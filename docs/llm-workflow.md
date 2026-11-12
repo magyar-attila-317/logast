@@ -10,7 +10,8 @@ logging code by hand and do not read source files unless an order is REPORT-ONLY
 
 ## Loop
 
-1. `logast classpath <root>` once per project, and again after dependency changes. It runs Gradle
+1. `logast init <root>` once per project if it has no `logast.yaml` yet (it also writes the classpath);
+   `logast classpath <root>` again after dependency changes. It runs Gradle
    and writes `.logast/classpath-*.txt`. If `scan` warns about a missing classpath or unresolved
    calls, run it first.
 2. `logast scan <root>` prints every work order. The full JSON goes to `<root>/.logast/orders.json`.

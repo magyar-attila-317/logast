@@ -64,9 +64,16 @@ logast --version
 ### From source
 
 ```bash
-git clone <this repo> && cd log-ast
+git clone https://github.com/magyar-attila-317/logast.git && cd logast
 ./install.sh --skill --starter
 ```
+
+To update, pull and run `./install.sh` again: it rebuilds and replaces the installed copy (and refreshes the
+Claude Code skill if it was installed). Add `--starter` when the starter changed.
+
+**macOS:** the same steps work. Install a JDK first (`brew install openjdk@21`, or SDKMAN / Temurin) so `java` is
+on PATH; the `/usr/bin/java` stub alone is not a JDK. `~/.local/bin` is not on the macOS PATH by default: add
+`export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, or install elsewhere with `LOGAST_BIN=/opt/homebrew/bin ./install.sh`.
 
 | option | what it does |
 |---|---|
@@ -94,13 +101,25 @@ The version comes from `gradle.properties`.
 
 ```bash
 cd my-service
-logast classpath .          # 1. runs Gradle once, writes .logast/classpath-*.txt (needed for type resolution)
-$EDITOR logast.yaml         # 2. your policy: see below (optional, but this is where your business language goes)
-logast traffic .            # 3. optional: lists every entrypoint in .logast/traffic.yaml, fill in calls/day
-logast scan . --update-baseline   # 4. optional, for CI: today's findings become the baseline
+logast init                 # writes logast.yaml, .gitignore entries, .logast/classpath-*.txt and .logast/traffic.yaml
+$EDITOR logast.yaml         # your business language: see below
 ```
 
-Add `.logast/` to `.gitignore`, except `.logast/baseline.json` and `.logast/traffic.yaml` if you want them shared.
+`logast init` runs Gradle once to write the classpath (type resolution needs it; nothing is compiled), writes a
+starter `logast.yaml` with vocabulary suggestions taken from the MDC keys the code already sets (commented out),
+ignores `.logast/` in git except the shared `baseline.json` and `traffic.yaml`, and lists every entrypoint in
+`.logast/traffic.yaml` for you to fill in calls/day. Re-running it keeps existing files.
+
+| option | what it does |
+|---|---|
+| `--extends <url\|file>` | company / area layers the policy builds on (comma-separated) |
+| `--keep-wording` | legacy service: fix structure, keep existing message wording |
+| `--pack logging,tracing,metrics` | rule packs (default `logging,tracing`) |
+| `--baseline` | scan once and record today's findings, so CI fails only on new ones |
+| `--no-classpath` / `--no-traffic` | skip those steps |
+| `--force` | regenerate an existing `logast.yaml` |
+
+The steps are also separate commands: `logast classpath .`, `logast traffic .`, `logast scan . --update-baseline`.
 
 A minimal `logast.yaml` that builds on a company layer:
 
@@ -268,6 +287,7 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 
 | command | what it does |
 |---|---|
+| `logast init [svc]` | one-time setup: policy, .gitignore, classpath, traffic template (`--baseline` for CI) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
 | `logast scan <svc>` | finds gaps, writes `.logast/orders.json`, prints the work orders |
 | `logast apply <svc> [--auto] [--fills f] [--only ids] [--write]` | applies orders on a scratch copy, rescanning between rounds; dry run unless `--write` |

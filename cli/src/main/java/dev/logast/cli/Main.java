@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
         subcommands = {Main.Scan.class, Main.Explain.class, Main.Apply.class, Main.Classpath.class, Main.RulesCmd.class,
-                Main.PolicyCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class})
+                Main.PolicyCmd.class, Init.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override

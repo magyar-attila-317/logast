@@ -26,7 +26,15 @@ final class Review extends Main.Common implements Callable<Integer> {
         String url = server.start(port);
         System.out.println("logast review: " + url + "  (local only; Ctrl+C to stop)");
         if (open) {
-            new ProcessBuilder("xdg-open", url).start();
+            String os = System.getProperty("os.name").toLowerCase();
+            String[] cmd = os.contains("mac") ? new String[]{"open", url}
+                    : os.contains("win") ? new String[]{"rundll32", "url.dll,FileProtocolHandler", url}
+                    : new String[]{"xdg-open", url};
+            try {
+                new ProcessBuilder(cmd).start();
+            } catch (java.io.IOException e) {
+                System.out.println("could not open a browser (" + cmd[0] + "); open the URL above manually");
+            }
         }
         Thread.currentThread().join();
         return 0;
