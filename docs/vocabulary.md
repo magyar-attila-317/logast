@@ -4,6 +4,14 @@ The standard is a **policy**: which words logs use, which MDC keys exist and whe
 lifecycle events are phrased, which levels mean what, which rule packs run. It is business-specific, so it lives
 in your company, not in logast, and teams can extend or (visibly) override it.
 
+
+## Start from the code
+
+Don't write the vocabulary from scratch: `logast vocabulary <root>` harvests it (MDC keys, `[k=v]` keys in log
+messages, id-like variables), grouped per term with counts, roles (`approvedByUserId` is a role of `user`, another
+field, not an alias) and hints for likely duplicates. `logast init` writes the same harvest into a new `logast.yaml`.
+Re-run it after editing: it lists only what the policy doesn't cover yet.
+
 ## Layers
 
 ```

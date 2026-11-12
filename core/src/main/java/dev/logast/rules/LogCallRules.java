@@ -300,10 +300,15 @@ final class LogCallRules {
 
         // drop values already in MDC, PII and e.getMessage() when the exception itself is logged
         Set<String> inMdc = ctx.mdcInside(m);
+        List<String> plannedDeps = new ArrayList<>();
         List<Arg> kept = new ArrayList<>();
         List<String> droppedStems = new ArrayList<>();
         for (Arg a : args) {
             if (a.registry() && inMdc.contains(a.key())) {
+                String wrap = ctx.plannedBy(m, a.key());
+                if (wrap != null) {
+                    plannedDeps.add(wrap);
+                }
                 droppedStems.add(MessageTemplate.stem(a.key()));
                 issues.add(Rules.LOG_FORMAT);
             } else if (ctx.domain.isPii(a.expr())) {
@@ -341,6 +346,7 @@ final class LogCallRules {
 
         String rule = unique.stream().max(Comparator.comparingInt(r -> Rules.rank(Rules.severity(ctx.policy, r)))).orElseThrow();
         OrderBuilder b = ctx.order(rule, m, line, "log" + ordinal);
+        plannedDeps.forEach(b::dependsOn);
         unique.forEach(b::fix);
         b.title(title(unique, lc));
         String keysText = String.join("", kept.stream().map(a -> ", " + a.src()).toList());
@@ -422,13 +428,9 @@ final class LogCallRules {
         return ctx.policy.logKey(key);
     }
 
-    /** policy.logging.keyStyle for keys outside the vocabulary: dotted (amount.cents), camel (amountCents), keep. */
+    /** policy.logging.keyStyle for keys outside the vocabulary: dotted, camel, pascal, snake, keep. */
     private String styled(String name) {
-        return switch (ctx.policy.logging().keyStyle()) {
-            case "camel" -> Text.camel(name);
-            case "keep" -> name;
-            default -> name.replaceAll("([a-z0-9])([A-Z])", "$1.$2").replace('_', '.').toLowerCase(Locale.ROOT);
-        };
+        return ctx.policy.logging().style().apply(name);
     }
 
     private static boolean droppedPiiMidSentence(Set<String> issues, String raw) {

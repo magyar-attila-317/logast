@@ -18,6 +18,7 @@ public final class PathContext {
     private final Map<String, Set<String>> mdcIn = new HashMap<>();
 
     private final Map<String, Set<String>> extraEntryKeys;
+    private final Map<String, Set<String>> extraOwnKeys;
 
     public PathContext(CallGraph graph, List<Entrypoint> entrypoints, Set<String> ambient,
                        Set<String> httpFilterKeys, boolean decoratorPresent) {
@@ -27,9 +28,16 @@ public final class PathContext {
     /** @param extraEntryKeys MDC keys that planned fixes will set at an entrypoint (method key -> keys) */
     public PathContext(CallGraph graph, List<Entrypoint> entrypoints, Set<String> ambient,
                        Set<String> httpFilterKeys, boolean decoratorPresent, Map<String, Set<String>> extraEntryKeys) {
+        this(graph, entrypoints, ambient, httpFilterKeys, decoratorPresent, extraEntryKeys, Map.of());
+    }
+
+    /** @param extraOwnKeys MDC keys planned fixes will set for a whole method body (method key -> keys) */
+    public PathContext(CallGraph graph, List<Entrypoint> entrypoints, Set<String> ambient, Set<String> httpFilterKeys,
+                       boolean decoratorPresent, Map<String, Set<String>> extraEntryKeys, Map<String, Set<String>> extraOwnKeys) {
         this.graph = graph;
         this.entrypoints = entrypoints;
         this.extraEntryKeys = extraEntryKeys;
+        this.extraOwnKeys = extraOwnKeys;
         for (Entrypoint ep : entrypoints) {
             parents.put(ep.method().key(), bfs(ep.method()));
         }
@@ -68,6 +76,7 @@ public final class PathContext {
             MethodInfo m = work.poll();
             Set<String> out = new TreeSet<>(mdcIn.get(m.key()));
             out.addAll(ownKeys(m));
+            out.addAll(extraOwnKeys.getOrDefault(m.key(), Set.of()));
             for (CallGraph.Edge e : graph.out(m)) {
                 Set<String> passed = switch (e.async()) {
                     case NONE -> out;
@@ -110,6 +119,7 @@ public final class PathContext {
     public Set<String> mdcInside(MethodInfo m) {
         Set<String> s = new TreeSet<>(mdcAtEntry(m));
         s.addAll(ownKeys(m));
+        s.addAll(extraOwnKeys.getOrDefault(m.key(), Set.of()));
         return s;
     }
 

@@ -131,6 +131,7 @@ final class EntrypointRules {
             b.edit(Edit.insert(f.relPath(), inner[0], indent + top));
         }
         if (replacement != null) {
+            ctx.wrappedMethods.add(m.key());
             b.edit(Edit.replace(f.relPath(), inner[0], inner[1], replacement));
         }
         b.edits(extra);
