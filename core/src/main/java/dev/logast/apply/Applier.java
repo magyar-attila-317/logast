@@ -246,8 +246,17 @@ public final class Applier {
 
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    Files.copy(file, work.resolve(root.relativize(file).toString()), StandardCopyOption.COPY_ATTRIBUTES);
+                    // sockets, pipes and devices (e.g. a tool's daemon.sock) cannot be copied and are never edited
+                    if (attrs.isRegularFile() || attrs.isSymbolicLink()) {
+                        Files.copy(file, work.resolve(root.relativize(file).toString()),
+                                StandardCopyOption.COPY_ATTRIBUTES, LinkOption.NOFOLLOW_LINKS);
+                    }
                     return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException e) {
+                    return FileVisitResult.CONTINUE;   // unreadable entry: not something logast edits
                 }
             });
             return work;
