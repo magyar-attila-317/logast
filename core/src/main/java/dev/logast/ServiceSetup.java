@@ -15,54 +15,20 @@ public final class ServiceSetup {
     }
 
     public static final List<String> GITIGNORE = List.of(".logast/*", "!.logast/baseline.json", "!.logast/traffic.yaml");
-    private static final Pattern MDC_KEY = Pattern.compile(
-            "(?:MDC\\s*\\.\\s*put(?:Closeable)?|MdcScope\\s*\\.\\s*of)\\s*\\(\\s*\"([A-Za-z][\\w.\\-]*)\"");
-    private static final Pattern ID_SUFFIX = Pattern.compile("(?i)[._\\-]?(id|uuid|key|number|no)$");
-    private static final Set<String> AMBIENT = Set.of("traceId", "spanId", "trace.id", "span.id", "traceparent");
-    private static final Set<String> SKIP_DIRS = Set.of("build", "out", "target", ".gradle", ".git", ".logast", "node_modules");
 
     public static boolean isGradleProject(Path root) {
         return Stream.of("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle")
                 .anyMatch(f -> Files.exists(root.resolve(f)));
     }
 
-    /** MDC keys the code already sets, grouped by the business term they identify: {@code orderId → order}. */
-    public static Map<String, SortedSet<String>> mdcKeysByTerm(Path root) {
-        Map<String, SortedSet<String>> byTerm = new TreeMap<>();
-        try (Stream<Path> files = Files.walk(root)) {
-            files.filter(p -> p.toString().endsWith(".java"))
-                    .filter(p -> root.relativize(p).toString().replace('\\', '/').contains("src/"))
-                    .filter(p -> { for (Path seg : root.relativize(p)) { if (SKIP_DIRS.contains(seg.toString())) return false; } return true; })
-                    .forEach(p -> {
-                        Matcher m = MDC_KEY.matcher(read(p));
-                        while (m.find()) {
-                            String key = m.group(1);
-                            if (!AMBIENT.contains(key)) {
-                                byTerm.computeIfAbsent(term(key), t -> new TreeSet<>()).add(key);
-                            }
-                        }
-                    });
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return byTerm;
+    /** @param vocabulary harvested {@code vocabulary:} block ({@link VocabularyHarvest#yaml}); empty → commented example */
+    public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String vocabulary) {
+        return policyTemplate(extendsList, packs, keepWording, null, vocabulary);
     }
 
-    /** {@code orderId, order_id, order.id, orderUuid → order}; {@code job.name → job}; {@code tenant → tenant}. */
-    static String term(String key) {
-        if (key.contains(".")) {
-            return key.substring(0, key.indexOf('.')).toLowerCase(Locale.ROOT);
-        }
-        String base = ID_SUFFIX.matcher(key).replaceFirst("");
-        if (base.isEmpty()) {
-            base = key;
-        }
-        String dotted = base.replaceAll("([a-z0-9])([A-Z])", "$1.$2").replaceAll("[_\\-]+", ".").toLowerCase(Locale.ROOT);
-        return dotted;
-    }
-
-    public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording,
-                                        Map<String, SortedSet<String>> mdcKeys) {
+    /** @param keyStyle null → not written (default or company layer decides) */
+    public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
+                                        String vocabulary) {
         StringBuilder sb = new StringBuilder();
         sb.append("""
                 # logast policy for this service.
@@ -80,14 +46,14 @@ public final class ServiceSetup {
         sb.append("logging:\n  rewriteExistingMessages: ").append(!keepWording)
                 .append(keepWording ? "   # keep existing wording; still fix concatenation, glossary, lost exceptions\n"
                         : "    # set false to keep existing message wording\n");
+        sb.append(keyStyle != null ? "  keyStyle: " + keyStyle + "   # MDC and [k=v] keys: dotted (order.id), camel (orderId), pascal (OrderId), snake (order_id)\n"
+                : "  # keyStyle: camel             # MDC and [k=v] keys: dotted (order.id, default), camel (orderId), pascal (OrderId), snake (order_id)\n");
         sb.append("""
 
                 # Business vocabulary: one word per concept, one MDC key per identifier. Banned words in `aliases`
                 # are rewritten to the term; old MDC key names in `mdc.aliases` are migrated to `mdc.key`.
                 """);
-        List<Map.Entry<String, SortedSet<String>>> suggestions = mdcKeys.entrySet().stream()
-                .filter(e -> !e.getKey().isBlank()).toList();
-        if (suggestions.isEmpty()) {
+        if (vocabulary == null || !vocabulary.contains("vocabulary:")) {
             sb.append("""
                     # vocabulary:
                     #   order:
@@ -95,23 +61,7 @@ public final class ServiceSetup {
                     #     mdc: { key: order.id, aliases: [orderId], sources: { params: [orderId] } }
                     """);
         } else {
-            sb.append("# Suggested from the MDC keys this service already sets; uncomment and adjust:\n# vocabulary:\n");
-            for (var e : suggestions) {
-                String term = e.getKey();
-                boolean idLike = e.getValue().stream().anyMatch(k -> ID_SUFFIX.matcher(k).find());
-                String key = e.getValue().stream().filter(k -> k.startsWith(term + ".")).findFirst()
-                        .orElse(idLike ? term + ".id" : term);
-                List<String> aliases = e.getValue().stream().filter(k -> !k.equals(key)).toList();
-                List<String> params = e.getValue().stream().filter(k -> k.matches("[a-z][A-Za-z0-9]*")).toList();
-                sb.append("#   ").append(yamlKey(term)).append(":\n#     mdc: { key: ").append(key);
-                if (!aliases.isEmpty()) {
-                    sb.append(", aliases: [").append(String.join(", ", aliases)).append("]");
-                }
-                if (!params.isEmpty()) {
-                    sb.append(", sources: { params: [").append(String.join(", ", params)).append("] }");
-                }
-                sb.append(" }\n");
-            }
+            sb.append(vocabulary);
         }
         sb.append("""
 
@@ -122,10 +72,6 @@ public final class ServiceSetup {
                 #     requiredMdc: [tenant.id]
                 """);
         return sb.toString();
-    }
-
-    private static String yamlKey(String term) {
-        return term.matches("[a-z][a-z0-9_]*") ? term : "\"" + term + "\"";
     }
 
     /** Appends the logast entries missing from {@code <root>/.gitignore}; returns the ones added. */
@@ -153,11 +99,4 @@ public final class ServiceSetup {
         return missing;
     }
 
-    private static String read(Path p) {
-        try {
-            return Files.readString(p);
-        } catch (IOException e) {
-            return "";
-        }
-    }
 }

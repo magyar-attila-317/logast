@@ -9,7 +9,8 @@ mdc:
 pii: [password, secret, token, email, phone, iban, cardNumber, cvv, pin, ssn, taxNumber, birthDate]
 
 logging:
-  keyStyle: dotted                 # [k=v] keys not in the vocabulary: amountCents -> amount.cents
+  keyStyle: dotted                 # MDC and [k=v] keys outside the vocabulary: dotted (order.id), camel (orderId),
+                                   # pascal (OrderId), snake (order_id), keep. Also the spelling `logast vocabulary` proposes.
 
 # One way to say lifecycle events. "{subject}" is what happens, in domain terms ("Order sync").
 # Existing messages matching a variant are rewritten to the canonical form; new text written for an entry log

@@ -34,6 +34,7 @@ public final class Rules {
     public static final String MESSAGE_PHRASING = "MESSAGE_PHRASING";
     public static final String MDC_KEY_ALIAS = "MDC_KEY_ALIAS";
     public static final String LOG_KEY_STYLE = "LOG_KEY_STYLE";
+    public static final String REPEATED_LOG_VALUE = "REPEATED_LOG_VALUE";
     public static final String AREA_MDC_MISSING = "AREA_MDC_MISSING";
     public static final String LOG_LEVEL = "LOG_LEVEL";
     public static final String EXCEPTION_LOGGED_TWICE = "EXCEPTION_LOGGED_TWICE";
@@ -55,7 +56,7 @@ public final class Rules {
     static {
         for (String r : List.of(SWALLOWED_EXCEPTION, LOST_THROWABLE, LOG_AND_RETHROW, EXCEPTION_LOGGED_TWICE,
                 STRING_CONCAT_LOG, LOG_FORMAT, GLOSSARY_VIOLATION, PII_IN_LOG, MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS,
-                MISSING_DOMAIN_MDC, AREA_MDC_MISSING, ENTRYPOINT_SILENT, MESSAGE_PHRASING, LOG_KEY_STYLE, LOG_LEVEL,
+                MISSING_DOMAIN_MDC, AREA_MDC_MISSING, ENTRYPOINT_SILENT, MESSAGE_PHRASING, LOG_KEY_STYLE, LOG_LEVEL, REPEATED_LOG_VALUE,
                 SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE, LOG_IN_LOOP, LOG_VOLUME)) {
             PACKS.put(r, Set.of("logging"));
         }
@@ -89,7 +90,7 @@ public final class Rules {
             Map.entry(SETUP_LOGBACK_XML, "medium"), Map.entry(LOG_AND_RETHROW, "medium"),
             Map.entry(SETUP_STRUCTURED_LOGGING, "medium"), Map.entry(MDC_NOT_CLOSEABLE, "low"),
             Map.entry(STRING_CONCAT_LOG, "low"), Map.entry(LOG_FORMAT, "low"), Map.entry(GLOSSARY_VIOLATION, "low"),
-            Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_STYLE, "low"),
+            Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_STYLE, "low"), Map.entry(REPEATED_LOG_VALUE, "medium"),
             Map.entry(AREA_MDC_MISSING, "medium"), Map.entry(LOG_LEVEL, "medium"), Map.entry(EXCEPTION_LOGGED_TWICE, "medium"),
             Map.entry(HTTP_CLIENT_UNTRACED, "high"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
@@ -124,6 +125,8 @@ public final class Rules {
         new SetupRules(ctx).run();
         new TracingRules(ctx).run();
         new EntrypointRules(ctx).run();
+        ctx.freezePlan();
+        new RepeatedValueRules(ctx).run();
         ctx.freezePlan();
         new ExceptionRules(ctx).run();
         new LogCallRules(ctx).run();

@@ -68,7 +68,7 @@ final class MdcRules {
             Map<String, String> aliases = ctx.policy.mdcAliases();
             int n = 0;
             for (MdcOp op : m.facts().mdc) {
-                String canonical = op.key() == null ? null : aliases.get(op.key());
+                String canonical = ctx.policy.canonicalMdcKey(op.key());
                 int st = Pos.start(op.call());
                 if (canonical == null || claimed.stream().anyMatch(r -> r[0] <= st && st < r[1])) {
                     continue;
@@ -81,7 +81,8 @@ final class MdcRules {
                     continue;
                 }
                 ctx.order(Rules.MDC_KEY_ALIAS, m, line, "alias" + n++)
-                        .title("MDC key '" + op.key() + "' is an alias of '" + canonical + "' (vocabulary)")
+                        .title(aliases.containsKey(op.key()) ? "MDC key '" + op.key() + "' is an alias of '" + canonical + "' (vocabulary)"
+                                : "MDC key '" + op.key() + "' is not spelled in keyStyle " + ctx.policy.logging().keyStyle() + ": '" + canonical + "'")
                         .edit(Edit.replace(f.relPath(), Pos.start(lit), Pos.end(lit), "\"" + canonical + "\""))
                         .context(ctx.context(m, st, Text.oneLine(op.call().printTrimmed(), 160), null));
             }
@@ -202,7 +203,7 @@ final class MdcRules {
         }
         List<Expression> args = op.call().getArguments();
         String var = EntrypointRules.unique("mdc", ctx.vars(m, Pos.start(op.call())).keySet());
-        String canonical = ctx.policy.mdcAliases().get(op.key());
+        String canonical = ctx.policy.canonicalMdcKey(op.key());
         if (canonical != null) {
             b.fix(Rules.MDC_KEY_ALIAS);
         }

@@ -121,10 +121,19 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         }
     }
 
-    public record Mdc(List<String> ambientKeys, Map<String, KeySource> keys) {
+    /**
+     * @param extractRepeated a vocabulary identifier logged by this many statements of one method goes into MDC once
+     *                        (REPEATED_LOG_VALUE); 0 turns it off. Default 2.
+     */
+    public record Mdc(List<String> ambientKeys, Map<String, KeySource> keys, Integer extractRepeated) {
         public Mdc {
             ambientKeys = ambientKeys == null ? List.of("traceId", "spanId") : List.copyOf(ambientKeys);
             keys = keys == null ? Map.of() : new TreeMap<>(keys);
+            extractRepeated = extractRepeated == null ? 2 : extractRepeated;
+        }
+
+        public Mdc(List<String> ambientKeys, Map<String, KeySource> keys) {
+            this(ambientKeys, keys, null);
         }
     }
 
@@ -141,16 +150,20 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param rewriteExistingMessages true: existing messages are migrated to {@code Text [k=v]}; false: only
      *                                concatenation, glossary and lost exceptions are fixed in existing lines
      */
-    /** @param keyStyle naming of {@code [k=v]} keys that are not in the vocabulary: dotted (amount.cents), camel, keep */
+    /** @param keyStyle spelling of MDC keys and {@code [k=v]} keys outside the vocabulary: dotted, camel, pascal, snake, keep */
     public record Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
                           Boolean rewriteExistingMessages, String keyStyle) {
         public Logging {
-            keyStyle = keyStyle == null ? "dotted" : keyStyle.toLowerCase(Locale.ROOT);
+            keyStyle = KeyStyle.parse(keyStyle).toString();   // fails fast on an unknown style
             rewriteExistingMessages = rewriteExistingMessages == null || rewriteExistingMessages;
             loggerName = loggerName == null ? "log" : loggerName;
             swallowedLevel = swallowedLevel == null ? "warn" : swallowedLevel.toLowerCase(Locale.ROOT);
             entryLevel = entryLevel == null ? "info" : entryLevel.toLowerCase(Locale.ROOT);
             minEntrypointLevel = minEntrypointLevel == null ? "info" : minEntrypointLevel.toLowerCase(Locale.ROOT);
+        }
+
+        public KeyStyle style() {
+            return KeyStyle.parse(keyStyle);
         }
     }
 
@@ -249,6 +262,25 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
             }
         });
         return out;
+    }
+
+    /**
+     * The key an MDC call should use instead of {@code key}, or null when it is fine: a vocabulary alias maps to its
+     * canonical key; any other key that is not in the vocabulary and not ambient is spelled in {@code logging.keyStyle}.
+     */
+    public String canonicalMdcKey(String key) {
+        if (key == null) {
+            return null;
+        }
+        String alias = mdcAliases().get(key);
+        if (alias != null) {
+            return alias;
+        }
+        if (mdcRegistry().containsKey(key) || mdc.ambientKeys().contains(key)) {
+            return null;
+        }
+        String styled = logging.style().apply(key);
+        return styled.equals(key) ? null : styled;
     }
 
     /** Name for an MDC key inside a {@code [k=v]} suffix. */

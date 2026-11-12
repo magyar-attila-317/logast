@@ -4,6 +4,7 @@ import dev.logast.Analysis;
 import dev.logast.Logast;
 import dev.logast.ServiceSetup;
 import dev.logast.Traffic;
+import dev.logast.VocabularyHarvest;
 import dev.logast.orders.Baseline;
 import dev.logast.orders.CompactFormat;
 import dev.logast.orders.ScanResult;
@@ -29,6 +30,8 @@ final class Init implements Callable<Integer> {
     List<String> packs = new ArrayList<>();
     @Option(names = "--keep-wording", description = "Legacy service: don't rewrite existing message wording")
     boolean keepWording;
+    @Option(names = "--key-style", description = "Spelling of MDC and [k=v] keys: dotted (order.id), camel (orderId), pascal (OrderId), snake (order_id)")
+    String keyStyle;
     @Option(names = "--baseline", description = "Scan once and record today's findings as the CI baseline")
     boolean baseline;
     @Option(names = "--no-classpath", description = "Skip the Gradle run (scans then resolve far fewer types)")
@@ -51,10 +54,13 @@ final class Init implements Callable<Integer> {
         if (Files.exists(policyFile) && !force) {
             System.out.println("policy:    logast.yaml exists, kept (--force to regenerate)");
         } else {
-            var keys = ServiceSetup.mdcKeysByTerm(r);
-            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, keys));
-            System.out.println("policy:    wrote logast.yaml" + (keys.isEmpty() ? "" : " (" + keys.size()
-                    + " vocabulary suggestions from existing MDC keys, commented out)"));
+            // first without vocabulary, so the harvest can leave out what the extended company layers already define
+            String style = keyStyle == null ? null : dev.logast.policy.KeyStyle.parse(keyStyle).toString();
+            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, null));
+            VocabularyHarvest.Result h = VocabularyHarvest.run(r, Logast.policy(r, null), 3);
+            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, VocabularyHarvest.yaml(h)));
+            System.out.println("policy:    wrote logast.yaml with " + h.terms().size() + " vocabulary terms harvested from the code"
+                    + (h.terms().isEmpty() ? "" : " (review: rename, merge duplicates, drop non-business terms)"));
         }
 
         List<String> added = ServiceSetup.updateGitignore(r);
@@ -103,7 +109,7 @@ final class Init implements Callable<Integer> {
         if (!haveClasspath) {
             System.out.println("  logast classpath .                 # needed for type resolution");
         }
-        System.out.println("  $EDITOR logast.yaml                # business vocabulary, areas; `logast policy .` shows the merge");
+        System.out.println("  $EDITOR logast.yaml                # reorganise the harvested vocabulary; `logast policy .` shows the merge");
         System.out.println("  logast scan . --format summary     # what logast would change");
         if (!baseline) {
             System.out.println("  logast scan . --update-baseline    # for CI: only new findings fail the build");

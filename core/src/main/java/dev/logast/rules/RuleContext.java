@@ -23,6 +23,14 @@ public final class RuleContext {
     final List<OrderBuilder> orders = new ArrayList<>();
     final Map<CatchInfo, String> swallowedOrders = new IdentityHashMap<>();
     final Map<String, Set<String>> plannedEntryKeys = new HashMap<>();
+    /** Keys a planned wrap sets for a whole method body (passed on to callees). */
+    final Map<String, Set<String>> plannedOwnKeys = new HashMap<>();
+    /** Keys a planned wrap sets after a local declaration: valid inside the method only. */
+    final Map<String, Set<String>> plannedLocalKeys = new HashMap<>();
+    /** "methodKey|mdcKey" → id of the order that will put it in MDC (message rewrites that drop it depend on it). */
+    final Map<String, String> plannedBy = new HashMap<>();
+    /** Methods whose body an entrypoint order already rewraps. */
+    final Set<String> wrappedMethods = new HashSet<>();
     String supportOrderId;
     /** TracingRules will switch on Kafka listener observation, so listeners count as observed. */
     boolean kafkaListenerObservationPlanned;
@@ -44,11 +52,23 @@ public final class RuleContext {
     /** Called after the entrypoint rules: MDC context as it will be once their orders are applied. */
     void freezePlan() {
         planned = new PathContext(a.graph, a.entrypoints, new TreeSet<>(policy.mdc().ambientKeys()),
-                a.httpFilterKeys, a.decoratorPresent || starterPlanned(), plannedEntryKeys);
+                a.httpFilterKeys, a.decoratorPresent || starterPlanned(), plannedEntryKeys, plannedOwnKeys);
     }
 
     public Set<String> mdcInside(MethodInfo m) {
-        return (planned != null ? planned : a.paths).mdcInside(m);
+        Set<String> local = plannedLocalKeys.get(m.key());
+        Set<String> s = (planned != null ? planned : a.paths).mdcInside(m);
+        if (local == null) {
+            return s;
+        }
+        Set<String> out = new TreeSet<>(s);
+        out.addAll(local);
+        return out;
+    }
+
+    /** Id of the order planned to put {@code key} into MDC inside {@code m}, or null. */
+    public String plannedBy(MethodInfo m, String key) {
+        return a.paths.mdcInside(m).contains(key) ? null : plannedBy.get(m.key() + "|" + key);
     }
 
     public boolean plannedKey(MethodInfo m, String key) {

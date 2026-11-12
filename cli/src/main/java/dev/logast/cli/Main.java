@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
         subcommands = {Main.Scan.class, Main.Explain.class, Main.Apply.class, Main.Classpath.class, Main.RulesCmd.class,
-                Main.PolicyCmd.class, Init.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class})
+                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override
@@ -309,6 +309,23 @@ public final class Main {
             Files.writeString(file, dev.logast.Traffic.template(a.entrypoints, existing));
             long filled = a.entrypoints.stream().filter(ep -> existing.perDay(ep.label()) != null).count();
             System.out.println("traffic: " + a.entrypoints.size() + " entrypoints in " + file + " (" + filled + " with rates)");
+            return 0;
+        }
+    }
+
+    @Command(name = "vocabulary", description = "Harvest a draft vocabulary from the code (MDC keys, [k=v] keys in log messages, "
+            + "id-like variables): terms the policy does not cover yet, as YAML to reorganise and paste into logast.yaml")
+    static class VocabularyCmd extends Common implements Callable<Integer> {
+        @Option(names = "--min-declared", defaultValue = "3",
+                description = "Identifiers that are never logged or put in MDC need this many declarations (default 3)")
+        int minDeclared;
+        @Option(names = "--all", description = "Ignore the current policy: show everything, including terms it already defines")
+        boolean all;
+
+        @Override
+        public Integer call() {
+            dev.logast.VocabularyHarvest.Result h = dev.logast.VocabularyHarvest.run(root(), all ? null : policy(), minDeclared);
+            System.out.print(dev.logast.VocabularyHarvest.yaml(h));
             return 0;
         }
     }

@@ -106,7 +106,7 @@ $EDITOR logast.yaml         # your business language: see below
 ```
 
 `logast init` runs Gradle once to write the classpath (type resolution needs it; nothing is compiled), writes a
-starter `logast.yaml` with vocabulary suggestions taken from the MDC keys the code already sets (commented out),
+starter `logast.yaml` whose vocabulary is harvested from the code (see below),
 ignores `.logast/` in git except the shared `baseline.json` and `traffic.yaml`, and lists every entrypoint in
 `.logast/traffic.yaml` for you to fill in calls/day. Re-running it keeps existing files.
 
@@ -120,6 +120,25 @@ ignores `.logast/` in git except the shared `baseline.json` and `traffic.yaml`, 
 | `--force` | regenerate an existing `logast.yaml` |
 
 The steps are also separate commands: `logast classpath .`, `logast traffic .`, `logast scan . --update-baseline`.
+
+**The vocabulary starts from your code.** `init` (and `logast vocabulary .` at any time) collects every identifier the
+service already uses: MDC keys, `[k=v]` / `k={}` keys in log messages, and id-like variables. Spellings of one
+identifier become one term (`orderId`, `order_id`, `orderUuid` → `order`, key `order.id`), so you only reorganise:
+
+```yaml
+vocabulary:
+  tenant:                # 1 / 25 / 283, 126 files            <- mdc / log / declared counts
+    # roles in the code (other fields, not aliases): hostTenantId, jwtTenantId, requestedTenantId
+    mdc: { key: tenant.id, aliases: [tenantId, tenant_id, tenantUuid], sources: { params: [tenantId, tenantUuid] } }
+  "actor.user":          # 0 / 10 / 27, 23 files  <- a kind of "user"?
+    mdc: { key: actor.user.id, aliases: [actorUserId], sources: { params: [actorUserId] } }
+
+# Identifiers declared in the code that no log or MDC uses yet (declarations); add the ones that matter:
+#   approver: approverUuid, approverId (90)
+```
+
+Rename terms, merge the ones flagged `a kind of` / `same as` when they are one concept, drop what isn't a business
+term, and add banned words as `aliases`. With a company layer in `extends:`, only what it doesn't cover is listed.
 
 A minimal `logast.yaml` that builds on a company layer:
 
@@ -288,6 +307,7 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 | command | what it does |
 |---|---|
 | `logast init [svc]` | one-time setup: policy, .gitignore, classpath, traffic template (`--baseline` for CI) |
+| `logast vocabulary [svc]` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
 | `logast scan <svc>` | finds gaps, writes `.logast/orders.json`, prints the work orders |
 | `logast apply <svc> [--auto] [--fills f] [--only ids] [--write]` | applies orders on a scratch copy, rescanning between rounds; dry run unless `--write` |
