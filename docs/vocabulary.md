@@ -56,9 +56,10 @@ What each part drives:
 |---|---|
 | `aliases` | GLOSSARY_VIOLATION rewrites existing messages; fill validation rejects new ones |
 | `mdc.key` + `sources` | MISSING_DOMAIN_MDC adds `MdcScope.of("order.id", orderId)` at entrypoints; values already in MDC are dropped from messages |
+| `mdc.key` (any method) | REPEATED_LOG_VALUE: logged by `mdc.extractRepeated` (default 2, `0` = off) statements of one method → one `MdcScope` there |
 | `mdc.aliases` | MDC_KEY_ALIAS renames keys in `MDC.put` / `MdcScope.of`; `[orderId={}]` becomes `[order.id={}]` |
 | `logKey` | the key name in `[k=v]` (LOG_KEY_STYLE) |
-| keys not in the vocabulary | `logging.keyStyle`: `dotted` (default, `amountCents` → `amount.cents`), `camel`, `keep` |
+| key spelling | `logging.keyStyle`: `dotted` (default, `order.id`), `camel` (`orderId`), `pascal` (`OrderId`), `snake` (`order_id`), `keep`. Applies to `[k=v]` keys and MDC keys outside the vocabulary (MDC_KEY_ALIAS renames them), and to the keys `logast vocabulary` / `init` propose. Vocabulary `mdc.key`s are used as written. |
 
 ## Areas: when a word means something else
 

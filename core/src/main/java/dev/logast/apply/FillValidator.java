@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 /** Checks LLM-provided slot text and extra arguments before anything is written. */
 public final class FillValidator {
-    private static final Pattern MANUAL_SUFFIX = Pattern.compile("\\[[^\\]]*=");
+    private static final Pattern MANUAL_SUFFIX = Pattern.compile("\\[[^\\]]*=|\\b[A-Za-z][\\w.\\-]*=\\S*");
     private final Glossary glossary;
     private final DomainValues domain;
     private final dev.logast.rules.Phrasing phrasing;

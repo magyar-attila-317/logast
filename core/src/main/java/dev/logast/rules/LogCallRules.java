@@ -358,6 +358,11 @@ final class LogCallRules {
         if (mechanical && droppedPiiMidSentence(unique, raw)) {
             mechanical = false;
         }
+        // never write a message whose placeholders don't match its arguments, or with leftovers like "funders=()":
+        // hand it to the text slot instead
+        if (mechanical && (MessageTemplate.count(normalized) > 0 || KEY_LEFTOVER.matcher(normalized).find())) {
+            mechanical = false;
+        }
         if (mechanical) {
             String message = normalized + MessageTemplate.suffix(keys);
             String replacement = "\"" + message + "\"" + keysText + tail;
@@ -415,6 +420,11 @@ final class LogCallRules {
             return;
         }
         String args = String.join("", rawArgs.stream().map(e -> ", " + src(f, e)).toList());
+        if (MessageTemplate.count(normalized) != rawArgs.size()) {
+            b.suggestion("Not rewritten: the message has " + MessageTemplate.count(normalized) + " placeholders for "
+                    + rawArgs.size() + " arguments; fix it by hand.");
+            return;
+        }
         String replacement = "\"" + normalized + "\"" + args + (throwableSrc == null ? "" : ", " + throwableSrc);
         if (replacement.equals(f.slice(start, end))) {
             ctx.drop(b);
@@ -422,6 +432,8 @@ final class LogCallRules {
         }
         b.edit(Edit.replace(f.relPath(), start, end, replacement));
     }
+
+    private static final java.util.regex.Pattern KEY_LEFTOVER = java.util.regex.Pattern.compile("\\b[A-Za-z][\\w.\\-]*=|[\\[(]\\s*[,;]");
 
     /** Suffix name for an MDC/registry key (vocabulary logKey), or the key itself. */
     private String logKey(String key) {

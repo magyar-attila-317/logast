@@ -189,6 +189,18 @@ list. `--format json|summary|sarif|fills-template` change the output.
 
 ### 2. What the fixes look like
 
+An identifier repeated in every message of a method goes into MDC once (REPEATED_LOG_VALUE), and the messages lose
+the now redundant `[k=v]`:
+```java
+public void refund(String orderId, long amountCents) {
+    try (var mdc = MdcScope.of("order.id", orderId)) {
+        log.info("Refund started");
+        check(amountCents);
+        log.info("Refund completed [amount.cents={}]", amountCents);
+    }
+}
+```
+
 Swallowed exception, written text in **bold**:
 ```java
 } catch (PaymentException e) {
@@ -279,6 +291,15 @@ RNV-5ecdae  medium  REPORT-ONLY  RUNTIME_NULL_VALUE  …/notification/Mailer.jav
 It runs your existing tests (the build isn't changed; an init script adds the capture jar), records every log
 event, and reports context that existed in a test and then got lost, plus values logged as `null`.
 
+By default it runs `./gradlew test`. Services with other test tasks set them in `logast.yaml` (or pass
+`--tasks "test intTest bddTest"`):
+
+```yaml
+verify:
+  tasks: [test, intTest, bddTest]   # or [check]
+  gradleDir: ../..                  # optional: run Gradle from the repo root (service is a subproject)
+```
+
 ### 6. Noise: logs in loops, and real volume
 
 `LOG_IN_LOOP` flags an INFO line per collection element, skipping loops over enums and fixed lists. With rates
@@ -325,7 +346,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 
 | pack | rules |
 |---|---|
-| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · LOG_KEY_STYLE · PII_IN_LOG · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
+| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · LOG_KEY_STYLE · PII_IN_LOG · REPEATED_LOG_VALUE · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SETUP_SUPPORT_STARTER |
 | metrics (opt-in) | METRIC_NAMING · METRIC_HIGH_CARDINALITY_TAG · METRIC_DIRECT_REGISTRY |

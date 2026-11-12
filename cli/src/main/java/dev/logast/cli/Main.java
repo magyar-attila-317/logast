@@ -324,7 +324,8 @@ public final class Main {
 
         @Override
         public Integer call() {
-            dev.logast.VocabularyHarvest.Result h = dev.logast.VocabularyHarvest.run(root(), all ? null : policy(), minDeclared);
+            Policy p = policy();
+            dev.logast.VocabularyHarvest.Result h = dev.logast.VocabularyHarvest.run(root(), all ? null : p, p.logging().style(), minDeclared);
             System.out.print(dev.logast.VocabularyHarvest.yaml(h));
             return 0;
         }

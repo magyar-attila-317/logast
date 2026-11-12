@@ -98,16 +98,22 @@ public final class MessageTemplate {
         return n;
     }
 
-    private static final Pattern NAMED = Pattern.compile("([\\w.\\-]+)=\\{}");
-    private static final Pattern NAMED_FRAGMENT = Pattern.compile("\\s*[,;]?\\s*\\b[\\w.\\-]+=\\{}");
+    /** A placeholder as written, optionally wrapped: {@code {}}, {@code ({})}, {@code [{}]}, {@code '{}'}, {@code "{}"}, {@code <{}>}. */
+    private static final String PH = "(?:\\(\\{}\\)|\\[\\{}]|'\\{}'|\"\\{}\"|<\\{}>|\\{})";
+    /** A key in front of a placeholder: {@code k=}, or {@code k: } when k looks like a key (camel, dotted, snake). */
+    private static final String KEY = "(?:[\\w.\\-]+\\s*=\\s*|[a-z][a-z0-9]*(?:[A-Z_.][\\w.]*)+\\s*:\\s*)";
+    private static final Pattern NAMED = Pattern.compile("\\b" + KEY + PH);
+    private static final Pattern NAMED_FRAGMENT = Pattern.compile("\\s*[,;]?\\s*\\b" + KEY + PH);
+    private static final Pattern ANY_PLACEHOLDER = Pattern.compile("(?:\\b" + KEY + ")?" + PH);
+    private static final Pattern NAME_BEFORE = Pattern.compile("\\b([\\w.\\-]+)\\s*=\\s*[(\\['\"<]?$|\\b([a-z][a-z0-9]*(?:[A-Z_.][\\w.]*)+)\\s*:\\s*[(\\['\"<]?$");
 
     /** Per placeholder, the name written in front of it ({@code device={}} → "device"), else null. */
     public static List<String> placeholderNames(String raw) {
         List<String> out = new ArrayList<>();
         int i = raw.indexOf("{}");
         while (i >= 0) {
-            Matcher m = Pattern.compile("([\\w.\\-]+)=$").matcher(raw.substring(0, i));
-            out.add(m.find() ? m.group(1) : null);
+            Matcher m = NAME_BEFORE.matcher(raw.substring(0, i));
+            out.add(m.find() ? (m.group(1) != null ? m.group(1) : m.group(2)) : null);
             i = raw.indexOf("{}", i + 2);
         }
         return out;
@@ -118,7 +124,7 @@ public final class MessageTemplate {
         if (!NAMED.matcher(raw).find() || compliantKeys(raw) != null) {
             return raw;
         }
-        return NAMED_FRAGMENT.matcher(raw).replaceAll("").replaceAll("[\\s,;:]+$", "").trim();
+        return tidy(NAMED_FRAGMENT.matcher(raw).replaceAll(""));
     }
 
     /** Keys of an already compliant message, or null when it is not in house format. */
@@ -151,8 +157,26 @@ public final class MessageTemplate {
 
     /** Message text with placeholders removed and dangling separators trimmed. */
     public static String stripPlaceholders(String raw) {
-        String base = raw.replace("{}", "");
-        return trimTail(base);
+        return tidy(ANY_PLACEHOLDER.matcher(raw).replaceAll(""));
+    }
+
+    /**
+     * Separators and brackets left behind by removed placeholders: {@code "setup [, funders=()]"} → {@code "setup"},
+     * {@code "setup (a, )"} → {@code "setup (a)"}, {@code "failed:, x"} → {@code "failed: x"}.
+     */
+    static String tidy(String s) {
+        String prev;
+        do {
+            prev = s;
+            s = s.replaceAll("\\b[\\w.\\-]+\\s*=\\s*(?=[\\s,;)\\]]|$)", "")   // "funders=" whose value went away
+                    .replaceAll("([\\[(])\\s*[,;]\\s*", "$1")
+                    .replaceAll("\\s*[,;]\\s*([\\])])", "$1")
+                    .replaceAll("\\(\\s*\\)|\\[\\s*]|''|\"\"|<\\s*>", "")
+                    .replaceAll("([,;:])\\s*[,;]", "$1")
+                    .replaceAll("\\s+([,;:.!?)\\]])", "$1")
+                    .replaceAll("^[\\s,;:]+", "");
+        } while (!s.equals(prev));
+        return trimTail(s);
     }
 
     private static String trimTail(String s) {

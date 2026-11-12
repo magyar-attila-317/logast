@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -22,10 +23,12 @@ import java.util.stream.Stream;
 @Command(name = "verify", description = "Run the existing tests with log capture and check what they actually logged "
         + "(context lost across threads, null values, coverage of log statements). The service's build is not changed.")
 final class Verify extends Main.Common implements Callable<Integer> {
-    @Option(names = "--gradle-dir", description = "Where to run Gradle (default: the root; use the repo root for a subproject)")
+    @Option(names = "--gradle-dir", description = "Where to run Gradle (default: verify.gradleDir in the policy, else the root; "
+            + "use the repo root for a subproject)")
     Path gradleDir;
-    @Option(names = "--task", defaultValue = "test", description = "Gradle task(s) to run, e.g. :app:test")
-    String task;
+    @Option(names = {"--task", "--tasks"}, split = "[,\\s]+",
+            description = "Gradle tasks that run the tests, e.g. check or \"test intTest bddTest\" (default: verify.tasks in the policy, else test)")
+    List<String> tasks = new ArrayList<>();
     @Option(names = "--no-run", description = "Only analyse captures from a previous run")
     boolean noRun;
     @Option(names = "--format", defaultValue = "compact", description = "compact | json")
@@ -84,11 +87,16 @@ final class Verify extends Main.Common implements Callable<Integer> {
                     }
                 }
                 """.formatted(jar.toAbsolutePath().toString().replace("\\", "/")));
-        Path dir = gradleDir != null ? gradleDir.toAbsolutePath() : root;
+        dev.logast.policy.Policy.Verify cfg = policy().verify();
+        Path dir = gradleDir != null ? gradleDir.toAbsolutePath()
+                : cfg.gradleDir() != null ? root.resolve(cfg.gradleDir()).normalize() : root;
+        List<String> run = (tasks.isEmpty() ? cfg.tasks() : tasks).stream().filter(t -> !t.isBlank()).toList();
         Path wrapper = dir.resolve("gradlew");
         String gradle = Files.exists(wrapper) ? wrapper.toString() : "gradle";
-        Process p = new ProcessBuilder(gradle, "-q", "--no-configuration-cache", "--continue", "--init-script", init.toString(), task)
-                .directory(dir.toFile()).inheritIO().start();
+        List<String> cmd = new ArrayList<>(List.of(gradle, "-q", "--no-configuration-cache", "--continue", "--init-script", init.toString()));
+        cmd.addAll(run);
+        System.err.println("running: " + String.join(" ", cmd).replace(init.toString(), "<logast init script>") + "  (in " + dir + ")");
+        Process p = new ProcessBuilder(cmd).directory(dir.toFile()).inheritIO().start();
         int rc = p.waitFor();
         Files.deleteIfExists(init);
         return rc;

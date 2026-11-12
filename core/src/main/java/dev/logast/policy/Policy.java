@@ -18,7 +18,17 @@ import java.util.*;
 public record Policy(@JsonProperty("extends") List<String> parents, Glossary glossary, Mdc mdc, List<String> pii,
                      Entrypoints entrypoints, Logging logging, Support support, Map<String, RuleConfig> rules,
                      Map<String, Term> vocabulary, Map<String, Area> areas, Phrasing phrasing, Levels levels,
-                     List<String> packs, List<String> overrides) {
+                     List<String> packs, List<String> overrides, Verify verify) {
+
+    /**
+     * {@code logast verify}: which Gradle tasks run the tests ({@code [check]}, {@code [test, intTest, bddTest]}) and
+     * where Gradle runs (a repo root, for a service that is a subproject).
+     */
+    public record Verify(List<String> tasks, String gradleDir) {
+        public Verify {
+            tasks = tasks == null || tasks.isEmpty() ? List.of("test") : List.copyOf(tasks);
+        }
+    }
 
     /**
      * A business term. {@code aliases} are banned words replaced by the term; {@code mdc} describes the MDC key
@@ -185,6 +195,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         logging = logging == null ? new Logging(null, null, null, null, null, null) : logging;
         support = support == null ? new Support(null, null, null, null) : support;
         rules = rules == null ? Map.of() : Map.copyOf(rules);
+        verify = verify == null ? new Verify(null, null) : verify;
     }
 
     /** Built-in defaults only (no project file). */
@@ -203,22 +214,22 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
     public Policy withPacks(List<String> selected) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, selected, overrides);
+                phrasing, levels, selected, overrides, verify);
     }
 
     public Policy withLogging(Logging l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, l, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides);
+                phrasing, levels, packs, overrides, verify);
     }
 
     public Policy withLevels(Levels l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, l, packs, overrides);
+                phrasing, l, packs, overrides, verify);
     }
 
     public Policy withSupport(Support s) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, s, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides);
+                phrasing, levels, packs, overrides, verify);
     }
 
     // ---- derived views (vocabulary + the older flat glossary/mdc form) -------------------------------------
