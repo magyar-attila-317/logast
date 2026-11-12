@@ -114,6 +114,8 @@ ignores `.logast/` in git except the shared `baseline.json` and `traffic.yaml`, 
 |---|---|
 | `--extends <url\|file>` | company / area layers the policy builds on (comma-separated) |
 | `--keep-wording` | legacy service: fix structure, keep existing message wording |
+| `--key-style camel` | spelling of MDC and `[k=v]` keys: `dotted` (default), `camel`, `pascal`, `snake` |
+| `--support vendor` | copy `MdcScope` / `ObservedContext` into the service instead of depending on the starter library (use until the starter is in your Nexus) |
 | `--pack logging,tracing,metrics` | rule packs (default `logging,tracing`) |
 | `--baseline` | scan once and record today's findings, so CI fails only on new ones |
 | `--no-classpath` / `--no-traffic` | skip those steps |

@@ -29,6 +29,12 @@ public final class ServiceSetup {
     /** @param keyStyle null → not written (default or company layer decides) */
     public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
                                         String vocabulary) {
+        return policyTemplate(extendsList, packs, keepWording, keyStyle, null, vocabulary);
+    }
+
+    /** @param supportMode null → not written (dependency, or what the company layer says); "vendor" → copy the classes */
+    public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
+                                        String supportMode, String vocabulary) {
         StringBuilder sb = new StringBuilder();
         sb.append("""
                 # logast policy for this service.
@@ -48,6 +54,10 @@ public final class ServiceSetup {
                         : "    # set false to keep existing message wording\n");
         sb.append(keyStyle != null ? "  keyStyle: " + keyStyle + "   # MDC and [k=v] keys: dotted (order.id), camel (orderId), pascal (OrderId), snake (order_id)\n"
                 : "  # keyStyle: camel             # MDC and [k=v] keys: dotted (order.id, default), camel (orderId), pascal (OrderId), snake (order_id)\n");
+        sb.append("\n# Generated code uses MdcScope / ObservedContext from the logging-support starter:\n")
+                .append("#   dependency: add dev.logast:logging-support (must be resolvable: Nexus, or mavenLocal after `install.sh --starter`)\n")
+                .append("#   vendor:     copy the classes into <@SpringBootApplication package>.logging (no library)\n")
+                .append(supportMode != null ? "support:\n  mode: " + supportMode + "\n" : "# support:\n#   mode: vendor\n");
         sb.append("""
 
                 # Business vocabulary: one word per concept, one MDC key per identifier. Banned words in `aliases`
