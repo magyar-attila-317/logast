@@ -1,0 +1,22 @@
+// Written by `logast classpath`: dumps every project's compileClasspath plus its compiled main classes (when they
+// already exist from a normal build; nothing is compiled here) into <root>/.logast/classpath-<project>.txt.
+// With class directories present, apply rounds re-parse only the files they changed.
+allprojects {
+    tasks.register('logastClasspath') {
+        notCompatibleWithConfigurationCache('reads configurations at execution time')
+        doLast {
+            def cp = project.configurations.findByName('compileClasspath')
+            if (cp != null && cp.canBeResolved) {
+                def name = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '_')
+                def out = project.rootProject.file(".logast/classpath-${name}.txt")
+                out.parentFile.mkdirs()
+                def entries = cp.files.collect { it.absolutePath }
+                def ss = project.extensions.findByName('sourceSets')
+                if (ss != null && ss.findByName('main') != null) {
+                    entries += ss.main.output.classesDirs.files.findAll { d -> d.exists() && project.fileTree(d).matching { include '**/*.class' }.files.size() > 0 }.collect { it.absolutePath }
+                }
+                out.text = entries.join('\n')
+            }
+        }
+    }
+}

@@ -1,0 +1,33 @@
+glossary:
+  terms: [order, payment, charge, refund, shipment, customer, reconciliation, confirmation]
+  synonyms:
+    purchase: order
+    buyer: customer
+mdc:
+  ambientKeys: [traceId, spanId]
+  keys:
+    order.id:
+      params: [orderId]
+      types:
+        com.example.shop.domain.Order: "id()"
+        com.example.shop.messaging.ShipmentEvent: "orderId()"
+    customer.id:
+      params: [customerId]
+      types:
+        com.example.shop.web.CreateOrderRequest: "customerId()"
+    request.id: {}
+    tenant.id: {}
+    job.name: {}
+pii: [email, cardNumber, iban]
+entrypoints:
+  extraAnnotations: [com.example.shop.messaging.InboxHandler]
+vocabulary:
+  tenant:
+    mdc: { key: tenant.id, aliases: [tenantId] }
+areas:
+  payments:
+    packages: [com.example.shop.payment]
+    requiredMdc: [order.id]
+levels:
+  noInfoInLoops: true
+packs: [logging, tracing, metrics]

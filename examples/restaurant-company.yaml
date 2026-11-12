@@ -1,0 +1,66 @@
+# Example COMPANY layer for a restaurant POS business.
+# Publish it once (git raw URL / Nexus); every service extends it:   extends: [https://…/restaurant-company.yaml]
+# Built-in defaults (phrasing, levels, PII, packs) are always underneath; this file adds the business.
+
+pii: [loyaltyCardId, guestName, guestPhone]
+
+vocabulary:
+  # term:            the word logs and MDC use
+  #   aliases:       words that are rewritten to the term (in messages) / rejected (in new text)
+  #   mdc.key:       MDC key carrying the term's identifier; mdc.aliases are old key names to migrate
+  #   mdc.sources:   where logast finds the value (parameter names, or type -> accessor)
+  #   mdc.cardinality: high = ids (never a metric tag); low = small sets (ok as metric tag)
+  #   logKey:        name inside "Text [k=v]" (defaults to mdc.key)
+  order:
+    aliases: [purchase]
+    mdc:
+      key: order.id
+      aliases: [orderId, orderUuid, order_id]
+      sources:
+        params: [orderId, orderUuid]
+        types: { com.example.restaurant.ordering.order.Order: "getUuid()" }
+  tenant:
+    aliases: [restaurant, venue]
+    mdc: { key: tenant.id, aliases: [tenantId], sources: { params: [tenantId] }, cardinality: low }
+  seating:
+    aliases: [sitting, party]
+    mdc: { key: seating.id, aliases: [seatingId, seatingUuid], sources: { params: [seatingId, seatingUuid] } }
+  table:
+    mdc: { key: table.id, aliases: [tableId], sources: { params: [tableId] }, cardinality: low }
+  check:
+    aliases: [bill]                      # "tab" is a different thing (bar tab), so it is its own term
+  tab:
+    mdc: { key: tab.id, aliases: [tabId], sources: { params: [tabId] } }
+  shift:
+    mdc: { key: shift.id, aliases: [shiftId, activeShiftId], sources: { params: [shiftId] } }
+  waiter:
+    aliases: [server, staff member]
+    mdc: { key: user.id, aliases: [userId, actorId], sources: { params: [userId, actorId] } }
+  device:
+    aliases: [terminal]
+    mdc: { key: device.id, aliases: [deviceId], sources: { params: [deviceId] } }
+  receipt:
+    mdc: { key: receipt.id, aliases: [receiptId], sources: { params: [receiptId] } }
+
+# "Contextual" meaning: the same word means different things in different parts of the code.
+areas:
+  kitchen:
+    packages: [com.example.restaurant.kitchen]
+    vocabulary:
+      ticket:                             # here a ticket is the kitchen's copy of order items
+        aliases: [chit, docket, kot]
+        mdc: { key: ticket.id, aliases: [ticketId, ticketUuid], sources: { params: [ticketId, ticketUuid] } }
+    requiredMdc: [tenant.id]              # every kitchen log line must say which restaurant
+  compliance:
+    packages: [com.example.restaurant.compliance]
+    vocabulary:
+      invoice:                            # tax authority document, not the guest's receipt
+        aliases: [bill]
+        mdc: { key: invoice.id, aliases: [invoiceId, invoiceNumber], sources: { params: [invoiceId, invoiceNumber] } }
+      storno:
+        aliases: [reversal, cancellation invoice]
+    requiredMdc: [tenant.id, invoice.id]
+
+levels:
+  clientErrors:                           # appended to the built-in list
+    - com.example.restaurant.shared.error.BusinessRuleViolationException

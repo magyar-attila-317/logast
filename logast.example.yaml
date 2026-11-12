@@ -1,0 +1,49 @@
+# Minimal service policy. For layers, vocabulary, areas and phrasing see docs/vocabulary.md and
+# examples/restaurant-company.yaml + examples/restaurant-service.yaml. The flat glossary/mdc.keys form below still works.
+
+# logast policy: put it at the project root as logast.yaml. Every section is optional.
+
+glossary:
+  # preferred domain terms (shown to the LLM)
+  terms: [order, payment, charge, refund, shipment, customer]
+  # banned word -> canonical term; replaced automatically in existing messages, rejected in new ones
+  synonyms:
+    purchase: order
+    buyer: customer
+
+mdc:
+  # keys maintained by tracing; never set by hand (Spring Boot 4 defaults)
+  ambientKeys: [traceId, spanId]
+  # MDC key registry: where each key's value comes from
+  keys:
+    order.id:
+      params: [orderId]                       # parameter / variable names
+      types:                                  # type -> accessor appended to a variable of that type
+        com.example.shop.domain.Order: "id()"
+    customer.id:
+      params: [customerId]
+      types:
+        com.example.shop.web.CreateOrderRequest: "customerId()"
+    request.id: {}
+
+# argument names containing any of these are never logged
+pii: [email, cardNumber, iban, password, token]
+
+entrypoints:
+  extraAnnotations: []            # e.g. com.example.messaging.InboxHandler
+  includeMain: false
+  kafkaObservationEnabled: false  # true when spring.kafka.listener.observation-enabled=true
+
+logging:
+  loggerName: log
+  swallowedLevel: warn
+  entryLevel: info
+  minEntrypointLevel: info
+
+support:
+  coordinates: dev.logast:logging-support:0.1.0   # replace with the Nexus coordinates
+  packageName: dev.logast.support
+
+rules:
+  LOG_FORMAT: {severity: low}
+  # GLOSSARY_VIOLATION: {enabled: false}
