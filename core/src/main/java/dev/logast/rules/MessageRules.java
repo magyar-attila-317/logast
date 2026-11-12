@@ -55,6 +55,9 @@ final class MessageRules {
 
     void run() {
         for (MethodInfo m : ctx.methods()) {
+            if (ctx.logHelper(m)) {
+                continue;
+            }
             int n = 0;
             for (LogCall lc : m.facts().logs) {
                 if (ctx.policy.logging().protectedMessage(MessageTemplate.text(lc.template()))) {

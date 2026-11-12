@@ -169,6 +169,9 @@ public final class Main {
                                 + " unresolved calls: results are incomplete (run `logast classpath`)");
                     }
                     System.out.print(CompactFormat.summary(shown));
+                    if (r.coverage() != null && r.coverage().total() > 0) {
+                        System.out.println("log coverage " + r.coverage().line());
+                    }
                 }
                 default -> {
                     System.out.print(CompactFormat.render(r, shown, policy.terms()));

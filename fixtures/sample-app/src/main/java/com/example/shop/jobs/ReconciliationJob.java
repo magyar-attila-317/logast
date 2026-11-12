@@ -15,7 +15,7 @@ public class ReconciliationJob {
     }
 
     @Scheduled(fixedDelay = 60000)
-    public void reconcile() { // expect: ENTRYPOINT_SILENT
+    public void reconcile() { // expect: ENTRYPOINT_SILENT, JOB_OUTCOME_MISSING
         MDC.put("job.name", "reconciliation"); // expect: MDC_NOT_CLOSEABLE
         for (Order order : repository.findAll()) {
             if (order.lines().isEmpty()) {
