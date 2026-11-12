@@ -32,6 +32,9 @@ final class Init implements Callable<Integer> {
     boolean keepWording;
     @Option(names = "--key-style", description = "Spelling of MDC and [k=v] keys: dotted (order.id), camel (orderId), pascal (OrderId), snake (order_id)")
     String keyStyle;
+    @Option(names = "--support", description = "How generated code gets MdcScope/ObservedContext: dependency (the starter "
+            + "library, must be resolvable from your repositories) or vendor (classes copied into the service)")
+    String support;
     @Option(names = "--baseline", description = "Scan once and record today's findings as the CI baseline")
     boolean baseline;
     @Option(names = "--no-classpath", description = "Skip the Gradle run (scans then resolve far fewer types)")
@@ -56,9 +59,10 @@ final class Init implements Callable<Integer> {
         } else {
             // first without vocabulary, so the harvest can leave out what the extended company layers already define
             String style = keyStyle == null ? null : dev.logast.policy.KeyStyle.parse(keyStyle).toString();
-            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, null));
+            String mode = support == null ? null : new dev.logast.policy.Policy.Support(null, null, support, null).mode();
+            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, null));
             VocabularyHarvest.Result h = VocabularyHarvest.run(r, Logast.policy(r, null), 3);
-            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, VocabularyHarvest.yaml(h)));
+            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, VocabularyHarvest.yaml(h)));
             System.out.println("policy:    wrote logast.yaml with " + h.terms().size() + " vocabulary terms harvested from the code"
                     + (h.terms().isEmpty() ? "" : " (review: rename, merge duplicates, drop non-business terms)"));
         }
