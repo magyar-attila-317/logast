@@ -1,0 +1,22 @@
+# .github/workflows/logging-standard.yml — fail PRs on NEW high-severity findings, annotate the diff.
+name: logging-standard
+on: pull_request
+jobs:
+  logast:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, security-events: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - name: install logast
+        run: |
+          curl -fsSL "$LOGAST_ZIP_URL" -o logast.zip      # your release zip (Nexus/GitHub release)
+          unzip -q logast.zip && echo "$PWD/$(ls -d logast-*/)bin" >> "$GITHUB_PATH"
+        env: { LOGAST_ZIP_URL: '${{ vars.LOGAST_ZIP_URL }}' }
+      - run: logast classpath .
+      - run: logast scan . --since origin/${{ github.base_ref }} --format sarif > logast.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: logast.sarif, category: logast }
+      - run: logast scan . --baseline --fail-on high --format summary   # .logast/baseline.json is committed

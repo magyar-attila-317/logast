@@ -1,0 +1,3 @@
+dev.logast.support.LoggingSupportAutoConfiguration
+dev.logast.support.MdcHygieneConfiguration
+dev.logast.support.TraceContextEnvConfiguration

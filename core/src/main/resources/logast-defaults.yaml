@@ -1,0 +1,57 @@
+# Built-in, opinionated defaults. Every policy starts from these; company / area / service layers
+# extend them (lists append, objects merge) or replace parts with `override: true`.
+
+packs: [logging, tracing]          # metrics is opt-in: packs: [logging, tracing, metrics]
+
+mdc:
+  ambientKeys: [traceId, spanId]   # maintained by tracing, never set by hand
+
+pii: [password, secret, token, email, phone, iban, cardNumber, cvv, pin, ssn, taxNumber, birthDate]
+
+logging:
+  keyStyle: dotted                 # [k=v] keys not in the vocabulary: amountCents -> amount.cents
+
+# One way to say lifecycle events. "{subject}" is what happens, in domain terms ("Order sync").
+# Existing messages matching a variant are rewritten to the canonical form; new text written for an entry log
+# must use "started", for a swallowed exception "failed".
+phrasing:
+  events:
+    started:
+      canonical: "{subject} started"
+      variants: ["starting {subject}", "started {subject}", "initiating {subject}", "initializing {subject}",
+                 "kicking off {subject}", "beginning {subject}", "about to {subject}", "{subject} starting",
+                 "{subject} begins", "{subject} initiated"]
+    completed:
+      canonical: "{subject} completed"
+      variants: ["finished {subject}", "completed {subject}", "done {subject}", "{subject} finished", "{subject} done", "{subject} complete", "{subject} succeeded",
+                 "{subject} successful", "{subject} successfully completed", "{subject} ended"]
+    failed:
+      canonical: "{subject} failed"
+      variants: ["failed to {subject}", "could not {subject}", "couldn't {subject}", "unable to {subject}",
+                 "error while {subject}", "error during {subject}", "error in {subject}", "exception in {subject}",
+                 "exception while {subject}", "{subject} error", "{subject} unsuccessful", "{subject} has failed"]
+    skipped:
+      canonical: "{subject} skipped"
+      variants: ["skipping {subject}", "{subject} ignored", "ignoring {subject}"]
+    retrying:
+      canonical: "{subject} retrying"
+      variants: ["retrying {subject}", "will retry {subject}", "{subject} will be retried", "re-trying {subject}"]
+
+levels:
+  # Caller/client errors are expected outcomes: WARN at most, never ERROR (ERROR = someone must act).
+  clientErrors:
+    - jakarta.validation.ConstraintViolationException
+    - jakarta.validation.ValidationException
+    - org.springframework.web.bind.MethodArgumentNotValidException
+    - org.springframework.web.method.annotation.HandlerMethodValidationException
+    - org.springframework.http.converter.HttpMessageNotReadableException
+    - org.springframework.web.HttpRequestMethodNotSupportedException
+    - org.springframework.web.servlet.resource.NoResourceFoundException
+    - org.springframework.security.access.AccessDeniedException
+    - org.springframework.security.core.AuthenticationException
+    - org.springframework.dao.EmptyResultDataAccessException
+    - jakarta.persistence.EntityNotFoundException
+  clientErrorLevel: warn
+  # Opt-in: INFO per collection element -> DEBUG. Off by default because per-item INFO is often a business event
+  # (a merged table, a moved order); turn on for high-volume batch services.
+  noInfoInLoops: false

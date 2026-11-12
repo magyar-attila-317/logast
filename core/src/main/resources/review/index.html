@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logast Review</title>
+<style>
+:root{--bg:#fafaf8;--fg:#1c1c1a;--muted:#6d6c66;--line:#e3e2dc;--card:#fff;--accent:#2d5fa8;--bad:#b3392f;--good:#2f7d4f;--code:#f3f2ee}
+@media (prefers-color-scheme:dark){:root{--bg:#151514;--fg:#ebeae5;--muted:#9b9a94;--line:#2d2d2a;--card:#1d1d1b;--accent:#7aa7e6;--bad:#e4695e;--good:#62bb88;--code:#252522}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;z-index:2}
+header .row{max-width:1000px;margin:0 auto;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:17px;margin:0;margin-right:auto}main{max-width:1000px;margin:0 auto;padding:16px}
+.muted{color:var(--muted);font-size:12px}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin:0 0 12px}
+.top{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.id{font:600 12px ui-monospace,monospace}.sev{font-size:11px;padding:1px 6px;border-radius:9px;border:1px solid var(--line)}
+.sev.high{color:var(--bad)}pre{background:var(--code);padding:8px 10px;border-radius:6px;overflow-x:auto;font-size:12px;margin:8px 0}
+label{display:block;font-weight:600;margin-top:8px}input[type=text]{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+button{font:inherit;padding:7px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+button.secondary{background:transparent;color:var(--accent)}button:disabled{opacity:.5;cursor:default}
+.err{color:var(--bad);font-size:13px;margin-top:6px}.ok{color:var(--good)}#diff{white-space:pre;font:12px ui-monospace,monospace}
+details summary{cursor:pointer;color:var(--muted);font-size:12px}
+</style></head><body>
+<header><div class="row"><h1>logast review</h1><span id="counts" class="muted"></span>
+<label class="muted" style="margin:0;font-weight:400"><input type="checkbox" id="auto" checked> also apply AUTO orders</label>
+<button class="secondary" id="dry">Dry run</button><button id="write">Apply to files</button></div></header>
+<main><p class="muted" id="intro"></p><div id="result"></div><div id="list"></div>
+<details id="others"><summary>AUTO and REPORT-ONLY orders</summary><div id="rest"></div></details></main>
+<script>
+const T = new URLSearchParams(location.search).get('t');
+const api = (p, body) => fetch(p + '?t=' + T, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {}).then(r => r.json());
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let data;
+async function load() {
+  data = await api('/api/orders');
+  const text = data.orders.filter(o => o.kind === 'text'), rest = data.orders.filter(o => o.kind !== 'text');
+  document.getElementById('counts').textContent = `${text.length} need text · ${rest.filter(o=>o.kind==='auto').length} auto · ${rest.filter(o=>o.kind==='report').length} report-only`;
+  document.getElementById('intro').textContent = `${data.root} — write plain text only: no {} and no [k=v]; the tool adds values, keys and the exception. Glossary: ${data.terms.join(', ')}`;
+  document.getElementById('list').innerHTML = text.map(o => `
+    <div class="card" data-id="${o.id}">
+      <div class="top"><span class="id">${o.id}</span><span class="sev ${o.severity}">${o.severity}</span><b>${esc(o.fixes.join(' + '))}</b><span class="muted">${esc(o.where)} ${esc(o.method)}</span></div>
+      <div>${esc(o.title)}</div>${o.path ? `<div class="muted">${esc(o.path)}</div>` : ''}
+      <pre>${esc(o.preview.join('\n'))}</pre>
+      ${Object.entries(o.slots).map(([n, s]) => `<label>${n} <span class="muted" style="font-weight:400">${esc(s.describe)}${s.original ? ' · was: “' + esc(s.original) + '”' : ''}${s.pattern ? ' · must read as “' + esc(s.pattern) + '”' : ''}${s.keys.length ? ' · suffix: ' + esc(s.keys.join(', ')) : ''}</span></label>
+        <input type="text" data-slot="${n}" placeholder="${s.pattern ? esc(s.pattern.replace('{subject}', 'Order sync')) : ''}">`).join('')}
+      ${o.vars.length ? `<label class="muted" style="font-weight:400">extra values for the suffix (optional, comma separated): ${esc(o.vars.join(', '))}</label><input type="text" data-args>` : ''}
+      <div class="err" data-err></div></div>`).join('') || '<p>No orders need text.</p>';
+  document.getElementById('rest').innerHTML = rest.map(o => `<div class="card"><div class="top"><span class="id">${o.id}</span><span class="sev ${o.severity}">${o.severity}</span><b>${esc(o.kind)}</b><span class="muted">${esc(o.where)}</span></div><div>${esc(o.title)}</div>${o.suggestion ? `<div class="muted">${esc(o.suggestion)}</div>` : ''}</div>`).join('');
+}
+function fills() {
+  const out = {};
+  document.querySelectorAll('#list .card').forEach(c => {
+    const f = {}; let any = false;
+    c.querySelectorAll('input[data-slot]').forEach(i => { if (i.value.trim()) { f[i.dataset.slot] = i.value.trim(); any = true; } });
+    const a = c.querySelector('input[data-args]');
+    if (a && a.value.trim()) f.args = a.value.split(',').map(s => s.trim()).filter(Boolean);
+    if (any) out[c.dataset.id] = f;
+  });
+  return out;
+}
+async function run(write) {
+  for (const b of document.querySelectorAll('button')) b.disabled = true;
+  document.querySelectorAll('[data-err]').forEach(e => e.textContent = '');
+  const res = document.getElementById('result');
+  res.innerHTML = '<p class="muted">Working… (scans run on a scratch copy)</p>';
+  try {
+    const r = await api('/api/apply', {fills: fills(), auto: document.getElementById('auto').checked, write});
+    for (const [id, why] of Object.entries(r.rejected || {})) {
+      const e = document.querySelector(`.card[data-id="${id}"] [data-err]`); if (e) e.textContent = why;
+    }
+    res.innerHTML = `<div class="card"><b class="${Object.keys(r.rejected||{}).length ? '' : 'ok'}">${write ? 'Applied' : 'Dry run'}: ${r.applied.length} applied, ${Object.keys(r.rejected||{}).length} rejected, ${r.changedFiles.length} files</b>
+      ${write ? '' : `<details><summary>diff</summary><div id="diff">${esc(r.diff)}</div></details>`}</div>`;
+    if (write) await load();
+  } catch (e) { res.innerHTML = `<p class="err">${esc(e)}</p>`; }
+  for (const b of document.querySelectorAll('button')) b.disabled = false;
+}
+document.getElementById('dry').onclick = () => run(false);
+document.getElementById('write').onclick = () => { if (confirm('Write the changes to the project files?')) run(true); };
+load();
+</script></body></html>

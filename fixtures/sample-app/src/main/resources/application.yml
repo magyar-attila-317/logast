@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: shop
+server:
+  port: 8080

@@ -1,0 +1,23 @@
+# Example SERVICE layer (services/ordering/logast.yaml): extends the company layer, adds and overrides.
+extends: [restaurant-company.yaml]          # or https://git.example.com/platform/observability/raw/main/restaurant-company.yaml
+
+packs: [logging, tracing]            # selections replace (add metrics here when the team is ready)
+
+logging:
+  rewriteExistingMessages: false     # legacy service: fix concatenation/glossary/lost exceptions, keep wording
+
+vocabulary:
+  order:
+    aliases: [ordr]                  # appended to the company aliases
+  waiter:
+    override: true                   # this service calls them "staff"; replaces the company definition (reported)
+    aliases: [server, waiter]
+    mdc: { key: user.id, aliases: [userId], sources: { params: [userId] } }
+
+areas:
+  printing:
+    packages: [com.example.restaurant.kitchen.printer]
+    requiredMdc: [tenant.id, device.id]
+
+rules:
+  ENTRYPOINT_SILENT: { severity: low }

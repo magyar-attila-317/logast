@@ -1,0 +1,11 @@
+# Example .logast/traffic.yaml (generate the real one with `logast traffic <svc>`, then fill in).
+# Calls per day per entrypoint, from production. Empty = unknown; logast never estimates.
+entrypoints:
+  # http
+  "POST /orders": 120000
+  "GET /orders/{orderId}": 2500000
+  "DELETE /orders/{orderId}":
+  # scheduled
+  "@Scheduled ReconciliationJob.reconcile": 1440
+  # kafka
+  "@KafkaListener shipment-acks": 400000
