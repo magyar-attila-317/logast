@@ -69,8 +69,13 @@ class RoundTripTest {
     void fixtureConvergesAndCompiles() throws IOException {
         Path root = tmp.resolve("app");
         copy(Fixtures.root(), root);
-        List<Applier.Result> results = converge(root);
-        System.out.println(results.getFirst().diff());
+        // a tool's daemon socket in the project (e.g. .codegraph/daemon.sock) must not break the scratch copy
+        Files.createDirectories(root.resolve(".codegraph"));
+        try (var server = java.nio.channels.ServerSocketChannel.open(java.net.StandardProtocolFamily.UNIX)) {
+            server.bind(java.net.UnixDomainSocketAddress.of(root.resolve(".codegraph/daemon.sock")));
+            List<Applier.Result> results = converge(root);
+            System.out.println(results.getFirst().diff());
+        }
         assertThat(root.resolve("src/main/resources/logback-spring.xml")).doesNotExist();
         assertThat(Files.readString(root.resolve("build.gradle.kts"))).contains("dev.logast:logging-support");
         assertThat(Files.readString(root.resolve("src/main/resources/application.yml"))).contains("com.example.shop: DEBUG");
