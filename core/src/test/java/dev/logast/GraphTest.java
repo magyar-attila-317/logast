@@ -31,6 +31,8 @@ class GraphTest {
     @Test
     void findsEntrypoints() {
         assertThat(a.entrypoints).extracting(Entrypoint::label).containsExactly(
+                "@EventListener CacheWarmup.onReady(ApplicationReadyEvent)",
+                "@EventListener CacheWarmup.warmUp(ApplicationReadyEvent)",
                 "@EventListener ShipmentListener.onShipped(ShipmentEvent)",
                 "@InboxHandler InboxProcessor.handle",
                 "@KafkaListener shipment-acks",
@@ -40,9 +42,12 @@ class GraphTest {
                 "GET /orders/{orderId}/lines",
                 "GET /reports/daily",
                 "POST /orders");
-        // custom @InboxHandler and the Kafka listener (observation-enabled not set yet) start work unobserved
+        // custom @InboxHandler, the Kafka listener (observation-enabled not set yet) and listeners on Spring's own
+        // startup events start work unobserved; a listener on an application event runs in the publisher's trace
         assertThat(a.entrypoints).filteredOn(e -> !e.observedByFramework()).extracting(Entrypoint::label)
-                .containsExactly("@InboxHandler InboxProcessor.handle", "@KafkaListener shipment-acks");
+                .containsExactly("@EventListener CacheWarmup.onReady(ApplicationReadyEvent)",
+                        "@EventListener CacheWarmup.warmUp(ApplicationReadyEvent)",
+                        "@InboxHandler InboxProcessor.handle", "@KafkaListener shipment-acks");
     }
 
     @Test
