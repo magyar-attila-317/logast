@@ -3,7 +3,8 @@ plugins { `java-library` }
 dependencies {
     api(platform(libs.rewrite.bom))
     api(libs.rewrite.java)
-    runtimeOnly(libs.rewrite.java25)
+    runtimeOnly(libs.rewrite.java21)   // OpenRewrite picks the parser matching the running JVM: 21-24
+    runtimeOnly(libs.rewrite.java25)           // 25+
     api(libs.jackson.databind)
     api(libs.jackson.yaml)
     runtimeOnly(libs.slf4j.nop)

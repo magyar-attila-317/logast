@@ -21,7 +21,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-if ! command -v java >/dev/null || [ "$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p')" -lt 21 ]; then
+# macOS ships a /usr/bin/java stub without a JDK: its output has no version, which counts as "missing".
+java_major="$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -1 || true)"
+if [ -z "$java_major" ] || [ "$java_major" -lt 21 ]; then
   echo "logast needs Java 21+ on PATH (25 recommended)." >&2; exit 1
 fi
 
@@ -35,12 +37,13 @@ fi
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 unzip -q "$ZIP" -d "$tmp"
+old="$([ -x "$PREFIX/bin/logast" ] && "$PREFIX/bin/logast" --version 2>/dev/null || true)"
 rm -rf "$PREFIX"; mkdir -p "$(dirname "$PREFIX")" "$BIN_DIR"
 mv "$tmp"/logast-* "$PREFIX"
 ln -sf "$PREFIX/bin/logast" "$BIN_DIR/logast"
-echo "installed: $BIN_DIR/logast -> $PREFIX ($("$BIN_DIR/logast" --version))"
+echo "installed: $BIN_DIR/logast -> $PREFIX ($("$BIN_DIR/logast" --version)${old:+, was: $old})"
 
-if [ "$SKILL" = 1 ]; then
+if [ "$SKILL" = 1 ] || [ -f "$HOME/.claude/skills/logast/SKILL.md" ]; then   # re-runs refresh an installed skill
   mkdir -p "$HOME/.claude/skills/logast"
   cp "$PREFIX/claude-skill/logast/SKILL.md" "$HOME/.claude/skills/logast/SKILL.md"
   echo "Claude Code skill: ~/.claude/skills/logast/SKILL.md"

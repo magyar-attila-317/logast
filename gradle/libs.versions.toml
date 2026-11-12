@@ -12,6 +12,7 @@ slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 rewrite-bom = { module = "org.openrewrite:rewrite-bom", version.ref = "rewrite" }
 rewrite-java = { module = "org.openrewrite:rewrite-java" }
 rewrite-java25 = { module = "org.openrewrite:rewrite-java-25" }
+rewrite-java21 = { module = "org.openrewrite:rewrite-java-21" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml", version.ref = "jackson" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
