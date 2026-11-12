@@ -39,6 +39,8 @@ public final class Rules {
     public static final String LOG_LEVEL = "LOG_LEVEL";
     public static final String EXCEPTION_LOGGED_TWICE = "EXCEPTION_LOGGED_TWICE";
     public static final String HTTP_CLIENT_UNTRACED = "HTTP_CLIENT_UNTRACED";
+    public static final String TRACING_SAMPLING = "TRACING_SAMPLING";
+    public static final String SCHEDULED_TASK_UNTRACED = "SCHEDULED_TASK_UNTRACED";
     public static final String KAFKA_OBSERVATION_DISABLED = "KAFKA_OBSERVATION_DISABLED";
     public static final String JOB_LAUNCH_UNTRACED = "JOB_LAUNCH_UNTRACED";
     public static final String RUNTIME_TRACE_LOST = "RUNTIME_TRACE_LOST";
@@ -61,11 +63,12 @@ public final class Rules {
             PACKS.put(r, Set.of("logging"));
         }
         for (String r : List.of(ENTRYPOINT_NOT_OBSERVED, MANUAL_TRACE_MDC, SETUP_OTEL_STARTER, HTTP_CLIENT_UNTRACED,
-                KAFKA_OBSERVATION_DISABLED, JOB_LAUNCH_UNTRACED, RUNTIME_TRACE_LOST)) {
+                KAFKA_OBSERVATION_DISABLED, JOB_LAUNCH_UNTRACED, RUNTIME_TRACE_LOST, TRACING_SAMPLING)) {
             PACKS.put(r, Set.of("tracing"));
         }
         // context propagation matters to MDC (logging) and spans (tracing); the starter serves every pack
         PACKS.put(ASYNC_CONTEXT_LOSS, Set.of("logging", "tracing"));
+        PACKS.put(SCHEDULED_TASK_UNTRACED, Set.of("logging", "tracing"));
         for (String r : List.of(METRIC_NAMING, METRIC_HIGH_CARDINALITY_TAG, METRIC_DIRECT_REGISTRY)) {
             PACKS.put(r, Set.of("metrics"));
         }
@@ -92,7 +95,7 @@ public final class Rules {
             Map.entry(STRING_CONCAT_LOG, "low"), Map.entry(LOG_FORMAT, "low"), Map.entry(GLOSSARY_VIOLATION, "low"),
             Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_STYLE, "low"), Map.entry(REPEATED_LOG_VALUE, "medium"),
             Map.entry(AREA_MDC_MISSING, "medium"), Map.entry(LOG_LEVEL, "medium"), Map.entry(EXCEPTION_LOGGED_TWICE, "medium"),
-            Map.entry(HTTP_CLIENT_UNTRACED, "high"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
+            Map.entry(HTTP_CLIENT_UNTRACED, "high"), Map.entry(TRACING_SAMPLING, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
             Map.entry(LOG_IN_LOOP, "low"), Map.entry(LOG_VOLUME, "medium"),
             Map.entry(METRIC_NAMING, "low"), Map.entry(METRIC_HIGH_CARDINALITY_TAG, "high"), Map.entry(METRIC_DIRECT_REGISTRY, "low"));

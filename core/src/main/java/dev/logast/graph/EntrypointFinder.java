@@ -26,6 +26,9 @@ public final class EntrypointFinder {
         MESSAGING.put("org.springframework.amqp.rabbit.annotation.RabbitListener", Kind.RABBIT);
         MESSAGING.put("org.springframework.context.event.EventListener", Kind.EVENT);
         MESSAGING.put("org.springframework.transaction.event.TransactionalEventListener", Kind.EVENT);
+        // STOMP over WebSocket: only the HTTP handshake is observed, each inbound message runs without a trace
+        MESSAGING.put("org.springframework.messaging.handler.annotation.MessageMapping", Kind.WEBSOCKET);
+        MESSAGING.put("org.springframework.messaging.simp.annotation.SubscribeMapping", Kind.WEBSOCKET);
     }
 
     private final Policy policy;
@@ -75,6 +78,10 @@ public final class EntrypointFinder {
             }
         }
         ClassInfo owner = m.owner();
+        if (WEBSOCKET_CALLBACKS.contains(m.name()) && m.decl().getBody() != null
+                && TypeUtils.isAssignableTo("org.springframework.web.socket.WebSocketHandler", owner.type())) {
+            return new Entrypoint(m, Kind.WEBSOCKET, "websocket " + m.label(), false);
+        }
         if (m.name().equals("run") && (TypeUtils.isAssignableTo("org.springframework.boot.CommandLineRunner", owner.type())
                 || TypeUtils.isAssignableTo("org.springframework.boot.ApplicationRunner", owner.type()))) {
             return new Entrypoint(m, Kind.BATCH, "batch " + m.label(), false);
@@ -90,6 +97,7 @@ public final class EntrypointFinder {
             case KAFKA -> "@KafkaListener " + Annotations.stringAttribute(a, "topics", "value").orElse(m.label());
             case JMS -> "@JmsListener " + Annotations.stringAttribute(a, "destination").orElse(m.label());
             case RABBIT -> "@RabbitListener " + Annotations.stringAttribute(a, "queues", "value").orElse(m.label());
+            case WEBSOCKET -> "@" + a.getSimpleName() + " " + Annotations.stringAttribute(a, "value", "destination").orElse(m.label());
             case EVENT -> "@" + a.getSimpleName() + " " + m.label() + eventType(m, a);
             default -> "@" + a.getSimpleName() + " " + m.label();
         };
@@ -105,6 +113,11 @@ public final class EntrypointFinder {
         };
         return new Entrypoint(m, kind, label, observed);
     }
+
+    /** WebSocketHandler methods Spring calls per connection event or message, outside any HTTP request. */
+    private static final java.util.Set<String> WEBSOCKET_CALLBACKS = java.util.Set.of("afterConnectionEstablished",
+            "handleMessage", "handleTextMessage", "handleBinaryMessage", "handlePongMessage", "handleTransportError",
+            "afterConnectionClosed");
 
     /** Events Spring publishes itself during startup/shutdown, never inside a trace. */
     private static final java.util.Set<String> LIFECYCLE_EVENTS = java.util.Set.of(

@@ -47,6 +47,25 @@ public final class ObservedContext implements AutoCloseable {
         return new Builder(name, registry);
     }
 
+    /**
+     * A task that runs in its own new observation (and trace) every time it executes: for periodic work started
+     * with {@code scheduleAtFixedRate}/{@code scheduleWithFixedDelay}, which otherwise logs without any trace.
+     */
+    public static Runnable observed(String name, Runnable task) {
+        java.util.Objects.requireNonNull(task, "task");
+        return () -> {
+            ObservedContext observed = entrypoint(name).start();
+            try (observed) {
+                task.run();
+            } catch (RuntimeException | Error t) {
+                observed.error(t);
+                throw t;
+            } finally {
+                observed.stop();
+            }
+        };
+    }
+
     /** Adds an MDC entry (restored on close) and a span attribute while the context is open. */
     public ObservedContext mdc(String key, Object value) {
         if (value != null) {

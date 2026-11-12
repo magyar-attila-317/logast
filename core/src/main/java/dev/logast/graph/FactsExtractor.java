@@ -55,7 +55,7 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
     @Override
     public J.NewClass visitNewClass(J.NewClass n, MethodFacts f) {
         if (n.getBody() == null && n.getArguments() != null && TypeUtils.isAssignableTo("java.lang.Thread", n.getType())
-                && n.getArguments().stream().anyMatch(a -> !(a instanceof J.Empty))) {
+                && n.getArguments().stream().anyMatch(a -> !(a instanceof J.Empty)) && !inThreadFactory()) {
             f.asyncHops.add(new AsyncHop(n, "new Thread", false, Pos.line(n)));
             asyncStack.push(false);
             J.NewClass r = super.visitNewClass(n, f);
@@ -369,6 +369,19 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
     }
 
     /** null when {@code mi} does not hand work to another thread; otherwise whether a Spring TaskDecorator applies. */
+    /**
+     * {@code new Thread(task)} inside a ThreadFactory (lambda or {@code newThread}) creates a pool thread: the
+     * creator's context means nothing there, the executor's own submit/schedule calls are the hops.
+     */
+    private boolean inThreadFactory() {
+        J.Lambda lambda = getCursor().firstEnclosing(J.Lambda.class);
+        if (lambda != null && TypeUtils.isAssignableTo("java.util.concurrent.ThreadFactory", lambda.getType())) {
+            return true;
+        }
+        J.MethodDeclaration md = getCursor().firstEnclosing(J.MethodDeclaration.class);
+        return md != null && md.getSimpleName().equals("newThread");
+    }
+
     static Boolean asyncApiManaged(J.MethodInvocation mi) {
         JavaType.Method mt = mi.getMethodType();
         if (mt == null) {
@@ -383,6 +396,11 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         // Thread.startVirtualThread(r), Thread.ofVirtual().start(r), Thread.ofPlatform().unstarted(r)
         if (owner.startsWith("java.lang.Thread") && Set.of("startVirtualThread", "start", "unstarted").contains(name)
                 && !args(mi).isEmpty()) {
+            return false;
+        }
+        // SseEmitter / ResponseBodyEmitter callbacks run later on a container thread, without the request's context
+        if (Set.of("onCompletion", "onTimeout", "onError").contains(name) && !args(mi).isEmpty()
+                && TypeUtils.isAssignableTo("org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter", mt.getDeclaringType())) {
             return false;
         }
         // lambdas of a parallel stream run in the ForkJoin common pool

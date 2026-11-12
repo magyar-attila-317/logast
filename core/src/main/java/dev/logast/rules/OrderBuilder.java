@@ -22,6 +22,7 @@ public final class OrderBuilder {
             Map.entry(Rules.MDC_KEY_ALIAS, "MKA"), Map.entry(Rules.LOG_KEY_STYLE, "LKS"), Map.entry(Rules.REPEATED_LOG_VALUE, "RLV"),
             Map.entry(Rules.AREA_MDC_MISSING, "AMM"), Map.entry(Rules.LOG_LEVEL, "LVL"),
             Map.entry(Rules.EXCEPTION_LOGGED_TWICE, "ELT"), Map.entry(Rules.HTTP_CLIENT_UNTRACED, "HTC"),
+            Map.entry(Rules.TRACING_SAMPLING, "SMP"), Map.entry(Rules.SCHEDULED_TASK_UNTRACED, "STU"),
             Map.entry(Rules.KAFKA_OBSERVATION_DISABLED, "KFK"), Map.entry(Rules.JOB_LAUNCH_UNTRACED, "JOB"),
             Map.entry(Rules.RUNTIME_TRACE_LOST, "RTL"), Map.entry(Rules.RUNTIME_MDC_LOST, "RML"), Map.entry(Rules.RUNTIME_NULL_VALUE, "RNV"),
             Map.entry(Rules.LOG_IN_LOOP, "LIL"), Map.entry(Rules.LOG_VOLUME, "VOL"),

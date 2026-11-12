@@ -24,9 +24,11 @@ final class AsyncRules {
     }
 
     void run() {
-        if (!ctx.enabled(Rules.ASYNC_CONTEXT_LOSS)) {
+        boolean scheduled = ctx.enabled(Rules.SCHEDULED_TASK_UNTRACED);
+        if (!ctx.enabled(Rules.ASYNC_CONTEXT_LOSS) && !scheduled) {
             return;
         }
+        boolean async = ctx.enabled(Rules.ASYNC_CONTEXT_LOSS);
         Map<String, OrderBuilder> byField = new HashMap<>();
         for (MethodInfo m : ctx.methods()) {
             // a rejection policy re-runs a task that was wrapped (or not) when it was submitted; it adds no loss
@@ -34,7 +36,18 @@ final class AsyncRules {
                 continue;
             }
             for (AsyncHop hop : m.facts().asyncHops) {
-                if (hop.springManaged() || ctx.ignored(m.file(), hop.line(), Rules.ASYNC_CONTEXT_LOSS)) {
+                // periodic work has no caller context worth carrying: each run needs a trace of its own
+                if (periodic(hop)) {
+                    if (scheduled && !ctx.ignored(m.file(), hop.line(), Rules.SCHEDULED_TASK_UNTRACED)) {
+                        scheduledTask(m, (J.MethodInvocation) hop.call());
+                    }
+                    continue;
+                }
+                if (!async || hop.springManaged() || ctx.ignored(m.file(), hop.line(), Rules.ASYNC_CONTEXT_LOSS)) {
+                    continue;
+                }
+                if (hop.api().startsWith("ResponseBodyEmitter.")) {
+                    emitterCallback(m, hop);
                     continue;
                 }
                 if (hop.api().equals("new Thread") || hop.api().startsWith("Thread.")) {
@@ -101,6 +114,59 @@ final class AsyncRules {
         }
         String src = m.file().slice(Pos.start(runnable), Pos.end(runnable));
         b.edit(Edit.replace(m.file().relPath(), Pos.start(runnable), Pos.end(runnable), "ContextPropagation.wrapRunnable(" + src + ")"));
+        b.edits(JavaEdits.imports(m.file(), ctx.support("ContextPropagation")));
+        ctx.dependOnStarter(b);
+    }
+
+    /** {@code scheduleAtFixedRate}/{@code scheduleWithFixedDelay}, or {@code TaskScheduler.schedule(task, trigger)}. */
+    private static boolean periodic(AsyncHop hop) {
+        if (!(hop.call() instanceof J.MethodInvocation mi)) {
+            return false;
+        }
+        String name = mi.getSimpleName();
+        if (name.equals("scheduleAtFixedRate") || name.equals("scheduleWithFixedDelay")) {
+            return true;
+        }
+        List<Expression> args = mi.getArguments().stream().filter(a -> !(a instanceof J.Empty)).toList();
+        return name.equals("schedule") && args.size() == 2
+                && TypeUtils.isAssignableTo("org.springframework.scheduling.Trigger", args.get(1).getType());
+    }
+
+    /** {@code executor.scheduleAtFixedRate(task, ..)} → {@code executor.scheduleAtFixedRate(ObservedContext.observed("x.sweep", task), ..)}. */
+    private void scheduledTask(MethodInfo m, J.MethodInvocation call) {
+        Expression task = call.getArguments().stream().filter(a -> !(a instanceof J.Empty)).findFirst().orElse(null);
+        if (task == null || task instanceof J.MethodInvocation w && w.getSimpleName().equals("observed")
+                && w.getSelect() instanceof J.Identifier sel && sel.getSimpleName().equals("ObservedContext")) {
+            return;
+        }
+        String taskName = task instanceof J.MemberReference ref ? ref.getReference().getSimpleName()
+                : task instanceof J.Identifier id ? id.getSimpleName() : m.name();
+        String name = Text.kebab(m.owner().simpleName()) + "." + Text.kebab(taskName);
+        int line = Pos.line(call.getName());
+        String src = m.file().slice(Pos.start(task), Pos.end(task));
+        OrderBuilder b = ctx.order(Rules.SCHEDULED_TASK_UNTRACED, m, line, "periodic" + line)
+                .title(call.getSimpleName() + " runs '" + Text.oneLine(src, 60) + "' periodically outside any trace: "
+                        + "its logs have no trace id")
+                .context(ctx.context(m, Pos.start(call), Text.oneLine(call.printTrimmed(), 160), null));
+        b.edit(Edit.replace(m.file().relPath(), Pos.start(task), Pos.end(task), "ObservedContext.observed(\"" + name + "\", " + src + ")"));
+        b.edits(JavaEdits.imports(m.file(), ctx.support("ObservedContext")));
+        ctx.dependOnStarter(b);
+    }
+
+    /** {@code emitter.onCompletion(() -> ..)}: the callback runs on a container thread; give it the registering request's context. */
+    private void emitterCallback(MethodInfo m, AsyncHop hop) {
+        J.MethodInvocation call = (J.MethodInvocation) hop.call();
+        Expression cb = call.getArguments().stream().filter(a -> !(a instanceof J.Empty)).findFirst().orElse(null);
+        if (cb == null || cb instanceof J.MethodInvocation w && w.getSimpleName().startsWith("wrap")
+                && w.getSelect() instanceof J.Identifier sel && sel.getSimpleName().equals("ContextPropagation")) {
+            return;
+        }
+        String wrapper = call.getSimpleName().equals("onError") ? "wrapConsumer" : "wrapRunnable";
+        String src = m.file().slice(Pos.start(cb), Pos.end(cb));
+        OrderBuilder b = ctx.order(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "emitter" + hop.line())
+                .title("SseEmitter." + call.getSimpleName() + " callback runs later on a container thread without MDC/trace context")
+                .context(ctx.context(m, Pos.start(call), Text.oneLine(call.printTrimmed(), 160), null));
+        b.edit(Edit.replace(m.file().relPath(), Pos.start(cb), Pos.end(cb), "ContextPropagation." + wrapper + "(" + src + ")"));
         b.edits(JavaEdits.imports(m.file(), ctx.support("ContextPropagation")));
         ctx.dependOnStarter(b);
     }
