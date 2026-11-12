@@ -157,7 +157,7 @@ class RulesTest {
         assertThat(naming.edits().getFirst().text()).isEqualTo("\"orders.placed\""); // dotted + glossary (purchase -> order)
         ScanResult metricsOnly = Rules.scan(Analysis.run(Fixtures.root(), Fixtures.classpath(), Fixtures.policy().withPacks(java.util.List.of("metrics"))));
         assertThat(metricsOnly.orders()).extracting(WorkOrder::rule)
-                .allMatch(r -> r.startsWith("METRIC_") || r.equals(Rules.SETUP_SUPPORT_STARTER));
+                .allMatch(r -> Rules.packsOf(r).contains("metrics"));
         assertThat(metricsOnly.orders()).extracting(WorkOrder::rule).contains(Rules.METRIC_NAMING, Rules.METRIC_HIGH_CARDINALITY_TAG);
     }
 }

@@ -158,7 +158,8 @@ public final class Applier {
         return switch (o.rule()) {
             case Rules.SETUP_SUPPORT_STARTER, Rules.SETUP_OTEL_STARTER, Rules.SETUP_LOGBACK_XML,
                  Rules.SETUP_STRUCTURED_LOGGING -> 0;
-            case Rules.ENTRYPOINT_NOT_OBSERVED, Rules.MISSING_DOMAIN_MDC, Rules.ENTRYPOINT_SILENT, Rules.REPEATED_LOG_VALUE -> 1;
+            case Rules.ENTRYPOINT_NOT_OBSERVED, Rules.MISSING_DOMAIN_MDC, Rules.ENTRYPOINT_SILENT, Rules.REPEATED_LOG_VALUE,
+                 Rules.BUSINESS_EVENT_UNMEASURED -> 1;
             case Rules.MDC_NOT_CLOSEABLE, Rules.MANUAL_TRACE_MDC -> 2;
             case Rules.SWALLOWED_EXCEPTION, Rules.LOG_AND_RETHROW -> 3;
             case Rules.ASYNC_CONTEXT_LOSS -> 4;

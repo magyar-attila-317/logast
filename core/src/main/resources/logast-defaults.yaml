@@ -56,3 +56,10 @@ levels:
   # Opt-in: INFO per collection element -> DEBUG. Off by default because per-item INFO is often a business event
   # (a merged table, a moved order); turn on for high-volume batch services.
   noInfoInLoops: false
+
+metrics:
+  events: true                     # business events (lifecycle log messages) without a metric get an Observation
+  tags:                            # tag vocabulary: aliases are renamed to the key (METRIC_TAG_KEY)
+    outcome:
+      aliases: [result, success, succeeded]
+      # values: [success, failure]   # optional: allowed literal values (METRIC_TAG_VALUE)

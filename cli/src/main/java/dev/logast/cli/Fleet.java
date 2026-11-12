@@ -25,8 +25,9 @@ final class Fleet implements Callable<Integer> {
     public Integer call() throws Exception {
         List<Path> roots = new ArrayList<>();
         for (String s : services) {
-            if (s.startsWith("@")) {
-                Files.readAllLines(Path.of(s.substring(1))).stream().map(String::trim).filter(l -> !l.isEmpty() && !l.startsWith("#"))
+            boolean listFile = s.startsWith("@") || Files.isRegularFile(Path.of(s));   // a file of service roots, one per line
+            if (listFile) {
+                Files.readAllLines(Path.of(s.startsWith("@") ? s.substring(1) : s)).stream().map(String::trim).filter(l -> !l.isEmpty() && !l.startsWith("#"))
                         .map(Path::of).forEach(roots::add);
             } else {
                 roots.add(Path.of(s));
@@ -38,7 +39,8 @@ final class Fleet implements Callable<Integer> {
             Policy policy = Logast.policy(r, null);
             System.err.println("scanning " + r);
             ScanResult scan = Logast.scan(r, Logast.classpath(r, null), policy);
-            result.add(FleetReport.service(r.getFileName().toString(), scan, policy.overrides(), policy.packs()));
+            result.add(FleetReport.service(r.getFileName().toString(), scan, policy.overrides(), policy.packs(),
+                    dev.logast.metrics.MeterCatalog.of(Logast.lastAnalysis)));
         }
         Path html = FleetReport.write(out, result);
         result.forEach(s -> System.out.printf("%-28s score %5.1f  high %3d  medium %3d  low %3d%n", s.name(), s.score(),

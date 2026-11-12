@@ -59,7 +59,8 @@ class RoundTripTest {
         // after the swallowed exception in the caller logs, log-and-rethrow becomes a proven "logged twice"
         assertThat(last.orders()).extracting(WorkOrder::rule)
                 .isSubsetOf("LOG_AND_RETHROW", "EXCEPTION_LOGGED_TWICE", "ASYNC_CONTEXT_LOSS", "AREA_MDC_MISSING",
-                        "HTTP_CLIENT_UNTRACED", "METRIC_HIGH_CARDINALITY_TAG", "METRIC_DIRECT_REGISTRY");
+                        "HTTP_CLIENT_UNTRACED", "METRIC_HIGH_CARDINALITY_TAG", "METRIC_DIRECT_REGISTRY",
+                        "METRIC_TAG_KEYS_MISMATCH", "METRIC_GAUGE_WEAK_REF", "METRIC_REGISTERED_PER_CALL");  // report-only
         assertThat(last.orders()).filteredOn(o -> o.rule().equals("ASYNC_CONTEXT_LOSS"))
                 .singleElement().satisfies(o -> assertThat(o.title()).startsWith("Parallel stream"));
         return results;
