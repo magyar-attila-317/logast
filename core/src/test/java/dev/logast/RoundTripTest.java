@@ -60,7 +60,10 @@ class RoundTripTest {
         assertThat(last.orders()).extracting(WorkOrder::rule)
                 .isSubsetOf("LOG_AND_RETHROW", "EXCEPTION_LOGGED_TWICE", "ASYNC_CONTEXT_LOSS", "AREA_MDC_MISSING",
                         "HTTP_CLIENT_UNTRACED", "METRIC_HIGH_CARDINALITY_TAG", "METRIC_DIRECT_REGISTRY",
-                        "METRIC_TAG_KEYS_MISMATCH", "METRIC_GAUGE_WEAK_REF", "METRIC_REGISTERED_PER_CALL");  // report-only
+                        "METRIC_TAG_KEYS_MISMATCH", "METRIC_GAUGE_WEAK_REF", "METRIC_REGISTERED_PER_CALL",   // report-only
+                        "HTTP_CLIENT_NO_TIMEOUT", "ERROR_DETAILS_EXPOSED", "UNMAPPED_EXCEPTION", "UNBOUNDED_EXECUTOR",
+                        "KAFKA_NO_ERROR_HANDLER", "AUDIT_MISSING", "BLOCKING_WAIT_UNBOUNDED", "CLIENT_ERROR_AS_SERVER_ERROR",
+                        "PROBLEM_DETAILS_DISABLED", "MDC_CLEAR", "LOG_HELPER", "MESSAGE_VAGUE");
         assertThat(last.orders()).filteredOn(o -> o.rule().equals("ASYNC_CONTEXT_LOSS"))
                 .singleElement().satisfies(o -> assertThat(o.title()).startsWith("Parallel stream"));
         return results;

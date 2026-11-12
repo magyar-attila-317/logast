@@ -21,7 +21,7 @@ public class ShipmentPublisher {
     }
 
     @KafkaListener(topics = "shipment-acks")
-    public void onAck(String payload) { // expect: KAFKA_OBSERVATION_DISABLED
+    public void onAck(String payload) { // expect: KAFKA_OBSERVATION_DISABLED, KAFKA_NO_ERROR_HANDLER
         log.info("Shipment acknowledgement received");
     }
 }

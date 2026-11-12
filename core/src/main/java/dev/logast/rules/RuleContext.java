@@ -29,6 +29,8 @@ public final class RuleContext {
     final Map<String, Set<String>> plannedLocalKeys = new HashMap<>();
     /** "methodKey|mdcKey" → id of the order that will put it in MDC (message rewrites that drop it depend on it). */
     final Map<String, String> plannedBy = new HashMap<>();
+    /** Entrypoint method key → id of the order that scopes its domain MDC keys. */
+    final Map<String, String> entryOrders = new HashMap<>();
     /** Methods whose body an entrypoint order already rewraps. */
     final Set<String> wrappedMethods = new HashSet<>();
     String supportOrderId;
@@ -55,6 +57,11 @@ public final class RuleContext {
                 a.httpFilterKeys, a.decoratorPresent || starterPlanned(), plannedEntryKeys, plannedOwnKeys);
     }
 
+    /** MDC keys guaranteed on entry to {@code m}, with the planned entrypoint/whole-method scopes applied. */
+    public Set<String> mdcAtEntry(MethodInfo m) {
+        return (planned != null ? planned : a.paths).mdcAtEntry(m);
+    }
+
     public Set<String> mdcInside(MethodInfo m) {
         Set<String> local = plannedLocalKeys.get(m.key());
         Set<String> s = (planned != null ? planned : a.paths).mdcInside(m);
@@ -73,6 +80,19 @@ public final class RuleContext {
 
     public boolean plannedKey(MethodInfo m, String key) {
         return !a.paths.mdcInside(m).contains(key) && mdcInside(m).contains(key);
+    }
+
+    /**
+     * The method still writes MDC the old way (put/remove outside try-with-resources, clear, setContextMap). New
+     * scopes or observations are not added around such code: a clear() inside would wipe them. The MDC orders come
+     * first; the wraps follow after the rescan.
+     */
+    public boolean legacyMdc(MethodInfo m) {
+        return m.facts().mdc.stream().anyMatch(op -> switch (op.kind()) {
+            case CLEAR, SET_CONTEXT_MAP -> true;
+            case PUT, REMOVE -> !op.inResource();
+            default -> false;
+        });
     }
 
     /** Rule enabled in the policy and its pack selected. */

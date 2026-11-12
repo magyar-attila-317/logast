@@ -9,6 +9,13 @@ mdc:
 pii: [password, secret, token, email, phone, iban, cardNumber, cvv, pin, ssn, taxNumber, birthDate]
 
 logging:
+  protectedMessages: []            # regexes of messages alerts/dashboards depend on: reported, never rewritten
+  vagueMessages:                   # MESSAGE_VAGUE: say what started / completed / failed, and to what
+    - "^(processing|done|finished|start|started|end|ended|ok|success|failed|error|exception)\\.*$"
+    - "^(an? )?(unexpected )?(error|exception)( happened| occurred| thrown)?\\.*$"
+    - "^something went wrong"
+    - "^(publishing|completed publishing|finished publishing)\\b"
+    - "^(in|inside|entering|leaving|exiting) (method )?\\w+\\(?\\)?\\.*$"
   keyStyle: dotted                 # MDC and [k=v] keys outside the vocabulary: dotted (order.id), camel (orderId),
                                    # pascal (OrderId), snake (order_id), keep. Also the spelling `logast vocabulary` proposes.
 
@@ -63,3 +70,16 @@ metrics:
     outcome:
       aliases: [result, success, succeeded]
       # values: [success, failure]   # optional: allowed literal values (METRIC_TAG_VALUE)
+
+resilience:                        # opt-in pack: packs: [..., resilience]
+  httpConnectTimeout: 5s           # written to spring.http.clients.* by HTTP_CLIENT_NO_TIMEOUT
+  httpReadTimeout: 30s
+
+audit:                             # opt-in pack: packs: [..., audit]
+  emitters: []                     # e.g. [com.example.audit.AuditService, com.example.ActivityLogger#log];
+                                   # empty: any call on a *Audit* type or with an *Audit* argument (AuditAction enum)
+  actions:                         # entrypoints that must record an audit event (any field matches)
+    - http: "DELETE **"
+    - http: "* /admin/**"
+    - http: "* /api/admin/**"
+    - method: "(?i)(export|delete|remove|grant|revoke|refund|void|approve|reject|reset|disable|enable|impersonate|assign|unassign)[A-Z_].*|(?i)(export|delete|refund|approve|reject|impersonate)"

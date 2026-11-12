@@ -153,6 +153,10 @@ public final class Main {
                 case "sarif" -> System.out.println(OrderJson.MAPPER.writeValueAsString(dev.logast.orders.Sarif.of(shown)));
                 case "fills-template" -> System.out.println(OrderJson.MAPPER.writeValueAsString(FillsTemplate.of(shown)));
                 case "summary" -> {
+                    if (!r.stats().coverageComplete()) {
+                        System.err.println("WARNING: coverage incomplete: " + r.stats().files() + " of " + r.stats().discoveredFiles()
+                                + " source files analysed " + r.stats().parseErrors().stream().limit(5).toList());
+                    }
                     if (r.stats().noClasspath() || r.stats().unresolvedCalls() > 100) {
                         System.err.println("WARNING: " + (r.stats().noClasspath() ? "no classpath; " : "") + r.stats().unresolvedCalls()
                                 + " unresolved calls: results are incomplete (run `logast classpath`)");

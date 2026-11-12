@@ -321,16 +321,46 @@ final class SetupRules {
 
     /** Deep-merges {@code snippet} into the YAML document, keeping existing values (OpenRewrite MergeYamlVisitor). */
     static String mergeYaml(String existing, String snippet) {
+        return mergeYaml(existing, snippet, false);
+    }
+
+    /** @param overwrite true: the snippet's values replace existing ones (a fix that must change a value) */
+    static String mergeYaml(String existing, String snippet, boolean overwrite) {
         Yaml.Documents docs = (Yaml.Documents) new YamlParser().parse(existing).findFirst().orElseThrow();
         Yaml.Document doc = docs.getDocuments().getFirst();
         Yaml incoming = ((Yaml.Documents) new YamlParser().parse(snippet).findFirst().orElseThrow())
                 .getDocuments().getFirst().getBlock();
-        Yaml merged = new MergeYamlVisitor<Integer>(doc.getBlock(), incoming, true, null, null, null)
+        Yaml merged = new MergeYamlVisitor<Integer>(doc.getBlock(), incoming, !overwrite, null, null, null)
                 .visitNonNull(doc.getBlock(), 0, new Cursor(new Cursor(new Cursor(null, Cursor.ROOT_VALUE), docs), doc));
         List<Yaml.Document> all = new ArrayList<>(docs.getDocuments());
         all.set(0, doc.withBlock((Yaml.Block) merged));
-        String out = docs.withDocuments(all).printAll();
+        String out = dropCopiedComments(existing, docs.withDocuments(all).printAll());
         return out.endsWith("\n") ? out : out + "\n";
+    }
+
+    /**
+     * The merge carries the trailing comment of the document's last line onto blocks it appends ("root: INFO   # old
+     * comment"). A comment on a line the merge added, copied from an existing line, is removed again.
+     */
+    static String dropCopiedComments(String before, String after) {
+        Set<String> oldLines = new HashSet<>(before.lines().toList());
+        Set<String> oldComments = new HashSet<>();
+        for (String l : before.lines().toList()) {
+            int i = l.indexOf(" #");
+            if (i >= 0) {
+                oldComments.add(l.substring(i).strip());
+            }
+        }
+        StringBuilder out = new StringBuilder();
+        for (String l : after.split("\n", -1)) {
+            int i = l.indexOf(" #");
+            if (i >= 0 && !oldLines.contains(l) && oldComments.contains(l.substring(i).strip())
+                    && !before.contains(l.substring(0, i).stripTrailing() + l.substring(i, l.length()))) {
+                l = l.substring(0, i).stripTrailing();
+            }
+            out.append(l).append('\n');
+        }
+        return out.substring(0, out.length() - 1);
     }
 
     // ---- structured logging properties ------------------------------------------------------

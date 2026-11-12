@@ -123,6 +123,11 @@ public final class PathContext {
         return s;
     }
 
+    /** Keys of every method reachable from the entrypoint (itself included). */
+    public Set<String> reachableFrom(Entrypoint ep) {
+        return parents.getOrDefault(ep.method().key(), Map.of()).keySet();
+    }
+
     public boolean reachable(MethodInfo m) {
         return parents.values().stream().anyMatch(p -> p.containsKey(m.key()));
     }

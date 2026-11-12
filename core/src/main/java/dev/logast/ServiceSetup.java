@@ -48,7 +48,7 @@ public final class ServiceSetup {
             sb.append("extends: [").append(String.join(", ", extendsList)).append("]\n\n");
         }
         sb.append("packs: [").append(String.join(", ", packs.isEmpty() ? List.of("logging", "tracing") : packs))
-                .append("]   # logging, tracing, metrics\n\n");
+                .append("]   # logging, tracing, metrics, resilience, errors, audit\n\n");
         sb.append("logging:\n  rewriteExistingMessages: ").append(!keepWording)
                 .append(keepWording ? "   # keep existing wording; still fix concatenation, glossary, lost exceptions\n"
                         : "    # set false to keep existing message wording\n");

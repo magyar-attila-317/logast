@@ -8,7 +8,7 @@ public class ShippingClient {
     private final RestClient client;
 
     public ShippingClient() {
-        this.client = RestClient.builder() // expect: HTTP_CLIENT_UNTRACED
+        this.client = RestClient.builder() // expect: HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT
                 .baseUrl("http://shipping-service")
                 .build();
     }

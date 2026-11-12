@@ -59,7 +59,7 @@ What each part drives:
 | `mdc.key` (any method) | REPEATED_LOG_VALUE: logged by `mdc.extractRepeated` (default 2, `0` = off) statements of one method → one `MdcScope` there |
 | `mdc.aliases` | MDC_KEY_ALIAS renames keys in `MDC.put` / `MdcScope.of`; `[orderId={}]` becomes `[order.id={}]` |
 | `logKey` | the key name in `[k=v]` (LOG_KEY_STYLE) |
-| key spelling | `logging.keyStyle`: `dotted` (default, `order.id`), `camel` (`orderId`), `pascal` (`OrderId`), `snake` (`order_id`), `keep`. Applies to `[k=v]` keys and MDC keys outside the vocabulary (MDC_KEY_ALIAS renames them), and to the keys `logast vocabulary` / `init` propose. Vocabulary `mdc.key`s are used as written. |
+| key spelling | `logging.keyStyle`: `dotted` (default, `order.id`), `camel` (`orderId`), `pascal` (`OrderId`), `snake` (`order_id`), `keep`. Applies to every MDC and `[k=v]` key, vocabulary keys included: under `camel`, a vocabulary `mdc.key: order.id` is used as `orderId` and `order.id` becomes an alias that MDC_KEY_ALIAS migrates. Ambient keys (`traceId`, `spanId`) are never renamed. |
 
 ## Metric tags
 

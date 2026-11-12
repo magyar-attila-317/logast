@@ -12,7 +12,7 @@ public class AuditTrail {
 
     public void record(String action, String tenantId) {
         try {
-            MDC.put("audit.action", action); // expect: MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS
+            MDC.put("audit.action", action); // expect: MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS, MDC_CLEAR
             MDC.put("tenantId", tenantId);
             log.info("Audit entry written");
         } finally {

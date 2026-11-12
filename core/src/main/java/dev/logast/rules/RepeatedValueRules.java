@@ -41,7 +41,7 @@ final class RepeatedValueRules {
         }
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() != null && m.facts().logs.size() >= min && !ctx.wrappedMethods.contains(m.key())
-                    && m.facts().mdc.stream().noneMatch(op -> op.kind() == MdcOp.Kind.PUT)) {   // MDC_NOT_CLOSEABLE converts those first
+                    && !ctx.legacyMdc(m)) {   // MDC_NOT_CLOSEABLE / MDC_CLEAR come first
                 method(m, min);
             }
         }

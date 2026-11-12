@@ -35,6 +35,9 @@ final class LogCallRules {
                 if (lc.fluent() || lc.template() == null) {
                     continue;
                 }
+                if (ctx.policy.logging().protectedMessage(MessageTemplate.text(lc.template()))) {
+                    continue;   // alert-linked (logging.protectedMessages): never reworded or reformatted
+                }
                 boolean deleted = false;
                 CatchInfo c = lc.inCatch();
                 if (c != null && c.rethrowsCause && lc.level().compareTo(Level.WARN) >= 0

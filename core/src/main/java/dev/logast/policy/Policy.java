@@ -18,7 +18,40 @@ import java.util.*;
 public record Policy(@JsonProperty("extends") List<String> parents, Glossary glossary, Mdc mdc, List<String> pii,
                      Entrypoints entrypoints, Logging logging, Support support, Map<String, RuleConfig> rules,
                      Map<String, Term> vocabulary, Map<String, Area> areas, Phrasing phrasing, Levels levels,
-                     List<String> packs, List<String> overrides, Verify verify, Metrics metrics) {
+                     List<String> packs, List<String> overrides, Verify verify, Metrics metrics, Resilience resilience,
+                     Audit audit) {
+
+    /** {@code resilience} pack: timeouts written by HTTP_CLIENT_NO_TIMEOUT (Spring duration syntax). */
+    public record Resilience(String httpConnectTimeout, String httpReadTimeout) {
+        public Resilience {
+            httpConnectTimeout = httpConnectTimeout == null ? "5s" : httpConnectTimeout;
+            httpReadTimeout = httpReadTimeout == null ? "30s" : httpReadTimeout;
+        }
+    }
+
+    /**
+     * {@code audit} pack.
+     *
+     * @param emitters calls that record an audit event: {@code com.x.AuditService} or {@code com.x.ActivityLogger#log};
+     *                 empty: any call on a type named *Audit*, or with an *Audit* argument (an AuditAction enum)
+     * @param actions  entrypoints that must record one
+     */
+    public record Audit(List<String> emitters, List<AuditAction> actions) {
+        public Audit {
+            emitters = emitters == null ? List.of() : List.copyOf(emitters);
+            actions = actions == null ? List.of() : List.copyOf(actions);
+        }
+    }
+
+    /**
+     * One kind of auditable entrypoint; any given field must match.
+     *
+     * @param http   glob on the entrypoint label: {@code "DELETE *"}, {@code "* /admin/**"}
+     * @param method regex on the entrypoint method name
+     * @param term   vocabulary term in the label or method name ({@code refund})
+     */
+    public record AuditAction(String http, String method, String term) {
+    }
 
     /**
      * {@code metrics} pack settings.
@@ -190,9 +223,26 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      *                                concatenation, glossary and lost exceptions are fixed in existing lines
      */
     /** @param keyStyle spelling of MDC keys and {@code [k=v]} keys outside the vocabulary: dotted, camel, pascal, snake, keep */
+    /**
+     * @param protectedMessages regexes of messages that alerts or dashboards depend on: never reworded or reformatted,
+     *                          only reported (expand-contract: add a stable event field first, change the text later)
+     * @param vagueMessages     regexes of avoid-listed wording (MESSAGE_VAGUE), matched case-insensitively on the text
+     */
     public record Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
-                          Boolean rewriteExistingMessages, String keyStyle) {
+                          Boolean rewriteExistingMessages, String keyStyle, List<String> protectedMessages,
+                          List<String> vagueMessages) {
+        public Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
+                       Boolean rewriteExistingMessages, String keyStyle) {
+            this(loggerName, swallowedLevel, entryLevel, minEntrypointLevel, rewriteExistingMessages, keyStyle, null, null);
+        }
+
+        public boolean protectedMessage(String text) {
+            return text != null && protectedMessages.stream().anyMatch(r -> java.util.regex.Pattern.compile(r).matcher(text).find());
+        }
+
         public Logging {
+            protectedMessages = protectedMessages == null ? List.of() : List.copyOf(protectedMessages);
+            vagueMessages = vagueMessages == null ? List.of() : List.copyOf(vagueMessages);
             keyStyle = KeyStyle.parse(keyStyle).toString();   // fails fast on an unknown style
             rewriteExistingMessages = rewriteExistingMessages == null || rewriteExistingMessages;
             loggerName = loggerName == null ? "log" : loggerName;
@@ -226,6 +276,8 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         rules = rules == null ? Map.of() : Map.copyOf(rules);
         verify = verify == null ? new Verify(null, null) : verify;
         metrics = metrics == null ? new Metrics(null, null) : metrics;
+        resilience = resilience == null ? new Resilience(null, null) : resilience;
+        audit = audit == null ? new Audit(null, null) : audit;
     }
 
     /** Built-in defaults only (no project file). */
@@ -244,22 +296,22 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
     public Policy withPacks(List<String> selected) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, selected, overrides, verify, metrics);
+                phrasing, levels, selected, overrides, verify, metrics, resilience, audit);
     }
 
     public Policy withLogging(Logging l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, l, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit);
     }
 
     public Policy withLevels(Levels l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, l, packs, overrides, verify, metrics);
+                phrasing, l, packs, overrides, verify, metrics, resilience, audit);
     }
 
     public Policy withSupport(Support s) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, s, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit);
     }
 
     // ---- derived views (vocabulary + the older flat glossary/mdc form) -------------------------------------
@@ -282,24 +334,46 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         return out;
     }
 
+    /**
+     * A vocabulary key in the house spelling ({@code logging.keyStyle}): with {@code camel}, {@code order.id} becomes
+     * {@code orderId} everywhere (registry, aliases, generated MdcScope keys); the written spelling becomes an alias.
+     */
+    public String styledKey(String key) {
+        return key == null ? null : logging.style().apply(key);
+    }
+
     /** MDC key → where its value comes from. */
     public Map<String, KeySource> mdcRegistry() {
-        Map<String, KeySource> out = new TreeMap<>(mdc.keys());
+        Map<String, KeySource> out = new TreeMap<>();
+        mdc.keys().forEach((k, v) -> out.merge(styledKey(k), v, (a, b) -> new KeySource(concat(a.params(), b.params()), merge(a.types(), b.types()))));
         vocabulary.values().forEach(t -> {
             if (t.mdc() != null && t.mdc().key() != null) {
-                out.merge(t.mdc().key(), t.mdc().sources(), (a, b) -> new KeySource(
+                out.merge(styledKey(t.mdc().key()), t.mdc().sources(), (a, b) -> new KeySource(
                         concat(a.params(), b.params()), merge(a.types(), b.types())));
             }
         });
         return out;
     }
 
-    /** Non-canonical MDC key → canonical key (e.g. orderId → order.id). */
+    /** Non-canonical MDC key → canonical key (e.g. orderId → order.id, or order.id → orderId under keyStyle camel). */
     public Map<String, String> mdcAliases() {
         Map<String, String> out = new LinkedHashMap<>();
+        mdc.keys().keySet().forEach(k -> {
+            if (!styledKey(k).equals(k)) {
+                out.put(k, styledKey(k));
+            }
+        });
         vocabulary.values().forEach(t -> {
             if (t.mdc() != null && t.mdc().key() != null) {
-                t.mdc().aliases().forEach(a -> out.put(a, t.mdc().key()));
+                String canonical = styledKey(t.mdc().key());
+                t.mdc().aliases().forEach(a -> {
+                    if (!a.equals(canonical)) {
+                        out.put(a, canonical);
+                    }
+                });
+                if (!t.mdc().key().equals(canonical)) {
+                    out.put(t.mdc().key(), canonical);
+                }
             }
         });
         return out;
@@ -327,8 +401,8 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
     /** Name for an MDC key inside a {@code [k=v]} suffix. */
     public String logKey(String mdcKey) {
         for (Term t : vocabulary.values()) {
-            if (t.mdc() != null && mdcKey.equals(t.mdc().key()) && t.logKey() != null) {
-                return t.logKey();
+            if (t.mdc() != null && mdcKey.equals(styledKey(t.mdc().key())) && t.logKey() != null) {
+                return styledKey(t.logKey());
             }
         }
         return mdcKey;
@@ -337,11 +411,11 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
     /** Registry keys carry ids, so they are high-cardinality unless the vocabulary says {@code cardinality: low}. */
     public boolean highCardinality(String mdcKey) {
         for (Term t : vocabulary.values()) {
-            if (t.mdc() != null && mdcKey.equals(t.mdc().key())) {
+            if (t.mdc() != null && mdcKey.equals(styledKey(t.mdc().key()))) {
                 return "high".equals(t.mdc().cardinality());
             }
         }
-        return mdc.keys().containsKey(mdcKey);
+        return mdc.keys().keySet().stream().anyMatch(k -> styledKey(k).equals(mdcKey));
     }
 
     /** Area whose packages contain the class, longest package prefix first; null when none. */

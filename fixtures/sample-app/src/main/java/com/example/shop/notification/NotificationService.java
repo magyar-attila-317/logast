@@ -14,7 +14,7 @@ public class NotificationService {
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
     private final Mailer mailer;
-    private final ExecutorService executor = Executors.newFixedThreadPool(2);
+    private final ExecutorService executor = Executors.newFixedThreadPool(2); // expect: UNBOUNDED_EXECUTOR
 
     public NotificationService(Mailer mailer) {
         this.mailer = mailer;

@@ -38,11 +38,14 @@ class GraphTest {
                 "@KafkaListener shipment-acks",
                 "@MessageMapping /orders/ack",
                 "@Scheduled ReconciliationJob.reconcile",
+                "DELETE /admin/sessions/{sessionId}",
                 "DELETE /orders/{orderId}",
+                "GET /admin/exports/{exportId}",
                 "GET /live",
                 "GET /orders/{orderId}",
                 "GET /orders/{orderId}/lines",
                 "GET /reports/daily",
+                "POST /admin/customers/{customerId}/reset",
                 "POST /orders",
                 "websocket KitchenSocket.handleTextMessage");
         // custom @InboxHandler, the Kafka listener (observation-enabled not set yet) and listeners on Spring's own

@@ -218,6 +218,9 @@ public final class Applier {
                     sb.replace(e.start(), e.end(), e.text());
                 }
                 String after = sb.toString();
+                if (p.toString().endsWith(".java")) {
+                    after = ImportFixer.fix(after, ImportFixer.learn(edits.stream().map(Edit::text).toList()));
+                }
                 if (p.toString().endsWith(".java") && !ProjectParser.parsesCleanly(work, work.relativize(p), after)) {
                     broken.add(entry.getKey());
                     continue;
