@@ -102,29 +102,58 @@ The version comes from `gradle.properties`.
 
 ## Set up a service (once)
 
-```bash
-cd my-service
-logast init                 # writes logast.yaml, .gitignore entries, .logast/classpath-*.txt and .logast/traffic.yaml
-$EDITOR logast.yaml         # your business language: see below
+### 1. Run `logast init` in the service's folder
+
+```
+$ cd my-service
+$ logast init --key-style camel
+logast init  /home/me/my-service
+Sets up this service once. Re-running keeps what you already edited.
+
+  ✓ logast.yaml             your settings: which checks run, key style, and 36 business terms found in the code (review them)
+  ✓ .gitignore              ignores .logast/, but keeps baseline.json, traffic.yaml and README.md shared
+  ✓ .logast/README.md       explains every file in .logast/ and which ones go into git
+  ✓ .logast/classpath-*.txt 263 jars and class folders (8.1s): lets logast understand types
+  ✓ .logast/traffic.yaml    845 entrypoints; optional: add calls/day so logast can judge log volume
+  · .logast/baseline.json   not recorded (add --baseline, or later `logast scan . --update-baseline`)
+
+Next steps
+  1. open logast.yaml                 rename/merge the business terms; the comments explain every setting
+  2. logast scan . --format summary   what logast would change, per rule
+  3. logast apply . --auto            preview the automatic fixes (add --write to change files)
 ```
 
-`logast init` runs Gradle once to write the classpath (type resolution needs it; nothing is compiled), writes a
-starter `logast.yaml` whose vocabulary is harvested from the code (see below),
-ignores `.logast/` in git except the shared `baseline.json` and `traffic.yaml`, and lists every entrypoint in
-`.logast/traffic.yaml` for you to fill in calls/day. Re-running it keeps existing files.
+### What `init` creates, and why
+
+| file | what it is for | in git? | when you touch it |
+|---|---|---|---|
+| `logast.yaml` | your settings: which checks run, how keys are spelled, your business words. Every option is explained in comments inside the file | yes | right after `init`, then rarely |
+| `.logast/classpath-*.txt` | the service's compile classpath. logast needs it to understand types; Gradle runs once, nothing is compiled | no (machine-specific paths) | run `logast classpath .` again after changing dependencies |
+| `.logast/traffic.yaml` | every entrypoint, with calls per day if you fill them in; used to judge log volume | yes | optional; refresh the list with `logast traffic .` |
+| `.logast/baseline.json` | today's findings, so CI fails only on new ones (`--baseline`) | yes | when you accept the current state |
+| `.logast/fills.json` | message texts for findings that need one; `logast scan` creates and updates it, `logast apply` uses it | no | when you (or an LLM) write messages |
+| `.logast/README.md` | the same explanation, inside the folder | yes | never |
+
+`init` options:
 
 | option | what it does |
 |---|---|
-| `--extends <url\|file>` | company / area layers the policy builds on (comma-separated) |
-| `--keep-wording` | legacy service: fix structure, keep existing message wording |
+| `--extends <url\|file>` | build on your company's shared settings (comma-separated) |
 | `--key-style camel` | spelling of MDC and `[k=v]` keys: `dotted` (default), `camel`, `pascal`, `snake` |
-| `--support vendor` | copy `MdcScope` / `ObservedContext` into the service instead of depending on the starter library (use until the starter is in your Nexus) |
-| `--pack logging,tracing,metrics` | rule packs (default `logging,tracing`; also `metrics`, `resilience`, `errors`, `audit`) |
-| `--baseline` | scan once and record today's findings, so CI fails only on new ones |
+| `--keep-wording` | legacy service: fix structure, keep the wording of existing messages |
+| `--support vendor` | copy `MdcScope` / `ObservedContext` into the service instead of adding the library (until it is in your Nexus) |
+| `--pack logging,tracing,metrics` | which checks run (default `logging,tracing`; also `metrics`, `resilience`, `errors`, `audit`) |
+| `--baseline` | scan once and record today's findings for CI |
 | `--no-classpath` / `--no-traffic` | skip those steps |
-| `--force` | regenerate an existing `logast.yaml` |
+| `--force` | write a fresh `logast.yaml` over an existing one |
 
-The steps are also separate commands: `logast classpath .`, `logast traffic .`, `logast scan . --update-baseline`.
+Each step is also its own command: `logast classpath .`, `logast traffic .`, `logast scan . --update-baseline`.
+
+### 2. Review `logast.yaml`
+
+The file explains itself: every setting has a comment, and optional ones are there as switched-off examples. The
+full list, with defaults, is in **[docs/configuration.md](docs/configuration.md)**. `logast policy .` shows the final
+settings after all layers are merged.
 
 **The vocabulary starts from your code.** `init` (and `logast vocabulary .` at any time) collects every identifier the
 service already uses: MDC keys, `[k=v]` / `k={}` keys in log messages, and id-like variables. Spellings of one
@@ -162,6 +191,22 @@ The company layer is where the business language lives. See [`examples/restauran
 for a complete one (terms, aliases, MDC keys and their sources, areas where words mean something else, PII), and
 [`docs/vocabulary.md`](docs/vocabulary.md) for how layers, overrides, phrasing and levels work.
 `logast policy .` prints the merged result and every override.
+
+### 3. Scan, then apply
+
+```bash
+logast scan . --format summary      # what would change, per rule
+logast scan .                       # every finding, with a preview of the change
+logast apply . --auto               # preview the automatic fixes (a diff); nothing is written
+logast apply . --auto --write       # make them
+```
+
+Findings come in three kinds: **AUTO** (logast fixes it), **NEEDS TEXT** (someone writes one message: put it into
+`.logast/fills.json`, which the scan already created, and `apply` picks it up), and **REPORT-ONLY** (a decision for
+a person; the note says what to decide).
+
+Output is coloured in a terminal. `NO_COLOR=1` turns colours off, `LOGAST_COLOR=always|never` forces them.
+
 
 ---
 
@@ -294,10 +339,10 @@ With the skill installed (`./install.sh --skill`), ask Claude Code *"bring this 
 standard"*. It follows [`docs/llm-workflow.md`](docs/llm-workflow.md):
 
 ```bash
-logast scan . --format fills-template > fills.json      # LLM fills only the empty "MSG" values
-logast apply . --auto --fills fills.json                # dry run: diff + REJECTED reasons
-logast apply . --auto --fills fills.json --write
-logast scan .                                           # until only REPORT-ONLY remains
+logast scan .                       # also writes .logast/fills.json: the LLM fills in the empty "MSG" values
+logast apply . --auto               # dry run: diff + REJECTED reasons (uses .logast/fills.json)
+logast apply . --auto --write
+logast scan .                       # until only REPORT-ONLY remains
 ```
 
 In a trial on the sample app, an LLM working only from the docs finished in one round: it wrote 4 lines of text,
@@ -309,7 +354,8 @@ In a trial on the sample app, an LLM working only from the docs finished in one 
 logast review . --open
 ```
 
-This opens a local page (127.0.0.1, token-protected) with one input per message. It shows the code, the path
+This opens a local page (127.0.0.1, token-protected) with one input per message. Texts already in
+`.logast/fills.json` are filled in, and what you type is saved there. It shows the code, the path
 from the entrypoint, the required phrasing and the suffix keys. *Dry run* shows the diff and any rejections;
 *Apply* writes.
 
@@ -438,7 +484,7 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 | `logast vocabulary [svc]` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
 | `logast scan <svc>` | finds gaps, writes `.logast/orders.json`, prints the work orders |
-| `logast apply <svc> [--auto] [--fills f] [--only ids] [--write]` | applies orders on a scratch copy, rescanning between rounds; dry run unless `--write` |
+| `logast apply <svc> [--auto] [--only ids] [--write]` | applies orders on a scratch copy, rescanning between rounds; dry run unless `--write`. Message texts come from `.logast/fills.json` (or `--fills <file>`) |
 | `logast review <svc> [--open]` | local page for people to write the messages and apply |
 | `logast verify <svc>` | runs the existing tests with log capture and checks what was really logged |
 | `logast explain <svc> [--entrypoint "POST /x"]` | lists entrypoints, or the call tree below one with log/MDC/async markers |

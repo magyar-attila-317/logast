@@ -22,8 +22,9 @@ import java.util.regex.Pattern;
  */
 final class EventMetricRules {
     private static final Set<String> EVENTS = Set.of("started", "completed", "failed");
+    /** Already observed: by Spring (HTTP, @Scheduled, Kafka), or by the starter's BatchTraceListener (runners). */
     private static final Set<Entrypoint.Kind> TIMED_BY_FRAMEWORK = EnumSet.of(Entrypoint.Kind.HTTP, Entrypoint.Kind.SCHEDULED,
-            Entrypoint.Kind.KAFKA);
+            Entrypoint.Kind.KAFKA, Entrypoint.Kind.BATCH);
     private static final Pattern MEASURED = Pattern.compile(
             "ObservedContext|Observation\\.|MeterRegistry|meterRegistry|\\bCounter\\.|\\bTimer\\.|\\.counter\\(|\\.timer\\(");
     private static final Pattern NAME = Pattern.compile("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,3}");
@@ -40,7 +41,7 @@ final class EventMetricRules {
         }
         Set<String> timed = new HashSet<>();
         for (Entrypoint ep : ctx.a.entrypoints) {
-            if (ep.observedByFramework() && TIMED_BY_FRAMEWORK.contains(ep.kind())) {
+            if ((ep.observedByFramework() || ep.kind() == Entrypoint.Kind.BATCH) && TIMED_BY_FRAMEWORK.contains(ep.kind())) {
                 timed.add(ep.method().key());
             }
         }

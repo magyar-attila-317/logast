@@ -19,13 +19,15 @@ logging code by hand and do not read source files unless an order is REPORT-ONLY
    - **NEEDS TEXT**: write the message for each slot (usually `MSG`).
    - **REPORT-ONLY**: needs a human decision. Read its `note` and mention it in your summary;
      don't fix it by hand unless asked.
-3. Write `fills.json` for every NEEDS TEXT order:
+3. Fill in `.logast/fills.json` (the scan created it: one entry per NEEDS TEXT order, with `_MSG` and `_where`
+   hints). Only replace the empty `"MSG"` values; leave the `_…` keys as they are:
    ```json
    {
-     "SWA-1a2b3c": {"MSG": "Invoice export failed, nightly job will retry"},
-     "FMT-4d5e6f": {"MSG": "Exporting invoice", "args": ["batchSize"]}
+     "SWA-1a2b3c": {"MSG": "Invoice export failed, nightly job will retry", "_MSG": "…", "_where": "…"},
+     "FMT-4d5e6f": {"MSG": "Exporting invoice", "args": ["batchSize"], "_MSG": "…", "_where": "…"}
    }
    ```
+   Entries you leave empty are skipped. Re-scanning keeps what you wrote.
    Text rules (they are checked):
    - Plain sentence text, single line, at most 160 characters. Describe what happened or what
      is starting in domain terms.
@@ -37,10 +39,10 @@ logging code by hand and do not read source files unless an order is REPORT-ONLY
    - Don't repeat values that are in `mdc:`; they are already on every log line.
    - `args` (optional) adds variables from `vars:` to the suffix. Use it only for values that
      help diagnose the problem. Never add PII.
-4. Dry run: `logast apply <root> --auto --fills fills.json`. Check the diff and the `REJECTED`
-   lines, fix the fills, and repeat.
-5. `logast apply <root> --auto --fills fills.json --write`
-6. If `apply` printed `NEXT: run logast classpath` (it does after adding the logging-support
+4. Dry run: `logast apply <root> --auto` (it uses `.logast/fills.json` automatically). Check the diff and the
+   `REJECTED` lines, fix the texts in the file, and repeat.
+5. `logast apply <root> --auto --write`
+6. If `apply` lists `logast classpath .` under next steps (it does after adding the logging-support
    dependency), run it. Otherwise the new `ObservedContext`/`MdcScope` calls show up as unresolved.
 7. `logast scan <root>` again. Only REPORT-ONLY orders should remain. New NEEDS TEXT orders can
    appear after structural changes: repeat from step 3.
@@ -52,8 +54,8 @@ Handle follow-ups in the next round.
 
 ## Helpful shortcuts
 
-- `logast scan <root> --format fills-template > fills.json` writes the skeleton: fill the empty `"MSG"` values and
-  ignore the `"_…"` hint keys.
+- `--fills <file>` uses another file instead of `.logast/fills.json`; `logast scan <root> --format fills-template`
+  prints the skeleton for one.
 - After `apply --write`, if the project has tests, `logast verify <root>` runs them with log capture. It reports
   where context (trace or MDC keys) got lost across threads at runtime, and values logged as `null`. Mention its
   findings; they are report-only.

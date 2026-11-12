@@ -14,7 +14,8 @@ public final class ServiceSetup {
     private ServiceSetup() {
     }
 
-    public static final List<String> GITIGNORE = List.of(".logast/*", "!.logast/baseline.json", "!.logast/traffic.yaml");
+    public static final List<String> GITIGNORE = List.of(".logast/*", "!.logast/baseline.json", "!.logast/traffic.yaml",
+            "!.logast/README.md");
 
     public static boolean isGradleProject(Path root) {
         return Stream.of("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle")
@@ -32,36 +33,63 @@ public final class ServiceSetup {
         return policyTemplate(extendsList, packs, keepWording, keyStyle, null, vocabulary);
     }
 
+    static final String GUIDE = "https://github.com/magyar-attila-317/logast/blob/main/docs/configuration.md";
+
     /** @param supportMode null → not written (dependency, or what the company layer says); "vendor" → copy the classes */
     public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
                                         String supportMode, String vocabulary) {
         StringBuilder sb = new StringBuilder();
         sb.append("""
-                # logast policy for this service.
-                # Layers: built-in defaults -> extends (company / area) -> this file. Lists append; `override: true` replaces.
-                # `logast policy .` prints the merged result. Guide: docs/vocabulary.md in the logast distribution.
+                # =============================================================================================
+                # logast.yaml: how this service should log, trace and measure
+                #
+                # logast reads this file on every run. Anything you leave out uses the built-in default.
+                # Lines starting with "#" are switched-off examples: remove the "#" to use one.
+                #
+                # Handy commands
+                #   logast policy .                 the final settings (this file + extends + defaults)
+                #   logast vocabulary .             business ids in the code that are not listed below yet
+                #   logast scan . --format summary  what logast would change
+                #
+                # Every option, explained: %s
+                # =============================================================================================
 
-                """);
+                """.formatted(GUIDE));
+        sb.append("# Shared settings for all your services (a URL or a file). Lists add up; this file wins on conflicts.\n");
         if (extendsList.isEmpty()) {
             sb.append("# extends: [https://git.example.com/platform/observability/raw/main/company.yaml]\n\n");
         } else {
             sb.append("extends: [").append(String.join(", ", extendsList)).append("]\n\n");
         }
-        sb.append("packs: [").append(String.join(", ", packs.isEmpty() ? List.of("logging", "tracing") : packs))
-                .append("]   # logging, tracing, metrics, resilience, errors, audit\n\n");
-        sb.append("logging:\n  rewriteExistingMessages: ").append(!keepWording)
-                .append(keepWording ? "   # keep existing wording; still fix concatenation, glossary, lost exceptions\n"
-                        : "    # set false to keep existing message wording\n");
-        sb.append(keyStyle != null ? "  keyStyle: " + keyStyle + "   # MDC and [k=v] keys: dotted (order.id), camel (orderId), pascal (OrderId), snake (order_id)\n"
-                : "  # keyStyle: camel             # MDC and [k=v] keys: dotted (order.id, default), camel (orderId), pascal (OrderId), snake (order_id)\n");
-        sb.append("\n# Generated code uses MdcScope / ObservedContext from the logging-support starter:\n")
-                .append("#   dependency: add dev.logast:logging-support (must be resolvable: Nexus, or mavenLocal after `install.sh --starter`)\n")
-                .append("#   vendor:     copy the classes into <@SpringBootApplication package>.logging (no library)\n")
-                .append(supportMode != null ? "support:\n  mode: " + supportMode + "\n" : "# support:\n#   mode: vendor\n");
+        sb.append("# Which checks run. Default: logging, tracing. Add any of: metrics, resilience, errors, audit.\n");
+        sb.append("packs: [").append(String.join(", ", packs.isEmpty() ? List.of("logging", "tracing") : packs)).append("]\n\n");
+        sb.append("logging:\n");
+        sb.append("  # How MDC keys and [key=value] keys are spelled: dotted (order.id), camel (orderId), pascal (OrderId),\n");
+        sb.append("  # snake (order_id). Applies to the vocabulary below too.\n");
+        sb.append(keyStyle != null ? "  keyStyle: " + keyStyle + "\n" : "  # keyStyle: camel\n");
+        sb.append("  # true: logast may reword existing messages. false: keep their words, fix only the structure.\n");
+        sb.append("  rewriteExistingMessages: ").append(!keepWording).append('\n');
+        sb.append("  # Messages that alerts or dashboards search for (regex): logast never changes them, it only reports.\n");
+        sb.append("  # protectedMessages: [\"^ALERT:\"]\n\n");
         sb.append("""
-
-                # Business vocabulary: one word per concept, one MDC key per identifier. Banned words in `aliases`
-                # are rewritten to the term; old MDC key names in `mdc.aliases` are migrated to `mdc.key`.
+                # Where generated code gets MdcScope / ObservedContext from:
+                #   dependency  adds the logging-support library (it must be in a repository your build uses)
+                #   vendor      copies the classes into this service, no library needed
+                """);
+        sb.append(supportMode != null ? "support:\n  mode: " + supportMode + "\n\n" : "# support:\n#   mode: vendor\n\n");
+        sb.append("""
+                # ---------------------------------------------------------------------------------------------
+                # Business vocabulary: one entry per business concept
+                #
+                # logast puts each id into MDC where a flow starts (endpoint, listener, job) and removes it from
+                # the messages below that point, because every log line already carries it.
+                #   aliases       other words for the same thing; rewritten to the term in messages
+                #   mdc.key       the MDC key for the id; mdc.aliases are old key names, renamed to mdc.key
+                #   mdc.sources   where the id comes from: parameter names, or "com.x.Type: accessor()"
+                #
+                # The entries below were found in your code. Rename terms, merge duplicates, and delete what is not
+                # a business concept. Then run `logast vocabulary .` again: it lists only what is still missing.
+                # ---------------------------------------------------------------------------------------------
                 """);
         if (vocabulary == null || !vocabulary.contains("vocabulary:")) {
             sb.append("""
@@ -75,13 +103,59 @@ public final class ServiceSetup {
         }
         sb.append("""
 
-                # Areas: packages where words mean something else, or extra MDC keys are required.
+                # ---------------------------------------------------------------------------------------------
+                # More options (remove the "#" to use one)
+                # ---------------------------------------------------------------------------------------------
+
+                # Areas: packages where a word means something else, or where extra MDC keys are required.
                 # areas:
                 #   billing:
                 #     packages: [com.example.billing]
-                #     requiredMdc: [tenant.id]
+                #     requiredMdc: [tenantId]
+
+                # Personal data: values with these names never reach a log line or a metric tag (adds to the built-ins).
+                # pii: [guestName, guestPhone]
+
+                # Exceptions caused by the caller (logged at WARN at most, never ERROR). Adds to the built-in list.
+                # levels:
+                #   clientErrors: [com.example.BusinessRuleViolationException]
+                #   noInfoInLoops: true          # INFO inside loops becomes DEBUG (for high-volume batch services)
+
+                # Your own annotations that start work, like @KafkaListener does.
+                # entrypoints:
+                #   extraAnnotations: [com.example.InboxHandler]
+
+                # Gradle tasks that run the tests, for `logast verify` (default: test).
+                # verify:
+                #   tasks: [test, intTest]
+
+                # Turn single rules off or change how serious they are (`logast rules` lists all of them).
+                # rules:
+                #   ENTRYPOINT_SILENT: { severity: low }
+                #   LOG_IN_LOOP: { enabled: false }
+
+                # The metrics, resilience and audit packs have their own settings: see the guide linked at the top.
                 """);
         return sb.toString();
+    }
+
+    /** {@code .logast/README.md}: what each file in the folder is for, and which ones belong in git. */
+    public static String logastReadme() {
+        return """
+                # .logast
+
+                Files logast writes for this service. You rarely edit them by hand.
+
+                | file | what it is | in git? |
+                |---|---|---|
+                | `classpath-*.txt` | the service's compile classpath, written by `logast classpath .` (Gradle runs once). logast needs it to understand types. Run it again after you change dependencies. | no: paths are machine-specific |
+                | `traffic.yaml` | every entrypoint of the service, with calls per day if you fill them in. Used to judge log volume (LOG_VOLUME). Leave a value empty if you don't know it. Refresh the list with `logast traffic .`. | yes |
+                | `baseline.json` | the findings that existed when it was recorded (`logast scan . --update-baseline`). CI uses it to fail only on *new* findings: `logast scan . --baseline --fail-on high`. | yes |
+                | `orders.json` | the result of the last `logast scan` (full detail, read by `apply` and `review`). | no |
+                | `verify.json` | the result of the last `logast verify`. | no |
+
+                Configuration lives in `logast.yaml` next to this folder: %s
+                """.formatted(GUIDE);
     }
 
     /** Appends the logast entries missing from {@code <root>/.gitignore}; returns the ones added. */

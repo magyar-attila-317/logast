@@ -7,6 +7,7 @@ import dev.logast.Logast;
 import dev.logast.apply.Applier;
 import dev.logast.apply.Fill;
 import dev.logast.apply.FillValidator;
+import dev.logast.orders.Ansi;
 import dev.logast.orders.CompactFormat;
 import dev.logast.orders.OrderJson;
 import dev.logast.orders.ScanResult;
@@ -48,6 +49,7 @@ public final class Main {
     }
 
     public static void main(String[] args) {
+        Out.detectColor();
         System.exit(new CommandLine(new Main()).execute(args));
     }
 
@@ -111,24 +113,29 @@ public final class Main {
                 Logast.lastAnalysis.entrypoints.forEach(ep -> labels.add(ep.label()));
                 List<String> unmatched = t.labels().stream().filter(l -> !labels.contains(l)).toList();
                 long covered = labels.stream().filter(l -> t.perDay(l) != null).count();
-                System.err.println("traffic (" + t.source() + "): " + covered + " of " + labels.size() + " entrypoints have rates"
+                Out.progress("traffic (" + t.source() + "): " + covered + " of " + labels.size() + " entrypoints have rates"
                         + (unmatched.isEmpty() ? "" : "; labels matching no entrypoint (check spelling with `logast explain`): " + unmatched));
             }
             Path target = out != null ? out : root().resolve(".logast/orders.json");
             Files.createDirectories(target.toAbsolutePath().getParent());
             OrderJson.MAPPER.writeValue(target.toFile(), r);
+            int[] fillsState = out == null ? dev.logast.apply.FillsFile.update(root(), r.orders()) : new int[]{0, 0};
+            if (fillsState[0] > 0 && (format.equals("compact") || format.equals("summary"))) {
+                Out.progress(dev.logast.apply.FillsFile.PATH + ": " + fillsState[0] + " orders need a message text ("
+                        + fillsState[1] + " written so far); `logast apply . --auto` uses the ones you fill in");
+            }
 
             Path baselineFile = baseline == null || baseline.isEmpty() ? root().resolve(".logast/baseline.json") : Path.of(baseline);
             if (updateBaseline) {
                 dev.logast.orders.Baseline.of(r).write(baselineFile);
-                System.out.println("baseline: " + r.orders().size() + " orders written to " + baselineFile);
+                Out.step("baseline", r.orders().size() + " findings recorded in " + baselineFile + "; CI now fails only on new ones");
                 return 0;
             }
             List<WorkOrder> candidates = r.orders();
             String scope = "";
             if (baseline != null) {
                 if (!Files.exists(baselineFile)) {
-                    System.err.println("no baseline at " + baselineFile + " (create it with --update-baseline)");
+                    Out.warn("no baseline at " + baselineFile + " (create it with --update-baseline)");
                     return 3;
                 }
                 dev.logast.orders.Baseline b = dev.logast.orders.Baseline.read(baselineFile);
@@ -146,7 +153,7 @@ public final class Main {
                     .limit(limit == null ? Long.MAX_VALUE : limit)
                     .toList();
             if (!scope.isEmpty()) {
-                System.err.println("scope:" + scope + ": " + shown.size() + " of " + r.orders().size() + " orders");
+                Out.progress("scope:" + scope + ": " + shown.size() + " of " + r.orders().size() + " orders");
             }
             switch (format) {
                 case "json" -> System.out.println(OrderJson.MAPPER.writeValueAsString(shown));
@@ -154,11 +161,11 @@ public final class Main {
                 case "fills-template" -> System.out.println(OrderJson.MAPPER.writeValueAsString(FillsTemplate.of(shown)));
                 case "summary" -> {
                     if (!r.stats().coverageComplete()) {
-                        System.err.println("WARNING: coverage incomplete: " + r.stats().files() + " of " + r.stats().discoveredFiles()
+                        Out.warn("coverage incomplete: " + r.stats().files() + " of " + r.stats().discoveredFiles()
                                 + " source files analysed " + r.stats().parseErrors().stream().limit(5).toList());
                     }
                     if (r.stats().noClasspath() || r.stats().unresolvedCalls() > 100) {
-                        System.err.println("WARNING: " + (r.stats().noClasspath() ? "no classpath; " : "") + r.stats().unresolvedCalls()
+                        Out.warn((r.stats().noClasspath() ? "no classpath; " : "") + r.stats().unresolvedCalls()
                                 + " unresolved calls: results are incomplete (run `logast classpath`)");
                     }
                     System.out.print(CompactFormat.summary(shown));
@@ -166,8 +173,8 @@ public final class Main {
                 default -> {
                     System.out.print(CompactFormat.render(r, shown, policy.terms()));
                     if (!policy.overrides().isEmpty()) {
-                        System.out.println("\npolicy overrides (" + policy.overrides().size() + "): "
-                                + String.join("; ", policy.overrides().stream().limit(8).toList()));
+                        System.out.println(Ansi.dim("\npolicy overrides (" + policy.overrides().size() + "): "
+                                + String.join("; ", policy.overrides().stream().limit(8).toList())));
                     }
                 }
             }
@@ -208,7 +215,7 @@ public final class Main {
 
     @Command(name = "apply", description = "Apply orders (dry run unless --write). Rescans between rounds; ids are stable.")
     static class Apply extends Common implements Callable<Integer> {
-        @Option(names = "--fills", description = "JSON {\"<id>\": {\"MSG\": \"text\", \"args\": [\"var\"]}}")
+        @Option(names = "--fills", description = "Message texts (default: .logast/fills.json, kept up to date by `logast scan`)")
         Path fills;
         @Option(names = "--auto", description = "Also apply every order that needs no text (including ones that appear after earlier fixes)")
         boolean auto;
@@ -221,53 +228,83 @@ public final class Main {
 
         @Override
         public Integer call() throws IOException {
-            if (!auto && fills == null) {
+            Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
+            if (!auto && fillMap.isEmpty()) {
                 System.err.println("""
                         logast apply: nothing selected. Choose what to apply:
-                          --auto                apply every fix that needs no message text (mechanical fixes)
-                          --fills fills.json    apply fixes that need text, with the text from this file
-                                                (skeleton: `logast scan . --format fills-template > fills.json`)
-                        and add --write to change files; without it you get a preview diff.
+                          --auto     every fix that needs no message text
+                          texts      fixes that need a message: write them into .logast/fills.json (`logast scan`
+                                     creates it) and they are picked up automatically
+                        and add --write to change files; without it you get a preview.
                         e.g.  logast apply . --auto            # preview
                               logast apply . --auto --write    # change files""");
                 return 2;
             }
-            if (!write && !format.equals("json")) {
-                System.err.println("DRY RUN: previewing only, no files are changed (add --write to apply)");
+            if (!fillMap.isEmpty() && !format.equals("json")) {
+                Out.progress("using " + fillMap.size() + " message text(s) from " + (fills != null ? fills : dev.logast.apply.FillsFile.PATH));
             }
+            if (!write && !format.equals("json")) {
+                Out.progress("DRY RUN: previewing only, no files are changed (add --write to apply)");
+            }
+            long t0 = System.nanoTime();
             Policy policy = policy();
             List<Path> cp = classpath();
-            Map<String, Fill> fillMap = fills == null ? Map.of()
-                    : OrderJson.MAPPER.readValue(fills.toFile(), new TypeReference<LinkedHashMap<String, Fill>>() {
-                    });
             Applier applier = new Applier(new dev.logast.IncrementalScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
                     : Logast.policy(root, null).withPacks(packs)),
                     new FillValidator(policy));
             Applier.Result r = applier.apply(root(), new Applier.Selection(auto, only, fillMap), write);
             if (format.equals("json")) {
                 System.out.println(OrderJson.MAPPER.writeValueAsString(r));
-            } else {
-                System.out.println((write ? "applied (" : "would apply (") + r.applied().size() + "): " + String.join(" ", r.applied()));
-                if (r.applied().isEmpty() && fills == null) {
-                    System.out.println("nothing to apply without text: the remaining orders need message text "
-                            + "(`logast scan .` lists them; fill them via --fills or `logast review .`)");
-                }
-                if (!r.resolvedIndirectly().isEmpty()) {
-                    System.out.println("resolved by other changes: " + String.join(" ", r.resolvedIndirectly()));
-                }
-                r.rejected().forEach((id, why) -> System.out.println("REJECTED " + id + ": " + why));
-                System.out.println("files: " + String.join(", ", r.changedFiles()) + "  (rounds: " + r.rounds() + ")");
-                if (write && r.applied().stream().anyMatch(id -> id.startsWith("SUP-") || id.startsWith("OTL-"))) {
-                    System.out.println("NEXT: run `logast classpath " + root + "`: dependencies changed, the classpath file is stale");
-                }
-                if (!write) {
-                    System.out.println();
-                    System.out.print(r.diff());
-                    System.out.println("(dry run: add --write to change files)");
-                }
+                return r.rejected().isEmpty() ? 0 : 1;
+            }
+            if (!write && !r.diff().isEmpty()) {
+                System.out.print(colorDiff(r.diff()));
+                System.out.println();
+            }
+            System.out.println(Ansi.bold((write ? "applied (" : "would apply (") + r.applied().size() + ")") + ": "
+                    + Ansi.dim(String.join(" ", r.applied())));
+            System.out.println(Ansi.dim("files (" + r.changedFiles().size() + "): " + String.join(", ", r.changedFiles())
+                    + "  ·  " + r.rounds() + " rounds, " + Out.seconds(t0)));
+            if (r.applied().isEmpty() && fillMap.isEmpty()) {
+                System.out.println("nothing to apply without text: the remaining orders need message text "
+                        + "(`logast scan .` lists them; fill them via --fills or `logast review .`)");
+            }
+            if (!r.resolvedIndirectly().isEmpty()) {
+                System.out.println(Ansi.dim("resolved by other changes: " + String.join(" ", r.resolvedIndirectly())));
+            }
+            r.rejected().forEach((id, why) -> System.out.println(Ansi.red("REJECTED " + id) + ": " + why));
+            List<String[]> next = new ArrayList<>();
+            if (!write && !r.applied().isEmpty()) {
+                next.add(new String[]{"logast apply . " + (auto ? "--auto " : "") + (fills != null ? "--fills " + fills + " " : "") + "--write",
+                        "make these changes"});
+            }
+            if (write && r.applied().stream().anyMatch(id -> id.startsWith("SUP-") || id.startsWith("OTL-"))) {
+                next.add(new String[]{"logast classpath .", "dependencies changed: refresh the classpath file"});
+            }
+            if (write) {
+                next.add(new String[]{"git diff", "review the changes, then build and run the tests"});
+            }
+            if (!next.isEmpty()) {
+                Out.next(next);
             }
             return r.rejected().isEmpty() ? 0 : 1;
         }
+    }
+
+    /** Unified diff with the usual colours: file headers bold, hunks cyan, removed red, added green. */
+    static String colorDiff(String diff) {
+        if (!Ansi.enabled()) {
+            return diff;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String line : diff.split("\n", -1)) {
+            String out = line.startsWith("diff --git") || line.startsWith("+++") || line.startsWith("---") ? Ansi.bold(line)
+                    : line.startsWith("@@") ? Ansi.cyan(line)
+                    : line.startsWith("+") ? Ansi.green(line)
+                    : line.startsWith("-") ? Ansi.red(line) : line;
+            sb.append(out).append('\n');
+        }
+        return sb.substring(0, sb.length() - 1);
     }
 
     @Command(name = "classpath", description = "Run Gradle once to write <root>/.logast/classpath-*.txt (needed for type resolution)")
@@ -275,9 +312,12 @@ public final class Main {
         @Parameters(index = "0", defaultValue = ".")
         Path root;
 
-        @Override
-        public Integer call() throws IOException, InterruptedException {
-            Path r = root.toAbsolutePath().normalize();
+        /** Result of one Gradle run: exit code, classpath entries, whether compiled classes were found. */
+        record Result(int exitCode, int entries, boolean compiledClasses) {
+        }
+
+        /** Runs Gradle with the classpath init script (compiles nothing); prints only Gradle's own errors. */
+        static Result write(Path r) throws IOException, InterruptedException {
             Path init = Files.createTempFile("logast-classpath", ".init.gradle");
             try (InputStream in = Main.class.getResourceAsStream("/logast-classpath.init.gradle")) {
                 Files.write(init, Objects.requireNonNull(in).readAllBytes());
@@ -288,16 +328,25 @@ public final class Main {
                     .directory(r.toFile()).inheritIO().start();
             int rc = p.waitFor();
             Files.deleteIfExists(init);
-            if (rc != 0) {
-                System.err.println("logast classpath: Gradle failed (exit " + rc + "); run `./gradlew --init-script <script> logastClasspath` "
-                        + "without -q in " + r + " to see why. Scans without a classpath leave most calls unresolved.");
-                return rc;
+            List<Path> cp = rc == 0 ? Logast.classpath(r, null) : List.of();
+            return new Result(rc, cp.size(), dev.logast.parse.ProjectParser.hasCompiledClasses(cp));
+        }
+
+        @Override
+        public Integer call() throws IOException, InterruptedException {
+            Path r = root.toAbsolutePath().normalize();
+            long t0 = System.nanoTime();
+            Out.progress("running Gradle to read the classpath (nothing is compiled)…");
+            Result res = write(r);
+            if (res.exitCode() != 0) {
+                Out.failed("classpath", "Gradle failed (exit " + res.exitCode() + ")");
+                Out.warn("run `./gradlew --init-script <script> logastClasspath` without -q in " + r + " to see why. "
+                        + "Scans without a classpath leave most calls unresolved.");
+                return res.exitCode();
             }
-            List<Path> cp = Logast.classpath(r, null);
-            boolean classes = dev.logast.parse.ProjectParser.hasCompiledClasses(cp);
-            System.out.println("classpath: " + cp.size() + " entries in " + r.resolve(".logast")
-                    + (classes ? " (incl. compiled classes: apply rounds re-parse only changed files)"
-                    : " (no compiled classes found: build the project once so apply rounds can re-parse incrementally)"));
+            Out.step(".logast/classpath-*.txt", res.entries() + " entries in " + Out.seconds(t0)
+                    + (res.compiledClasses() ? "; compiled classes found (apply re-parses only changed files)"
+                    : "; no compiled classes yet (build once so apply rounds can re-parse incrementally)"));
             return 0;
         }
     }

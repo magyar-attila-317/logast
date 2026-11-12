@@ -81,6 +81,7 @@ public final class ReviewServer {
                     Map<String, Fill> fills = OrderJson.MAPPER.convertValue(body.path("fills"), new TypeReference<LinkedHashMap<String, Fill>>() {
                     });
                     boolean write = body.path("write").asBoolean(false);
+                    dev.logast.apply.FillsFile.save(root, fills);   // texts typed here survive, and scan/apply see them
                     Applier.Result r = new Applier(scanners.get(), new FillValidator(policy))
                             .apply(root, new Applier.Selection(body.path("auto").asBoolean(false), Set.of(), fills), write);
                     if (write) {
@@ -97,6 +98,7 @@ public final class ReviewServer {
 
     private Map<String, Object> orders() {
         List<Map<String, Object>> out = new ArrayList<>();
+        Map<String, Fill> written = dev.logast.apply.FillsFile.read(root.resolve(dev.logast.apply.FillsFile.PATH));
         for (WorkOrder o : current.orders()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", o.id());
@@ -112,6 +114,7 @@ public final class ReviewServer {
             m.put("code", o.context() == null ? null : o.context().code());
             m.put("vars", o.context() == null || o.context().argsSlot() == null ? List.of() : o.context().varsInScope().keySet());
             m.put("slots", o.slots());
+            m.put("text", written.containsKey(o.id()) ? written.get(o.id()).slots() : Map.of());   // from .logast/fills.json
             m.put("preview", CompactFormat.previewLines(Path.of(current.root()), o));
             out.add(m);
         }
