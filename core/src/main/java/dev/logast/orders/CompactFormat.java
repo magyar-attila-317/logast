@@ -18,44 +18,46 @@ public final class CompactFormat {
     public static String render(ScanResult r, List<WorkOrder> orders, List<String> glossaryTerms) {
         StringBuilder sb = new StringBuilder();
         Analysis.Stats s = r.stats();
-        sb.append("logast: ").append(s.files()).append(" files, ").append(s.entrypoints()).append(" entrypoints, ")
-                .append(s.reachableMethods()).append('/').append(s.methods()).append(" methods reachable, ")
+        sb.append(Ansi.bold("logast")).append(Ansi.dim(" · ")).append(s.files()).append(" files").append(Ansi.dim(" · "))
+                .append(s.entrypoints()).append(" entrypoints").append(Ansi.dim(" · "))
+                .append(s.reachableMethods()).append('/').append(s.methods()).append(" methods reachable").append(Ansi.dim(" · "))
                 .append(s.edges()).append(" call edges\n");
         if (!s.coverageComplete()) {
-            sb.append("WARNING: coverage incomplete: ").append(s.files()).append(" of ").append(s.discoveredFiles())
-                    .append(" source files analysed; ").append(String.join("; ", s.parseErrors().stream().limit(5).toList()))
-                    .append(s.parseErrors().size() > 5 ? "; …" : "").append('\n');
+            sb.append(Ansi.warn("coverage incomplete: " + s.files() + " of " + s.discoveredFiles() + " source files analysed; "
+                    + String.join("; ", s.parseErrors().stream().limit(5).toList()) + (s.parseErrors().size() > 5 ? "; …" : ""))).append('\n');
         }
         if (s.noClasspath()) {
-            sb.append("WARNING: no classpath (run `logast classpath <root>`); library types are unresolved and call edges may be missing\n");
+            sb.append(Ansi.warn("no classpath (run `logast classpath <root>`); library types are unresolved and call edges may be missing")).append('\n');
         }
         if (s.unresolvedCalls() > 0) {
-            sb.append("WARNING: ").append(s.unresolvedCalls()).append(" unresolved calls, e.g. ").append(s.unresolvedSample()).append('\n');
+            sb.append(Ansi.warn(s.unresolvedCalls() + " unresolved calls, e.g. " + s.unresolvedSample())).append('\n');
         }
         long auto = orders.stream().filter(WorkOrder::mechanical).count();
         long text = orders.stream().filter(o -> !o.slots().isEmpty()).count();
         long report = orders.stream().filter(WorkOrder::reportOnly).count();
-        sb.append(orders.size()).append(" orders: ").append(auto).append(" AUTO, ").append(text)
-                .append(" NEEDS TEXT, ").append(report).append(" REPORT-ONLY\n");
+        sb.append(Ansi.bold(orders.size() + " orders")).append(": ").append(Ansi.green(auto + " AUTO")).append(", ")
+                .append(Ansi.cyan(text + " NEEDS TEXT")).append(", ").append(Ansi.magenta(report + " REPORT-ONLY"))
+                .append(Ansi.dim("   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)"))
+                .append('\n');
         if (!glossaryTerms.isEmpty()) {
-            sb.append("glossary terms: ").append(String.join(", ", glossaryTerms)).append('\n');
+            sb.append(Ansi.dim("glossary terms: " + String.join(", ", glossaryTerms))).append('\n');
         }
         sb.append('\n');
         Path root = Path.of(r.root());
         for (WorkOrder o : orders) {
             String kind = o.reportOnly() ? "REPORT-ONLY" : o.slots().isEmpty() ? "AUTO" : "NEEDS TEXT";
-            sb.append(o.id()).append("  ").append(o.severity()).append("  ").append(kind).append("  ")
-                    .append(String.join("+", o.fixes())).append("  ").append(o.file()).append(':').append(o.line())
-                    .append(o.method() == null ? "" : "  " + o.method()).append('\n');
+            sb.append(Ansi.bold(o.id())).append("  ").append(Ansi.severity(o.severity())).append("  ").append(Ansi.kind(kind)).append("  ")
+                    .append(Ansi.blue(String.join("+", o.fixes()))).append("  ").append(Ansi.dim(o.file() + ":" + o.line()))
+                    .append(o.method() == null ? "" : "  " + Ansi.dim(o.method())).append('\n');
             if (o.title() != null) {
                 sb.append("  ").append(o.title()).append('\n');
             }
             if (!o.paths().isEmpty()) {
-                sb.append("  path: ").append(o.paths().getFirst())
-                        .append(o.paths().size() > 1 ? "  (+" + (o.paths().size() - 1) + " more)" : "").append('\n');
+                sb.append(Ansi.dim("  path: " + o.paths().getFirst()
+                        + (o.paths().size() > 1 ? "  (+" + (o.paths().size() - 1) + " more)" : ""))).append('\n');
             }
             for (String line : preview(root, o)) {
-                sb.append("  ").append(line).append('\n');
+                sb.append("  ").append(line.startsWith("- ") ? Ansi.red(line) : line.startsWith("+ ") ? Ansi.green(line) : Ansi.dim(line)).append('\n');
             }
             for (var slot : o.slots().entrySet()) {
                 sb.append("  ").append(slot.getKey()).append(": ").append(slot.getValue().describe());
@@ -80,17 +82,18 @@ public final class CompactFormat {
                         .collect(Collectors.joining(", "))).append('\n');
             }
             if (o.suggestion() != null) {
-                sb.append("  note: ").append(o.suggestion()).append('\n');
+                sb.append(Ansi.dim("  note: " + o.suggestion())).append('\n');
             }
             if (!o.dependsOn().isEmpty()) {
                 sb.append("  depends on: ").append(String.join(", ", o.dependsOn())).append('\n');
             }
         }
         if (text > 0) {
-            sb.append("\nNext: write fills.json {\"<id>\": {\"MSG\": \"text\"}} for NEEDS TEXT orders (plain text, no {} and no [k=v];"
-                    + " optional \"args\": [\"var\"] adds variables to the suffix), then: logast apply <root> --auto --fills fills.json\n");
+            sb.append("\n").append(Ansi.bold("Next")).append(": write the message for each NEEDS TEXT order into .logast/fills.json"
+                    + " (\"MSG\": plain text, no {} and no [k=v]; optional \"args\": [\"var\"] adds variables), then:"
+                    + " logast apply <root> --auto\n");
         } else if (auto > 0) {
-            sb.append("\nNext: logast apply <root> --auto\n");
+            sb.append("\n").append(Ansi.bold("Next")).append(": logast apply <root> --auto   (preview; add --write to change files)\n");
         }
         return sb.toString();
     }
@@ -147,11 +150,25 @@ public final class CompactFormat {
         }
     }
 
+    /** Findings per rule: count, worst severity and how they get fixed; then the totals. */
     public static String summary(List<WorkOrder> orders) {
         StringBuilder sb = new StringBuilder();
-        Map<String, Long> byRule = orders.stream().flatMap(o -> o.fixes().stream())
-                .collect(Collectors.groupingBy(r -> r, TreeMap::new, Collectors.counting()));
-        byRule.forEach((k, v) -> sb.append(String.format("%-26s %4d%n", k, v)));
+        Map<String, List<WorkOrder>> byRule = new TreeMap<>();
+        orders.forEach(o -> o.fixes().forEach(f -> byRule.computeIfAbsent(f, k -> new ArrayList<>()).add(o)));
+        int w = Math.max(26, byRule.keySet().stream().mapToInt(String::length).max().orElse(0) + 2);
+        for (var e : byRule.entrySet()) {
+            List<WorkOrder> os = e.getValue();
+            String worst = os.stream().map(WorkOrder::severity).max(Comparator.comparingInt(Rules::rank)).orElse("low");
+            long auto = os.stream().filter(WorkOrder::mechanical).count();
+            long text = os.stream().filter(o -> !o.slots().isEmpty()).count();
+            long report = os.stream().filter(WorkOrder::reportOnly).count();
+            List<String> how = new ArrayList<>();
+            if (auto > 0) how.add(Ansi.green(auto + " auto"));
+            if (text > 0) how.add(Ansi.cyan(text + " text"));
+            if (report > 0) how.add(Ansi.magenta(report + " report"));
+            sb.append(String.format("%-" + w + "s %4d", e.getKey(), os.size())).append("  ")
+                    .append(Ansi.severity(worst)).append(" ".repeat(Math.max(0, 6 - worst.length()))).append("  ").append(String.join(Ansi.dim(" · "), how)).append('\n');
+        }
         Map<String, Long> bySev = orders.stream().collect(Collectors.groupingBy(WorkOrder::severity, Collectors.counting()));
         sb.append("high=").append(bySev.getOrDefault("high", 0L)).append(" medium=").append(bySev.getOrDefault("medium", 0L))
                 .append(" low=").append(bySev.getOrDefault("low", 0L)).append('\n');

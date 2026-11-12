@@ -12,6 +12,10 @@ final class FillsTemplate {
     }
 
     static Map<String, Object> of(List<WorkOrder> orders) {
+        return dev.logast.apply.FillsFile.template(orders);
+    }
+
+    private static Map<String, Object> unused(List<WorkOrder> orders) {
         Map<String, Object> out = new LinkedHashMap<>();
         for (WorkOrder o : orders) {
             if (o.slots().isEmpty()) {
