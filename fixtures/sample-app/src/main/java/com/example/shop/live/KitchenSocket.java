@@ -11,7 +11,7 @@ public class KitchenSocket extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(KitchenSocket.class);
 
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) { // expect: ENTRYPOINT_NOT_OBSERVED
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) { // expect: ENTRYPOINT_NOT_OBSERVED, JOB_OUTCOME_MISSING
         log.info("Kitchen message received");
     }
 }

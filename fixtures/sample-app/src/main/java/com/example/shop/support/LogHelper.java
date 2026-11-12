@@ -9,7 +9,11 @@ public final class LogHelper {
     private LogHelper() {
     }
 
-    public static void logCollection(Logger log, String message, Collection<?> items) { // expect: LOG_HELPER
-        log.info("{}: {} items", message, items.size()); // expect: LOG_FORMAT
+    public static void logCollection(Logger log, String label, Collection<?> collection) { // expect: LOG_HELPER
+        if (log.isTraceEnabled()) {
+            log.trace("{} [elements={}]", label, collection);
+        } else {
+            log.debug("{} [count={}]", label, collection.size());
+        }
     }
 }

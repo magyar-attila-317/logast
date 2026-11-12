@@ -19,7 +19,7 @@ public class CacheWarmup {
     }
 
     @EventListener
-    public void onReady(ApplicationReadyEvent event) { // expect: ENTRYPOINT_NOT_OBSERVED
+    public void onReady(ApplicationReadyEvent event) { // expect: ENTRYPOINT_NOT_OBSERVED, JOB_OUTCOME_MISSING
         log.info("Price list refresh started");
     }
 
