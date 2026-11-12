@@ -6,7 +6,7 @@ import dev.logast.ServiceSetup;
 import dev.logast.Traffic;
 import dev.logast.VocabularyHarvest;
 import dev.logast.orders.Baseline;
-import dev.logast.orders.CompactFormat;
+import dev.logast.orders.Ansi;
 import dev.logast.orders.ScanResult;
 import dev.logast.policy.Policy;
 import picocli.CommandLine.Command;
@@ -48,14 +48,17 @@ final class Init implements Callable<Integer> {
     public Integer call() throws Exception {
         Path r = root.toAbsolutePath().normalize();
         if (!ServiceSetup.isGradleProject(r)) {
-            System.err.println("logast init: " + r + " has no build.gradle(.kts) / settings.gradle(.kts); "
+            Out.warn("logast init: " + r + " has no build.gradle(.kts) / settings.gradle(.kts); "
                     + (Files.exists(r.resolve("pom.xml")) ? "Maven projects are not supported yet." : "run it in a service root."));
             return 2;
         }
+        Out.title("logast init  " + Ansi.dim(r.toString()));
+        System.out.println(Ansi.dim("Sets up this service once. Re-running keeps what you already edited."));
+        System.out.println();
 
         Path policyFile = r.resolve("logast.yaml");
         if (Files.exists(policyFile) && !force) {
-            System.out.println("policy:    logast.yaml exists, kept (--force to regenerate)");
+            Out.kept("logast.yaml", "already there, kept (--force writes a fresh one)");
         } else {
             // first without vocabulary, so the harvest can leave out what the extended company layers already define
             String style = keyStyle == null ? null : dev.logast.policy.KeyStyle.parse(keyStyle).toString();
@@ -63,26 +66,40 @@ final class Init implements Callable<Integer> {
             Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, null));
             VocabularyHarvest.Result h = VocabularyHarvest.run(r, Logast.policy(r, null), 3);
             Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, VocabularyHarvest.yaml(h)));
-            System.out.println("policy:    wrote logast.yaml with " + h.terms().size() + " vocabulary terms harvested from the code"
-                    + (h.terms().isEmpty() ? "" : " (review: rename, merge duplicates, drop non-business terms)"));
+            Out.step("logast.yaml", "your settings: which checks run, key style, and " + h.terms().size()
+                    + " business terms found in the code (review them)");
         }
 
         List<String> added = ServiceSetup.updateGitignore(r);
-        System.out.println("gitignore: " + (added.isEmpty() ? "already set up" : "added " + String.join(" ", added)));
+        if (added.isEmpty()) {
+            Out.kept(".gitignore", "already ignores .logast/ (except the shared files)");
+        } else {
+            Out.step(".gitignore", "ignores .logast/, but keeps baseline.json, traffic.yaml and README.md shared");
+        }
+        Path readme = r.resolve(".logast/README.md");
+        Files.createDirectories(readme.getParent());
+        Files.writeString(readme, ServiceSetup.logastReadme());
+        Out.step(".logast/README.md", "explains every file in .logast/ and which ones go into git");
 
         boolean haveClasspath = !Logast.classpath(r, null).isEmpty();
-        if (!noClasspath) {
-            Main.Classpath cp = new Main.Classpath();
-            cp.root = r;
-            int rc = cp.call();
-            haveClasspath = rc == 0;
-            if (rc != 0) {
-                System.err.println("continuing without a classpath; fix the Gradle error and run `logast classpath .`");
+        if (noClasspath) {
+            Out.skipped(".logast/classpath-*.txt", "skipped (--no-classpath); run `logast classpath .` before scanning");
+        } else {
+            long t0 = System.nanoTime();
+            Out.progress("  running Gradle to read the classpath (nothing is compiled)…");
+            Main.Classpath.Result cp = Main.Classpath.write(r);
+            haveClasspath = cp.exitCode() == 0;
+            if (haveClasspath) {
+                Out.step(".logast/classpath-*.txt", cp.entries() + " jars and class folders (" + Out.seconds(t0)
+                        + "): lets logast understand types; re-run `logast classpath .` after dependency changes");
+            } else {
+                Out.failed(".logast/classpath-*.txt", "Gradle failed (exit " + cp.exitCode() + "); fix it and run `logast classpath .`");
             }
         }
 
         if (!noTraffic || baseline) {
-            System.out.println("analysing… (parsing dominates: about 30 s for 2,000 files)");
+            long t0 = System.nanoTime();
+            Out.progress("  analysing the code (about 30 s for 2,000 files)…");
             Policy policy = Logast.policy(r, null);
             if (!packs.isEmpty()) {
                 policy = policy.withPacks(packs);
@@ -92,32 +109,31 @@ final class Init implements Callable<Integer> {
             if (baseline) {
                 ScanResult res = Logast.scan(r, cp, policy, null);
                 a = Logast.lastAnalysis;
-                Path file = r.resolve(".logast/baseline.json");
-                Baseline.of(res).write(file);
-                System.out.println("baseline:  " + res.orders().size() + " findings recorded in .logast/baseline.json");
-                System.out.print(CompactFormat.summary(res.orders()).indent(11));
+                Baseline.of(res).write(r.resolve(".logast/baseline.json"));
+                Out.step(".logast/baseline.json", res.orders().size() + " findings recorded (" + Out.seconds(t0)
+                        + "): CI fails only on findings that are not in it");
             } else {
                 a = Logast.analyse(r, cp, policy);
             }
             if (!noTraffic) {
                 Path file = r.resolve(".logast/traffic.yaml");
                 Traffic existing = Files.exists(file) ? Traffic.load(r, file) : Traffic.none();
-                Files.createDirectories(file.getParent());
                 Files.writeString(file, Traffic.template(a.entrypoints, existing));
-                System.out.println("traffic:   " + a.entrypoints.size() + " entrypoints listed in .logast/traffic.yaml (fill in calls/day)");
+                Out.step(".logast/traffic.yaml", a.entrypoints.size() + " entrypoints; optional: add calls/day so logast can judge log volume");
             }
         }
-
-        System.out.println();
-        System.out.println("next:");
-        if (!haveClasspath) {
-            System.out.println("  logast classpath .                 # needed for type resolution");
-        }
-        System.out.println("  $EDITOR logast.yaml                # reorganise the harvested vocabulary; `logast policy .` shows the merge");
-        System.out.println("  logast scan . --format summary     # what logast would change");
         if (!baseline) {
-            System.out.println("  logast scan . --update-baseline    # for CI: only new findings fail the build");
+            Out.skipped(".logast/baseline.json", "not recorded (add --baseline, or later `logast scan . --update-baseline`)");
         }
+
+        List<String[]> next = new ArrayList<>();
+        if (!haveClasspath) {
+            next.add(new String[]{"logast classpath .", "lets logast understand types (needs a working Gradle build)"});
+        }
+        next.add(new String[]{"open logast.yaml", "rename/merge the business terms; the comments explain every setting"});
+        next.add(new String[]{"logast scan . --format summary", "what logast would change, per rule"});
+        next.add(new String[]{"logast apply . --auto", "preview the automatic fixes (add --write to change files)"});
+        Out.next(next);
         return 0;
     }
 }

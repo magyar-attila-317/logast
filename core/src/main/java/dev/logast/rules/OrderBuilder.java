@@ -20,7 +20,7 @@ public final class OrderBuilder {
             Map.entry(Rules.SETUP_SUPPORT_STARTER, "SUP"), Map.entry(Rules.SETUP_LOGBACK_XML, "LBK"),
             Map.entry(Rules.SETUP_STRUCTURED_LOGGING, "SLG"), Map.entry(Rules.MESSAGE_PHRASING, "PHR"),
             Map.entry(Rules.MDC_KEY_ALIAS, "MKA"), Map.entry(Rules.LOG_KEY_STYLE, "LKS"), Map.entry(Rules.REPEATED_LOG_VALUE, "RLV"),
-            Map.entry(Rules.MDC_CLEAR, "MCL"), Map.entry(Rules.MDC_NESTED_KEY, "MNK"), Map.entry(Rules.LOG_OBJECT_ARGUMENT, "LOA"),
+            Map.entry(Rules.MDC_CLEAR, "MCL"), Map.entry(Rules.MDC_NOT_OWNER, "MNO"), Map.entry(Rules.MDC_NESTED_KEY, "MNK"), Map.entry(Rules.LOG_OBJECT_ARGUMENT, "LOA"),
             Map.entry(Rules.LOG_COLLECTION_ARGUMENT, "LCA"), Map.entry(Rules.LOG_HELPER, "LHL"), Map.entry(Rules.MESSAGE_VAGUE, "MVG"),
             Map.entry(Rules.LOG_KEY_VALUE_IN_MDC, "KVM"),
             Map.entry(Rules.AREA_MDC_MISSING, "AMM"), Map.entry(Rules.LOG_LEVEL, "LVL"),

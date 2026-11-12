@@ -58,6 +58,10 @@ public final class Text {
         return min == Integer.MAX_VALUE || min > 8 ? "    " : " ".repeat(min);
     }
 
+    public static String lowerFirst(String s) {
+        return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
+    }
+
     /** Removes one {@code unit} of indentation from every line that has it. */
     public static String dedent(String block, String unit) {
         StringBuilder sb = new StringBuilder();

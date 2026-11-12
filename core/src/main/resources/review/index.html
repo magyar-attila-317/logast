@@ -38,7 +38,7 @@ async function load() {
       <div>${esc(o.title)}</div>${o.path ? `<div class="muted">${esc(o.path)}</div>` : ''}
       <pre>${esc(o.preview.join('\n'))}</pre>
       ${Object.entries(o.slots).map(([n, s]) => `<label>${n} <span class="muted" style="font-weight:400">${esc(s.describe)}${s.original ? ' · was: “' + esc(s.original) + '”' : ''}${s.pattern ? ' · must read as “' + esc(s.pattern) + '”' : ''}${s.keys.length ? ' · suffix: ' + esc(s.keys.join(', ')) : ''}</span></label>
-        <input type="text" data-slot="${n}" placeholder="${s.pattern ? esc(s.pattern.replace('{subject}', 'Order sync')) : ''}">`).join('')}
+        <input type="text" data-slot="${n}" value="${esc((o.text || {})[n] || '')}" placeholder="${s.pattern ? esc(s.pattern.replace('{subject}', 'Order sync')) : ''}">`).join('')}
       ${o.vars.length ? `<label class="muted" style="font-weight:400">extra values for the suffix (optional, comma separated): ${esc(o.vars.join(', '))}</label><input type="text" data-args>` : ''}
       <div class="err" data-err></div></div>`).join('') || '<p>No orders need text.</p>';
   document.getElementById('rest').innerHTML = rest.map(o => `<div class="card"><div class="top"><span class="id">${o.id}</span><span class="sev ${o.severity}">${o.severity}</span><b>${esc(o.kind)}</b><span class="muted">${esc(o.where)}</span></div><div>${esc(o.title)}</div>${o.suggestion ? `<div class="muted">${esc(o.suggestion)}</div>` : ''}</div>`).join('');

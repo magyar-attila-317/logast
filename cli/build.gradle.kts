@@ -29,3 +29,20 @@ application {
     applicationName = "logast"
     applicationDefaultJvmArgs = listOf("-XX:MaxRAMPercentage=50")
 }
+
+// Java 24+ warns on every run that OpenRewrite's Lombok support uses sun.misc.Unsafe. The flag that silences it does
+// not exist on Java 21 (the JVM would refuse to start), so the Unix start script adds it only on 24 and later.
+tasks.startScripts {
+    doLast {
+        val script = unixScript
+        script.writeText(script.readText().replace(
+            "# Collect all arguments for the java command:\n",
+            """
+            |case "${'$'}("${'$'}JAVACMD" -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -n 1)" in
+            |    2[4-9]|[3-9][0-9]) DEFAULT_JVM_OPTS="${'$'}DEFAULT_JVM_OPTS --sun-misc-unsafe-memory-access=allow" ;;
+            |esac
+            |
+            |# Collect all arguments for the java command:
+            |""".trimMargin()))
+    }
+}

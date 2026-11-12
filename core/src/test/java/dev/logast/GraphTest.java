@@ -47,6 +47,7 @@ class GraphTest {
                 "GET /reports/daily",
                 "POST /admin/customers/{customerId}/reset",
                 "POST /orders",
+                "batch TpiJob.run",
                 "websocket KitchenSocket.handleTextMessage");
         // custom @InboxHandler, the Kafka listener (observation-enabled not set yet) and listeners on Spring's own
         // startup events start work unobserved; a listener on an application event runs in the publisher's trace
@@ -54,7 +55,7 @@ class GraphTest {
                 .containsExactly("@EventListener CacheWarmup.onReady(ApplicationReadyEvent)",
                         "@EventListener CacheWarmup.warmUp(ApplicationReadyEvent)",
                         "@InboxHandler InboxProcessor.handle", "@KafkaListener shipment-acks",
-                        "@MessageMapping /orders/ack", "websocket KitchenSocket.handleTextMessage");
+                        "@MessageMapping /orders/ack", "batch TpiJob.run", "websocket KitchenSocket.handleTextMessage");
     }
 
     @Test

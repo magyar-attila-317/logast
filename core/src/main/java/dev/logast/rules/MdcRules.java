@@ -10,6 +10,7 @@ import dev.logast.parse.SourceFileInfo;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.Statement;
+import org.openrewrite.java.tree.TypeUtils;
 
 import java.util.*;
 
@@ -23,6 +24,8 @@ final class MdcRules {
     private final Set<String> ambient;
     /** try statements already turned into one order (all their puts are handled together). */
     private final Set<J.Try> handledTries = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** MDC.clear() calls a conversion order already removes. */
+    private final Set<J.MethodInvocation> handledClears = Collections.newSetFromMap(new IdentityHashMap<>());
 
     MdcRules(RuleContext ctx) {
         this.ctx = ctx;
@@ -39,6 +42,82 @@ final class MdcRules {
         }
     }
 
+    private static final Set<String> INIT_ANNOTATIONS = Set.of("jakarta.annotation.PostConstruct", "javax.annotation.PostConstruct",
+            "org.springframework.context.annotation.Bean");
+    private static final List<String> BOUNDARY_TYPES = List.of("jakarta.servlet.Filter", "javax.servlet.Filter",
+            "org.springframework.web.servlet.HandlerInterceptor", "org.springframework.core.task.TaskDecorator",
+            "org.springframework.messaging.support.ChannelInterceptor", "org.springframework.web.server.WebFilter",
+            "java.util.concurrent.ThreadFactory");
+
+    /**
+     * MDC_NOT_OWNER: MDC belongs to the flow, set where it starts (the entrypoint), not by the beans it uses.
+     * <ul>
+     *   <li>a bean writing MDC while it is created (constructor, @PostConstruct, afterPropertiesSet, @Bean): the value
+     *       sticks to the startup thread. Deleted when an entrypoint already scopes the same key, else reported;</li>
+     *   <li>a plain method (not an entrypoint, not a filter/interceptor/decorator) that puts a key its entrypoint owns:
+     *       reported (two owners of one key).</li>
+     * </ul>
+     */
+    private void notOwner(MethodInfo m, List<int[]> claimed) {
+        if (!ctx.enabled(Rules.MDC_NOT_OWNER) || BOUNDARY_TYPES.stream().anyMatch(t -> TypeUtils.isAssignableTo(t, m.owner().type()))
+                || m.owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
+            return;
+        }
+        boolean init = m.decl().isConstructor() || m.name().equals("afterPropertiesSet") || INIT_ANNOTATIONS.stream().anyMatch(m::hasAnnotation);
+        boolean entrypoint = ctx.a.entrypoints.stream().anyMatch(ep -> ep.method().key().equals(m.key()));
+        if (entrypoint) {
+            return;
+        }
+        for (MdcOp op : m.facts().mdc) {
+            boolean write = op.kind() == MdcOp.Kind.PUT || init && op.kind() == MdcOp.Kind.PUT_CLOSEABLE;
+            if (!write || op.key() == null || ambient.contains(op.key())) {
+                continue;
+            }
+            List<String> owners = ownersOf(op.key());
+            boolean reached = ctx.a.paths.entrypointsReaching(m).stream().anyMatch(ep -> owners.contains(ep.method().label()));
+            if (!init && !reached) {
+                continue;   // a helper setting context nobody else owns: MDC_NOT_CLOSEABLE handles the scoping
+            }
+            int line = Pos.line(op.call());
+            if (ctx.ignored(m.file(), line, Rules.MDC_NOT_OWNER)) {
+                continue;
+            }
+            OrderBuilder b = ctx.order(Rules.MDC_NOT_OWNER, m, line, "owner|" + op.key())
+                    .title((init ? m.owner().simpleName() + " puts '" + op.key() + "' into MDC while the bean is being created: the value "
+                            + "sticks to the startup thread and leaks into whatever runs there next"
+                            : m.label() + " puts '" + op.key() + "' into MDC, but " + String.join(", ", owners) + " already owns it")
+                            + ". MDC belongs to the flow that uses the value, set where it starts.")
+                    .context(ctx.context(m, Pos.start(op.call()), Text.oneLine(op.call().printTrimmed(), 160), null));
+            if (init && !owners.isEmpty() && op.block() != null && op.kind() == MdcOp.Kind.PUT) {
+                int[] lines = JavaEdits.statementLines(m.file().text(), op.call());
+                b.edit(Edit.replace(m.file().relPath(), lines[0], lines[1], ""))
+                        .suggestion("Removed: " + String.join(", ", owners) + " scopes '" + op.key() + "' for its run.");
+                claimed.add(lines);
+                String rest = m.file().text().substring(0, lines[0]) + m.file().text().substring(lines[1]);
+                if (!rest.contains("MDC.")) {
+                    b.edit(removeImport(m.file(), "org.slf4j.MDC"));
+                }
+            } else {
+                b.suggestion("Expose the value (a getter) and scope it where the flow starts: try (var mdc = MdcScope.of(\""
+                        + op.key() + "\", " + Text.lowerFirst(m.owner().simpleName()) + ".…())) { … }"
+                        + (owners.isEmpty() ? "" : " — " + String.join(", ", owners) + " already does; then delete this put."));
+                claimed.add(new int[]{Pos.start(op.call()), Pos.end(op.call())});
+            }
+        }
+    }
+
+    /** Entrypoints that write the key themselves (put, putCloseable, MdcScope). */
+    private List<String> ownersOf(String key) {
+        List<String> out = new ArrayList<>();
+        for (Entrypoint ep : ctx.a.entrypoints) {
+            if (ep.method().facts().mdc.stream().anyMatch(o -> key.equals(o.key())
+                    && (o.kind() == MdcOp.Kind.PUT || o.kind() == MdcOp.Kind.PUT_CLOSEABLE))) {
+                out.add(ep.method().label());
+            }
+        }
+        return out;
+    }
+
     /**
      * MDC_CLEAR: {@code MDC.clear()} not already part of a converted put/clear block. It removes every key on the thread,
      * the caller's included (trace ids, request context), in the middle of a flow.
@@ -52,7 +131,7 @@ final class MdcRules {
                 continue;
             }
             J.Try owner = op.block() == null ? null : tryWithFinally(m, op.block());
-            if (owner != null && handledTries.contains(owner)) {
+            if (owner != null && handledTries.contains(owner) || handledClears.contains(op.call())) {
                 continue;   // the MDC_NOT_CLOSEABLE order already replaces it
             }
             int line = Pos.line(op.call());
@@ -119,6 +198,7 @@ final class MdcRules {
                 .toList();
         Set<MdcOp> coveredAmbient = Collections.newSetFromMap(new IdentityHashMap<>());
         List<int[]> claimed = new ArrayList<>();
+        notOwner(m, claimed);
 
         if (ctx.enabled(Rules.MDC_NOT_CLOSEABLE)) {
             int ordinal = 0;
@@ -200,38 +280,68 @@ final class MdcRules {
             return null;
         }
 
+        // consecutive puts belong together: MDC.put(a); MDC.put(b); → one MdcScope.of(a, .., b, ..)
+        Map<J.MethodInvocation, String> keyOf = new IdentityHashMap<>();
+        m.facts().mdc.forEach(o -> {
+            if (o.key() != null) {
+                keyOf.put(o.call(), o.key());
+            }
+        });
+        List<J.MethodInvocation> group = new ArrayList<>(List.of(op.call()));
+        while (i + group.size() < stmts.size() && stmts.get(i + group.size()) instanceof J.MethodInvocation next
+                && isMdc(next, "put", null) && keyOf.containsKey(next) && !ambient.contains(keyOf.get(next))) {
+            group.add(next);
+        }
+        Set<String> keys = new LinkedHashSet<>();
+        group.forEach(g -> keys.add(keyOf.get(g)));
+        int after = i + group.size();
+
         String mode = "leak";
         int j = -1;
-        for (int k = i + 1; k < stmts.size(); k++) {
+        for (int k = after; k < stmts.size(); k++) {
             Statement s = stmts.get(k);
-            if (isMdc(s, "remove", op.key())) {
+            if (isMdc(s, "clear", null)) {
+                mode = "clear";
+                j = k;
+                break;
+            }
+            if (keys.stream().anyMatch(key -> isMdc(s, "remove", key))) {
                 mode = "remove";
                 j = k;
                 break;
             }
-            if (s instanceof J.Try t && t.getFinally() != null
-                    && t.getFinally().getStatements().stream().anyMatch(fs -> isMdc(fs, "remove", op.key()))) {
+            if (s instanceof J.Try t && t.getFinally() != null && t.getFinally().getStatements().stream()
+                    .anyMatch(fs -> isMdc(fs, "clear", null) || keys.stream().anyMatch(key -> isMdc(fs, "remove", key)))) {
                 mode = "try";
                 j = k;
                 break;
             }
         }
-        if (mode.equals("leak") && i == stmts.size() - 1) {
-            b.severity("high").title("MDC.put(\"" + op.key() + "\") leaks: never removed")
+        String what = keys.size() == 1 ? "MDC.put(\"" + op.key() + "\")" : "MDC.put of " + keys;
+        if (mode.equals("leak") && after == stmts.size()) {
+            b.severity("high").title(what + " leaks: never removed")
                     .suggestion("The key outlives this method on a pooled thread. Scope it with MdcScope around the work it describes.");
             return null;
         }
-        b.title(mode.equals("leak") ? "MDC.put(\"" + op.key() + "\") leaks into later work on this thread (never removed)"
-                : "MDC.put/remove pair for \"" + op.key() + "\": use a try-with-resources MdcScope (restores previous value)");
-        if (mode.equals("leak")) {
+        b.title(switch (mode) {
+            case "leak" -> what + " leaks into later work on this thread (never removed)";
+            case "clear" -> what + " then MDC.clear(): clear() also wipes the caller's keys; one MdcScope restores exactly what it set";
+            default -> what + " with manual cleanup: use one try-with-resources MdcScope (restores previous values)";
+        });
+        if (mode.equals("leak") || mode.equals("clear")) {
             b.severity("high");
+        }
+        if (mode.equals("clear") || mode.equals("try") && ((J.Try) stmts.get(j)).getFinally().getStatements().stream().anyMatch(fs -> isMdc(fs, "clear", null))) {
+            b.fix(Rules.MDC_CLEAR);
+            handledClears.add(mode.equals("clear") ? (J.MethodInvocation) stmts.get(j)
+                    : (J.MethodInvocation) ((J.Try) stmts.get(j)).getFinally().getStatements().stream().filter(fs -> isMdc(fs, "clear", null)).findFirst().orElseThrow());
         }
 
         int regionEnd = mode.equals("leak") ? stmts.size() : j;
         List<int[]> cuts = new ArrayList<>();
         for (MdcOp a : ambientOps) {
             int s = Pos.start(a.call());
-            if (s > Pos.start(op.call()) && within(stmts, i + 1, regionEnd, a.call(), mode.equals("try") ? stmts.get(j) : null)) {
+            if (s > Pos.start(op.call()) && within(stmts, after, regionEnd, a.call(), mode.equals("try") ? stmts.get(j) : null)) {
                 cuts.add(JavaEdits.statementLines(text, a.call()));
                 coveredAmbient.add(a);
                 if (a.kind() == MdcOp.Kind.PUT) {
@@ -242,21 +352,30 @@ final class MdcRules {
 
         String unit = Text.indentUnit(text);
         String indent = Text.indentAt(text, Pos.start(op.call()));
-        int from = pLines[1];
+        int from = JavaEdits.statementLines(text, group.getLast())[1];
         String region;
         int replaceEnd;
         switch (mode) {
-            case "remove" -> {
+            case "remove", "clear" -> {
                 int[] rl = JavaEdits.statementLines(text, stmts.get(j));
-                region = Text.reindent(JavaEdits.cut(text, from, rl[0], cuts), unit);
                 replaceEnd = rl[1];
+                // further removes of the group's keys right after the first one go too
+                for (int k = j + 1; k < stmts.size(); k++) {
+                    Statement more = stmts.get(k);
+                    if (keys.stream().noneMatch(key -> isMdc(more, "remove", key))) {
+                        break;
+                    }
+                    replaceEnd = JavaEdits.statementLines(text, more)[1];
+                }
+                region = Text.reindent(JavaEdits.cut(text, from, rl[0], cuts), unit);
             }
             case "try" -> {
                 J.Try t = (J.Try) stmts.get(j);
-                cuts.addAll(t.getFinally().getStatements().stream().filter(fs -> isMdc(fs, "remove", op.key()))
+                cuts.addAll(t.getFinally().getStatements().stream()
+                        .filter(fs -> isMdc(fs, "clear", null) || keys.stream().anyMatch(key -> isMdc(fs, "remove", key)))
                         .map(fs -> JavaEdits.statementLines(text, fs)).toList());
                 boolean finallyEmpties = t.getFinally().getStatements().stream()
-                        .allMatch(fs -> isMdc(fs, "remove", op.key()) || cuts.stream().anyMatch(c -> c[0] <= Pos.start(fs) && Pos.start(fs) < c[1]));
+                        .allMatch(fs -> cuts.stream().anyMatch(c -> c[0] <= Pos.start(fs) && Pos.start(fs) < c[1]));
                 int tStart = Text.lineStart(text, Pos.start(t));
                 replaceEnd = Text.nextLine(text, Pos.end(t) - 1);
                 int[] bodyInner = JavaEdits.blockInner(text, t.getBody());
@@ -276,21 +395,33 @@ final class MdcRules {
         if (!region.endsWith("\n")) {
             region += "\n";
         }
-        List<Expression> args = op.call().getArguments();
-        String var = EntrypointRules.unique("mdc", ctx.vars(m, Pos.start(op.call())).keySet());
-        String canonical = ctx.policy.canonicalMdcKey(op.key());
-        if (canonical != null) {
-            b.fix(Rules.MDC_KEY_ALIAS);
+        List<String> pairs = new ArrayList<>();
+        for (J.MethodInvocation put : group) {
+            String key = keyOf.get(put);
+            boolean literal = put.getArguments().getFirst() instanceof J.Literal;
+            String canonical = literal ? ctx.policy.canonicalMdcKey(key) : null;
+            if (canonical != null) {
+                b.fix(Rules.MDC_KEY_ALIAS);
+            }
+            String effective = canonical != null ? canonical : key;
+            if (sameValueAlreadyInMdc(m, effective, put.getArguments().get(1))) {
+                b.fix(Rules.MDC_NESTED_KEY);
+                continue;
+            }
+            pairs.add((canonical != null ? "\"" + canonical + "\"" : src(f, put.getArguments().getFirst())) + ", "
+                    + src(f, put.getArguments().get(1)));
         }
-        String keySrc = canonical != null ? "\"" + canonical + "\"" : src(f, args.get(0));
-        String replacement = indent + "try (var " + var + " = MdcScope.of(" + keySrc + ", " + src(f, args.get(1)) + ")) {\n"
-                + region + indent + "}\n";
+        String var = EntrypointRules.unique("mdc", ctx.vars(m, Pos.start(op.call())).keySet());
+        String replacement = pairs.isEmpty() ? Text.dedent(region, unit)
+                : indent + "try (var " + var + " = MdcScope.of(" + String.join(", ", pairs) + ")) {\n" + region + indent + "}\n";
         b.edit(Edit.replace(f.relPath(), pLines[0], replaceEnd, replacement));
-        b.edits(JavaEdits.imports(f, ctx.support("MdcScope")));
+        if (!pairs.isEmpty()) {
+            b.edits(JavaEdits.imports(f, ctx.support("MdcScope")));
+            ctx.dependOnStarter(b);
+        }
         if (!text.substring(0, pLines[0]).concat(text.substring(replaceEnd)).contains("MDC.")) {
             b.edit(removeImport(f, "org.slf4j.MDC"));
         }
-        ctx.dependOnStarter(b);
         return new int[]{pLines[0], replaceEnd};
     }
 
