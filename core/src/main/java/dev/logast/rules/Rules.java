@@ -51,6 +51,12 @@ public final class Rules {
     public static final String METRIC_NAMING = "METRIC_NAMING";
     public static final String METRIC_HIGH_CARDINALITY_TAG = "METRIC_HIGH_CARDINALITY_TAG";
     public static final String METRIC_DIRECT_REGISTRY = "METRIC_DIRECT_REGISTRY";
+    public static final String METRIC_TAG_KEY = "METRIC_TAG_KEY";
+    public static final String METRIC_TAG_VALUE = "METRIC_TAG_VALUE";
+    public static final String METRIC_REGISTERED_PER_CALL = "METRIC_REGISTERED_PER_CALL";
+    public static final String METRIC_GAUGE_WEAK_REF = "METRIC_GAUGE_WEAK_REF";
+    public static final String BUSINESS_EVENT_UNMEASURED = "BUSINESS_EVENT_UNMEASURED";
+    public static final String METRIC_TAG_KEYS_MISMATCH = "METRIC_TAG_KEYS_MISMATCH";
 
     /** Rule → packs it belongs to. A rule runs when any of its packs is selected (policy.packs / --pack). */
     private static final Map<String, Set<String>> PACKS = new HashMap<>();
@@ -69,7 +75,8 @@ public final class Rules {
         // context propagation matters to MDC (logging) and spans (tracing); the starter serves every pack
         PACKS.put(ASYNC_CONTEXT_LOSS, Set.of("logging", "tracing"));
         PACKS.put(SCHEDULED_TASK_UNTRACED, Set.of("logging", "tracing"));
-        for (String r : List.of(METRIC_NAMING, METRIC_HIGH_CARDINALITY_TAG, METRIC_DIRECT_REGISTRY)) {
+        for (String r : List.of(METRIC_NAMING, METRIC_HIGH_CARDINALITY_TAG, METRIC_DIRECT_REGISTRY, METRIC_TAG_KEY,
+                METRIC_TAG_VALUE, METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, BUSINESS_EVENT_UNMEASURED, METRIC_TAG_KEYS_MISMATCH)) {
             PACKS.put(r, Set.of("metrics"));
         }
         PACKS.put(SETUP_SUPPORT_STARTER, Set.of("logging", "tracing", "metrics"));
@@ -95,7 +102,10 @@ public final class Rules {
             Map.entry(STRING_CONCAT_LOG, "low"), Map.entry(LOG_FORMAT, "low"), Map.entry(GLOSSARY_VIOLATION, "low"),
             Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_STYLE, "low"), Map.entry(REPEATED_LOG_VALUE, "medium"),
             Map.entry(AREA_MDC_MISSING, "medium"), Map.entry(LOG_LEVEL, "medium"), Map.entry(EXCEPTION_LOGGED_TWICE, "medium"),
-            Map.entry(HTTP_CLIENT_UNTRACED, "high"), Map.entry(TRACING_SAMPLING, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
+            Map.entry(HTTP_CLIENT_UNTRACED, "high"), Map.entry(TRACING_SAMPLING, "medium"),
+            Map.entry(METRIC_TAG_KEY, "low"), Map.entry(METRIC_TAG_VALUE, "low"), Map.entry(METRIC_REGISTERED_PER_CALL, "low"),
+            Map.entry(METRIC_GAUGE_WEAK_REF, "high"), Map.entry(BUSINESS_EVENT_UNMEASURED, "medium"),
+            Map.entry(METRIC_TAG_KEYS_MISMATCH, "high"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
             Map.entry(LOG_IN_LOOP, "low"), Map.entry(LOG_VOLUME, "medium"),
             Map.entry(METRIC_NAMING, "low"), Map.entry(METRIC_HIGH_CARDINALITY_TAG, "high"), Map.entry(METRIC_DIRECT_REGISTRY, "low"));
@@ -137,6 +147,8 @@ public final class Rules {
         new AsyncRules(ctx).run();
         new AreaRules(ctx).run();
         new MetricRules(ctx).run();
+        new EventMetricRules(ctx).run();
+        MetricRules.tagKeyMismatch(ctx);
         new VolumeRules(ctx).run();
 
         Set<String> ids = new HashSet<>();

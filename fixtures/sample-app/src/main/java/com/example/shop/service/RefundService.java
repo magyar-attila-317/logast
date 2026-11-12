@@ -11,13 +11,13 @@ public class RefundService {
     private static final Logger log = LoggerFactory.getLogger(RefundService.class);
 
     public void refund(String orderId, long amountCents) {
-        log.info("Refund started [order.id={}]", orderId); // expect: REPEATED_LOG_VALUE, LOG_FORMAT
+        log.info("Refund started [order.id={}]", orderId); // expect: REPEATED_LOG_VALUE, LOG_FORMAT, BUSINESS_EVENT_UNMEASURED
         check(amountCents);
         log.info("Refund completed [order.id={}, amount.cents={}]", orderId, amountCents); // expect: LOG_FORMAT
     }
 
     public void reverse(Order order) {
-        log.info("Reversal started [order.id={}]", order.id()); // expect: REPEATED_LOG_VALUE, LOG_FORMAT
+        log.info("Reversal started [order.id={}]", order.id()); // expect: REPEATED_LOG_VALUE, LOG_FORMAT, BUSINESS_EVENT_UNMEASURED
         log.info("Reversal completed [order.id={}]", order.id()); // expect: LOG_FORMAT
     }
 
@@ -39,7 +39,7 @@ public class RefundService {
             log.warn("Audit skipped");
             return;
         }
-        log.info("Audit started [order.id={}]", order.id());
+        log.info("Audit started [order.id={}]", order.id()); // expect: BUSINESS_EVENT_UNMEASURED
         log.info("Audit completed [order.id={}]", order.id());
     }
 

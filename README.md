@@ -317,7 +317,36 @@ logast scan . --since origin/main --format sarif > logast.sarif  # changed lines
 
 A complete GitHub Actions job is in [`examples/github-actions.yml`](examples/github-actions.yml).
 
-### 8. Across all services
+### 8. Metrics (opt-in pack)
+
+Turn it on with `packs: [logging, tracing, metrics]`. A business event that is logged but not measured gets an
+Observation, which gives a timer (count, duration, errors) and a span in one:
+```java
+public void refund(String orderId, long amountCents) {
+    ObservedContext observed = ObservedContext.entrypoint("refund").start();
+    try (observed) {
+        log.info("Refund started");
+        …
+        log.info("Refund completed");
+    } catch (Throwable t) { observed.error(t); throw t; } finally { observed.stop(); }
+}
+```
+A business event is a method logging "X started" / "X completed" (the phrasing rules), where X names a vocabulary
+term or the method logs the full lifecycle. HTTP endpoints, `@Scheduled` methods and observed Kafka listeners are
+already timed by Spring and left alone.
+
+Tags get a vocabulary like MDC keys (aliases are renamed, `values` optionally restricts literal values):
+```yaml
+metrics:
+  tags:
+    outcome: { aliases: [result, success, succeeded], values: [success, failure] }
+```
+It also catches what silently breaks metrics: one meter name registered with different tag keys (Prometheus drops the
+later ones), gauges on objects nothing else references (they read NaN after GC), meters built per loop item, ids or
+PII as tags. `logast metrics .` lists every meter, and the fleet report compares them across services: same name with
+different types/tags, and similar names (`orders.placed` vs `order_placed`).
+
+### 9. Across all services
 
 ```bash
 logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, with trend against the last run
@@ -330,6 +359,7 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 | command | what it does |
 |---|---|
 | `logast init [svc]` | one-time setup: policy, .gitignore, classpath, traffic template (`--baseline` for CI) |
+| `logast metrics [svc]` | every meter the service publishes: name, type, tag keys, where (`--format json`) |
 | `logast vocabulary [svc]` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
 | `logast scan <svc>` | finds gaps, writes `.logast/orders.json`, prints the work orders |
@@ -351,7 +381,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · LOG_KEY_STYLE · PII_IN_LOG · REPEATED_LOG_VALUE · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
-| metrics (opt-in) | METRIC_NAMING · METRIC_HIGH_CARDINALITY_TAG · METRIC_DIRECT_REGISTRY |
+| metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
 | runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
 
 Suppress a single finding with `// logast:ignore RULE` on the line or the line above. Tune or disable rules in the

@@ -73,6 +73,24 @@ public final class Phrasing {
         return null;
     }
 
+    /** What the lifecycle message is about: "Order sync" for "Order sync completed" / "Finished order sync"; else null. */
+    public String subjectOf(String text) {
+        String body = stripTag(text)[1];
+        for (Pattern p : canonicalPattern.values()) {
+            Matcher m = p.matcher(body);
+            if (m.matches()) {
+                return m.group("subject").strip();
+            }
+        }
+        for (Variant v : variants) {
+            Matcher m = v.pattern().matcher(body);
+            if (m.matches()) {
+                return m.group("subject").strip();
+            }
+        }
+        return null;
+    }
+
     /** Canonical rewrite of a variant message; empty when it is already canonical or not a lifecycle message. */
     private static final Pattern DETAIL = Pattern.compile("(:\\s|\\s[-–—]\\s|;\\s|\\s\\()");
 

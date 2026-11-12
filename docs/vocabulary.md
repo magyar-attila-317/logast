@@ -61,6 +61,20 @@ What each part drives:
 | `logKey` | the key name in `[k=v]` (LOG_KEY_STYLE) |
 | key spelling | `logging.keyStyle`: `dotted` (default, `order.id`), `camel` (`orderId`), `pascal` (`OrderId`), `snake` (`order_id`), `keep`. Applies to `[k=v]` keys and MDC keys outside the vocabulary (MDC_KEY_ALIAS renames them), and to the keys `logast vocabulary` / `init` propose. Vocabulary `mdc.key`s are used as written. |
 
+## Metric tags
+
+`metrics.tags` is the vocabulary for metric tag keys: `aliases` are renamed to the key (METRIC_TAG_KEY), `values`
+(optional) lists the allowed literal values (METRIC_TAG_VALUE). Ids never belong in tags: a vocabulary MDC key with
+`cardinality: high` used as a tag is METRIC_HIGH_CARDINALITY_TAG.
+
+```yaml
+metrics:
+  events: true          # BUSINESS_EVENT_UNMEASURED on/off
+  tags:
+    outcome: { aliases: [result, success], values: [success, failure, rejected] }
+    channel: { aliases: [source, origin] }
+```
+
 ## Areas: when a word means something else
 
 ```yaml

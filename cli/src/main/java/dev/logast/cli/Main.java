@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
         subcommands = {Main.Scan.class, Main.Explain.class, Main.Apply.class, Main.Classpath.class, Main.RulesCmd.class,
-                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class})
+                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override
@@ -327,6 +327,25 @@ public final class Main {
             Policy p = policy();
             dev.logast.VocabularyHarvest.Result h = dev.logast.VocabularyHarvest.run(root(), all ? null : p, p.logging().style(), minDeclared);
             System.out.print(dev.logast.VocabularyHarvest.yaml(h));
+            return 0;
+        }
+    }
+
+    @Command(name = "metrics", description = "List every meter the service publishes: name, type, tag keys, where it is "
+            + "defined (code, annotations, observations, Spring's own for observed entrypoints)")
+    static class MetricsCmd extends Common implements Callable<Integer> {
+        @Option(names = "--format", defaultValue = "table", description = "table | json")
+        String format;
+
+        @Override
+        public Integer call() throws IOException {
+            Analysis a = Logast.analyse(root(), classpath(), policy());
+            List<dev.logast.metrics.MeterCatalog.Meter> meters = dev.logast.metrics.MeterCatalog.of(a);
+            if (format.equals("json")) {
+                System.out.println(OrderJson.MAPPER.writeValueAsString(meters));
+            } else {
+                System.out.print(dev.logast.metrics.MeterCatalog.table(meters));
+            }
             return 0;
         }
     }

@@ -18,7 +18,36 @@ import java.util.*;
 public record Policy(@JsonProperty("extends") List<String> parents, Glossary glossary, Mdc mdc, List<String> pii,
                      Entrypoints entrypoints, Logging logging, Support support, Map<String, RuleConfig> rules,
                      Map<String, Term> vocabulary, Map<String, Area> areas, Phrasing phrasing, Levels levels,
-                     List<String> packs, List<String> overrides, Verify verify) {
+                     List<String> packs, List<String> overrides, Verify verify, Metrics metrics) {
+
+    /**
+     * {@code metrics} pack settings.
+     *
+     * @param tags   tag vocabulary: canonical key → aliases (renamed by METRIC_TAG_KEY) and allowed values
+     * @param events business events (lifecycle log messages) without a metric get an Observation
+     *               (BUSINESS_EVENT_UNMEASURED); default true
+     */
+    public record Metrics(Map<String, MetricTag> tags, Boolean events) {
+        public Metrics {
+            tags = tags == null ? Map.of() : new LinkedHashMap<>(tags);
+            events = events == null || events;
+        }
+
+        /** Alias → canonical tag key. */
+        public Map<String, String> tagAliases() {
+            Map<String, String> out = new LinkedHashMap<>();
+            tags.forEach((key, t) -> t.aliases().forEach(a -> out.put(a, key)));
+            return out;
+        }
+    }
+
+    /** @param values allowed literal values (empty: any) */
+    public record MetricTag(List<String> aliases, List<String> values, Boolean override) {
+        public MetricTag {
+            aliases = aliases == null ? List.of() : List.copyOf(aliases);
+            values = values == null ? List.of() : List.copyOf(values);
+        }
+    }
 
     /**
      * {@code logast verify}: which Gradle tasks run the tests ({@code [check]}, {@code [test, intTest, bddTest]}) and
@@ -196,6 +225,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         support = support == null ? new Support(null, null, null, null) : support;
         rules = rules == null ? Map.of() : Map.copyOf(rules);
         verify = verify == null ? new Verify(null, null) : verify;
+        metrics = metrics == null ? new Metrics(null, null) : metrics;
     }
 
     /** Built-in defaults only (no project file). */
@@ -214,22 +244,22 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
     public Policy withPacks(List<String> selected) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, selected, overrides, verify);
+                phrasing, levels, selected, overrides, verify, metrics);
     }
 
     public Policy withLogging(Logging l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, l, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify);
+                phrasing, levels, packs, overrides, verify, metrics);
     }
 
     public Policy withLevels(Levels l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, l, packs, overrides, verify);
+                phrasing, l, packs, overrides, verify, metrics);
     }
 
     public Policy withSupport(Support s) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, s, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify);
+                phrasing, levels, packs, overrides, verify, metrics);
     }
 
     // ---- derived views (vocabulary + the older flat glossary/mdc form) -------------------------------------
