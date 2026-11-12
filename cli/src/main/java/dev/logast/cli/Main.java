@@ -217,6 +217,20 @@ public final class Main {
 
         @Override
         public Integer call() throws IOException {
+            if (!auto && fills == null) {
+                System.err.println("""
+                        logast apply: nothing selected. Choose what to apply:
+                          --auto                apply every fix that needs no message text (mechanical fixes)
+                          --fills fills.json    apply fixes that need text, with the text from this file
+                                                (skeleton: `logast scan . --format fills-template > fills.json`)
+                        and add --write to change files; without it you get a preview diff.
+                        e.g.  logast apply . --auto            # preview
+                              logast apply . --auto --write    # change files""");
+                return 2;
+            }
+            if (!write && !format.equals("json")) {
+                System.err.println("DRY RUN: previewing only, no files are changed (add --write to apply)");
+            }
             Policy policy = policy();
             List<Path> cp = classpath();
             Map<String, Fill> fillMap = fills == null ? Map.of()
@@ -229,7 +243,11 @@ public final class Main {
             if (format.equals("json")) {
                 System.out.println(OrderJson.MAPPER.writeValueAsString(r));
             } else {
-                System.out.println("applied (" + r.applied().size() + "): " + String.join(" ", r.applied()));
+                System.out.println((write ? "applied (" : "would apply (") + r.applied().size() + "): " + String.join(" ", r.applied()));
+                if (r.applied().isEmpty() && fills == null) {
+                    System.out.println("nothing to apply without text: the remaining orders need message text "
+                            + "(`logast scan .` lists them; fill them via --fills or `logast review .`)");
+                }
                 if (!r.resolvedIndirectly().isEmpty()) {
                     System.out.println("resolved by other changes: " + String.join(" ", r.resolvedIndirectly()));
                 }
