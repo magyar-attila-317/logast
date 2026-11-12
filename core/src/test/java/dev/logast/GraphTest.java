@@ -36,18 +36,22 @@ class GraphTest {
                 "@EventListener ShipmentListener.onShipped(ShipmentEvent)",
                 "@InboxHandler InboxProcessor.handle",
                 "@KafkaListener shipment-acks",
+                "@MessageMapping /orders/ack",
                 "@Scheduled ReconciliationJob.reconcile",
                 "DELETE /orders/{orderId}",
+                "GET /live",
                 "GET /orders/{orderId}",
                 "GET /orders/{orderId}/lines",
                 "GET /reports/daily",
-                "POST /orders");
+                "POST /orders",
+                "websocket KitchenSocket.handleTextMessage");
         // custom @InboxHandler, the Kafka listener (observation-enabled not set yet) and listeners on Spring's own
         // startup events start work unobserved; a listener on an application event runs in the publisher's trace
         assertThat(a.entrypoints).filteredOn(e -> !e.observedByFramework()).extracting(Entrypoint::label)
                 .containsExactly("@EventListener CacheWarmup.onReady(ApplicationReadyEvent)",
                         "@EventListener CacheWarmup.warmUp(ApplicationReadyEvent)",
-                        "@InboxHandler InboxProcessor.handle", "@KafkaListener shipment-acks");
+                        "@InboxHandler InboxProcessor.handle", "@KafkaListener shipment-acks",
+                        "@MessageMapping /orders/ack", "websocket KitchenSocket.handleTextMessage");
     }
 
     @Test

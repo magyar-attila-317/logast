@@ -35,6 +35,22 @@ public final class ContextPropagation {
         return wrap(task);
     }
 
+    /** A callback that runs with the MDC and trace of the thread that registered it (e.g. {@code SseEmitter.onError}). */
+    public static <T> java.util.function.Consumer<T> wrapConsumer(java.util.function.Consumer<T> callback) {
+        java.util.Objects.requireNonNull(callback, "callback");
+        Map<String, String> mdc = MDC.getCopyOfContextMap();
+        ContextSnapshot snapshot = FACTORY.captureAll();
+        return value -> {
+            Map<String, String> previous = MDC.getCopyOfContextMap();
+            try (ContextSnapshot.Scope ignored = snapshot.setThreadLocals()) {
+                restore(mdc);
+                callback.accept(value);
+            } finally {
+                restore(previous);
+            }
+        };
+    }
+
     public static <T> Callable<T> wrap(Callable<T> task) {
         Map<String, String> mdc = MDC.getCopyOfContextMap();
         ContextSnapshot snapshot = FACTORY.captureAll();
