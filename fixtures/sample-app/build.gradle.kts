@@ -7,6 +7,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-restclient")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
+    implementation("org.springframework.data:spring-data-commons")
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

@@ -224,7 +224,8 @@ rules:
   LOG_IN_LOOP: { enabled: false }
 ```
 
-`logast rules` lists every rule and its pack. A single finding is silenced in code with
+`logast rules` lists every rule and its pack. The log-coverage rules (JOB_OUTCOME_MISSING, SKIP_UNLOGGED,
+STATE_CHANGE_UNLOGGED, BATCH_SUMMARY_MISSING) add log lines; switch off the ones a service does not want. A single finding is silenced in code with
 `// logast:ignore RULE_NAME` on the line or the line above.
 
 ---

@@ -32,6 +32,12 @@ public final class CompactFormat {
         if (s.unresolvedCalls() > 0) {
             sb.append(Ansi.warn(s.unresolvedCalls() + " unresolved calls, e.g. " + s.unresolvedSample())).append('\n');
         }
+        if (r.coverage() != null && r.coverage().total() > 0) {
+            double p = r.coverage().percent();
+            String pct = p >= 90 ? Ansi.green(p + "%") : p >= 60 ? Ansi.yellow(p + "%") : Ansi.red(p + "%");
+            sb.append(Ansi.bold("log coverage ")).append(pct).append(Ansi.dim(r.coverage().line().substring(r.coverage().line().indexOf('%') + 1)
+                    + "   (places that should log and do)")).append('\n');
+        }
         long auto = orders.stream().filter(WorkOrder::mechanical).count();
         long text = orders.stream().filter(o -> !o.slots().isEmpty()).count();
         long report = orders.stream().filter(WorkOrder::reportOnly).count();

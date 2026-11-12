@@ -29,11 +29,19 @@ final class LogCallRules {
 
     void run() {
         for (MethodInfo m : ctx.methods()) {
+            if (ctx.logHelper(m)) {
+                continue;   // LOG_HELPER: inline it at the call sites instead of polishing it
+            }
             List<LogCall> logs = m.facts().logs;
             for (int i = 0; i < logs.size(); i++) {
                 LogCall lc = logs.get(i);
                 if (lc.fluent() || lc.template() == null) {
                     continue;
+                }
+                String written = MessageTemplate.text(lc.template());
+                if (written != null && !MessageTemplate.stripPlaceholders(MessageTemplate.compliantKeys(written) != null
+                        ? MessageTemplate.compliantBase(written) : written).matches(".*\\p{L}.*")) {
+                    continue;   // "{} [count={}]": the message itself comes from an argument; nothing to restructure
                 }
                 if (ctx.policy.logging().protectedMessage(MessageTemplate.text(lc.template()))) {
                     continue;   // alert-linked (logging.protectedMessages): never reworded or reformatted

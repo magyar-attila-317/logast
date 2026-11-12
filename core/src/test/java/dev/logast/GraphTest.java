@@ -37,6 +37,7 @@ class GraphTest {
                 "@InboxHandler InboxProcessor.handle",
                 "@KafkaListener shipment-acks",
                 "@MessageMapping /orders/ack",
+                "@Scheduled InvoiceExportJob.export",
                 "@Scheduled ReconciliationJob.reconcile",
                 "DELETE /admin/sessions/{sessionId}",
                 "DELETE /orders/{orderId}",

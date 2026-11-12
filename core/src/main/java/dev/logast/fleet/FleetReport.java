@@ -24,7 +24,13 @@ import java.util.stream.Stream;
 public final class FleetReport {
     public record Service(String name, String root, int files, int entrypoints, Map<String, Integer> severity,
                           Map<String, Integer> rules, Map<String, Double> packScore, double score,
-                          List<String> overrides, List<dev.logast.metrics.MeterCatalog.Meter> meters) {
+                          List<String> overrides, List<dev.logast.metrics.MeterCatalog.Meter> meters, Double logCoverage) {
+        public Service(String name, String root, int files, int entrypoints, Map<String, Integer> severity,
+                       Map<String, Integer> rules, Map<String, Double> packScore, double score,
+                       List<String> overrides, List<dev.logast.metrics.MeterCatalog.Meter> meters) {
+            this(name, root, files, entrypoints, severity, rules, packScore, score, overrides, meters, null);
+        }
+
         public Service {
             meters = meters == null ? List.of() : List.copyOf(meters);   // snapshots written before meters existed
         }
@@ -61,7 +67,8 @@ public final class FleetReport {
         }
         double total = r.orders().stream().mapToDouble(o -> weight(o.severity())).sum();
         return new Service(name, r.root(), r.stats().files(), r.stats().entrypoints(), sev, rules, packScore,
-                round(100.0 * files / (files + total)), overrides, meters);
+                round(100.0 * files / (files + total)), overrides, meters,
+                r.coverage() == null || r.coverage().total() == 0 ? null : r.coverage().percent());
     }
 
     private static double weight(String severity) {
@@ -114,6 +121,7 @@ public final class FleetReport {
             rows.append("<tr><td><b>").append(esc(s.name())).append("</b><div class=muted>").append(s.files()).append(" files · ")
                     .append(s.entrypoints()).append(" entrypoints</div></td>")
                     .append("<td>").append(bar(s.score())).append(" ").append(trend).append("</td>");
+            rows.append("<td class=num>").append(s.logCoverage() == null ? "<span class=muted>–</span>" : s.logCoverage() + "%").append("</td>");
             for (String pack : List.of("logging", "tracing", "metrics")) {
                 Double ps = s.packScore().get(pack);
                 rows.append("<td class=num>").append(ps == null ? "<span class=muted>–</span>" : ps).append("</td>");
@@ -153,7 +161,7 @@ public final class FleetReport {
                 <h1>Logging, MDC &amp; tracing compliance</h1>
                 <div class=muted>%s · %d services · score = 100 × files / (files + 3·high + 1·medium + 0.25·low)</div>
                 <h2>Services (lowest score first)</h2><div class=wrap><table>
-                <tr><th>Service</th><th>Score · trend</th><th class=num>logging</th><th class=num>tracing</th><th class=num>metrics</th>
+                <tr><th>Service</th><th>Score · trend</th><th class=num>log coverage</th><th class=num>logging</th><th class=num>tracing</th><th class=num>metrics</th>
                 <th class=num>high · med · low</th><th>Top rules</th><th class=num>Overrides</th></tr>
                 %s</table></div>
                 <h2>Rules across the fleet</h2><div class=wrap><table><tr><th>Rule</th><th>Packs</th><th class=num>Findings</th><th class=num>Services</th></tr>

@@ -333,6 +333,49 @@ logging:
   vagueMessages: ["^handled\\.?$"]                                  # added to the built-in avoid-list
 ```
 
+Where logs are missing (log coverage): logast adds the line, someone writes the sentence.
+```java
+@Scheduled(cron = "0 0 2 * * *")
+public void export() {
+    log.info("Invoice export started");                              // ENTRYPOINT_SILENT
+    List<Invoice> open = invoices.findBySentFalse();
+    if (open.isEmpty()) {
+        log.info("Invoice export skipped, no open invoices");        // SKIP_UNLOGGED: why nothing happened
+        return;
+    }
+    sender.sendAll(open);
+    log.info("Invoice export completed");                            // JOB_OUTCOME_MISSING
+}
+
+public void sendAll(List<Invoice> open) {
+    for (Invoice invoice : open) {
+        send(invoice);
+    }
+    log.info("Invoice batch completed [invoiceCount={}]", open.size()); // BATCH_SUMMARY_MISSING
+}
+
+public Invoice cancel(String invoiceId) {
+    var result = invoices.save(new Invoice(invoiceId, null, false)); // a returned value is extracted first,
+    log.info("Invoice cancelled [invoiceId={}]", result.id());      // STATE_CHANGE_UNLOGGED, so it can be logged
+    return result;
+}
+```
+- **Jobs and listeners** (scheduled, batch runners, Kafka/JMS/Rabbit, event and WebSocket handlers) get an outcome
+  line; scheduled and batch runs also a start line. HTTP requests are left out: access logs and `http.server.requests`
+  already show them.
+- **Skipped work**: an early `return` in a job or the methods it calls directly (INFO in scheduled/batch runs,
+  DEBUG elsewhere). Only `void` methods: an early return that hands back a value is logic, not a skip.
+- **State changes**: a repository save/delete in a method that logs nothing; the entity's id is logged.
+- **Batch summaries**: a loop on a job path that does I/O per item (repository, HTTP, messaging). Loops over a call
+  (`for (Order o : repository.findAll())`) get the call extracted into a variable first, so the count doesn't run
+  the query again.
+
+The scan's header shows the service's **log coverage**, the share of these places that already log:
+```
+log coverage 53.7% (jobs 68/214 · http 409/631 · skips 0/50 · stateChanges 174/310 · loops 14/33)
+```
+It is also a column in the fleet report. Turn single rules off with `rules: { SKIP_UNLOGGED: { enabled: false } }`.
+
 ### 3. Let an LLM finish it
 
 With the skill installed (`./install.sh --skill`), ask Claude Code *"bring this service's logging to the
@@ -499,7 +542,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 
 | pack | rules |
 |---|---|
-| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
+| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |

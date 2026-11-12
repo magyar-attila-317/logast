@@ -63,8 +63,14 @@ final class LogArgumentRules {
         boolean objects = ctx.enabled(Rules.LOG_OBJECT_ARGUMENT);
         if (collections || objects) {
             for (MethodInfo m : ctx.methods()) {
+                if (ctx.logHelper(m)) {
+                    continue;
+                }
                 int n = 0;
                 for (LogCall lc : m.facts().logs) {
+                    if (lc.level() == dev.logast.model.Level.TRACE) {
+                        continue;   // TRACE is the deliberate "show me everything" level (usually behind isTraceEnabled)
+                    }
                     for (int i = 0; i < lc.args().size(); i++) {
                         Expression arg = lc.args().get(i);
                         boolean throwableLast = i == lc.args().size() - 1 && TypeUtils.isAssignableTo("java.lang.Throwable", arg.getType());

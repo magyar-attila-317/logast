@@ -38,6 +38,10 @@ public final class Rules {
     public static final String MDC_CLEAR = "MDC_CLEAR";
     public static final String MDC_NESTED_KEY = "MDC_NESTED_KEY";
     public static final String MDC_NOT_OWNER = "MDC_NOT_OWNER";
+    public static final String JOB_OUTCOME_MISSING = "JOB_OUTCOME_MISSING";
+    public static final String SKIP_UNLOGGED = "SKIP_UNLOGGED";
+    public static final String STATE_CHANGE_UNLOGGED = "STATE_CHANGE_UNLOGGED";
+    public static final String BATCH_SUMMARY_MISSING = "BATCH_SUMMARY_MISSING";
     public static final String LOG_OBJECT_ARGUMENT = "LOG_OBJECT_ARGUMENT";
     public static final String LOG_COLLECTION_ARGUMENT = "LOG_COLLECTION_ARGUMENT";
     public static final String LOG_HELPER = "LOG_HELPER";
@@ -86,7 +90,8 @@ public final class Rules {
         for (String r : List.of(SWALLOWED_EXCEPTION, LOST_THROWABLE, LOG_AND_RETHROW, EXCEPTION_LOGGED_TWICE,
                 STRING_CONCAT_LOG, LOG_FORMAT, GLOSSARY_VIOLATION, PII_IN_LOG, MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS,
                 MISSING_DOMAIN_MDC, AREA_MDC_MISSING, ENTRYPOINT_SILENT, MESSAGE_PHRASING, LOG_KEY_STYLE, LOG_LEVEL, REPEATED_LOG_VALUE,
-                MDC_CLEAR, MDC_NESTED_KEY, MDC_NOT_OWNER, LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_HELPER, MESSAGE_VAGUE, LOG_KEY_VALUE_IN_MDC,
+                MDC_CLEAR, MDC_NESTED_KEY, MDC_NOT_OWNER, JOB_OUTCOME_MISSING, SKIP_UNLOGGED, STATE_CHANGE_UNLOGGED,
+                BATCH_SUMMARY_MISSING, LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_HELPER, MESSAGE_VAGUE, LOG_KEY_VALUE_IN_MDC,
                 SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE, LOG_IN_LOOP, LOG_VOLUME)) {
             PACKS.put(r, Set.of("logging"));
         }
@@ -132,7 +137,9 @@ public final class Rules {
             Map.entry(SETUP_STRUCTURED_LOGGING, "medium"), Map.entry(MDC_NOT_CLOSEABLE, "low"),
             Map.entry(STRING_CONCAT_LOG, "low"), Map.entry(LOG_FORMAT, "low"), Map.entry(GLOSSARY_VIOLATION, "low"),
             Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_STYLE, "low"), Map.entry(REPEATED_LOG_VALUE, "medium"),
-            Map.entry(MDC_CLEAR, "high"), Map.entry(MDC_NOT_OWNER, "high"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
+            Map.entry(MDC_CLEAR, "high"), Map.entry(MDC_NOT_OWNER, "high"),
+            Map.entry(JOB_OUTCOME_MISSING, "medium"), Map.entry(SKIP_UNLOGGED, "low"), Map.entry(STATE_CHANGE_UNLOGGED, "medium"),
+            Map.entry(BATCH_SUMMARY_MISSING, "low"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
             Map.entry(LOG_COLLECTION_ARGUMENT, "medium"), Map.entry(LOG_HELPER, "medium"), Map.entry(MESSAGE_VAGUE, "low"),
             Map.entry(LOG_KEY_VALUE_IN_MDC, "low"),
             Map.entry(AREA_MDC_MISSING, "medium"), Map.entry(LOG_LEVEL, "medium"), Map.entry(EXCEPTION_LOGGED_TWICE, "medium"),
@@ -184,6 +191,7 @@ public final class Rules {
         new LogCallRules(ctx).run();
         new LogArgumentRules(ctx).run();
         new MessageRules(ctx).run();
+        dev.logast.orders.LogCoverage coverage = new CoverageRules(ctx).run();
         new MdcRules(ctx).run();
         new AsyncRules(ctx).run();
         new AreaRules(ctx).run();
@@ -214,7 +222,7 @@ public final class Rules {
                 fingerprints.computeIfAbsent(e.file(), file -> fingerprint(a.project.root().resolve(file)));
             }
         }
-        return new ScanResult(1, a.project.root().toString(), a.stats(), fingerprints, orders);
+        return new ScanResult(1, a.project.root().toString(), a.stats(), fingerprints, orders, coverage);
     }
 
     static String fingerprint(Path p) {

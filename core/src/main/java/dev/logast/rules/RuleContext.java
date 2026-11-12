@@ -31,6 +31,8 @@ public final class RuleContext {
     final Map<String, String> plannedBy = new HashMap<>();
     /** Entrypoint method key → id of the order that scopes its domain MDC keys. */
     final Map<String, String> entryOrders = new HashMap<>();
+    /** Entrypoints that ENTRYPOINT_SILENT gives a "started" line. */
+    final Set<String> silentPlanned = new HashSet<>();
     /** Methods whose body an entrypoint order already rewraps. */
     final Set<String> wrappedMethods = new HashSet<>();
     String supportOrderId;
@@ -93,6 +95,22 @@ public final class RuleContext {
             case PUT, REMOVE -> !op.inResource();
             default -> false;
         });
+    }
+
+    private static final java.util.regex.Pattern HELPER_CLASS = java.util.regex.Pattern.compile("(?i).*(log|logging)(helper|helpers|util|utils|support|writer)?");
+
+    /**
+     * A method that logs on behalf of its callers: a Logger parameter, or a static logging method of a *Log*Helper
+     * class. LOG_HELPER reports it (inline it); the rewriting rules leave its body alone.
+     */
+    public boolean logHelper(MethodInfo m) {
+        if (m.decl().getBody() == null || m.facts().logs.isEmpty()) {
+            return false;
+        }
+        boolean loggerParam = m.decl().getParameters().stream().anyMatch(p -> p instanceof org.openrewrite.java.tree.J.VariableDeclarations vd
+                && org.openrewrite.java.tree.TypeUtils.isOfClassType(vd.getType(), "org.slf4j.Logger"));
+        return loggerParam || HELPER_CLASS.matcher(m.owner().simpleName()).matches()
+                && m.type().hasFlags(org.openrewrite.java.tree.Flag.Static);
     }
 
     /** Rule enabled in the policy and its pack selected. */

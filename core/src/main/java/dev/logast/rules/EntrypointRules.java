@@ -65,6 +65,7 @@ final class EntrypointRules {
         }
         if (silent) {
             b.fix(Rules.ENTRYPOINT_SILENT);
+            ctx.silentPlanned.add(m.key());
         }
         b.title(title(ep, notObserved, missing, silent));
 

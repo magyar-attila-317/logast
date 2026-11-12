@@ -11,7 +11,7 @@ public class ShipmentListener {
     private static final Logger log = LoggerFactory.getLogger(ShipmentListener.class);
 
     @EventListener
-    public void onShipped(ShipmentEvent event) {
+    public void onShipped(ShipmentEvent event) { // expect: JOB_OUTCOME_MISSING
         try (var ignored = MDC.putCloseable("order.id", event.orderId())) {
             log.info("Shipment {} dispatched for order {}", event.shipmentId(), event.orderId()); // expect: LOG_FORMAT
         }
