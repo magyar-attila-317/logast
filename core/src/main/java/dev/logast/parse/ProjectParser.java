@@ -27,7 +27,7 @@ public final class ProjectParser {
         Path absRoot = root.toAbsolutePath().normalize();
         List<Path> jars = classpath.stream().filter(p -> !Files.isDirectory(p)).toList();
         ParsedProject p = parseFiles(absRoot, findSources(absRoot), jars, List.of());
-        return new ParsedProject(p.root(), p.files(), List.copyOf(classpath), p.parseErrors(), p.probe());
+        return new ParsedProject(p.root(), p.files(), List.copyOf(classpath), p.parseErrors(), p.probe(), p.discovered());
     }
 
     /** Re-parses only {@code changed} (root-relative) files and keeps the rest; needs compiled classes on the classpath. */
@@ -77,8 +77,17 @@ public final class ProjectParser {
                     positioned == null ? cu : positioned, Hashing.sha256(text), editable));
         }
         files.sort(Comparator.comparing(SourceFileInfo::relPath));
+        // account for every discovered file: analysed, or named in the errors (never silently missing)
+        Set<String> analysed = new HashSet<>();
+        files.forEach(f -> analysed.add(f.relPath()));
+        for (Path src : sources) {
+            String rel = absRoot.relativize(src.toAbsolutePath().normalize()).toString().replace('\\', '/');
+            if (!analysed.contains(rel) && errors.stream().noneMatch(e -> e.endsWith(rel))) {
+                errors.add("not analysed: " + rel);
+            }
+        }
         return new ParsedProject(absRoot, List.copyOf(files), List.copyOf(classpath), List.copyOf(errors),
-                new ClasspathProbe(classpath));
+                new ClasspathProbe(classpath), kept.size() + sources.size());
     }
 
     private static List<SourceFile> parseSlice(Path absRoot, List<Path> slice, List<Path> classpath, List<String> errors) {

@@ -35,6 +35,13 @@ public final class Rules {
     public static final String MDC_KEY_ALIAS = "MDC_KEY_ALIAS";
     public static final String LOG_KEY_STYLE = "LOG_KEY_STYLE";
     public static final String REPEATED_LOG_VALUE = "REPEATED_LOG_VALUE";
+    public static final String MDC_CLEAR = "MDC_CLEAR";
+    public static final String MDC_NESTED_KEY = "MDC_NESTED_KEY";
+    public static final String LOG_OBJECT_ARGUMENT = "LOG_OBJECT_ARGUMENT";
+    public static final String LOG_COLLECTION_ARGUMENT = "LOG_COLLECTION_ARGUMENT";
+    public static final String LOG_HELPER = "LOG_HELPER";
+    public static final String MESSAGE_VAGUE = "MESSAGE_VAGUE";
+    public static final String LOG_KEY_VALUE_IN_MDC = "LOG_KEY_VALUE_IN_MDC";
     public static final String AREA_MDC_MISSING = "AREA_MDC_MISSING";
     public static final String LOG_LEVEL = "LOG_LEVEL";
     public static final String EXCEPTION_LOGGED_TWICE = "EXCEPTION_LOGGED_TWICE";
@@ -57,6 +64,19 @@ public final class Rules {
     public static final String METRIC_GAUGE_WEAK_REF = "METRIC_GAUGE_WEAK_REF";
     public static final String BUSINESS_EVENT_UNMEASURED = "BUSINESS_EVENT_UNMEASURED";
     public static final String METRIC_TAG_KEYS_MISMATCH = "METRIC_TAG_KEYS_MISMATCH";
+    // resilience
+    public static final String HTTP_CLIENT_NO_TIMEOUT = "HTTP_CLIENT_NO_TIMEOUT";
+    public static final String KAFKA_NO_ERROR_HANDLER = "KAFKA_NO_ERROR_HANDLER";
+    public static final String UNBOUNDED_EXECUTOR = "UNBOUNDED_EXECUTOR";
+    public static final String BLOCKING_WAIT_UNBOUNDED = "BLOCKING_WAIT_UNBOUNDED";
+    // errors
+    public static final String ERROR_DETAILS_EXPOSED = "ERROR_DETAILS_EXPOSED";
+    public static final String UNMAPPED_EXCEPTION = "UNMAPPED_EXCEPTION";
+    public static final String CLIENT_ERROR_AS_SERVER_ERROR = "CLIENT_ERROR_AS_SERVER_ERROR";
+    public static final String PROBLEM_DETAILS_DISABLED = "PROBLEM_DETAILS_DISABLED";
+    // audit
+    public static final String AUDIT_MISSING = "AUDIT_MISSING";
+    public static final String AUDIT_SECURITY_EVENTS = "AUDIT_SECURITY_EVENTS";
 
     /** Rule → packs it belongs to. A rule runs when any of its packs is selected (policy.packs / --pack). */
     private static final Map<String, Set<String>> PACKS = new HashMap<>();
@@ -65,6 +85,7 @@ public final class Rules {
         for (String r : List.of(SWALLOWED_EXCEPTION, LOST_THROWABLE, LOG_AND_RETHROW, EXCEPTION_LOGGED_TWICE,
                 STRING_CONCAT_LOG, LOG_FORMAT, GLOSSARY_VIOLATION, PII_IN_LOG, MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS,
                 MISSING_DOMAIN_MDC, AREA_MDC_MISSING, ENTRYPOINT_SILENT, MESSAGE_PHRASING, LOG_KEY_STYLE, LOG_LEVEL, REPEATED_LOG_VALUE,
+                MDC_CLEAR, MDC_NESTED_KEY, LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_HELPER, MESSAGE_VAGUE, LOG_KEY_VALUE_IN_MDC,
                 SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE, LOG_IN_LOOP, LOG_VOLUME)) {
             PACKS.put(r, Set.of("logging"));
         }
@@ -78,6 +99,15 @@ public final class Rules {
         for (String r : List.of(METRIC_NAMING, METRIC_HIGH_CARDINALITY_TAG, METRIC_DIRECT_REGISTRY, METRIC_TAG_KEY,
                 METRIC_TAG_VALUE, METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, BUSINESS_EVENT_UNMEASURED, METRIC_TAG_KEYS_MISMATCH)) {
             PACKS.put(r, Set.of("metrics"));
+        }
+        for (String r : List.of(HTTP_CLIENT_NO_TIMEOUT, KAFKA_NO_ERROR_HANDLER, UNBOUNDED_EXECUTOR, BLOCKING_WAIT_UNBOUNDED)) {
+            PACKS.put(r, Set.of("resilience"));
+        }
+        for (String r : List.of(ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED)) {
+            PACKS.put(r, Set.of("errors"));
+        }
+        for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS)) {
+            PACKS.put(r, Set.of("audit"));
         }
         PACKS.put(SETUP_SUPPORT_STARTER, Set.of("logging", "tracing", "metrics"));
     }
@@ -101,11 +131,19 @@ public final class Rules {
             Map.entry(SETUP_STRUCTURED_LOGGING, "medium"), Map.entry(MDC_NOT_CLOSEABLE, "low"),
             Map.entry(STRING_CONCAT_LOG, "low"), Map.entry(LOG_FORMAT, "low"), Map.entry(GLOSSARY_VIOLATION, "low"),
             Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_STYLE, "low"), Map.entry(REPEATED_LOG_VALUE, "medium"),
+            Map.entry(MDC_CLEAR, "high"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
+            Map.entry(LOG_COLLECTION_ARGUMENT, "medium"), Map.entry(LOG_HELPER, "medium"), Map.entry(MESSAGE_VAGUE, "low"),
+            Map.entry(LOG_KEY_VALUE_IN_MDC, "low"),
             Map.entry(AREA_MDC_MISSING, "medium"), Map.entry(LOG_LEVEL, "medium"), Map.entry(EXCEPTION_LOGGED_TWICE, "medium"),
             Map.entry(HTTP_CLIENT_UNTRACED, "high"), Map.entry(TRACING_SAMPLING, "medium"),
             Map.entry(METRIC_TAG_KEY, "low"), Map.entry(METRIC_TAG_VALUE, "low"), Map.entry(METRIC_REGISTERED_PER_CALL, "low"),
             Map.entry(METRIC_GAUGE_WEAK_REF, "high"), Map.entry(BUSINESS_EVENT_UNMEASURED, "medium"),
-            Map.entry(METRIC_TAG_KEYS_MISMATCH, "high"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
+            Map.entry(METRIC_TAG_KEYS_MISMATCH, "high"),
+            Map.entry(HTTP_CLIENT_NO_TIMEOUT, "high"), Map.entry(KAFKA_NO_ERROR_HANDLER, "medium"),
+            Map.entry(UNBOUNDED_EXECUTOR, "medium"), Map.entry(BLOCKING_WAIT_UNBOUNDED, "medium"),
+            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
+            Map.entry(CLIENT_ERROR_AS_SERVER_ERROR, "medium"), Map.entry(PROBLEM_DETAILS_DISABLED, "low"),
+            Map.entry(AUDIT_MISSING, "medium"), Map.entry(AUDIT_SECURITY_EVENTS, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
             Map.entry(LOG_IN_LOOP, "low"), Map.entry(LOG_VOLUME, "medium"),
             Map.entry(METRIC_NAMING, "low"), Map.entry(METRIC_HIGH_CARDINALITY_TAG, "high"), Map.entry(METRIC_DIRECT_REGISTRY, "low"));
@@ -143,12 +181,17 @@ public final class Rules {
         ctx.freezePlan();
         new ExceptionRules(ctx).run();
         new LogCallRules(ctx).run();
+        new LogArgumentRules(ctx).run();
+        new MessageRules(ctx).run();
         new MdcRules(ctx).run();
         new AsyncRules(ctx).run();
         new AreaRules(ctx).run();
         new MetricRules(ctx).run();
         new EventMetricRules(ctx).run();
         MetricRules.tagKeyMismatch(ctx);
+        new ResilienceRules(ctx).run();
+        new ErrorRules(ctx).run();
+        new AuditRules(ctx).run();
         new VolumeRules(ctx).run();
 
         Set<String> ids = new HashSet<>();

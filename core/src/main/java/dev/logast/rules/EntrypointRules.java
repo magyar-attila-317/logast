@@ -46,7 +46,7 @@ final class EntrypointRules {
         boolean notObserved = !observed && ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED)
                 && !ctx.ignored(f, line, Rules.ENTRYPOINT_NOT_OBSERVED) && !alreadyObserved(m);
         List<DomainValues.Value> missing = ctx.enabled(Rules.MISSING_DOMAIN_MDC)
-                && !ctx.ignored(f, line, Rules.MISSING_DOMAIN_MDC)
+                && !ctx.ignored(f, line, Rules.MISSING_DOMAIN_MDC) && !ctx.legacyMdc(m)
                 ? ctx.domain.fromVars(params(m)).stream()
                 .filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).toList()
                 : List.of();
@@ -138,6 +138,7 @@ final class EntrypointRules {
         b.context(ctx.context(m, inner[0], Text.oneLine(text.substring(Pos.start(m.decl()), Math.min(inner[0] + 200, text.length())), 200), null));
         if (!missing.isEmpty()) {
             ctx.plannedEntryKeys.put(m.key(), new TreeSet<>(missing.stream().map(DomainValues.Value::key).toList()));
+            ctx.entryOrders.put(m.key(), b.id());
         }
     }
 

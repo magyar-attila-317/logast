@@ -21,7 +21,7 @@ public class PaymentClient {
             gateway.charge(order.id(), amountCents);
         } catch (IllegalStateException e) {
             log.error("Payment charge failed for order {}", order.id(), e); // expect: LOG_AND_RETHROW, LOG_FORMAT, AREA_MDC_MISSING
-            throw new PaymentException("charge failed", e);
+            throw new PaymentException("charge failed", e); // expect: UNMAPPED_EXCEPTION
         }
     }
 

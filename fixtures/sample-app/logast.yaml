@@ -30,4 +30,6 @@ areas:
     requiredMdc: [order.id]
 levels:
   noInfoInLoops: true
-packs: [logging, tracing, metrics]
+packs: [logging, tracing, metrics, resilience, errors, audit]
+logging:
+  protectedMessages: ["^ALERT:"]

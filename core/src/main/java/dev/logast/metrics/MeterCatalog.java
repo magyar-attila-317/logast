@@ -183,31 +183,8 @@ public final class MeterCatalog {
         return List.copyOf(new LinkedHashSet<>(keys));
     }
 
-    /** A string literal, or a {@code static final String} constant of a project class ({@code METRIC}, {@code Metrics.ORDERS}). */
     static String constant(Analysis a, Expression e) {
-        if (e instanceof J.Literal l) {
-            return l.getValue() instanceof String s ? s : null;
-        }
-        JavaType.Variable field = e instanceof J.Identifier id ? id.getFieldType()
-                : e instanceof J.FieldAccess fa ? fa.getName().getFieldType() : null;
-        if (field == null || !(field.getOwner() instanceof JavaType.FullyQualified owner) || !TypeUtils.isString(field.getType())) {
-            return null;
-        }
-        ClassInfo c = a.index.clazz(owner.getFullyQualifiedName());
-        if (c == null) {
-            return null;
-        }
-        for (Statement s : c.decl().getBody().getStatements()) {
-            if (s instanceof J.VariableDeclarations vd) {
-                for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
-                    if (v.getSimpleName().equals(field.getName()) && v.getInitializer() instanceof J.Literal l
-                            && l.getValue() instanceof String str) {
-                        return str;
-                    }
-                }
-            }
-        }
-        return null;
+        return dev.logast.graph.Constants.string(a.index, e);
     }
 
     /** Plain-text table for the terminal. */

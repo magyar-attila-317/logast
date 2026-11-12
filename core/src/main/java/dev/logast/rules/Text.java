@@ -58,6 +58,18 @@ public final class Text {
         return min == Integer.MAX_VALUE || min > 8 ? "    " : " ".repeat(min);
     }
 
+    /** Removes one {@code unit} of indentation from every line that has it. */
+    public static String dedent(String block, String unit) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : block.split("\n", -1)) {
+            if (!sb.isEmpty()) {
+                sb.append('\n');
+            }
+            sb.append(line.startsWith(unit) ? line.substring(unit.length()) : line);
+        }
+        return sb.toString();
+    }
+
     /** Prefixes every non-blank line with {@code add}. */
     public static String reindent(String block, String add) {
         StringBuilder sb = new StringBuilder();

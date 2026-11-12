@@ -88,6 +88,20 @@ public final class MessageTemplate {
         return src.substring(1, src.length() - 1);
     }
 
+    /** The message as written: a literal, or a concatenation with its non-literal parts shown as {}. */
+    public static String text(org.openrewrite.java.tree.Expression template) {
+        if (template instanceof org.openrewrite.java.tree.J.Literal l) {
+            return l.getValue() instanceof String s ? s : null;
+        }
+        if (template instanceof org.openrewrite.java.tree.J.Binary b
+                && b.getOperator() == org.openrewrite.java.tree.J.Binary.Type.Addition) {
+            String left = text(b.getLeft());
+            String right = text(b.getRight());
+            return (left == null ? "{}" : left) + (right == null ? "{}" : right);
+        }
+        return null;
+    }
+
     public static int count(String raw) {
         int n = 0;
         for (int i = raw.indexOf("{}"); i >= 0; i = raw.indexOf("{}", i + 2)) {

@@ -51,7 +51,7 @@ public class OrderController {
     }
 
     @DeleteMapping("/{orderId}")
-    public void cancel(@PathVariable String orderId) {
+    public void cancel(@PathVariable String orderId) { // expect: AUDIT_MISSING
         try (var ignored = MDC.putCloseable("order.id", orderId)) {
             log.info("Cancelling order {}", orderId); // expect: LOG_FORMAT
             orderService.cancel(orderId);

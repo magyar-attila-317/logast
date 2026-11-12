@@ -341,7 +341,7 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         // MdcScope.of(k1, v1, k2, v2, ...): one op per literal key
         for (int i = 0; i < args.size(); i += 2) {
             String key = args.get(i) instanceof J.Literal l && l.getValue() instanceof String s ? s : null;
-            f.mdc.add(new MdcOp(MdcOp.Kind.PUT_CLOSEABLE, key, mi, null, finallyDepth > 0, true));
+            f.mdc.add(new MdcOp(MdcOp.Kind.PUT_CLOSEABLE, key, mi, null, finallyDepth > 0, true, args.get(i)));
             if (!name.equals("of")) {
                 break;
             }

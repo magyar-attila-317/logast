@@ -1,6 +1,6 @@
 # logast
 
-**Make every Spring Boot service log, trace and measure the same way, in your business's language,
+**Make every Spring Boot service log, trace, measure, fail and audit the same way, in your business's language,
 without asking each team to remember the rules.**
 
 logast reads a service's source with full type resolution, follows the call graph from every entrypoint (HTTP
@@ -18,7 +18,10 @@ What a service gets out of it:
 - log lines in one format and one vocabulary: `Payment charge failed [order.id=…]`, never
   `"Error while charging " + id`;
 - exceptions logged once, where they are handled, and never swallowed silently;
-- meter names and tags that don't explode your metrics backend;
+- meter names and tags that don't explode your metrics backend, and business events that are measured;
+- timeouts on every outgoing call, bounded thread pools, Kafka records that are not silently dropped;
+- error responses that don't leak internals, and business exceptions that don't turn into 500s;
+- an audit record for every action that must have one;
 - a compliance score per service, and CI that fails only on *new* problems.
 
 Works with Spring Boot 4, SLF4J + Logback, OpenTelemetry (Micrometer Tracing), Gradle builds, Java 17+ services.
@@ -116,7 +119,7 @@ ignores `.logast/` in git except the shared `baseline.json` and `traffic.yaml`, 
 | `--keep-wording` | legacy service: fix structure, keep existing message wording |
 | `--key-style camel` | spelling of MDC and `[k=v]` keys: `dotted` (default), `camel`, `pascal`, `snake` |
 | `--support vendor` | copy `MdcScope` / `ObservedContext` into the service instead of depending on the starter library (use until the starter is in your Nexus) |
-| `--pack logging,tracing,metrics` | rule packs (default `logging,tracing`) |
+| `--pack logging,tracing,metrics` | rule packs (default `logging,tracing`; also `metrics`, `resilience`, `errors`, `audit`) |
 | `--baseline` | scan once and record today's findings, so CI fails only on new ones |
 | `--no-classpath` / `--no-traffic` | skip those steps |
 | `--force` | regenerate an existing `logast.yaml` |
@@ -253,6 +256,38 @@ Messages:
 + log.info("Reconciliation for tenant {} started", tenant);
 ```
 
+What goes into a log line:
+```java
+log.info("Coupon batch received [couponIds={}]", couponIds);   // LOG_COLLECTION_ARGUMENT → [couponCount={}], couponIds.size()
+log.info("Order attached [order={}]", order);                  // LOG_OBJECT_ARGUMENT → order.id(): no toString of a whole
+                                                                //   DTO/entity (lazy loading = a query inside a log call)
+log.info("Loaded [customer={}]", ticket.getCustomer().getName()); // reported: navigates a lazy association, may NPE
+log.info("No Coupon entries found, won't publish");           // MESSAGE_VAGUE → "No coupon entries found, will not publish"
+log.debug("Processing...");                                    // MESSAGE_VAGUE (reported): say what started/completed/failed
+LogHelper.logCollection(log, "Prepared", items);               // LOG_HELPER (reported): log at the call site instead
+```
+Collections with a fixed size (`List.of(..)`, constants, enum sets, `limit(..)`) are left alone. A value record of counts,
+or a class with its own `toString()`, is not an object dump.
+
+MDC is owned once, where the flow starts:
+```java
+try {                                     // legacy block one call below an entrypoint that scopes couponId already:
+    MDC.put(COUPON_ID, couponId);         //   MDC_NOT_CLOSEABLE + MDC_NESTED_KEY + MDC_CLEAR → the whole block goes,
+    log.info("Calculation started");      //   the log lines stay, the entrypoint's scope carries the context
+} finally {
+    MDC.clear();                          // MDC_CLEAR: never wipe the caller's context (trace ids included)
+}
+```
+`static final` key constants are understood; the generated scope keeps the constant. No new scope or observation is
+added around code that still writes MDC the old way: the MDC fix comes first, the wraps follow after the rescan.
+
+Messages that alerts or dashboards depend on are never reworded or reformatted:
+```yaml
+logging:
+  protectedMessages: ["^ALERT:", "Payment reconciliation mismatch"]   # regexes; reported, not rewritten
+  vagueMessages: ["^handled\\.?$"]                                  # added to the built-in avoid-list
+```
+
 ### 3. Let an LLM finish it
 
 With the skill installed (`./install.sh --skill`), ask Claude Code *"bring this service's logging to the
@@ -346,7 +381,47 @@ later ones), gauges on objects nothing else references (they read NaN after GC),
 PII as tags. `logast metrics .` lists every meter, and the fleet report compares them across services: same name with
 different types/tags, and similar names (`orders.placed` vs `order_placed`).
 
-### 9. Across all services
+### 9. Resilience, errors and audit (opt-in packs)
+
+Turn them on with `packs: [logging, tracing, metrics, resilience, errors, audit]` (or `scan --pack resilience`).
+They use the same entrypoint and call-path analysis, so a finding says *which request* is affected.
+
+**resilience**: what turns a slow or failing dependency into an outage.
+
+| rule | finds | fix |
+|---|---|---|
+| HTTP_CLIENT_NO_TIMEOUT | Spring HTTP clients with no connect/read timeout (Boot sets none); JDK `HttpClient` without `connectTimeout` | AUTO: `spring.http.clients.connect-timeout` / `read-timeout` (policy `resilience.*`, default 5s / 30s) |
+| KAFKA_NO_ERROR_HANDLER | listeners on the default handling: 9 immediate retries, then the record is skipped | report: `DefaultErrorHandler` + `DeadLetterPublishingRecoverer` + backoff |
+| UNBOUNDED_EXECUTOR | `newCachedThreadPool`, `newFixedThreadPool` (unbounded queue), `ThreadPoolTaskExecutor` without queue capacity | report |
+| BLOCKING_WAIT_UNBOUNDED | `future.get()`, `join()`, `latch.await()` without timeout on a request/message path | report |
+
+**errors**: what an HTTP client sees when something goes wrong.
+
+| rule | finds | fix |
+|---|---|---|
+| ERROR_DETAILS_EXPOSED | `server.error.include-message/stacktrace/exception`; a handler for unexpected exceptions copying `e.getMessage()` into the body | AUTO for the config (set to never), report for handlers |
+| UNMAPPED_EXCEPTION | an application exception thrown on an HTTP path that no `@ExceptionHandler` or `@ResponseStatus` maps (it becomes a 500) | report: decide its status |
+| CLIENT_ERROR_AS_SERVER_ERROR | a handler answering 500 for a validation / not-found / denied exception | report |
+| PROBLEM_DETAILS_DISABLED | Spring MVC errors are not RFC 9457 `ProblemDetail` responses | report (changes the API's error body) |
+
+**audit**: actions that must leave an audit record, not just a log line.
+
+| rule | finds |
+|---|---|
+| AUDIT_MISSING | an entrypoint matching `audit.actions` from which no audit emitter is reachable |
+| AUDIT_SECURITY_EVENTS | Spring Security in use, but failed/successful logins and denied access are not recorded |
+
+```yaml
+audit:
+  emitters: [com.example.audit.AuditService, com.example.audit.ActivityLogger#log]
+  actions:                       # defaults: DELETE endpoints, /admin/**, export/delete/grant/revoke/refund/approve… methods
+    - http: "* /api/payments/**"
+    - term: refund               # a vocabulary term in the endpoint or method name
+```
+With no emitters listed, any call on a type named `*Audit*`, or passing an `*Audit*` argument (an `AuditAction`
+value, an event implementing `AuditableDomainEvent`), counts as recording an audit event.
+
+### 10. Across all services
 
 ```bash
 logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, with trend against the last run
@@ -378,9 +453,12 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 
 | pack | rules |
 |---|---|
-| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · LOG_KEY_STYLE · PII_IN_LOG · REPEATED_LOG_VALUE · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
+| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
+| resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |
+| errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED |
+| audit (opt-in) | AUDIT_MISSING · AUDIT_SECURITY_EVENTS |
 | metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
 | runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
 
@@ -433,4 +511,9 @@ Both give the same generated code. The starter also protects services that logas
 - Gradle builds only. Kotlin sources and reactive (WebFlux) code are not analysed.
 - Calls into libraries end the call graph; whatever happens inside a library is not followed.
 - Existing `MDC.putCloseable` calls are left as they are (they remove instead of restore).
+- LOG_OBJECT_ARGUMENT judges by type: a project class logged whole is reported unless it is a value record or defines
+  `toString()`; library types are only flagged when they are known payloads (headers, requests, JSON, records).
 - `LOG_VOLUME` is only as good as the traffic numbers you provide.
+- AUDIT_MISSING follows direct calls only: an audit written by a listener of a published event counts when the event
+  (or what it carries) is audit-typed, but not when the listener alone decides to audit.
+- UNMAPPED_EXCEPTION treats a controller's own `@ExceptionHandler` as global, and ignores exceptions from libraries.

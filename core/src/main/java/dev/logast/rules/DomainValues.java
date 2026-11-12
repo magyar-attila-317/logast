@@ -87,13 +87,36 @@ public final class DomainValues {
             if (n.startsWith("get") && n.length() > 3 && Character.isUpperCase(n.charAt(3))) {
                 n = Character.toLowerCase(n.charAt(3)) + n.substring(4);
             }
-            if (Set.of("id", "name", "type", "status", "code", "key", "value", "size", "length").contains(n)
+            if ((n.equals("size") || n.equals("length") || n.equals("count")) && mi.getSelect() instanceof J.Identifier sel) {
+                return countKey(sel.getSimpleName());   // items.size() -> itemCount, couponIds.size() -> couponCount
+            }
+            if (Set.of("id", "name", "type", "status", "code", "key", "value").contains(n)
                     && mi.getSelect() instanceof J.Identifier sel) {
                 return sel.getSimpleName() + Character.toUpperCase(n.charAt(0)) + n.substring(1);
             }
             return n;
         }
         return null;
+    }
+
+    /** Key for the size of a collection named {@code name}: items → itemCount, couponIds → couponCount. */
+    static String countKey(String name) {
+        String base = singular(name).replaceFirst("(Id|ID|Uuid|UUID)$", "");
+        return (base.isEmpty() ? singular(name) : base) + "Count";
+    }
+
+    /** orders → order, entries → entry, statuses → status; other words unchanged. */
+    static String singular(String w) {
+        if (w.endsWith("ies") && w.length() > 4) {
+            return w.substring(0, w.length() - 3) + "y";
+        }
+        if (w.endsWith("sses") || w.endsWith("uses") || w.endsWith("xes")) {
+            return w.substring(0, w.length() - 2);
+        }
+        if (w.endsWith("s") && !w.endsWith("ss") && w.length() > 3) {
+            return w.substring(0, w.length() - 1);
+        }
+        return w;
     }
 
     /** True when the argument names a PII field (by identifier, accessor or field name). */

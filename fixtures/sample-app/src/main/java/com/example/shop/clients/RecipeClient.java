@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class RecipeClient {
     private static final Logger log = LoggerFactory.getLogger(RecipeClient.class);
-    private final HttpClient http = HttpClient.newHttpClient(); // expect: HTTP_CLIENT_UNTRACED
+    private final HttpClient http = HttpClient.newHttpClient(); // expect: HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT
     private final ScheduledExecutorService sweeper = Executors.newSingleThreadScheduledExecutor();
 
     public RecipeClient() {

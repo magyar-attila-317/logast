@@ -1,6 +1,8 @@
 package dev.logast.rules;
 
+import dev.logast.model.Entrypoint;
 import dev.logast.model.MdcOp;
+import dev.logast.policy.Policy;
 import dev.logast.model.MethodInfo;
 import dev.logast.orders.Edit;
 import dev.logast.parse.Pos;
@@ -31,6 +33,79 @@ final class MdcRules {
         for (MethodInfo m : ctx.methods()) {
             if (!m.facts().mdc.isEmpty()) {
                 method(m);
+                clears(m);
+                nestedKeys(m);
+            }
+        }
+    }
+
+    /**
+     * MDC_CLEAR: {@code MDC.clear()} not already part of a converted put/clear block. It removes every key on the thread,
+     * the caller's included (trace ids, request context), in the middle of a flow.
+     */
+    private void clears(MethodInfo m) {
+        if (!ctx.enabled(Rules.MDC_CLEAR)) {
+            return;
+        }
+        for (MdcOp op : m.facts().mdc) {
+            if (op.kind() != MdcOp.Kind.CLEAR) {
+                continue;
+            }
+            J.Try owner = op.block() == null ? null : tryWithFinally(m, op.block());
+            if (owner != null && handledTries.contains(owner)) {
+                continue;   // the MDC_NOT_CLOSEABLE order already replaces it
+            }
+            int line = Pos.line(op.call());
+            if (ctx.ignored(m.file(), line, Rules.MDC_CLEAR)) {
+                continue;
+            }
+            ctx.order(Rules.MDC_CLEAR, m, line, "clear" + line)
+                    .title("MDC.clear() removes every MDC key on this thread, including the caller's (trace ids, request "
+                            + "context): later logs of the same flow lose their context")
+                    .suggestion("Scope what this code sets with try (var mdc = MdcScope.of(..)) and drop the clear(); a thread "
+                            + "hand-off restores the previous map (ContextPropagation) instead of clearing.")
+                    .context(ctx.context(m, Pos.start(op.call()), Text.oneLine(op.call().printTrimmed(), 160), null));
+        }
+    }
+
+    /** The try whose finally block is {@code block}. */
+    private static J.Try tryWithFinally(MethodInfo m, J.Block block) {
+        J.Try[] found = new J.Try[1];
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Try visitTry(J.Try t, Integer p) {
+                if (t.getFinally() == block) {
+                    found[0] = t;
+                }
+                return super.visitTry(t, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return found[0];
+    }
+
+    /**
+     * MDC_NESTED_KEY: the method scopes a key that every path into it already has in MDC. Two owners of one key: the
+     * inner value hides the outer one, and the code that set it first no longer decides it.
+     */
+    private void nestedKeys(MethodInfo m) {
+        if (!ctx.enabled(Rules.MDC_NESTED_KEY) || !ctx.a.paths.reachable(m)) {
+            return;
+        }
+        Set<String> atEntry = ctx.a.paths.mdcAtEntry(m);
+        Set<String> seen = new HashSet<>();
+        for (MdcOp op : m.facts().mdc) {
+            if ((op.kind() == MdcOp.Kind.PUT || op.kind() == MdcOp.Kind.PUT_CLOSEABLE) && op.key() != null
+                    && atEntry.contains(op.key()) && !ambient.contains(op.key()) && seen.add(op.key())) {
+                int line = Pos.line(op.call());
+                if (ctx.ignored(m.file(), line, Rules.MDC_NESTED_KEY)) {
+                    continue;
+                }
+                ctx.order(Rules.MDC_NESTED_KEY, m, line, "nested|" + op.key())
+                        .title("MDC key '" + op.key() + "' is already set on every path into " + m.label()
+                                + ": a nested scope for the same key")
+                        .suggestion("Drop this scope if the value is the same; if it differs, use a distinct key "
+                                + "(e.g. source." + op.key() + ") so both stay visible.")
+                        .context(ctx.context(m, Pos.start(op.call()), Text.oneLine(op.call().printTrimmed(), 160), null));
             }
         }
     }
@@ -234,8 +309,14 @@ final class MdcRules {
         List<Statement> body = t.getBody().getStatements();
         List<J.MethodInvocation> puts = new ArrayList<>();
         int k = 0;
+        Map<J.MethodInvocation, String> keyOf = new IdentityHashMap<>();
+        m.facts().mdc.forEach(o -> {
+            if (o.key() != null) {
+                keyOf.put(o.call(), o.key());
+            }
+        });
         while (k < body.size() && body.get(k) instanceof J.MethodInvocation mi && isMdc(mi, "put", null)
-                && mi.getArguments().getFirst() instanceof J.Literal) {
+                && keyOf.containsKey(mi)) {   // literal or a resolved String constant
             puts.add(mi);
             k++;
         }
@@ -246,6 +327,9 @@ final class MdcRules {
         int[] inner = JavaEdits.blockInner(text, t.getBody());
         if (puts.isEmpty() || otherMdcWrites || !finallyOnlyMdc || !t.getCatches().isEmpty() || t.getResources() != null
                 || inner == null) {
+            if (clears) {
+                b.severity("high").fix(Rules.MDC_CLEAR);
+            }
             b.suggestion("Replace the puts with try (var mdc = MdcScope.of(k1, v1, k2, v2 ...)) and drop the finally cleanup"
                     + (otherMdcWrites ? "; the block also writes computed MDC keys, scope those explicitly too" : "")
                     + (clears ? ". MDC.clear() removes keys this method never set." : "."));
@@ -254,17 +338,32 @@ final class MdcRules {
         Map<String, String> aliases = ctx.policy.mdcAliases();
         List<String> pairs = new ArrayList<>();
         for (J.MethodInvocation put : puts) {
-            String key = (String) ((J.Literal) put.getArguments().getFirst()).getValue();
+            String key = keyOf.get(put);
+            boolean literal = put.getArguments().getFirst() instanceof J.Literal;
             if (ambient.contains(key)) {
                 b.location(f.relPath(), Pos.line(put), Rules.MANUAL_TRACE_MDC);
                 ambientOps.stream().filter(o -> o.call() == put).forEach(coveredAmbient::add);
                 continue;
             }
-            if (aliases.containsKey(key)) {
-                b.fix(Rules.MDC_KEY_ALIAS);
-                key = aliases.get(key);
+            String canonical = literal ? ctx.policy.canonicalMdcKey(key) : null;   // a constant keeps its name; rename it at its declaration
+            String effective = canonical != null ? canonical : key;
+            if (sameValueAlreadyInMdc(m, effective, put.getArguments().get(1))) {
+                b.fix(Rules.MDC_NESTED_KEY);
+                if (!ctx.a.paths.mdcAtEntry(m).contains(effective)) {
+                    // only planned: the entrypoint fixes that add it must be applied first
+                    for (Entrypoint ep : ctx.a.paths.entrypointsReaching(m)) {
+                        String id = ctx.entryOrders.get(ep.method().key());
+                        if (id != null) {
+                            b.dependsOn(id);
+                        }
+                    }
+                }
+                continue;   // every caller already scoped this value: a second scope would only hide the first
             }
-            pairs.add("\"" + key + "\", " + src(f, put.getArguments().get(1)));
+            if (canonical != null) {
+                b.fix(Rules.MDC_KEY_ALIAS);
+            }
+            pairs.add((canonical != null ? "\"" + canonical + "\"" : src(f, put.getArguments().getFirst())) + ", " + src(f, put.getArguments().get(1)));
         }
         ambientOps.stream().filter(o -> Pos.start(o.call()) > Pos.start(t) && Pos.start(o.call()) < Pos.end(t)).forEach(coveredAmbient::add);
         int restStart = puts.isEmpty() ? inner[0] : Text.nextLine(text, JavaEdits.statementEnd(text, puts.getLast()) - 1);
@@ -272,10 +371,15 @@ final class MdcRules {
         rest = rest.replaceFirst("^(\\s*\n)+", "");
         String indent = Text.indentAt(text, Pos.start(t));
         String var = EntrypointRules.unique("mdc", ctx.vars(m, Pos.start(t)).keySet());
-        String replacement = indent + "try (var " + var + " = MdcScope.of(" + String.join(", ", pairs) + ")) {\n" + rest + indent + "}\n";
+        String replacement = pairs.isEmpty()
+                ? Text.dedent(rest, Text.indentUnit(text))
+                : indent + "try (var " + var + " = MdcScope.of(" + String.join(", ", pairs) + ")) {\n" + rest + indent + "}\n";
         int from = Text.lineStart(text, Pos.start(t));
         int to = Text.nextLine(text, Pos.end(t) - 1);
-        b.severity(clears ? "medium" : "low");
+        b.severity(clears ? "high" : "low");
+        if (clears) {
+            b.fix(Rules.MDC_CLEAR);
+        }
         b.edit(Edit.replace(f.relPath(), from, to, replacement));
         b.edits(JavaEdits.imports(f, ctx.support("MdcScope")));
         if (!text.substring(0, from).concat(text.substring(to)).contains("MDC.")) {
@@ -283,6 +387,20 @@ final class MdcRules {
         }
         ctx.dependOnStarter(b);
         return new int[]{from, to};
+    }
+
+    /**
+     * The key is in MDC on every path into {@code m}, and the value is the parameter that carries it (a source
+     * parameter of that vocabulary key): the caller's scope already holds exactly this value.
+     */
+    private boolean sameValueAlreadyInMdc(MethodInfo m, String key, Expression value) {
+        if (!ctx.a.paths.reachable(m) || !ctx.mdcAtEntry(m).contains(key) || !(value instanceof J.Identifier id)) {
+            return false;
+        }
+        Policy.KeySource src = ctx.policy.mdcRegistry().get(key);
+        boolean param = m.decl().getParameters().stream().anyMatch(p -> p instanceof J.VariableDeclarations vd
+                && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(id.getSimpleName())));
+        return param && src != null && src.params().contains(id.getSimpleName());
     }
 
     /** The try statement whose body is {@code block}, if any. */

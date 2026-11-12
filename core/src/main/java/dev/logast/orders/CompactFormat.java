@@ -21,6 +21,11 @@ public final class CompactFormat {
         sb.append("logast: ").append(s.files()).append(" files, ").append(s.entrypoints()).append(" entrypoints, ")
                 .append(s.reachableMethods()).append('/').append(s.methods()).append(" methods reachable, ")
                 .append(s.edges()).append(" call edges\n");
+        if (!s.coverageComplete()) {
+            sb.append("WARNING: coverage incomplete: ").append(s.files()).append(" of ").append(s.discoveredFiles())
+                    .append(" source files analysed; ").append(String.join("; ", s.parseErrors().stream().limit(5).toList()))
+                    .append(s.parseErrors().size() > 5 ? "; …" : "").append('\n');
+        }
         if (s.noClasspath()) {
             sb.append("WARNING: no classpath (run `logast classpath <root>`); library types are unresolved and call edges may be missing\n");
         }

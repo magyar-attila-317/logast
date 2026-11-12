@@ -1,5 +1,6 @@
 package dev.logast.rules;
 
+import dev.logast.graph.CallGraph;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.LogCall;
 import dev.logast.model.MethodInfo;
@@ -43,13 +44,31 @@ final class EventMetricRules {
                 timed.add(ep.method().key());
             }
         }
+        // candidates first: a business event called from another observed method is part of that observation
+        Map<String, Event> candidates = new LinkedHashMap<>();
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() == null || m.decl().isConstructor() || timed.contains(m.key())
-                    || ctx.wrappedMethods.contains(m.key()) || measured(m)) {
+                    || ctx.wrappedMethods.contains(m.key()) || measured(m) || ctx.legacyMdc(m)) {
                 continue;
             }
-            event(m);
+            Event e = detect(m);
+            if (e != null) {
+                candidates.put(m.key(), e);
+            }
         }
+        for (var entry : candidates.entrySet()) {
+            MethodInfo m = ctx.a.index.method(entry.getKey());
+            boolean insideObservation = ctx.a.graph.in(m).stream().map(CallGraph.Edge::from).anyMatch(caller ->
+                    candidates.containsKey(caller.key()) || timed.contains(caller.key())
+                            || ctx.wrappedMethods.contains(caller.key()) || caller.decl().getBody() != null && measured(caller));
+            if (!insideObservation) {
+                emit(m, entry.getValue());
+            }
+        }
+    }
+
+    /** The business event a method logs: its subject and the first lifecycle log line. */
+    private record Event(String subject, LogCall first) {
     }
 
     private boolean measured(MethodInfo m) {
@@ -65,7 +84,7 @@ final class EventMetricRules {
      * whose subject is a short noun phrase, and which is either a full lifecycle (started + completed/failed in the
      * method) or names a vocabulary term ("Order sync", "Refund").
      */
-    private void event(MethodInfo m) {
+    private Event detect(MethodInfo m) {
         Map<String, Set<String>> eventsBySubject = new LinkedHashMap<>();
         Map<String, LogCall> firstBySubject = new LinkedHashMap<>();
         for (LogCall lc : m.facts().logs) {
@@ -98,9 +117,12 @@ final class EventMetricRules {
                 break;
             }
         }
-        if (subject == null) {
-            return;
-        }
+        return subject == null ? null : new Event(subject, first);
+    }
+
+    private void emit(MethodInfo m, Event ev) {
+        String subject = ev.subject();
+        LogCall first = ev.first();
         String name = MetricRules.canonicalName(ctx.policy, subject.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "."), ctx.area(m));
         if (!NAME.matcher(name).matches()) {
             return;

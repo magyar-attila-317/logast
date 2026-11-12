@@ -32,7 +32,7 @@ final class AreaRules {
                 continue;
             }
             int line = Pos.line(m.facts().logs.getFirst().call());
-            for (String key : def.requiredMdc()) {
+            for (String key : def.requiredMdc().stream().map(ctx.policy::styledKey).toList()) {
                 if (!ctx.mdcInside(m).contains(key) && !ctx.ignored(m.file(), line, Rules.AREA_MDC_MISSING)) {
                     byAreaKey.computeIfAbsent(area + "|" + key, k -> new ArrayList<>()).add(m);
                 }

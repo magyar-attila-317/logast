@@ -43,6 +43,7 @@ public final class Analysis {
         this.project = project;
         this.policy = policy;
         this.index = CodeIndex.build(project);
+        resolveConstantMdcKeys(index);
         this.springProperties = SpringProperties.read(project.root());
         boolean kafkaObserved = policy.entrypoints().kafkaObservationEnabled()
                 || "true".equals(springProperties.get("spring.kafka.listener.observation-enabled"));
@@ -74,6 +75,22 @@ public final class Analysis {
             System.err.printf("timing: parse %d ms, index+graph+paths %d ms%n", (t1 - t0) / 1_000_000, (System.nanoTime() - t1) / 1_000_000);
         }
         return a;
+    }
+
+    /** {@code MDC.put(MdcKeys.ORDER_ID, ..)}: rules need the key, not just literals. */
+    private static void resolveConstantMdcKeys(CodeIndex index) {
+        for (var m : index.methods()) {
+            var ops = m.facts().mdc;
+            for (int i = 0; i < ops.size(); i++) {
+                var op = ops.get(i);
+                if (op.key() == null && op.keyExpr() != null) {
+                    String key = dev.logast.graph.Constants.string(index, op.keyExpr());
+                    if (key != null) {
+                        ops.set(i, op.withKey(key));
+                    }
+                }
+            }
+        }
     }
 
     private static String appPackage(CodeIndex index) {
@@ -136,11 +153,18 @@ public final class Analysis {
         return new Stats(project.files().size(), index.methods().size(), entrypoints.size(), (int) reachable,
                 graph.edgeCount(), graph.ambiguousSites(), unresolved.size(),
                 unresolved.stream().limit(10).toList(), project.parseErrors(), project.classpath().isEmpty(),
-                project.files().stream().filter(f -> !f.editable()).map(f -> f.relPath()).toList());
+                project.files().stream().filter(f -> !f.editable()).map(f -> f.relPath()).toList(), project.discovered());
     }
 
+    /**
+     * @param discoveredFiles source files found; {@code files} of them were analysed, the rest are in parseErrors
+     */
     public record Stats(int files, int methods, int entrypoints, int reachableMethods, int edges,
                         int ambiguousCallSites, int unresolvedCalls, List<String> unresolvedSample,
-                        List<String> parseErrors, boolean noClasspath, List<String> nonEditableFiles) {
+                        List<String> parseErrors, boolean noClasspath, List<String> nonEditableFiles, int discoveredFiles) {
+        /** Every discovered file was analysed (LOG-COV-001): claims about "the whole service" hold. */
+        public boolean coverageComplete() {
+            return files >= discoveredFiles && parseErrors.isEmpty();
+        }
     }
 }
