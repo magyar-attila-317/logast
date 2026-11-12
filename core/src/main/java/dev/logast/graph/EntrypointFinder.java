@@ -90,18 +90,49 @@ public final class EntrypointFinder {
             case KAFKA -> "@KafkaListener " + Annotations.stringAttribute(a, "topics", "value").orElse(m.label());
             case JMS -> "@JmsListener " + Annotations.stringAttribute(a, "destination").orElse(m.label());
             case RABBIT -> "@RabbitListener " + Annotations.stringAttribute(a, "queues", "value").orElse(m.label());
-            case EVENT -> "@" + a.getSimpleName() + " " + m.label() + firstParamType(m);
+            case EVENT -> "@" + a.getSimpleName() + " " + m.label() + eventType(m, a);
             default -> "@" + a.getSimpleName() + " " + m.label();
         };
         boolean observed = switch (kind) {
             case SCHEDULED -> true;
             // synchronous listeners run in the publisher's thread, inside its span; @Async ones get the
-            // caller's context through the TaskDecorator (logging-support), so neither starts a new trace
-            case EVENT -> true;
+            // caller's context through the TaskDecorator (logging-support), so neither starts a new trace.
+            // Spring's own lifecycle events (ApplicationReadyEvent, ContextRefreshedEvent, ...) are published
+            // outside any request: those listeners have no trace unless they open one.
+            case EVENT -> !lifecycleEvent(m, a);
             case KAFKA -> kafkaObserved;
             default -> false;
         };
         return new Entrypoint(m, kind, label, observed);
+    }
+
+    /** Events Spring publishes itself during startup/shutdown, never inside a trace. */
+    private static final java.util.Set<String> LIFECYCLE_EVENTS = java.util.Set.of(
+            "ApplicationStartingEvent", "ApplicationEnvironmentPreparedEvent", "ApplicationContextInitializedEvent",
+            "ApplicationPreparedEvent", "ApplicationStartedEvent", "ApplicationReadyEvent", "ApplicationFailedEvent",
+            "ContextRefreshedEvent", "ContextStartedEvent", "ContextStoppedEvent", "ContextClosedEvent",
+            "WebServerInitializedEvent", "ServletWebServerInitializedEvent", "ReactiveWebServerInitializedEvent",
+            "AvailabilityChangeEvent");
+
+    static boolean lifecycleEvent(MethodInfo m, J.Annotation a) {
+        java.util.List<String> types = new java.util.ArrayList<>();
+        m.type().getParameterTypes().stream().findFirst().map(t -> Types.erasure(t)).ifPresent(types::add);
+        Annotations.rawAttribute(a, "classes").ifPresent(types::add);
+        Annotations.rawAttribute(a, "value").ifPresent(types::add);
+        return types.stream().filter(java.util.Objects::nonNull)
+                .flatMap(t -> java.util.Arrays.stream(t.split("[^\\w.$]+")))
+                .map(t -> t.endsWith(".class") ? t.substring(0, t.length() - 6) : t)
+                .map(t -> t.substring(t.lastIndexOf('.') + 1))
+                .anyMatch(LIFECYCLE_EVENTS::contains);
+    }
+
+    /** {@code (OrderPlaced)} from the parameter, else from {@code @EventListener(X.class)}. */
+    private static String eventType(MethodInfo m, J.Annotation a) {
+        if (!m.type().getParameterTypes().isEmpty()) {
+            return firstParamType(m);
+        }
+        return Annotations.rawAttribute(a, "classes").or(() -> Annotations.rawAttribute(a, "value"))
+                .map(s -> "(" + s.replaceAll("\\.class\\b", "").replaceAll("[{}\\s]", "") + ")").orElse("()");
     }
 
     private static String firstParamType(MethodInfo m) {

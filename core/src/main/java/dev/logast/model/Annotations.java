@@ -52,6 +52,9 @@ public final class Annotations {
                     && id.getSimpleName().equals(name)) {
                 return Optional.of(as.getAssignment().printTrimmed());
             }
+            if (!(arg instanceof J.Assignment) && !(arg instanceof J.Empty) && name.equals("value")) {
+                return Optional.of(arg.printTrimmed());   // @EventListener(ApplicationReadyEvent.class)
+            }
         }
         return Optional.empty();
     }
