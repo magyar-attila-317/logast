@@ -18,3 +18,8 @@ vocabulary:
         params: [orderId]
         types:
           com.example.e2e.order.Order: "id()"
+  agreement:
+    mdc:
+      key: agreementId
+      sources:
+        params: [agreementId]

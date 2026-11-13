@@ -39,6 +39,38 @@ index b5ef221..74b60cd 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/income/IncomeCalculator.java b/src/main/java/com/example/e2e/income/IncomeCalculator.java
+index 04a4db7..a82b3b1 100644
+--- a/src/main/java/com/example/e2e/income/IncomeCalculator.java
++++ b/src/main/java/com/example/e2e/income/IncomeCalculator.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.income;
+ 
++import com.example.e2e.logging.MdcScope;
+ import java.math.BigDecimal;
+ import java.util.List;
+ import java.util.Optional;
+@@ -35,13 +36,15 @@
+     }
+ 
+     private static Optional<String> validateCoupon(SalesTotals salesData, CouponDetails coupon) {
+-        for (CouponCheck check : CouponChecks.all()) {
+-            Optional<String> result = check.validate(coupon, salesData);
+-            if (result.isPresent()) {
+-                return result;
++        try (var mdc = MdcScope.of("agreementId", coupon.agreementId())) {
++            for (CouponCheck check : CouponChecks.all()) {
++                Optional<String> result = check.validate(coupon, salesData);
++                if (result.isPresent()) {
++                    return result;
++                }
+             }
++            return Optional.empty();
+         }
+-        return Optional.empty();
+     }
+ 
+     private static IncomeOutcome calculateIncome(SalesTotals salesData, CouponDetails coupon) {
 diff --git a/src/main/java/com/example/e2e/income/CalculationService.java b/src/main/java/com/example/e2e/income/CalculationService.java
 index c12133d..49d439e 100644
 --- a/src/main/java/com/example/e2e/income/CalculationService.java

@@ -40,10 +40,10 @@ index 4441104..fcb1bd0 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/income/IncomeCalculator.java b/src/main/java/com/example/e2e/income/IncomeCalculator.java
-index 9ca00bb..c5663df 100644
+index a82b3b1..5153ba7 100644
 --- a/src/main/java/com/example/e2e/income/IncomeCalculator.java
 +++ b/src/main/java/com/example/e2e/income/IncomeCalculator.java
-@@ -13,10 +13,9 @@ 
+@@ -15,10 +15,9 @@ 
      }
  
      public static IncomeOutcome calculate(SalesTotals salesData, List<CouponDetails> matchingCoupons) {
@@ -56,15 +56,16 @@ index 9ca00bb..c5663df 100644
              return new IncomeOutcome(true, BigDecimal.ZERO);
          }
          return evaluateOutcome(salesData, matchingCoupons);
-@@ -27,14 +26,14 @@
-             if (coupon.fundingPercentage() != null) {
+@@ -30,7 +29,7 @@
+             if (exclusion.isEmpty()) {
                  return calculateIncome(salesData, coupon);
              }
--            log.trace("Coupon excluded [couponId={}]", coupon.couponId());
-+            log.trace("Coupon excluded");
+-            log.trace("Coupon excluded [couponId={}, reason={}]", coupon.couponId(), exclusion.get());
++            log.trace("Coupon excluded [reason={}]", exclusion.get());
          }
          return new IncomeOutcome(true, BigDecimal.ZERO);
      }
+@@ -49,7 +48,7 @@
  
      private static IncomeOutcome calculateIncome(SalesTotals salesData, CouponDetails coupon) {
          BigDecimal result = salesData.totalDiscount().multiply(coupon.fundingPercentage());
@@ -87,6 +88,28 @@ index 1b9add7..0f5a523 100644
 +        log.info("Coupon sent");
      }
  }
+diff --git a/src/main/java/com/example/e2e/income/CouponChecks.java b/src/main/java/com/example/e2e/income/CouponChecks.java
+index 81fe38b..43456d4 100644
+--- a/src/main/java/com/example/e2e/income/CouponChecks.java
++++ b/src/main/java/com/example/e2e/income/CouponChecks.java
+@@ -22,7 +22,7 @@ 
+         public Optional<String> validate(CouponDetails coupon, SalesTotals salesData) {
+             log.trace(CHECK_LOG_MESSAGE, "approved", coupon.couponId(), coupon.agreementId(), salesData.saleDay());
+             if (coupon.agreementId() == null) {
+-                log.debug("Agreement missing [couponId={}, agreementId={}]", coupon.couponId(), coupon.agreementId());
++                log.debug("Agreement missing");
+                 return Optional.of("NO_AGREEMENT");
+             }
+             return Optional.empty();
+@@ -34,7 +34,7 @@
+         public Optional<String> validate(CouponDetails coupon, SalesTotals salesData) {
+             log.trace(CHECK_LOG_MESSAGE, "funding", coupon.couponId(), coupon.agreementId(), salesData.saleDay());
+             if (coupon.fundingPercentage() == null) {
+-                log.debug("No funding found [couponId={}, agreementId={}]", coupon.couponId(), coupon.agreementId());
++                log.debug("No funding found");
+                 return Optional.of("NO_FUNDING");
+             }
+             return Optional.empty();
 diff --git a/src/main/java/com/example/e2e/income/CalculationService.java b/src/main/java/com/example/e2e/income/CalculationService.java
 index 49d439e..1b7afce 100644
 --- a/src/main/java/com/example/e2e/income/CalculationService.java
