@@ -24,8 +24,18 @@ public record LogCall(J.MethodInvocation call, Level level, boolean fluent, Expr
     }
 
     /** In a loop whose size is unknown, or bounded but larger than {@code max}. */
+    /** Loop over data from a query or stream (database results, file lines, Kafka batches). */
+    public static final int LARGE = -2;
+    /** Loop whose size cannot be told from the code. */
+    public static final int UNKNOWN = -1;
+
     public boolean inLargeLoop(int max) {
         return loopBound < 0 || loopBound > max;
+    }
+
+    /** Over data from a query/stream, or a known size above {@code max}. */
+    public boolean inDataLoop(int max) {
+        return loopBound == LARGE || loopBound > max;
     }
 
     public boolean passesThrowable() {

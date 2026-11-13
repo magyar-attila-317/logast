@@ -119,7 +119,8 @@ public final class ServiceSetup {
                 # Exceptions caused by the caller (logged at WARN at most, never ERROR). Adds to the built-in list.
                 # levels:
                 #   clientErrors: [com.example.BusinessRuleViolationException]
-                #   noInfoInLoops: true          # INFO inside loops becomes DEBUG (for high-volume batch services)
+                #   infoInLoops: size            # INFO per loop item: fine when small, DEBUG over database rows/streams,
+                #                                # reported when unknown (`// logast:loop-size 10` above a loop settles it)
 
                 # Your own annotations that start work, like @KafkaListener does.
                 # entrypoints:

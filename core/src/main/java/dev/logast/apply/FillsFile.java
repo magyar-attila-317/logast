@@ -44,46 +44,68 @@ public final class FillsFile {
         return out;
     }
 
+    /** What {@link #update} changed: entries now, entries with text, added, removed, whether the file was written. */
+    public record Update(int entries, int filled, int added, int removed, boolean written) {
+    }
+
     /**
-     * Rewrites the file for the current orders: texts and args already written for an order that still exists are
-     * kept; entries of orders that are gone are dropped. Returns {total entries, entries with text}.
+     * Brings the file up to date without recreating it: existing entries stay exactly as they are and where they are
+     * (texts, args, hints), entries for new orders are appended, entries whose order is gone (applied, or no longer
+     * found) are removed. Nothing is written when nothing changed; the file is created when it does not exist.
      */
-    public static int[] update(Path root, List<WorkOrder> orders) {
+    public static Update update(Path root, List<WorkOrder> orders) {
         Path file = root.resolve(PATH);
         Map<String, JsonNode> previous = readRaw(file);
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("_readme", README);
-        int filled = 0;
         Map<String, Object> template = template(orders);
-        for (var e : template.entrySet()) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> fill = (Map<String, Object>) e.getValue();
-            JsonNode old = previous.get(e.getKey());
-            if (old != null && old.isObject()) {
-                boolean any = false;
-                for (String slot : List.copyOf(fill.keySet())) {
-                    if (!slot.startsWith("_") && old.path(slot).isTextual() && !old.path(slot).asText().isBlank()) {
-                        fill.put(slot, old.path(slot).asText());
-                        any = true;
-                    }
-                }
-                if (old.has("args")) {
-                    fill.put("args", OrderJson.MAPPER.convertValue(old.get("args"), List.class));
-                }
-                filled += any ? 1 : 0;
+        ObjectNode out = OrderJson.MAPPER.createObjectNode();
+        out.set("_readme", previous.getOrDefault("_readme", OrderJson.MAPPER.getNodeFactory().textNode(README)));
+        int filled = 0, removed = 0, added = 0;
+        for (var e : previous.entrySet()) {
+            if (e.getKey().startsWith("_")) {
+                continue;
             }
-            out.put(e.getKey(), fill);
+            if (!template.containsKey(e.getKey())) {
+                removed++;
+                continue;
+            }
+            ObjectNode node = e.getValue() instanceof ObjectNode o ? o.deepCopy() : OrderJson.MAPPER.createObjectNode();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> fresh = (Map<String, Object>) template.get(e.getKey());
+            fresh.forEach((k, v) -> {
+                if (!node.has(k)) {
+                    node.set(k, OrderJson.MAPPER.valueToTree(v));   // a slot or hint the order gained
+                }
+            });
+            boolean any = false;
+            for (var it = node.fields(); it.hasNext(); ) {
+                var f = it.next();
+                if (!f.getKey().startsWith("_") && !f.getKey().equals("args") && f.getValue().isTextual() && !f.getValue().asText().isBlank()) {
+                    any = true;
+                }
+            }
+            filled += any ? 1 : 0;
+            out.set(e.getKey(), node);
         }
-        if (template.isEmpty() && !Files.exists(file)) {
-            return new int[]{0, 0};
+        for (var e : template.entrySet()) {
+            if (!previous.containsKey(e.getKey())) {
+                out.set(e.getKey(), OrderJson.MAPPER.valueToTree(e.getValue()));
+                added++;
+            }
         }
-        try {
-            Files.createDirectories(file.getParent());
-            OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), out);
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
+        boolean exists = Files.exists(file);
+        if (template.isEmpty() && !exists) {
+            return new Update(0, 0, 0, 0, false);
         }
-        return new int[]{template.size(), filled};
+        boolean changed = !exists || added > 0 || removed > 0 || !out.equals(OrderJson.MAPPER.valueToTree(previous));
+        if (changed) {
+            try {
+                Files.createDirectories(file.getParent());
+                OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), out);
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+            }
+        }
+        return new Update(template.size(), filled, added, removed, changed);
     }
 
     /** Entries with text in every slot (empty ones are skipped, hints ignored). */

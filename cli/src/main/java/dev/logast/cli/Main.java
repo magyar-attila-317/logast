@@ -119,10 +119,11 @@ public final class Main {
             Path target = out != null ? out : root().resolve(".logast/orders.json");
             Files.createDirectories(target.toAbsolutePath().getParent());
             OrderJson.MAPPER.writeValue(target.toFile(), r);
-            int[] fillsState = out == null ? dev.logast.apply.FillsFile.update(root(), r.orders()) : new int[]{0, 0};
-            if (fillsState[0] > 0 && (format.equals("compact") || format.equals("summary"))) {
-                Out.progress(dev.logast.apply.FillsFile.PATH + ": " + fillsState[0] + " orders need a message text ("
-                        + fillsState[1] + " written so far); `logast apply . --auto` uses the ones you fill in");
+            if (out == null) {
+                var fu = dev.logast.apply.FillsFile.update(root(), r.orders());
+                if (fu.entries() > 0 && (format.equals("compact") || format.equals("summary"))) {
+                    Out.progress(fillsLine(fu));
+                }
             }
 
             Path baselineFile = baseline == null || baseline.isEmpty() ? root().resolve(".logast/baseline.json") : Path.of(baseline);
@@ -255,7 +256,14 @@ public final class Main {
             Applier applier = new Applier(new dev.logast.IncrementalScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
                     : Logast.policy(root, null).withPacks(packs)),
                     new FillValidator(policy));
-            Applier.Result r = applier.apply(root(), new Applier.Selection(auto, only, fillMap), write);
+            Applier.Result r = applier.apply(root(), new Applier.Selection(auto, only, fillMap, fills == null), write);
+            if (fills == null) {
+                // the automatic file follows the code: created if missing, finished entries out, new ones in
+                var fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders());
+                if (fu.written() && !format.equals("json")) {
+                    Out.progress(fillsLine(fu));
+                }
+            }
             if (format.equals("json")) {
                 System.out.println(OrderJson.MAPPER.writeValueAsString(r));
                 return r.rejected().isEmpty() ? 0 : 1;
@@ -292,6 +300,18 @@ public final class Main {
             }
             return r.rejected().isEmpty() ? 0 : 1;
         }
+    }
+
+    static String fillsLine(dev.logast.apply.FillsFile.Update fu) {
+        List<String> parts = new ArrayList<>();
+        if (fu.added() > 0) {
+            parts.add(fu.added() + " new");
+        }
+        if (fu.removed() > 0) {
+            parts.add(fu.removed() + " finished removed");
+        }
+        return dev.logast.apply.FillsFile.PATH + ": " + fu.entries() + " orders need a message text, " + fu.filled() + " written"
+                + (parts.isEmpty() ? "" : " (" + String.join(", ", parts) + ")") + "; `logast apply . --auto` uses the ones you fill in";
     }
 
     /** Unified diff with the usual colours: file headers bold, hunks cyan, removed red, added green. */
