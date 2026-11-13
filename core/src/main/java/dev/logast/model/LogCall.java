@@ -17,7 +17,13 @@ import java.util.List;
  *                  (enum values, List.of(..) literals, ...) running at most N times in total
  */
 public record LogCall(J.MethodInvocation call, Level level, boolean fluent, Expression template,
-                      List<Expression> args, CatchInfo inCatch, boolean statement, int loopBound) {
+                      List<Expression> args, CatchInfo inCatch, boolean statement, int loopBound, boolean offThread) {
+    /** @param offThread runs in a lambda handed to another thread without MDC propagation (MDC is empty there) */
+    public LogCall(J.MethodInvocation call, Level level, boolean fluent, Expression template, List<Expression> args,
+                   CatchInfo inCatch, boolean statement, int loopBound) {
+        this(call, level, fluent, template, args, inCatch, statement, loopBound, false);
+    }
+
 
     public boolean inLoop() {
         return loopBound != 0;

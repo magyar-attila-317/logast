@@ -360,7 +360,7 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
             }
             Expression template = args.isEmpty() ? null : args.getFirst();
             addLog(f, new LogCall(mi, LEVELS.get(name), false, template,
-                    args.isEmpty() ? List.of() : List.copyOf(args.subList(1, args.size())), inCatch, statement, currentBound()));
+                    args.isEmpty() ? List.of() : List.copyOf(args.subList(1, args.size())), inCatch, statement, currentBound(), offThread()));
             return mi;
         }
         if (owner.equals("org.slf4j.spi.LoggingEventBuilder") && name.equals("log")) {
@@ -368,7 +368,7 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
             List<Expression> args = args(mi);
             addLog(f, new LogCall(mi, level == null ? Level.INFO : level, true,
                     args.isEmpty() ? null : args.getFirst(),
-                    args.isEmpty() ? List.of() : List.copyOf(args.subList(1, args.size())), inCatch, statement, currentBound()));
+                    args.isEmpty() ? List.of() : List.copyOf(args.subList(1, args.size())), inCatch, statement, currentBound(), offThread()));
             return mi;
         }
         if (owner.equals("org.slf4j.Logger") || owner.equals("org.slf4j.spi.LoggingEventBuilder")) {
@@ -450,6 +450,11 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         List<CatchInfo> out = new ArrayList<>();
         guards.forEach(out::addAll);
         return List.copyOf(out);
+    }
+
+    /** Inside a lambda handed to another thread whose MDC is not propagated (raw async). */
+    private boolean offThread() {
+        return asyncStack.stream().anyMatch(managed -> !managed);
     }
 
     /** If the parent tree is an async API call, whether it is Spring-managed; null when not async. */

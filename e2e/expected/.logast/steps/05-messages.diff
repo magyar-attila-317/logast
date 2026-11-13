@@ -13,6 +13,66 @@ index 3bbf835..953f5f0 100644
 +        log.info("Order placed");
      }
  }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 671ba3a..0c14077 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -17,7 +17,7 @@ 
+ public class EdgeFlow implements Audited {
+     public void process(SalesTotals salesData) {
+         try (var mdc2 = MdcScope.of("couponId", salesData.couponId())) {
+-            log.info("Edge processing started [couponId={}]", salesData.couponId());
++            log.info("Edge processing started");
+             CouponRules.check(salesData.couponId());                                   // @UtilityClass, methods not declared static
+             List.of(salesData).forEach(this::publishOne);                              // method reference
+             for (Exclusion exclusion : Exclusion.values()) {                           // enum constants with bodies
+@@ -26,14 +26,14 @@
+             CouponDetails coupon = new CouponDetails(salesData.couponId(), null, null, null);
+             try (var mdc = MdcScope.of("agreementId", coupon.agreementId())) {
+                 CouponCheck inline = (c, s) -> {                                           // lambda implementing an interface
+-                    log.debug("Inline check [couponId={}]", c.couponId());
++                    log.debug("Inline check");
+                     return Optional.empty();
+                 };
+                 inline.validate(coupon, salesData);
+                 new CouponCheck() {                                                        // anonymous implementation
+                     @Override
+                     public Optional<String> validate(CouponDetails c, SalesTotals s) {
+-                        log.debug("Anonymous check [couponId={}]", c.couponId());
++                        log.debug("Anonymous check");
+                         return Optional.empty();
+                     }
+                 }.validate(coupon, salesData);
+@@ -43,14 +43,14 @@
+                 EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
+                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+                         log.info("Coupon archived [couponId={}]", salesData.couponId()));
+-                log.info("Coupon parsed [couponId={}]", UUID.nameUUIDFromBytes(salesData.couponId().getBytes())); // a transformed value
++                log.info("Coupon parsed"); // a transformed value
+                 new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
+-                log.info("Edge processing completed [couponId={}]", salesData.couponId());
++                log.info("Edge processing completed");
+             }
+         }
+     }
+ 
+     private void publishOne(SalesTotals row) {
+-        log.debug("Publishing coupon [couponId={}]", row.couponId());
++        log.debug("Publishing coupon");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
+index e6d521d..561107f 100644
+--- a/src/main/java/com/example/e2e/edge/Audited.java
++++ b/src/main/java/com/example/e2e/edge/Audited.java
+@@ -8,6 +8,6 @@ 
+     Logger AUDIT_LOG = LoggerFactory.getLogger(Audited.class);
+ 
+     default void audit(String couponId) {
+-        AUDIT_LOG.info("Coupon audited [couponId={}]", couponId);
++        AUDIT_LOG.info("Coupon audited");
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
 index 4441104..fcb1bd0 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponService.java
@@ -74,6 +134,20 @@ index a82b3b1..5153ba7 100644
          return new IncomeOutcome(false, result);
      }
  }
+diff --git a/src/main/java/com/example/e2e/edge/CouponTask.java b/src/main/java/com/example/e2e/edge/CouponTask.java
+index b5b44e5..c942299 100644
+--- a/src/main/java/com/example/e2e/edge/CouponTask.java
++++ b/src/main/java/com/example/e2e/edge/CouponTask.java
+@@ -12,7 +12,7 @@ 
+     }
+ 
+     public void run() {
+-        log.info("Task step one [couponId={}]", couponId);
+-        log.info("Task step two [couponId={}]", couponId);
++        log.info("Task step one");
++        log.info("Task step two");
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponSender.java b/src/main/java/com/example/e2e/coupon/CouponSender.java
 index 1b9add7..0f5a523 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponSender.java
@@ -123,6 +197,43 @@ index 49d439e..1b7afce 100644
              List<CouponDetails> matchingCoupons = filterMatchingCoupons(allCouponDetails, salesData.couponId());
              return IncomeCalculator.calculate(salesData, matchingCoupons);
          }
+diff --git a/src/main/java/com/example/e2e/edge/Exclusion.java b/src/main/java/com/example/e2e/edge/Exclusion.java
+index fa0d2df..92efeb4 100644
+--- a/src/main/java/com/example/e2e/edge/Exclusion.java
++++ b/src/main/java/com/example/e2e/edge/Exclusion.java
+@@ -10,14 +10,14 @@ 
+     EXPIRED {
+         @Override
+         Optional<String> test(SalesTotals salesData) {
+-            LOG.debug("Expiry checked [couponId={}]", salesData.couponId());
++            LOG.debug("Expiry checked");
+             return Optional.empty();
+         }
+     },
+     UNFUNDED {
+         @Override
+         Optional<String> test(SalesTotals salesData) {
+-            LOG.debug("Funding checked [couponId={}]", salesData.couponId());
++            LOG.debug("Funding checked");
+             return Optional.empty();
+         }
+     };
+diff --git a/src/main/java/com/example/e2e/edge/CouponRules.java b/src/main/java/com/example/e2e/edge/CouponRules.java
+index fd9932e..2271611 100644
+--- a/src/main/java/com/example/e2e/edge/CouponRules.java
++++ b/src/main/java/com/example/e2e/edge/CouponRules.java
+@@ -8,9 +8,9 @@ 
+ @UtilityClass
+ public class CouponRules {
+     public void check(String couponId) {
+-        log.debug("Checking rules [couponId={}]", couponId);
++        log.debug("Checking rules");
+         if (couponId.isBlank()) {
+-            log.debug("No rules apply [couponId={}]", couponId);
++            log.debug("No rules apply");
+         }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
 index 08f9ee6..7704c24 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
@@ -136,6 +247,19 @@ index 08f9ee6..7704c24 100644
              repository.close(couponId);
          }
          AfterCommit.log(() -> log.info("Coupon cleanup completed [couponCount={}]", couponIds.size())); // logast:wording
+diff --git a/src/main/java/com/example/e2e/edge/OriginCheck.java b/src/main/java/com/example/e2e/edge/OriginCheck.java
+index 75a07b2..dbee97b 100644
+--- a/src/main/java/com/example/e2e/edge/OriginCheck.java
++++ b/src/main/java/com/example/e2e/edge/OriginCheck.java
+@@ -8,7 +8,7 @@ 
+ public class OriginCheck implements Check<CouponDetails> {
+     @Override
+     public Optional<String> test(CouponDetails coupon) {
+-        log.debug("Origin checked [couponId={}, origin={}]", coupon.couponId(), coupon.origin());
++        log.debug("Origin checked [origin={}]", coupon.origin());
+         return Optional.empty();
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
 index 84cd343..1e94776 100644
 --- a/src/main/java/com/example/e2e/job/CalculationJob.java

@@ -54,8 +54,17 @@ dependencies {
     testRuntimeOnly(libs.junit.launcher)
 }
 
+// Lombok for the e2e project only (real services use it; the fixture stays without)
+val e2eLombok by configurations.creating
+dependencies {
+    e2eLombok(platform(libs.spring.boot.bom))
+    e2eLombok("org.projectlombok:lombok")
+}
+
 // e2e golden test: `./gradlew :cli:test -Pe2e.update` rewrites e2e/expected after an intended behaviour change
 tasks.test {
+    inputs.files(e2eLombok)
+    systemProperty("logast.e2e.lombok", e2eLombok.asPath)
     useJUnitPlatform()
     dependsOn(":fixtures:sample-app:writeClasspath")
     systemProperty("logast.e2e.before", rootProject.file("e2e/before").absolutePath)

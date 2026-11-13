@@ -1,6 +1,6 @@
 {
   "_readme" : "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.",
-  "_status" : "9 finding(s) below need a message text.",
+  "_status" : "11 finding(s) below need a message text.",
   "SUG-bc8896" : {
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Coupon cleanup started | must read as: {subject} started",
@@ -14,17 +14,27 @@
   "SUG-d99e11" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupons updated | suffix keys added by the tool: [rows]",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:29 CouponRepository.close"
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:27 CouponRepository.close"
   },
   "SUG-3b5d90" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupon usage saved | suffix keys added by the tool: [uses]",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:34 CouponRepository.countUse"
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:32 CouponRepository.countUse"
   },
   "SUG-56cdac" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupons read | suffix keys added by the tool: [count]",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:40 CouponRepository.findOpen"
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:38 CouponRepository.findOpen"
+  },
+  "SUG-2f8476" : {
+    "MSG" : "",
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Edge started | must read as: {subject} started",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeJob.java:21 EdgeJob.run"
+  },
+  "SUG-bd5779" : {
+    "MSG" : "",
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Edge completed | must read as: {subject} completed | suffix keys added by the tool: [salesTotalsCount]",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeJob.java:26 EdgeJob.run"
   },
   "SUG-a2a43c" : {
     "MSG" : "",
@@ -34,12 +44,12 @@
   "SUG-4dc17a" : {
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Export job started | must read as: {subject} started",
-    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:15 ExportJob.doExecute"
+    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:13 ExportJob.doExecute"
   },
   "SUG-7055a3" : {
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Export job completed | must read as: {subject} completed",
-    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:16 ExportJob.doExecute"
+    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:14 ExportJob.doExecute"
   },
   "FMT-93dcb8" : {
     "MSG" : "",
