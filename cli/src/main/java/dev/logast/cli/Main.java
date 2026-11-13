@@ -571,7 +571,12 @@ public final class Main {
     static class ShapeCmd extends Common implements Callable<Integer> {
         @Override
         public Integer call() throws IOException {
-            Analysis a = Logast.analyse(root(), classpath(), policy());
+            List<Path> cp = classpath();
+            if (cp.isEmpty()) {
+                Out.warn("no classpath (.logast/classpath*.txt): run `logast classpath .` first, or the export misses how "
+                        + "Lombok and library calls connect your code");
+            }
+            Analysis a = Logast.analyse(root(), cp, policy());
             var r = dev.logast.ShapeExport.write(a, root().resolve(".logast/shape"), root().resolve(".logast/shape-mapping.txt"));
             System.out.println("wrote " + r.files() + " files to " + root().relativize(r.dir()) + " (" + r.words() + " words replaced)");
             System.out.println("read it before sending it; the mapping back stays here: " + root().relativize(r.mapping()));

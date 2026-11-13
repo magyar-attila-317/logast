@@ -153,7 +153,9 @@ final class CoverageRules {
         if (stmts.size() < 2) {
             return out;   // a lone line is first and last at once: its wording decides
         }
-        if (infoLogIn(m, stmts.getFirst())) {
+        // simple declarations before the line do no work yet: List<String> errors = new ArrayList<>(); int count = 0;
+        Statement opening = stmts.stream().filter(s -> !setupOnly(s)).findFirst().orElse(stmts.getFirst());
+        if (infoLogIn(m, opening)) {
             out.add("started");
         }
         Statement last = stmts.getLast();
@@ -164,6 +166,19 @@ final class CoverageRules {
             out.add("completed");
         }
         return out;
+    }
+
+    /** A local declaration without work: no initializer, a literal, null, a variable, or a constructor without arguments. */
+    private static boolean setupOnly(Statement s) {
+        if (!(s instanceof J.VariableDeclarations vd)) {
+            return false;
+        }
+        return vd.getVariables().stream().allMatch(v -> {
+            var init = v.getInitializer();
+            return init == null || init instanceof J.Literal || init instanceof J.Identifier
+                    || init instanceof J.NewClass n && n.getBody() == null
+                    && (n.getArguments() == null || n.getArguments().stream().allMatch(a -> a instanceof J.Empty));
+        });
     }
 
     /** The statement is an INFO+ log call (directly, or the line inside an AfterCommit.log lambda), not in a catch. */

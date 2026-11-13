@@ -106,6 +106,8 @@ public final class LifecyclePlan {
             List<MethodInfo> impls = ctx.a.index.resolve(base.decl().getMethodType()).stream()
                     .filter(m -> !m.key().equals(base.key()) && m.decl().getBody() != null && done.add(m.key()))
                     .filter(m -> !m.owner().fqn().startsWith(ctx.a.supportPackage + "."))
+                    // an abstract class passes the step on to its subclasses: they own the lifecycle, not it
+                    .filter(m -> !m.owner().decl().hasModifier(J.Modifier.Type.Abstract))
                     .toList();
             if (impls.size() < 2) {
                 continue;

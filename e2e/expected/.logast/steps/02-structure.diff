@@ -1,3 +1,28 @@
+diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
+index 1627a09..6a002c4 100644
+--- a/src/main/java/com/example/e2e/job/PublishRunJob.java
++++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -13,7 +14,11 @@
+ 
+     @Override
+     protected void doRun(String runCode) {
+-        log.info("Publishing started [runCode={}]", runCode);
+-        log.info("Publishing completed [runCode={}]", runCode);
++        ObservedContext.entrypoint("publishing")
++                .quiet()
++                .run(() -> {
++                    log.info("Publishing started [runCode={}]", runCode);
++                    log.info("Publishing completed [runCode={}]", runCode);
++                });
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/job/TpiJobExecutor.java b/src/main/java/com/example/e2e/job/TpiJobExecutor.java
 index b2e38bd..0819a35 100644
 --- a/src/main/java/com/example/e2e/job/TpiJobExecutor.java

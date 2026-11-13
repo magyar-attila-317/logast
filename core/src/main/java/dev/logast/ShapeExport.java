@@ -71,6 +71,10 @@ public final class ShapeExport {
     private Result run(Analysis a, Path out, Path mappingFile) throws IOException {
         for (ClassInfo c : a.index.classes()) {
             own.add(c.fqn());
+            String pkg = c.type().getPackageName();
+            if (!pkg.isEmpty()) {
+                ownPackages.add(pkg);
+            }
         }
         String app = a.appPackage == null ? "" : a.appPackage;
         String[] seg = app.split("\\.");
@@ -84,11 +88,15 @@ public final class ShapeExport {
             }
         }
         for (SourceFileInfo f : a.project.files()) {
+            collectOwnNames(f.cu());
+        }
+        for (SourceFileInfo f : a.project.files()) {
             collectProtected(f.cu());
         }
         for (String p : protectedNames) {
             words(p).forEach(w -> generic.add(w.toLowerCase(Locale.ROOT)));
         }
+        protectedNames.addAll(guessedNames);   // whole names only: their words are not made generic
         deleteDir(out);
         int files = 0;
         for (SourceFileInfo f : a.project.files()) {
@@ -149,6 +157,60 @@ public final class ShapeExport {
         }
     }
 
+    /** Names declared in the code (methods, fields, classes): an unresolved name that is none of them is a library's. */
+    private final Set<String> ownNames = new HashSet<>();
+    /** Unresolved library names (no classpath for them): kept as whole names. */
+    private final Set<String> guessedNames = new HashSet<>();
+
+    private void collectOwnNames(J.CompilationUnit cu) {
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration md, Integer p) {
+                ownNames.add(md.getSimpleName());
+                return super.visitMethodDeclaration(md, p);
+            }
+
+            @Override
+            public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration c, Integer p) {
+                ownNames.add(c.getSimpleName());
+                return super.visitClassDeclaration(c, p);
+            }
+
+            @Override
+            public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable v, Integer p) {
+                String n = v.getSimpleName();
+                ownNames.add(n);
+                if (!n.isEmpty()) {
+                    String cap = Character.toUpperCase(n.charAt(0)) + n.substring(1);
+                    ownNames.addAll(List.of("get" + cap, "set" + cap, "is" + cap, "with" + cap));   // Lombok accessors
+                }
+                return super.visitVariable(v, p);
+            }
+        }.visit(cu, 0);
+    }
+
+    private boolean unresolved(JavaType.Method mt) {
+        return mt == null || mt.getDeclaringType() == null || mt.getDeclaringType() instanceof JavaType.Unknown;
+    }
+
+    /** Own packages (of source classes), to tell own imports from library ones without type resolution. */
+    private final Set<String> ownPackages = new HashSet<>();
+
+    /** An import of a public library: not own code, not under the company's prefix. Kept as written. */
+    private boolean externalImport(String path) {
+        String p = path.replaceFirst("^static\\s+", "").strip();
+        if (internalPrefix != null && p.startsWith(internalPrefix)) {
+            return false;
+        }
+        String owner = p.endsWith(".*") ? p.substring(0, p.length() - 2) : p;
+        for (String pkg : ownPackages) {
+            if (owner.equals(pkg) || owner.startsWith(pkg + ".")) {
+                return false;
+            }
+        }
+        return !own.contains(owner);
+    }
+
     // ---- what must keep its name: symbols of public libraries ----
 
     private boolean library(JavaType t) {
@@ -188,6 +250,9 @@ public final class ShapeExport {
             @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
                 protectMethod(mi.getMethodType());
+                if (unresolved(mi.getMethodType()) && !ownNames.contains(mi.getSimpleName())) {
+                    guessedNames.add(mi.getSimpleName());   // ResponseEntity.ok().body(..) without the jar
+                }
                 return super.visitMethodInvocation(mi, p);
             }
 
@@ -221,7 +286,12 @@ public final class ShapeExport {
 
             @Override
             public J.Annotation visitAnnotation(J.Annotation an, Integer p) {
-                if (library(an.getType()) && an.getArguments() != null) {
+                String simple = an.getSimpleName();
+                boolean ownAnnotation = ownNames.contains(simple) && !library(an.getType());
+                if (!ownAnnotation) {
+                    guessedNames.add(simple);   // @PostMapping from a wildcard import, resolved or not
+                }
+                if (!ownAnnotation && an.getArguments() != null) {
                     for (var arg : an.getArguments()) {
                         if (arg instanceof J.Assignment as && as.getVariable() instanceof J.Identifier name) {
                             protectedNames.add(name.getSimpleName());   // @Scheduled(cron = ...)
@@ -233,6 +303,12 @@ public final class ShapeExport {
 
             @Override
             public J.Import visitImport(J.Import i, Integer p) {
+                String path = i.getQualid().printTrimmed().replaceAll("\\s+", "");
+                if (externalImport(path)) {
+                    // the class (or static member) name stays wherever the code uses it, resolved or not
+                    String[] parts = path.split("\\.");
+                    protectedNames.addAll(Arrays.asList(parts).subList(0, parts.length).stream().filter(x -> !x.equals("*")).toList());
+                }
                 protectType(i.getQualid().getType());
                 if (i.isStatic() && i.getQualid().getTarget() instanceof J.FieldAccess t && library(t.getType())) {
                     protectedNames.add(i.getQualid().getSimpleName());
@@ -354,6 +430,14 @@ public final class ShapeExport {
                 j = Math.min(j + 1, n);
                 out.append(c == '"' ? mapText(src.substring(i, j)) : src.substring(i, j));
                 i = j;
+            } else if (src.startsWith("import", i) && (i == 0 || src.charAt(i - 1) == '\n') && i + 6 < n
+                    && Character.isWhitespace(src.charAt(i + 6))) {
+                int end = src.indexOf(';', i);
+                end = end < 0 ? n : end + 1;
+                String stmt = src.substring(i, end);
+                out.append(externalImport(stmt.substring(6, stmt.length() - 1).replaceAll("\\s+", " ").strip()
+                        .replace(" ", "").replaceFirst("^static", "static ")) ? stmt : mapImport(stmt));
+                i = end;
             } else if (Character.isJavaIdentifierStart(c)) {
                 int j = i + 1;
                 while (j < n && Character.isJavaIdentifierPart(src.charAt(j))) {
@@ -376,6 +460,17 @@ public final class ShapeExport {
             }
         }
         return out.toString();
+    }
+
+    private String mapImport(String stmt) {
+        Matcher m = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*").matcher(stmt);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            String id = m.group();
+            m.appendReplacement(sb, Matcher.quoteReplacement(id.equals("import") || id.equals("static") ? id : mapIdentifier(id)));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     /** Policy YAML: comments dropped, every non-generic word mapped the same way as in the code. */
