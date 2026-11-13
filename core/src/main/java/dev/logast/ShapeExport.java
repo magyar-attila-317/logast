@@ -52,7 +52,7 @@ public final class ShapeExport {
             + "string int long boolean object array optional empty present parse format to string of equals hash "
             + "spring boot java javax jakarta org com io net lombok slf4j jackson micrometer opentelemetry otel junit "
             + "example test tests mock received called used loaded requested invoked queued enabled disabled configured "
-            + "initialized initialised registered sent rejected cancelled built").split(" ")));
+            + "initialized initialised registered sent rejected cancelled built wording ignore loop small large").split(" ")));
 
     private final Set<String> generic = new HashSet<>(BASE_GENERIC);
     private final Map<String, String> aliases = new LinkedHashMap<>();   // lower-case word -> alias
