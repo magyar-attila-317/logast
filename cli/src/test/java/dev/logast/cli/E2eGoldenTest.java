@@ -92,6 +92,29 @@ class E2eGoldenTest {
      * A person rewords every line logast asked about (keeping the form it requires), then applies again: the result
      * must settle (a further apply changes nothing) and still pass the migration invariants.
      */
+    /** logast shape: no business word leaves, the export compiles and gives the same findings as the original. */
+    @Test
+    void shapeExportHidesTheWordsAndKeepsTheFindings() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        run(app, "shape", app.toString(), "--classpath-file", CLASSPATH);
+        Path shape = tmp.resolve("shape");
+        copy(app.resolve(".logast/shape"), shape);
+        try (var files = Files.walk(shape)) {
+            for (Path f : files.filter(Files::isRegularFile).toList()) {
+                String text = Files.readString(f).toLowerCase(java.util.Locale.ROOT) + f;
+                for (String word : List.of("coupon", "agreement", "income", "funding", "sales", "redeem", "voucher")) {
+                    assertThat(text).as(f + " still says " + word).doesNotContain(word);
+                }
+            }
+        }
+        compile(shape);
+        java.util.function.Function<Path, List<String>> rules = root -> run(root, "scan", root.toString(), "--format", "summary",
+                "--classpath-file", CLASSPATH).lines().map(String::strip).filter(l -> l.matches("[A-Z_]+ +\\d+.*"))
+                .map(l -> l.replaceAll("^([A-Z_]+ +\\d+).*", "$1")).filter(l -> !l.startsWith("SETUP_SUPPORT_STARTER")).sorted().toList();
+        assertThat(rules.apply(shape)).as("the export finds what the original finds").isEqualTo(rules.apply(app));
+    }
+
     @Test
     void rewordingTheGeneratedLinesConverges() throws IOException {
         Path app = tmp.resolve("app");
