@@ -240,6 +240,8 @@ public final class Main {
         boolean auto;
         @Option(names = "--only", split = ",", description = "Restrict to these order ids")
         Set<String> only = new LinkedHashSet<>();
+        @Option(names = "--until", description = "Stop after this pipeline step: setup, structure, lines, mdc, messages, exceptions, levels, reports (default: all)")
+        String until;
         @Option(names = "--write", description = "Write changes (default: print the diff only)")
         boolean write;
         @Option(names = "--format", defaultValue = "text", description = "text | json")
@@ -270,7 +272,8 @@ public final class Main {
             List<Path> cp = classpath();
             dev.logast.IncrementalScanner scanner = new dev.logast.IncrementalScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
                     : Logast.policy(root, null).withPacks(packs));
-            Applier applier = new Applier(scanner, new FillValidator(policy))
+            Rules.Step untilStep = until == null ? null : Rules.Step.valueOf(until.toUpperCase(java.util.Locale.ROOT));
+            Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep)
                     .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files));
             Applier.Result r;
             try (Out.Progress p = new Out.Progress("~starting")) {
@@ -286,6 +289,28 @@ public final class Main {
                 var mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders());
                 if (mu.written() && !format.equals("json")) {
                     Out.progress(metricsLine(mu));
+                }
+            }
+            // one diff per pipeline step, applicable in order: review or drop a whole kind of change at once
+            Path stepsDir = root().resolve(".logast/steps");
+            if (Files.exists(stepsDir) && !r.stepDiffs().isEmpty()) {   // a run that changes nothing keeps the last ones
+                try (var old = Files.list(stepsDir)) {
+                    for (Path p : old.toList()) {
+                        Files.delete(p);
+                    }
+                }
+            }
+            if (!r.stepDiffs().isEmpty()) {
+                Files.createDirectories(stepsDir);
+                int i = 0;
+                List<String> names = new ArrayList<>();
+                for (var e : r.stepDiffs().entrySet()) {
+                    String file = String.format("%02d-%s.diff", ++i, e.getKey());
+                    Files.writeString(stepsDir.resolve(file), e.getValue());
+                    names.add(file);
+                }
+                if (!format.equals("json")) {
+                    Out.progress("per step (apply in order, drop what you don't want): .logast/steps/ " + String.join(" ", names));
                 }
             }
             if (format.equals("json")) {

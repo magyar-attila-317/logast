@@ -58,7 +58,7 @@ final class RepeatedValueRules {
         for (var e : plans.entrySet()) {
             MethodInfo m = ctx.a.index.method(e.getKey());
             Map<String, Plan> mine = new LinkedHashMap<>(e.getValue());
-            mine.keySet().removeIf(key -> coveredByCallers(m, key, plans));
+            mine.keySet().removeIf(key -> coveredByCallers(m, key, plans, 0, new HashSet<>()));
             emit(m, mine);
         }
     }
@@ -66,10 +66,13 @@ final class RepeatedValueRules {
     private record Plan(Candidate candidate, Region region, int total) {
     }
 
-    /** Every caller has {@code key} in MDC already, or scopes it itself and passes the value on to {@code m}. */
-    private boolean coveredByCallers(MethodInfo m, String key, Map<String, Map<String, Plan>> plans) {
+    /**
+     * On every path into {@code m}, a method above has {@code key} in MDC or gets a scope for it in this run (not only
+     * the direct callers: listener → method (scope) → helper → helper (logs it) is covered too).
+     */
+    private boolean coveredByCallers(MethodInfo m, String key, Map<String, Map<String, Plan>> plans, int depth, Set<String> seen) {
         var in = ctx.a.graph.in(m);
-        if (in.isEmpty()) {
+        if (in.isEmpty() || depth > CHAIN_DEPTH || !seen.add(m.key())) {
             return false;
         }
         for (var e : in) {
@@ -81,8 +84,11 @@ final class RepeatedValueRules {
                 continue;
             }
             Map<String, Plan> theirs = plans.get(caller.key());
-            if (theirs == null || !theirs.containsKey(key)) {
-                return false;   // a caller that scopes the key covers this method too: a scope here would nest
+            if (theirs != null && theirs.containsKey(key)) {
+                continue;   // the caller scopes it: a scope here would nest
+            }
+            if (!coveredByCallers(caller, key, plans, depth + 1, new HashSet<>(seen))) {
+                return false;
             }
         }
         return true;
@@ -146,13 +152,13 @@ final class RepeatedValueRules {
         return out;
     }
 
-    /** A method the value is passed on to already puts {@code key} into MDC: a scope here would nest. */
+    /** A method below already puts {@code key} into MDC itself (passed the value or not): a scope here would nest. */
     private boolean setBelow(MethodInfo m, String key, int depth, Set<String> seen) {
         if (depth > CHAIN_DEPTH) {
             return false;
         }
-        for (var p : passes(m, key)) {
-            MethodInfo callee = p.getKey().to();
+        for (var e : ctx.a.graph.out(m)) {
+            MethodInfo callee = e.to();
             if (!seen.add(callee.key())) {
                 continue;
             }

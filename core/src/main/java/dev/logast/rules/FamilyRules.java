@@ -59,9 +59,10 @@ final class FamilyRules {
         }
     }
 
-    /** Lifecycle events the method logs at INFO+ on its normal path, with their subject. */
+    /** Lifecycle events the method logs at INFO+ on its normal path, with their subject (by role or by wording). */
     private Map<String, String> events(MethodInfo m) {
         Map<String, String> out = new LinkedHashMap<>();
+        CoverageRules.roles(m).forEach(role -> out.put(role, ""));
         for (LogCall lc : m.facts().logs) {
             if (lc.level().compareTo(Level.INFO) < 0 || lc.inCatch() != null || !(lc.template() instanceof J.Literal l)
                     || !(l.getValue() instanceof String raw)) {
@@ -71,7 +72,7 @@ final class FamilyRules {
             String event = ctx.phrasing.eventOf(text);
             if (event != null && EVENTS.contains(event)) {
                 String subject = ctx.phrasing.subjectOf(text);
-                out.putIfAbsent(event, subject == null ? "" : subject);
+                out.merge(event, subject == null ? "" : subject, (had, now) -> had.isBlank() ? now : had);
             }
         }
         return out;

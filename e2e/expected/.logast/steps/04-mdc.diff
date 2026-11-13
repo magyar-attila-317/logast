@@ -1,0 +1,66 @@
+diff --git a/src/main/java/com/example/e2e/web/CouponController.java b/src/main/java/com/example/e2e/web/CouponController.java
+index b5ef221..74b60cd 100644
+--- a/src/main/java/com/example/e2e/web/CouponController.java
++++ b/src/main/java/com/example/e2e/web/CouponController.java
+@@ -2,6 +2,7 @@ 
+ 
+ import com.example.e2e.coupon.CouponRepository;
+ import com.example.e2e.coupon.CouponService;
++import com.example.e2e.logging.MdcScope;
+ import com.example.e2e.order.Order;
+ import com.example.e2e.order.OrderService;
+ import java.util.List;
+@@ -26,12 +27,16 @@
+ 
+     @PostMapping("/coupons/{couponId}/publish")
+     public void publish(@PathVariable String couponId) {
+-        coupons.publish(couponId);
++        try (var mdc = MdcScope.of("couponId", couponId)) {
++            coupons.publish(couponId);
++        }
+     }
+ 
+     @PostMapping("/coupons/{couponId}/use")
+     public int use(@PathVariable String couponId) {
+-        return repository.countUse(couponId);
++        try (var mdc = MdcScope.of("couponId", couponId)) {
++            return repository.countUse(couponId);
++        }
+     }
+ 
+     @PostMapping("/coupons/redeem")
+@@ -41,6 +46,8 @@
+ 
+     @PostMapping("/orders")
+     public void place(@RequestBody Order order) {
+-        orders.place(order);
++        try (var mdc = MdcScope.of("orderId", order.id())) {
++            orders.place(order);
++        }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
+index 445b9d1..4441104 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponService.java
++++ b/src/main/java/com/example/e2e/coupon/CouponService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -24,8 +25,10 @@
+     }
+ 
+     public void redeem(RedeemRequest request) {
+-        log.info("Coupon redemption started [couponId={}]", request.code());
+-        sender.send(request.code());
+-        log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
++        try (var mdc = MdcScope.of("couponId", request.code())) {
++            log.info("Coupon redemption started [couponId={}]", request.code());
++            sender.send(request.code());
++            log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
++        }
+     }
+ }
