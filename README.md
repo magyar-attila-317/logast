@@ -209,7 +209,9 @@ decide).
 already have exactly as it is, add entries for new findings and remove the ones that are done. Nothing is rewritten
 when nothing changed.
 
-Output is coloured in a terminal. `NO_COLOR=1` turns colours off, `LOGAST_COLOR=always|never` forces them.
+Output is coloured in a terminal, and long steps (`scan`, `apply`) show a live progress line: the current step, the
+round and the number of fixes done, and the elapsed time. In CI or a pipe each step is printed as a plain line instead.
+`NO_COLOR=1` turns colours off, `LOGAST_COLOR=always|never` forces them.
 
 
 ---
