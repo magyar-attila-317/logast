@@ -427,7 +427,7 @@ public final class Main {
 
         @Override
         public Integer call() throws IOException {
-            Analysis a = Logast.analyse(root(), classpath(), policy());
+            Analysis a = Logast.analyse(root(), classpath(), policy()).withTraffic(dev.logast.Traffic.load(root(), traffic));
             if (format.equals("table")) {
                 System.out.print(dev.logast.metrics.MeterCatalog.table(dev.logast.metrics.MeterCatalog.of(a)));
                 return 0;

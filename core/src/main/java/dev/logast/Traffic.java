@@ -97,8 +97,14 @@ public final class Traffic {
         List<dev.logast.model.Entrypoint> sorted = new ArrayList<>(entrypoints);
         sorted.sort(Comparator.comparingInt((dev.logast.model.Entrypoint ep) -> ep.kind() == dev.logast.model.Entrypoint.Kind.EVENT ? 1 : 0)
                 .thenComparing(ep -> ep.kind().ordinal()).thenComparing(dev.logast.model.Entrypoint::label));
+        // one key per label: endpoints that differ only in produces/consumes/params share one http.server.requests series
+        Map<String, List<String>> sameLabel = new LinkedHashMap<>();
+        sorted.forEach(ep -> sameLabel.computeIfAbsent(ep.label(), k -> new ArrayList<>()).add(ep.method().label()));
         dev.logast.model.Entrypoint.Kind current = null;
         for (dev.logast.model.Entrypoint ep : sorted) {
+            if (labels.contains(ep.label())) {
+                continue;
+            }
             if (ep.kind() != current) {
                 current = ep.kind();
                 sb.append(current == dev.logast.model.Entrypoint.Kind.EVENT
@@ -109,7 +115,8 @@ public final class Traffic {
             Double v = existing.perDay(ep.label());
             sb.append("  \"").append(ep.label().replace("\"", "\\\"")).append("\": ")
                     .append(v == null ? "" : (v == Math.rint(v) ? String.valueOf(v.longValue()) : String.valueOf(v)))
-                    .append("    # ").append(ep.kind().name().toLowerCase(Locale.ROOT)).append(", ").append(ep.method().label())
+                    .append("    # ").append(ep.kind().name().toLowerCase(Locale.ROOT)).append(", ")
+                    .append(String.join(" + ", sameLabel.get(ep.label())))
                     .append('\n');
         }
         List<String> gone = existing.labels().stream().filter(l -> !labels.contains(l)).toList();
