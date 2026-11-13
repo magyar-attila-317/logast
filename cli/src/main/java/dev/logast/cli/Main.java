@@ -106,7 +106,10 @@ public final class Main {
         @Override
         public Integer call() throws IOException {
             Policy policy = policy();
-            ScanResult r = Logast.scan(root(), classpath(), policy, traffic);
+            ScanResult r;
+            try (Out.Progress p = new Out.Progress("analysing the code (parsing dominates: about 30 s for 2,000 files)")) {
+                r = Logast.scan(root(), classpath(), policy, traffic);
+            }
             dev.logast.Traffic t = Logast.lastAnalysis.traffic;
             if (t.known()) {
                 java.util.Set<String> labels = new java.util.TreeSet<>();
@@ -256,7 +259,11 @@ public final class Main {
             Applier applier = new Applier(new dev.logast.IncrementalScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
                     : Logast.policy(root, null).withPacks(packs)),
                     new FillValidator(policy));
-            Applier.Result r = applier.apply(root(), new Applier.Selection(auto, only, fillMap, fills == null), write);
+            Applier.Result r;
+            try (Out.Progress p = new Out.Progress("~starting")) {
+                applier.onProgress(p::update);
+                r = applier.apply(root(), new Applier.Selection(auto, only, fillMap, fills == null), write);
+            }
             if (fills == null) {
                 // the automatic file follows the code: created if missing, finished entries out, new ones in
                 var fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders());
