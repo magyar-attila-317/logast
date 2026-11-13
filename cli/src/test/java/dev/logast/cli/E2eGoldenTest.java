@@ -125,6 +125,70 @@ class E2eGoldenTest {
         assertThat(after.split("log\\.info\\(", -1).length - 1).as(after).isEqualTo(2);   // still one start, one end
     }
 
+    /**
+     * A service migrated by an earlier logast version has its scopes too low (calculate, calculateIncome). A new run
+     * puts the scope at the top of the flow (processRow) and unwraps the old ones: they are nested now.
+     */
+    @Test
+    void scopesLeftTooLowByAnEarlierRunMoveUp() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path calc = app.resolve("src/main/java/com/example/e2e/income/IncomeCalculator.java");
+        // the calculator as an earlier logast version left it: scopes in calculate and calculateIncome
+        Files.writeString(calc, """
+                package com.example.e2e.income;
+
+                import com.example.e2e.logging.MdcScope;
+                import java.math.BigDecimal;
+                import java.util.List;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public final class IncomeCalculator {
+                    private static final Logger log = LoggerFactory.getLogger(IncomeCalculator.class);
+
+                    private IncomeCalculator() {
+                    }
+
+                    public static IncomeOutcome calculate(SalesTotals salesData, List<CouponDetails> matchingCoupons) {
+                        try (var mdc = MdcScope.of("couponId", salesData.couponId())) {
+                            log.debug("Calculating income [saleDay={}, matchingCoupons={}]", salesData.saleDay(), matchingCoupons.size());
+                            if (matchingCoupons.isEmpty()) {
+                                log.debug("Coupon not found in the coupon list");
+                                return new IncomeOutcome(true, BigDecimal.ZERO);
+                            }
+                            return evaluateOutcome(salesData, matchingCoupons);
+                        }
+                    }
+
+                    private static IncomeOutcome evaluateOutcome(SalesTotals salesData, List<CouponDetails> sortedCoupons) {
+                        for (CouponDetails coupon : sortedCoupons) {
+                            if (coupon.fundingPercentage() != null) {
+                                return calculateIncome(salesData, coupon);
+                            }
+                            log.trace("Coupon excluded [couponId={}]", coupon.couponId());
+                        }
+                        return new IncomeOutcome(true, BigDecimal.ZERO);
+                    }
+
+                    private static IncomeOutcome calculateIncome(SalesTotals salesData, CouponDetails coupon) {
+                        try (var mdc = MdcScope.of("couponId", coupon.couponId())) {
+                            BigDecimal result = salesData.totalDiscount().multiply(coupon.fundingPercentage());
+                            log.debug("Income calculated [saleDay={}, result={}]", salesData.saleDay(), result);
+                            return new IncomeOutcome(false, result);
+                        }
+                    }
+                }
+                """);
+
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(out).doesNotContain("CHECK FAILED");
+        assertThat(Files.readString(app.resolve("src/main/java/com/example/e2e/income/CalculationService.java")))
+                .contains("MdcScope.of(\"couponId\", salesData.couponId())");
+        assertThat(Files.readString(calc)).doesNotContain("MdcScope.of(");
+        compile(app);
+    }
+
     /** Runs the CLI in-process; stdout with the temp path, timings and colours normalised. */
     private static String run(Path app, String... args) {
         PrintStream out = System.out;

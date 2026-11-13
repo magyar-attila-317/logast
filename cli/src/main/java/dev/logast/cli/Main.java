@@ -529,8 +529,31 @@ public final class Main {
             Rules.scan(a);
             List<dev.logast.rules.RepeatedValueRules.Decision> ds = Rules.lastMdcDecisions.stream()
                     .filter(d -> d.key().equals(key)).distinct().toList();   // one per method and outcome
+            // scopes already in the code (e.g. after an apply): where, and whether the key arrives in MDC there anyway
+            List<String> existing = new ArrayList<>();
+            for (var m : a.index.methods()) {
+                for (var op : m.facts().mdc) {
+                    if (key.equals(op.key()) && (op.kind() == dev.logast.model.MdcOp.Kind.PUT_CLOSEABLE || op.kind() == dev.logast.model.MdcOp.Kind.PUT)) {
+                        boolean onEntry = a.paths.mdcAtEntry(m).contains(key);
+                        int callers = (int) a.graph.in(m).stream().map(e -> e.from().key()).distinct().count();
+                        String via = a.graph.in(m).stream().map(e -> e.from().label()).distinct().limit(4)
+                                .reduce((x, y) -> x + ", " + y).orElse("");
+                        existing.add("  " + m.label() + Ansi.dim("  " + m.file().relPath() + ":" + dev.logast.parse.Pos.line(op.call()))
+                                + "\n    " + (onEntry ? Ansi.yellow("already in MDC on entry: a nested scope (callers: " + via + ")")
+                                : a.entrypoints.stream().anyMatch(ep -> ep.method().key().equals(m.key())) ? "the start of a flow (an entrypoint)"
+                                : callers == 0 ? "not in MDC on entry; logast sees no caller of this method (an unresolved call?)"
+                                : "not in MDC on entry " + (callers == 1 ? "(caller: " : "on every path (callers: ") + via + ")"));
+                    }
+                }
+            }
+            if (!existing.isEmpty()) {
+                System.out.println(Ansi.bold("scopes in the code now (" + existing.size() + ")"));
+                existing.forEach(System.out::println);
+            }
             if (ds.isEmpty()) {
-                System.out.println("No method logs " + key + " (or it is not a vocabulary key). `logast vocabulary .` lists the keys.");
+                System.out.println(existing.isEmpty()
+                        ? "No method logs or scopes " + key + " (or it is not a vocabulary key). `logast vocabulary .` lists the keys."
+                        : "No log line mentions " + key + " any more: nothing left to decide.");
                 return 0;
             }
             Map<String, List<dev.logast.rules.RepeatedValueRules.Decision>> byOutcome = new TreeMap<>();
