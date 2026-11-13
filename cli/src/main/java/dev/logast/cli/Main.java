@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
         subcommands = {Main.Scan.class, Main.Explain.class, Main.Apply.class, Main.Classpath.class, Main.RulesCmd.class,
-                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class, Main.WhyCmd.class, Main.LifecycleCmd.class})
+                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class, Main.WhyCmd.class, Main.ShapeCmd.class, Main.LifecycleCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override
@@ -562,6 +562,19 @@ public final class Main {
                 System.out.println(Ansi.bold(e.getKey()) + " (" + e.getValue().size() + ")");
                 e.getValue().forEach(d -> System.out.println("  " + d.method() + Ansi.dim("  " + d.location()) + "\n    " + d.reason()));
             }
+            return 0;
+        }
+    }
+
+    @Command(name = "shape", description = "Export the code's shape with its own names and words replaced (to send a "
+            + "reproduction without the content): <root>/.logast/shape/, mapping back in <root>/.logast/shape-mapping.txt")
+    static class ShapeCmd extends Common implements Callable<Integer> {
+        @Override
+        public Integer call() throws IOException {
+            Analysis a = Logast.analyse(root(), classpath(), policy());
+            var r = dev.logast.ShapeExport.write(a, root().resolve(".logast/shape"), root().resolve(".logast/shape-mapping.txt"));
+            System.out.println("wrote " + r.files() + " files to " + root().relativize(r.dir()) + " (" + r.words() + " words replaced)");
+            System.out.println("read it before sending it; the mapping back stays here: " + root().relativize(r.mapping()));
             return 0;
         }
     }
