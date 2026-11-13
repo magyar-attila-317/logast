@@ -22,4 +22,10 @@ public class CouponService {
         repository.close(couponId);
         log.info("Coupon {} published", couponId);
     }
+
+    public void redeem(RedeemRequest request) {
+        log.info("Coupon redemption started [couponId={}]", request.code());
+        sender.send(request.code());
+        log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
+    }
 }

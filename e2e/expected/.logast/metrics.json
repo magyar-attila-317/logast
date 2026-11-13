@@ -16,8 +16,8 @@
     "outcome" : "sent",
     "_message" : "INFO \"Coupon sent\"",
     "_where" : "src/main/java/com/example/e2e/coupon/CouponSender.java:13",
-    "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/publish\" in .logast/traffic.yaml",
-    "_paths" : [ "http POST /coupons/{couponId}/publish" ],
+    "_frequency" : "unknown: no rate for \"POST /coupons/redeem\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/redeem", "http POST /coupons/{couponId}/publish" ],
     "_tag" : "available"
   },
   "OUM-d73233" : {
@@ -25,9 +25,19 @@
     "name" : "coupon",
     "outcome" : "published",
     "_message" : "INFO \"Coupon published\"",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:23",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:24",
     "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/publish\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /coupons/{couponId}/publish" ],
+    "_tag" : "available"
+  },
+  "OUM-bd3c2e" : {
+    "count" : "",
+    "name" : "coupon.redemption",
+    "outcome" : "completed",
+    "_message" : "INFO \"Coupon redemption completed\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:31",
+    "_frequency" : "unknown: no rate for \"POST /coupons/redeem\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/redeem" ],
     "_tag" : "available"
   },
   "OUM-84c094" : {

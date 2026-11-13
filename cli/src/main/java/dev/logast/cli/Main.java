@@ -270,7 +270,8 @@ public final class Main {
             List<Path> cp = classpath();
             dev.logast.IncrementalScanner scanner = new dev.logast.IncrementalScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
                     : Logast.policy(root, null).withPacks(packs));
-            Applier applier = new Applier(scanner, new FillValidator(policy));
+            Applier applier = new Applier(scanner, new FillValidator(policy))
+                    .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files));
             Applier.Result r;
             try (Out.Progress p = new Out.Progress("~starting")) {
                 applier.onProgress(p::update);
@@ -307,6 +308,10 @@ public final class Main {
                 System.out.println(Ansi.dim("resolved by other changes: " + String.join(" ", r.resolvedIndirectly())));
             }
             r.rejected().forEach((id, why) -> System.out.println(Ansi.red("REJECTED " + id) + ": " + why));
+            if (!r.violations().isEmpty()) {
+                System.out.println(Ansi.warn("CHECK FAILED (" + r.violations().size() + "): the result breaks a rule every migrated file must follow"));
+                r.violations().forEach(v -> System.out.println("  " + v));
+            }
             List<String[]> next = new ArrayList<>();
             if (!write && !r.applied().isEmpty()) {
                 next.add(new String[]{"logast apply . " + (auto ? "--auto " : "") + (fills != null ? "--fills " + fills + " " : "") + "--write",
@@ -330,6 +335,10 @@ public final class Main {
             }
             if (write && !r.changedFiles().isEmpty()) {
                 next.add(new String[]{"git diff", "review the changes"});
+            }
+            if (!r.violations().isEmpty()) {
+                next.add(new String[]{"read the CHECK FAILED lines above", r.violations().size() + " places break a migration invariant: "
+                        + "a logast bug, please report the shape of the code"});
             }
             if (!r.rejected().isEmpty()) {
                 next.add(new String[]{"read the REJECTED lines above", (r.rejected().size() == 1 ? "1 fix" : r.rejected().size() + " fixes")

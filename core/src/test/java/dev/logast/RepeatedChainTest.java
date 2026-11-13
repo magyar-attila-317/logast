@@ -174,4 +174,39 @@ class RepeatedChainTest {
         assertThat(edits).contains("\"Publishing coupon\"", "\"Coupon published\"", "\"Sending coupon to the channel\"", "\"Coupon sent\"");
         assertThat(r.orders()).noneMatch(o -> !o.slots().isEmpty());          // nothing left for a person to word
     }
+
+    @Test
+    void aValueRecognisedByItsMessageKeyIsDroppedToo(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  coupon: { mdc: { key: couponId, sources: { params: [couponId] } } }
+                """);
+        Files.writeString(src.resolve("Coupons.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                record CouponRequest(String code) {
+                }
+
+                class CouponService {
+                    private static final Logger log = LoggerFactory.getLogger(CouponService.class);
+
+                    void publish(CouponRequest request) {
+                        log.info("Coupon publication started [couponId={}]", request.code());
+                        log.info("Coupon publication completed [couponId={}]", request.code());
+                    }
+                }
+                """);
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .containsExactly("CouponService.publish");
+        // the same recognition drops it from the messages: no line keeps [couponId={}] under the new scope
+        String edits = String.join("\n", r.orders().stream().filter(o -> o.rule().equals(Rules.LOG_FORMAT) || o.fixes().contains(Rules.LOG_FORMAT))
+                .flatMap(o -> o.edits().stream()).map(e -> e.text()).toList());
+        assertThat(edits).contains("\"Coupon publication started\"", "\"Coupon publication completed\"").doesNotContain("couponId={}");
+    }
 }

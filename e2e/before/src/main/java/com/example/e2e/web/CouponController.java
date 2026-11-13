@@ -34,6 +34,11 @@ public class CouponController {
         return repository.countUse(couponId);
     }
 
+    @PostMapping("/coupons/redeem")
+    public void redeem(@RequestBody com.example.e2e.coupon.RedeemRequest request) {
+        coupons.redeem(request);
+    }
+
     @PostMapping("/orders")
     public void place(@RequestBody Order order) {
         orders.place(order);

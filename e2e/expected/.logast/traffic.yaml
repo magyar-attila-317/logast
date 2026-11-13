@@ -5,6 +5,7 @@
 entrypoints:
   # http
   "GET /coupons":     # http, CouponController.open
+  "POST /coupons/redeem":     # http, CouponController.redeem
   "POST /coupons/{couponId}/publish":     # http, CouponController.publish
   "POST /coupons/{couponId}/use":     # http, CouponController.use
   "POST /orders":     # http, CouponController.place
