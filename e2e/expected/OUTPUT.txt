@@ -1,0 +1,23 @@
+=== logast apply . --auto --write
+applied (23): SLG-d7dbb8 SUP-065aa3 DOM-6007ea DOM-b2d3fe OBS-ccc573 LAR-277884 DBO-18c70d DBO-935c16 DBO-f9de16 FMT-0447e4 FMT-486887 FMT-60c40d FMT-6acce2 FMT-adb87b FMT-e00df0 FMT-e10ae3 LCU-15ff44 LCU-eab6ed LVL-04e16f PHR-16ab63 SID-ce5940 SMP-73051d DOM-74cc3c
+files (27): src/main/java/com/example/e2e/coupon/CouponCleanupJob.java, src/main/java/com/example/e2e/coupon/CouponRepository.java, src/main/java/com/example/e2e/coupon/CouponSender.java, src/main/java/com/example/e2e/coupon/CouponService.java, src/main/java/com/example/e2e/job/CalculationJob.java, src/main/java/com/example/e2e/job/ExportJob.java, src/main/java/com/example/e2e/job/TpiJobExecutor.java, src/main/java/com/example/e2e/logging/AfterCommit.java, src/main/java/com/example/e2e/logging/BatchTraceListener.java, src/main/java/com/example/e2e/logging/ContextExecutors.java, src/main/java/com/example/e2e/logging/ContextPropagation.java, src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java, src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygiene.java, src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygieneFilter.java, src/main/java/com/example/e2e/logging/MdcScope.java, src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java, src/main/java/com/example/e2e/logging/ObservedContext.java, src/main/java/com/example/e2e/logging/Outcomes.java, src/main/java/com/example/e2e/logging/TraceContextEnv.java, src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java, src/main/java/com/example/e2e/order/OrderService.java, src/main/java/com/example/e2e/order/PaymentClient.java, src/main/java/com/example/e2e/web/CouponController.java, src/main/resources/META-INF/spring.factories, src/main/resources/application.yml  ·  2 rounds, <t>
+
+Next steps
+  1. git diff                                            review the changes
+  2. write "MSG" texts in .logast/fills.json             10 log lines need wording only a person knows; then apply again
+  3. set "count" in .logast/metrics.json                 7 logged outcomes are not counted: counter, tag or skip each; then apply again
+  4. fill calls/day in .logast/traffic.yaml (optional)   6 of 6 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  5. logast scan . --format summary                      3 findings are decisions for a person (MESSAGE_VAGUE 1, PROBLEM_DETAILS_DISABLED 1, UNMAPPED_EXCEPTION 1); each says what to decide
+  6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+
+=== the same again (what one run left behind)
+applied (0):
+files (0):   ·  0 rounds, <t>
+nothing to apply without text: the remaining orders need message text (`logast scan .` lists them; fill them via --fills or `logast review .`)
+
+Next steps
+  1. write "MSG" texts in .logast/fills.json             10 log lines need wording only a person knows; then apply again
+  2. set "count" in .logast/metrics.json                 7 logged outcomes are not counted: counter, tag or skip each; then apply again
+  3. fill calls/day in .logast/traffic.yaml (optional)   6 of 6 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  4. logast scan . --format summary                      3 findings are decisions for a person (MESSAGE_VAGUE 1, PROBLEM_DETAILS_DISABLED 1, UNMAPPED_EXCEPTION 1); each says what to decide
+  5. logast verify .                                     build and run the tests with log capture: does the result really log what it should?

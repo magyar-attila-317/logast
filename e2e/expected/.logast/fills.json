@@ -1,0 +1,54 @@
+{
+  "_readme" : "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.",
+  "_status" : "10 finding(s) below need a message text.",
+  "OUT-b146dc" : {
+    "MSG" : "",
+    "_MSG" : "Completion log for @Scheduled CouponCleanupJob.cleanup: what finished, e.g. 'Invoice export completed' | must read as: {subject} completed | suffix keys added by the tool: [couponCount]",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:19 CouponCleanupJob.cleanup"
+  },
+  "SIL-75d6ff" : {
+    "MSG" : "",
+    "_MSG" : "Entry log for @Scheduled CouponCleanupJob.cleanup (CouponCleanupJob.cleanup): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:19 CouponCleanupJob.cleanup"
+  },
+  "OUT-7a1f0a" : {
+    "MSG" : "",
+    "_MSG" : "Completion log for @EventListener TpiJobExecutor.onReady(ApplicationReadyEvent): what finished, e.g. 'Invoice export completed' | must read as: {subject} completed",
+    "_where" : "src/main/java/com/example/e2e/job/TpiJobExecutor.java:17 TpiJobExecutor.onReady"
+  },
+  "SUG-d99e11" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupons updated | suffix keys added by the tool: [rows]",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:29 CouponRepository.close"
+  },
+  "SUG-3b5d90" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupon usage saved | suffix keys added by the tool: [uses]",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:34 CouponRepository.countUse"
+  },
+  "SUG-56cdac" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupons read | suffix keys added by the tool: [count]",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:40 CouponRepository.findOpen"
+  },
+  "SUG-a2a43c" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Calculation started",
+    "_where" : "src/main/java/com/example/e2e/job/CalculationJob.java:15 CalculationJob.doExecute"
+  },
+  "SUG-4dc17a" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Export job started",
+    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:15 ExportJob.doExecute"
+  },
+  "SUG-7055a3" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Export job completed",
+    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:16 ExportJob.doExecute"
+  },
+  "FMT-93dcb8" : {
+    "MSG" : "",
+    "_MSG" : "Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: Charging order with {} cents | suffix keys added by the tool: [amountCents]",
+    "_where" : "src/main/java/com/example/e2e/order/PaymentClient.java:13 PaymentClient.charge"
+  }
+}

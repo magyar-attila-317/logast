@@ -74,6 +74,13 @@ public final class PathContext {
                 work.add(ep.method());
             }
         }
+        // flows logast does not see start from (framework callbacks, other modules): nothing known in MDC there, but
+        // what such a method puts into MDC reaches the methods it calls
+        for (MethodInfo root : graph.roots()) {
+            if (!mdcIn.containsKey(root.key()) && meet(root, Set.of())) {
+                work.add(root);
+            }
+        }
         while (!work.isEmpty()) {
             MethodInfo m = work.poll();
             Set<String> out = new TreeSet<>(mdcIn.get(m.key()));

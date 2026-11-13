@@ -208,6 +208,11 @@ public final class RuleContext {
         }
     }
 
+    /** How to get a logger into {@code owner}: the existing one, Lombok's @Slf4j when Lombok is there, or a field. */
+    JavaEdits.LoggerPlan logger(dev.logast.model.ClassInfo owner) {
+        return JavaEdits.logger(owner, policy.logging().loggerName(), a.project.probe().hasClass("lombok.extern.slf4j.Slf4j"));
+    }
+
     /** A support class generated code may use: added or updated by this run, or already there. */
     boolean supportHas(String simpleName) {
         if (!a.supportStarterPresent || supportUpdateOrderId != null) {

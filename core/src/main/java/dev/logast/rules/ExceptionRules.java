@@ -51,7 +51,7 @@ final class ExceptionRules {
                         + (commented ? " (documented as intentional)" : fallback ? " (falls back silently)" : ""));
         ctx.swallowedOrders.put(c, b.id());
 
-        JavaEdits.LoggerPlan logger = JavaEdits.logger(m.owner(), ctx.policy.logging().loggerName());
+        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
         int open = Pos.start(c.clause.getBody());
         int close = Pos.end(c.clause.getBody()) - 1;
         String tryBody = Text.oneLine(f.slice(Pos.start(c.tryStatement.getBody()), Pos.end(c.tryStatement.getBody())), 120);

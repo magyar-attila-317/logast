@@ -48,11 +48,12 @@ public final class Todo {
         }
         long text = orders.stream().filter(o -> !o.slots().isEmpty()).count();
         if (text > 0) {
-            out.add(new Item("write \"MSG\" texts in " + FillsFile.PATH, text + " log lines need wording only a person knows; then apply again"));
+            out.add(new Item("write \"MSG\" texts in " + FillsFile.PATH, plural(text, "log line").replace("lines", "lines need").replace("line ", "line needs ").replaceAll("line$", "line needs")
+                    + " wording only a person knows; then apply again"));
         }
         long outcomes = orders.stream().filter(o -> o.rule().equals(MetricsFile.RULE) && o.reportOnly()).count();
         if (outcomes > 0) {
-            out.add(new Item("set \"count\" in " + MetricsFile.PATH, outcomes + " logged outcomes are not counted: counter, tag or skip each; then apply again"));
+            out.add(new Item("set \"count\" in " + MetricsFile.PATH, plural(outcomes, "logged outcome") + (outcomes == 1 ? " is" : " are") + " not counted: counter, tag or skip each; then apply again"));
         }
         if (a != null && !a.entrypoints.isEmpty()) {
             Path file = root.resolve(".logast/traffic.yaml");

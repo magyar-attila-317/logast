@@ -1,0 +1,20 @@
+# e2e golden project: the shapes real services showed (see cli/src/test/.../E2eGoldenTest)
+packs: [logging, tracing, metrics, resilience, errors, audit]
+logging:
+  keyStyle: camel
+  structuredFormat: logstash
+support:
+  mode: vendor
+vocabulary:
+  coupon:
+    mdc:
+      key: couponId
+      sources:
+        params: [couponId]
+  order:
+    mdc:
+      key: orderId
+      sources:
+        params: [orderId]
+        types:
+          com.example.e2e.order.Order: "id()"

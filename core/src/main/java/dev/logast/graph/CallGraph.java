@@ -16,6 +16,7 @@ public final class CallGraph {
     private final Map<String, List<Edge>> in = new HashMap<>();
     private int ambiguousSites;
     private int edgeCount;
+    private final List<MethodInfo> roots = new ArrayList<>();
 
     public static CallGraph build(CodeIndex index) {
         CallGraph g = new CallGraph();
@@ -35,11 +36,21 @@ public final class CallGraph {
                 }
             }
         }
+        for (MethodInfo m : index.methods()) {
+            if (g.out.containsKey(m.key()) && !g.in.containsKey(m.key())) {
+                g.roots.add(m);
+            }
+        }
         return g;
     }
 
     public List<Edge> out(MethodInfo m) {
         return out.getOrDefault(m.key(), List.of());
+    }
+
+    /** Methods that call others and that nothing in the analysed code calls: where unknown flows start. */
+    public List<MethodInfo> roots() {
+        return roots;
     }
 
     public List<Edge> in(MethodInfo m) {
