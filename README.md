@@ -634,6 +634,7 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 | command | what it does |
 |---|---|
 | `logast init [svc]` | one-time setup: policy, .gitignore, classpath, traffic template (`--baseline` for CI) |
+| `logast why [svc] <key>` | why an MDC key is scoped where it is: every method that logs it, the decision (scope, covered, in MDC, no scope, lifted) and the reason |
 | `logast metrics [svc]` | the metrics map: exporters, identity, metric per entrypoint, meters in code, outcomes not counted (`--format json`, `--format table` = meters only) |
 | `logast vocabulary [svc]` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |

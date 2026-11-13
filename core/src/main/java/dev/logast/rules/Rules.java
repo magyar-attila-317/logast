@@ -304,8 +304,12 @@ public final class Rules {
         }
     }
 
+    /** MDC decisions of the latest scan (for `logast why`). */
+    public static volatile List<RepeatedValueRules.Decision> lastMdcDecisions = List.of();
+
     public static ScanResult scan(Analysis a) {
         RuleContext ctx = new RuleContext(a);
+        lastMdcDecisions = ctx.mdcDecisions;
         new SetupRules(ctx).run();
         new TracingRules(ctx).run();
         new EntrypointRules(ctx).run();

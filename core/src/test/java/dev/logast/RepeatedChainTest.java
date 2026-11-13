@@ -275,4 +275,45 @@ class RepeatedChainTest {
                 """);
         assertThat(r.orders()).noneMatch(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE));
     }
+
+    @Test
+    void aRecordAccessorAtTheTopOfTheFlowGetsTheScope(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  pledge: { mdc: { key: pledgeId, sources: { params: [pledgeId] } } }
+                """);
+        Files.writeString(src.resolve("Pledges.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.*;
+
+                record PledgeRequest(String pledgeId, int amount) {
+                }
+
+                @RestController
+                public class Pledges {
+                    private static final Logger log = LoggerFactory.getLogger(Pledges.class);
+
+                    @PostMapping("/pledges")
+                    public Object method0(@RequestBody PledgeRequest request) {
+                        log.info("Pledge request received {}", request.pledgeId());
+                        return method1(request.pledgeId());
+                    }
+
+                    private static Object method1(String pledgeId) {
+                        log.info("Checking pledge {}", pledgeId);
+                        log.info("Pledge {} accepted", pledgeId);
+                        return "ok";
+                    }
+                }
+                """);
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        // request.pledgeId() is a pledgeId (accessor name), and it goes into method1's pledgeId parameter
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .containsExactly("Pledges.method0");
+    }
 }
