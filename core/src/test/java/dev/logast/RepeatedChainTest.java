@@ -275,4 +275,45 @@ class RepeatedChainTest {
                 """);
         assertThat(r.orders()).noneMatch(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE));
     }
+
+    @Test
+    void aRecordAccessorAtTheTopOfTheFlowGetsTheScope(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  coupon: { mdc: { key: couponId, sources: { params: [couponId] } } }
+                """);
+        Files.writeString(src.resolve("Coupons.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.*;
+
+                record CouponRequest(String couponId, int amount) {
+                }
+
+                @RestController
+                public class Coupons {
+                    private static final Logger log = LoggerFactory.getLogger(Coupons.class);
+
+                    @PostMapping("/coupons")
+                    public Object method0(@RequestBody CouponRequest request) {
+                        log.info("Coupon request received {}", request.couponId());
+                        return method1(request.couponId());
+                    }
+
+                    private static Object method1(String couponId) {
+                        log.info("Checking coupon {}", couponId);
+                        log.info("Coupon {} accepted", couponId);
+                        return "ok";
+                    }
+                }
+                """);
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        // request.couponId() is a couponId (accessor name), and it goes into method1's couponId parameter
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .containsExactly("Coupons.method0");
+    }
 }
