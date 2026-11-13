@@ -76,82 +76,103 @@ public final class Applier {
         List<String> applied = new ArrayList<>();
         Map<String, String> rejected = new LinkedHashMap<>();
         List<String> indirect = new ArrayList<>();
-        Set<String> pending = new LinkedHashSet<>();
         Set<String> everSelected = new HashSet<>();
 
         progress.accept("analysing the code");
         ScanResult scan = scanner.apply(work);
         ScanResult before = scan;
-        select(scan, sel, pending, everSelected, rejected, Set.of());
         int round = 0;
-        while (!pending.isEmpty() && round < MAX_ROUNDS) {
-            round++;
-            progress.accept("~round " + round + ": " + plural(pending.size(), "fix") + " to apply, " + applied.size() + " done");
-            Map<String, WorkOrder> byId = new LinkedHashMap<>();
-            scan.orders().forEach(o -> byId.put(o.id(), o));
-            for (Iterator<String> it = pending.iterator(); it.hasNext(); ) {
-                String id = it.next();
-                if (!byId.containsKey(id)) {
-                    it.remove();
-                    if (round > 1) {
-                        indirect.add(id);
-                    } else {
-                        rejected.put(id, "no such order in a fresh scan (stale orders file? rescan)");
+        boolean first = true;
+        Set<String> carried = new LinkedHashSet<>();
+        // the pipeline (docs/pipeline-plan.md): each step works on what the previous steps really produced
+        for (Rules.Step step : Rules.Step.values()) {
+            Set<String> pending = new LinkedHashSet<>(carried);
+            carried.clear();
+            select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied), step, first);
+            if (pending.isEmpty()) {
+                continue;
+            }
+            String name = step.name().toLowerCase(Locale.ROOT);
+            int stepRounds = 0;
+            while (!pending.isEmpty() && stepRounds < MAX_ROUNDS) {
+                stepRounds++;
+                round++;
+                progress.accept("~" + name + ", round " + stepRounds + ": " + plural(pending.size(), "fix") + " to apply, " + applied.size() + " done");
+                Map<String, WorkOrder> byId = new LinkedHashMap<>();
+                scan.orders().forEach(o -> byId.put(o.id(), o));
+                for (Iterator<String> it = pending.iterator(); it.hasNext(); ) {
+                    String id = it.next();
+                    if (!byId.containsKey(id)) {
+                        it.remove();
+                        if (first && stepRounds == 1) {
+                            rejected.put(id, "no such order in a fresh scan (stale orders file? rescan)");
+                        } else {
+                            indirect.add(id);   // an earlier fix took care of it
+                        }
                     }
                 }
-            }
-            List<WorkOrder> batch = pending.stream().map(byId::get)
-                    .sorted(Comparator.comparingInt(Applier::priority).thenComparing(WorkOrder::id)).toList();
+                first = false;
+                List<WorkOrder> batch = pending.stream().map(byId::get)
+                        .sorted(Comparator.comparingInt(Applier::priority).thenComparing(WorkOrder::id)).toList();
 
-            List<Edit> accepted = new ArrayList<>();
-            List<String> acceptedIds = new ArrayList<>();
-            for (WorkOrder o : batch) {
-                List<String> problems = validator.validate(o, sel.fills().get(o.id()));
-                if (!problems.isEmpty()) {
-                    rejected.put(o.id(), String.join("; ", problems));
-                    pending.remove(o.id());
-                    continue;
+                List<Edit> accepted = new ArrayList<>();
+                List<String> acceptedIds = new ArrayList<>();
+                for (WorkOrder o : batch) {
+                    List<String> problems = validator.validate(o, sel.fills().get(o.id()));
+                    if (!problems.isEmpty()) {
+                        rejected.put(o.id(), String.join("; ", problems));
+                        pending.remove(o.id());
+                        continue;
+                    }
+                    List<String> missingDeps = o.dependsOn().stream()
+                            .filter(d -> !applied.contains(d) && !pending.contains(d) && !acceptedIds.contains(d)).toList();
+                    if (!missingDeps.isEmpty()) {
+                        // a dependency of a later step: this order waits for that step
+                        boolean later = missingDeps.stream().allMatch(d -> byId.containsKey(d)
+                                && Rules.stepOf(byId.get(d).rule()).ordinal() > step.ordinal());
+                        if (later) {
+                            carried.add(o.id());
+                        } else {
+                            rejected.put(o.id(), "depends on " + missingDeps + ": select it in the same apply");
+                        }
+                        pending.remove(o.id());
+                        continue;
+                    }
+                    if (o.dependsOn().stream().anyMatch(d -> pending.contains(d) && !acceptedIds.contains(d))) {
+                        continue; // dependency not applied yet: next round
+                    }
+                    List<Edit> rendered = render(o, sel.fills().get(o.id()));
+                    if (rendered.stream().anyMatch(e -> accepted.stream().anyMatch(a -> !a.equals(e) && a.overlaps(e)))) {
+                        continue; // conflicts with an earlier order this round: retry after rescan
+                    }
+                    rendered.stream().filter(e -> !accepted.contains(e)).forEach(accepted::add);
+                    acceptedIds.add(o.id());
                 }
-                List<String> missingDeps = o.dependsOn().stream()
-                        .filter(d -> !applied.contains(d) && !pending.contains(d) && !acceptedIds.contains(d)).toList();
-                if (!missingDeps.isEmpty()) {
-                    rejected.put(o.id(), "depends on " + missingDeps + ": select it in the same apply");
-                    pending.remove(o.id());
-                    continue;
+                if (acceptedIds.isEmpty()) {
+                    break;
                 }
-                if (o.dependsOn().stream().anyMatch(d -> pending.contains(d) && !acceptedIds.contains(d))) {
-                    continue; // dependency not applied yet: next round
+                progress.accept(name + ", round " + stepRounds + ": applying " + plural(acceptedIds.size(), "fix") + " to "
+                        + plural((int) accepted.stream().map(Edit::file).distinct().count(), "file") + " (" + applied.size() + " done so far)");
+                List<String> broken = applyEdits(work, accepted);
+                for (String id : acceptedIds) {
+                    WorkOrder o = byId.get(id);
+                    if (o.edits().stream().anyMatch(e -> broken.contains(e.file()))) {
+                        rejected.put(id, "produced code that does not parse in " + broken + " (batch reverted)");
+                    } else {
+                        applied.add(id);
+                    }
+                    pending.remove(id);
                 }
-                List<Edit> rendered = render(o, sel.fills().get(o.id()));
-                if (rendered.stream().anyMatch(e -> accepted.stream().anyMatch(a -> !a.equals(e) && a.overlaps(e)))) {
-                    continue; // conflicts with an earlier order this round: retry after rescan
+                progress.accept("~" + name + ", round " + stepRounds + ": checking the changed code (" + applied.size() + " done)");
+                scan = scanner.apply(work);
+                if (sel.auto()) {
+                    select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied), step, false);
                 }
-                rendered.stream().filter(e -> !accepted.contains(e)).forEach(accepted::add);
-                acceptedIds.add(o.id());
             }
-            if (acceptedIds.isEmpty()) {
-                break;
-            }
-            progress.accept("round " + round + ": applying " + plural(acceptedIds.size(), "fix") + " to "
-                    + plural((int) accepted.stream().map(Edit::file).distinct().count(), "file") + " (" + applied.size() + " done so far)");
-            List<String> broken = applyEdits(work, accepted);
-            for (String id : acceptedIds) {
-                WorkOrder o = byId.get(id);
-                if (o.edits().stream().anyMatch(e -> broken.contains(e.file()))) {
-                    rejected.put(id, "produced code that does not parse in " + broken + " (batch reverted)");
-                } else {
-                    applied.add(id);
-                }
-                pending.remove(id);
-            }
-            progress.accept("~round " + round + ": checking the changed code (" + applied.size() + " done)");
-            scan = scanner.apply(work);
-            if (sel.auto()) {
-                select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied));
-            }
+            int rounds = stepRounds;
+            pending.forEach(id -> rejected.put(id, "could not be applied without conflicts after " + rounds + " rounds; rescan and retry"));
         }
-        int rounds = round;
-        pending.forEach(id -> rejected.put(id, "could not be applied without conflicts after " + rounds + " rounds; rescan and retry"));
+        carried.forEach(id -> rejected.put(id, "waits for a fix that was not applied"));
 
         progress.accept("~comparing with the original (" + plural(applied.size(), "fix") + " in " + plural(round, "round") + ")");
         List<String> changed = new ArrayList<>();
@@ -164,8 +185,11 @@ public final class Applier {
     }
 
     private static void select(ScanResult scan, Selection sel, Set<String> pending, Set<String> everSelected,
-                               Map<String, String> rejected, Set<String> applied) {
+                               Map<String, String> rejected, Set<String> applied, Rules.Step step, boolean first) {
         for (WorkOrder o : scan.orders()) {
+            if (Rules.stepOf(o.rule()) != step) {
+                continue;   // picked up in its own step, against the code the earlier steps produced
+            }
             boolean wanted = sel.fills().containsKey(o.id()) || sel.only().contains(o.id())
                     || (sel.auto() && o.mechanical());
             if (!sel.only().isEmpty() && !sel.only().contains(o.id()) && !sel.fills().containsKey(o.id())) {
@@ -178,11 +202,11 @@ public final class Applier {
         Set<String> present = new HashSet<>();
         scan.orders().forEach(o -> present.add(o.id()));
         for (String id : sel.fills().keySet()) {
-            if (sel.lenientFills() && !present.contains(id)) {
-                continue;   // a finished or outdated entry of .logast/fills.json
+            if (present.contains(id) || sel.lenientFills() || !first) {
+                continue;   // selected in its step above; a finished entry of .logast/fills.json; or already reported
             }
             if (everSelected.add(id)) {
-                pending.add(id); // reported as stale if it does not exist
+                pending.add(id); // reported as stale: no such order
             }
         }
     }

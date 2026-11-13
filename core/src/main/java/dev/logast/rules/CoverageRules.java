@@ -1,6 +1,7 @@
 package dev.logast.rules;
 
 import dev.logast.graph.CallGraph;
+import dev.logast.model.Annotations;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.Level;
 import dev.logast.model.LogCall;
@@ -18,6 +19,7 @@ import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
 
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * Log coverage: the events that should leave a log line but don't. Each finding adds the line (NEEDS TEXT: logast
@@ -157,6 +159,12 @@ final class CoverageRules {
                 && l.level().compareTo(Level.INFO) >= 0);
         count("jobs", started && outcome);
         boolean silentPlanned = ctx.silentPlanned.contains(m.key());   // ENTRYPOINT_SILENT adds the start line itself
+        // an ObservedContext wrapper (existing or planned) logs the outcome itself: completed/failed with duration
+        String body = m.decl().getBody() == null ? "" : m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
+        if (ctx.wrappedMethods.contains(m.key()) || body.contains("ObservedContext.entrypoint(") && !body.contains(".quiet()")) {
+            outcome = true;
+            started = started || !run;
+        }
         if (outcome && (started || silentPlanned) || !ctx.enabled(Rules.JOB_OUTCOME_MISSING) || ctx.ignored(m.file(), m.line(), Rules.JOB_OUTCOME_MISSING)) {
             return;
         }
@@ -175,11 +183,11 @@ final class CoverageRules {
                         : "nothing shows that the message was handled, or what it changed"))
                 .context(ctx.context(m, inner[0], Text.oneLine(ep.label(), 160), "MSG"));
         b.edits(logger.edits());
-        if (!started && !silentPlanned) {
-            b.edit(Edit.insert(f.relPath(), inner[0], indent + logger.name() + "." + ctx.policy.logging().entryLevel() + "(\"{{START}}\");\n"));
-            b.slot("START", slot("Start log for " + ep.label() + ": what this run does, in domain terms, e.g. 'Invoice export started'",
-                    List.of(), "started"));
-        }
+        // generated wording from the job's name, applied right away and marked for rewording (MESSAGE_SUGGESTED)
+        String subject = jobSubject(m);
+        Edit startEdit = !started && !silentPlanned ? Edit.insert(f.relPath(), inner[0], indent + logger.name() + "."
+                + ctx.policy.logging().entryLevel() + "(" + Text.javaString(phrase("started", subject)) + "); " + DbRules.WORDING_MARKER + "\n")
+                : null;
         if (!outcome) {
             Statement last = block.getStatements().getLast();
             List<String[]> values = new ArrayList<>();   // {key, expression}
@@ -198,8 +206,23 @@ final class CoverageRules {
                 ctx.drop(b);
                 return;
             }
-            b.slot("MSG", slot("Completion log for " + ep.label() + ": what finished, e.g. 'Invoice export completed'",
-                    values.stream().map(v -> v[0]).toList(), "completed"));
+            // the keys of the values become the [k={}] suffix; the line is marked for rewording
+            String done = phrase("completed", subject) + MessageTemplate.suffix(values.stream().map(v -> v[0]).toList());
+            b.rewriteEdits("\"{{MSG}}\"", Text.javaString(done)).rewriteEdits("{{ARGS}});", "); " + DbRules.WORDING_MARKER);
+            // in a transaction the run's result is only true once it commits: log it then (dropped on rollback)
+            boolean transactional = Stream.of(m.decl().getLeadingAnnotations(), m.owner().decl().getLeadingAnnotations())
+                    .flatMap(List::stream).anyMatch(an -> Annotations.is(an, "org.springframework.transaction.annotation.Transactional")
+                            || Annotations.is(an, "jakarta.transaction.Transactional"));
+            if (transactional && ctx.a.project.probe().hasClass("org.springframework.transaction.support.TransactionSynchronizationManager")
+                    && ctx.supportHas("AfterCommit")) {
+                String call = logger.name() + ".info(" + Text.javaString(done);
+                b.rewriteEdits(call, "AfterCommit.log(() -> " + call).rewriteEdits("); " + DbRules.WORDING_MARKER, ")); " + DbRules.WORDING_MARKER);
+                b.edits(JavaEdits.imports(f, ctx.support("AfterCommit")));
+                ctx.dependOnStarter(b);
+            }
+        }
+        if (startEdit != null) {
+            b.edit(startEdit);   // added last: at the same offset as an extracted variable it then lands first
         }
     }
 
@@ -559,6 +582,18 @@ final class CoverageRules {
     }
 
     // ---- helpers --------------------------------------------------------------------------------
+
+    /** "CouponCleanupJob" → "Coupon cleanup"; a bare "Job"/"Task" class → its method name. */
+    static String jobSubject(MethodInfo m) {
+        String cls = m.owner().simpleName().replaceAll("(Job|Task|Scheduler|Runner|Listener|Handler|Executor|Worker|Service)$", "");
+        String base = cls.isBlank() ? m.name() : cls;
+        return FamilyRules.classWords(base);
+    }
+
+    private String phrase(String event, String subject) {
+        String canonical = ctx.phrasing.canonicalOf(event);
+        return canonical == null ? subject + " " + event : canonical.replace("{subject}", subject);
+    }
 
     /** invoiceCount for a List<Invoice>, whatever the variable is called; else from the variable name. */
     private static String countKeyFor(Expression collection, String fallbackName) {

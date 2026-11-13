@@ -427,6 +427,10 @@ final class DbRules {
             }
             List<String> keys = MessageTemplate.compliantKeys(raw);
             String base = MessageTemplate.compliantBase(raw);
+            // a lifecycle line keeps its form when reworded ("{subject} completed"): otherwise the rule that added it
+            // would no longer recognise it and add another one
+            String event = ctx.phrasing.eventOf(base);
+            String pattern = event == null ? null : ctx.phrasing.canonicalOf(event);
             int from = end + marker;
             while (from > end && text.charAt(from - 1) == ' ') {
                 from--;
@@ -435,9 +439,11 @@ final class DbRules {
                     .title("Generated wording \"" + Text.oneLine(raw, 70) + "\": say it in domain terms")
                     .edit(Edit.replace(f.relPath(), Pos.start(lit), Pos.end(lit), "\"{{MSG}}\""))
                     .edit(Edit.replace(f.relPath(), from, end + marker + WORDING_MARKER.length(), ""))
-                    .slot("MSG", new Slot("What happened, in domain terms (the generated text was made from the table name), "
+                    .slot("MSG", new Slot(pattern != null
+                            ? "Say what this is in domain terms, keeping the form '" + pattern + "' (the generated subject came from the code's names)"
+                            : "What happened, in domain terms (the generated text was made from the table name), "
                             + "e.g. 'Order items closed' instead of 'Order items updated'", keys == null ? List.of() : keys,
-                            ctx.glossary.terms(), base))
+                            ctx.glossary.terms(), base, pattern == null ? null : event, pattern))
                     .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
         }
     }

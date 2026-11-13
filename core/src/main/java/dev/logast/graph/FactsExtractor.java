@@ -10,7 +10,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Collects logging, MDC, exception-handling, call and async facts from one method body. */
-final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
+public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
     private static final Map<String, Level> LEVELS = Map.of(
             "trace", Level.TRACE, "debug", Level.DEBUG, "info", Level.INFO, "warn", Level.WARN, "error", Level.ERROR);
     private static final Map<String, Level> FLUENT = Map.of(
@@ -179,7 +179,7 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
      * Collections that come from data, not code: repository queries (not by id), JDBC queries, pages, file lines,
      * Kafka record batches. One INFO line per item of these is volume nobody chose.
      */
-    private static boolean dataSource(Expression e) {
+    public static boolean dataSource(Expression e) {
         JavaType t = e.getType();
         if (TypeUtils.isAssignableTo("org.apache.kafka.clients.consumer.ConsumerRecords", t)
                 || TypeUtils.isAssignableTo("org.springframework.data.domain.Slice", t)) {

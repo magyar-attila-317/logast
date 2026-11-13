@@ -22,7 +22,7 @@ public final class OrderBuilder {
             Map.entry(Rules.MDC_KEY_ALIAS, "MKA"), Map.entry(Rules.LOG_KEY_STYLE, "LKS"), Map.entry(Rules.REPEATED_LOG_VALUE, "RLV"),
             Map.entry(Rules.JOB_OUTCOME_MISSING, "OUT"), Map.entry(Rules.SKIP_UNLOGGED, "SKP"),
             Map.entry(Rules.STATE_CHANGE_UNLOGGED, "STC"), Map.entry(Rules.BATCH_SUMMARY_MISSING, "BSM"),
-            Map.entry(Rules.DB_OUTCOME_UNLOGGED, "DBO"), Map.entry(Rules.SETUP_SERVICE_IDENTITY, "SID"), Map.entry(Rules.LIFECYCLE_UNEVEN, "LCU"),
+            Map.entry(Rules.DB_OUTCOME_UNLOGGED, "DBO"), Map.entry(Rules.SETUP_SERVICE_IDENTITY, "SID"), Map.entry(Rules.LIFECYCLE_UNEVEN, "LCU"), Map.entry(Rules.ROW_BY_ROW_WRITE, "RBR"),
             Map.entry(Rules.METRIC_OUTCOME_UNMEASURED, "OUM"), Map.entry(Rules.MESSAGE_SUGGESTED, "SUG"),
             Map.entry(Rules.MDC_CLEAR, "MCL"), Map.entry(Rules.MDC_NOT_OWNER, "MNO"), Map.entry(Rules.MDC_NESTED_KEY, "MNK"), Map.entry(Rules.LOG_OBJECT_ARGUMENT, "LOA"),
             Map.entry(Rules.LOG_COLLECTION_ARGUMENT, "LCA"), Map.entry(Rules.LOG_HELPER, "LHL"), Map.entry(Rules.MESSAGE_VAGUE, "MVG"),
@@ -134,6 +134,12 @@ public final class OrderBuilder {
     }
 
     private final Map<String, Object> data = new LinkedHashMap<>();
+
+    /** Replaces text in every edit added so far (turns a slot template into generated text). */
+    OrderBuilder rewriteEdits(String from, String to) {
+        edits.replaceAll(e -> e.text().contains(from) ? new Edit(e.file(), e.kind(), e.start(), e.end(), e.text().replace(from, to)) : e);
+        return this;
+    }
 
     public OrderBuilder data(String key, Object value) {
         if (value != null) {
