@@ -6,10 +6,18 @@ dependencies {
     runtimeOnly(project(":test-capture"))   // shipped in lib/; `logast verify` adds it to a service's test runtime
 }
 
+// `logast --version` names the commit it was built from, so an install that did not update is visible
+val gitCommit = providers.exec {
+    commandLine("git", "describe", "--always", "--dirty", "--abbrev=7")
+    isIgnoreExitValue = true
+}.standardOutput.asText.map { it.trim().ifEmpty { "unknown" } }
+
 tasks.processResources {
     val v = project.version.toString()
+    val c = gitCommit.orElse("unknown")
     inputs.property("version", v)
-    filesMatching("logast-version.properties") { expand("version" to v) }
+    inputs.property("commit", c)
+    filesMatching("logast-version.properties") { expand("version" to v, "commit" to c.get()) }
 }
 
 // release zip: bin/, lib/, plus docs, examples and the Claude Code skill
