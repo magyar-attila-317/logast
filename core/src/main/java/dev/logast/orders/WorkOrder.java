@@ -10,7 +10,11 @@ import java.util.Map;
 public record WorkOrder(String id, String rule, List<String> fixes, String severity, String title,
                         String file, int line, List<Location> locations, String method, List<String> paths,
                         String suggestion, List<Edit> edits, Map<String, Slot> slots, Context context,
-                        List<String> dependsOn) {
+                        List<String> dependsOn, Map<String, Object> data) {
+    /** @param data structured details for decision files and tools (e.g. a metric's suggested name and outcome) */
+    public WorkOrder {
+        data = data == null ? Map.of() : data;
+    }
 
     /** Another place this order fixes, e.g. an {@code @Async} method covered by adding the starter. */
     public record Location(String file, int line, String rule) {

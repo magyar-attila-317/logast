@@ -127,6 +127,10 @@ public final class Main {
                 if ((fu.entries() > 0 || fu.written()) && (format.equals("compact") || format.equals("summary"))) {
                     Out.progress(fillsLine(fu));
                 }
+                var mu = dev.logast.apply.MetricsFile.update(root(), r.orders());
+                if (mu.written() && (format.equals("compact") || format.equals("summary"))) {
+                    Out.progress(metricsLine(mu));
+                }
             }
 
             Path baselineFile = baseline == null || baseline.isEmpty() ? root().resolve(".logast/baseline.json") : Path.of(baseline);
@@ -270,6 +274,10 @@ public final class Main {
                 if (fu.written() && !format.equals("json")) {
                     Out.progress(fillsLine(fu));
                 }
+                var mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders());
+                if (mu.written() && !format.equals("json")) {
+                    Out.progress(metricsLine(mu));
+                }
             }
             if (format.equals("json")) {
                 System.out.println(OrderJson.MAPPER.writeValueAsString(r));
@@ -307,6 +315,12 @@ public final class Main {
             }
             return r.rejected().isEmpty() ? 0 : 1;
         }
+    }
+
+    static String metricsLine(dev.logast.apply.FillsFile.Update mu) {
+        return dev.logast.apply.MetricsFile.PATH + ": " + mu.entries() + " outcomes not counted, " + mu.filled() + " decided"
+                + (mu.added() > 0 ? ", " + mu.added() + " new" : "") + (mu.removed() > 0 ? ", " + mu.removed() + " finished removed" : "")
+                + "; set \"count\": counter | tag | skip, then `logast apply . --auto`";
     }
 
     static String fillsLine(dev.logast.apply.FillsFile.Update fu) {

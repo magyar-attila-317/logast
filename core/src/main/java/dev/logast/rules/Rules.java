@@ -188,12 +188,61 @@ public final class Rules {
 
     /** METRIC_OUTCOME_UNMEASURED: outcomes the logs report and no metric counts; a person or LLM picks the ones to count. */
     private static void outcomeGaps(RuleContext ctx) {
-        for (MetricsMap.Unmeasured u : MetricsMap.of(ctx.a).outcomes()) {
-            ctx.order(METRIC_OUTCOME_UNMEASURED, u.file() + "|" + u.line() + "|" + u.event()).at(u.file(), u.line())
+        var decisions = dev.logast.apply.MetricsFile.read(ctx.a.project.root());
+        for (MetricsMap.Gap g : MetricsMap.of(ctx.a).gaps()) {
+            MetricsMap.Unmeasured u = g.outcome();
+            OrderBuilder b = ctx.order(METRIC_OUTCOME_UNMEASURED, u.file() + "|" + u.method() + "|" + u.message() + "|" + u.event()).at(u.file(), u.line())
                     .title("\"" + u.message() + "\" is logged but not counted (outcome=" + u.event() + ", frequency " + u.frequency() + ")")
-                    .suggestion((u.tagOption() != null ? "As a tag on the running timer: " + u.tagOption() + ". " : "")
-                            + "As a counter: " + u.counter() + ". Count it only if a dashboard or alert needs it; "
-                            + "`logast metrics .` lists every outcome with its paths.");
+                    .data("name", g.name()).data("outcome", u.event()).data("message", u.level().toUpperCase(java.util.Locale.ROOT) + " \"" + u.message() + "\"")
+                    .data("frequency", u.frequency()).data("paths", u.paths()).data("tagAvailable", g.tagAvailable());
+            String advice = "Decide in " + dev.logast.apply.MetricsFile.PATH + ": \"count\": \"counter\" (Outcomes.count(\"" + g.name()
+                    + "\", \"" + u.event() + "\"))" + (g.tagAvailable() ? ", \"tag\" (Outcomes.tag(\"" + u.event() + "\") on the running timer)" : "")
+                    + " or \"skip\"; then logast apply . --auto. Count it only if a dashboard or alert needs it.";
+            String why = decide(ctx, b, g, decisions.get(b.id()));
+            b.suggestion(why != null ? why + " " + advice : advice);
+        }
+    }
+
+    /** Turns a metrics.json decision into edits; returns a problem to report, or null. */
+    private static String decide(RuleContext ctx, OrderBuilder b, MetricsMap.Gap g, dev.logast.apply.MetricsFile.Decision d) {
+        if (d == null) {
+            return null;
+        }
+        dev.logast.parse.SourceFileInfo f = g.method().file();
+        org.openrewrite.java.tree.J stmt = CoverageRules.enclosingStatement(g.method(), g.log().call());
+        if (stmt == null) {
+            return "Cannot place a line next to this log call automatically (not a plain statement).";
+        }
+        String text = f.text();
+        int[] lines = JavaEdits.statementLines(text, stmt);
+        String indent = Text.indentAt(text, dev.logast.parse.Pos.start(stmt));
+        String name = d.name().isBlank() ? g.name() : d.name();
+        String outcome = d.outcome().isBlank() ? g.outcome().event() : d.outcome();
+        switch (d.count()) {
+            case "skip" -> {
+                int eol = lines[1] - 1;   // before the newline that ends the statement
+                b.edit(dev.logast.orders.Edit.insert(f.relPath(), eol, " // logast:ignore " + METRIC_OUTCOME_UNMEASURED));
+                return null;
+            }
+            case "counter", "tag" -> {
+                if (!name.matches("[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*") || !outcome.matches("[a-z][a-z0-9_.-]*")) {
+                    return "metrics.json: name and outcome must be lower case words joined by dots (got \"" + name + "\", \"" + outcome + "\").";
+                }
+                if (d.count().equals("tag") && !g.tagAvailable()) {
+                    return "metrics.json: \"tag\" needs an observation running here and none is known; use \"counter\".";
+                }
+                if (!ctx.supportHas("Outcomes") || !ctx.a.project.probe().hasClass("io.micrometer.core.instrument.Metrics")) {
+                    return "Needs Micrometer and a logging-support version with Outcomes.";
+                }
+                String call = d.count().equals("tag") ? "Outcomes.tag(\"" + outcome + "\");" : "Outcomes.count(\"" + name + "\", \"" + outcome + "\");";
+                b.edit(dev.logast.orders.Edit.insert(f.relPath(), lines[1], indent + call + "\n"));
+                b.edits(JavaEdits.imports(f, ctx.support("Outcomes")));
+                ctx.dependOnStarter(b);
+                return null;
+            }
+            default -> {
+                return "metrics.json: \"count\" must be counter, tag or skip (got \"" + d.count() + "\").";
+            }
         }
     }
 

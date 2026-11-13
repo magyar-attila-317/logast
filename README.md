@@ -507,6 +507,20 @@ ready snippet: an `outcome` tag on the timer that is already running, or a count
 same outcomes are METRIC_OUTCOME_UNMEASURED findings (REPORT-ONLY): logast does not decide which business metrics
 matter, the LLM or a person picks.
 
+Decisions go into `.logast/metrics.json`, kept up to date by `scan` and `apply` like `fills.json`:
+```json
+"OUM-ed9954": {
+  "count": "counter",               // counter | tag | skip   (empty = not decided)
+  "name": "tpi.export", "outcome": "completed",
+  "_message": "INFO \"TPI export completed\"", "_frequency": "low", "_tag": "not available here …"
+}
+```
+`logast apply . --auto` then writes one line after the log line: `Outcomes.count("tpi.export", "completed")` (a
+counter `tpi.export{outcome="completed"}`, created once and cached), `Outcomes.tag("completed")` (`outcome` on the
+timer already running, offered only where one is known to run), or for `skip` a `// logast:ignore
+METRIC_OUTCOME_UNMEASURED` comment, so the decision lives in the code. `Outcomes` is in logging-support (copied in
+vendor mode when Micrometer is present).
+
 Every log line and meter also says which service and version wrote it (SETUP_SERVICE_IDENTITY, AUTO): logast adds
 `spring.application.name`/`version` when missing (env vars still win at runtime; set `logging.serviceName` /
 `logging.serviceVersion` in logast.yaml to your platform's expressions, default `${APPLICATION_VERSION:unknown}`),

@@ -133,8 +133,18 @@ public final class OrderBuilder {
         return this;
     }
 
+    private final Map<String, Object> data = new LinkedHashMap<>();
+
+    public OrderBuilder data(String key, Object value) {
+        if (value != null) {
+            data.put(key, value);
+        }
+        return this;
+    }
+
     WorkOrder build() {
         return new WorkOrder(id(), rule, List.copyOf(fixes), severity, title, file, line, List.copyOf(locations),
-                method, paths, suggestion, List.copyOf(edits), Map.copyOf(slots), context, List.copyOf(dependsOn));
+                method, paths, suggestion, List.copyOf(edits), Map.copyOf(slots), context, List.copyOf(dependsOn),
+                java.util.Collections.unmodifiableMap(new LinkedHashMap<>(data)));
     }
 }

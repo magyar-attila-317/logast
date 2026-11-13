@@ -122,6 +122,23 @@ public final class SetupRules {
     static final List<String> VENDORED_TRACING = List.of("TraceContextEnvConfiguration");
     /** Only copied when spring-tx is on the classpath (JdbcTemplate brings it). */
     static final List<String> VENDORED_TX = List.of("AfterCommit");
+    /** Only copied when Micrometer metrics are on the classpath. */
+    static final List<String> VENDORED_METRICS = List.of("Outcomes");
+
+    private boolean hasMetrics() {
+        return ctx.a.project.probe().hasClass("io.micrometer.core.instrument.Metrics");
+    }
+
+    private List<String> optionalVendored() {
+        List<String> out = new ArrayList<>();
+        if (hasTx()) {
+            out.addAll(VENDORED_TX);
+        }
+        if (hasMetrics()) {
+            out.addAll(VENDORED_METRICS);
+        }
+        return out;
+    }
 
     private boolean hasTx() {
         return ctx.a.project.probe().hasClass("org.springframework.transaction.support.TransactionSynchronizationManager");
@@ -146,9 +163,7 @@ public final class SetupRules {
         if (ctx.a.project.probe().hasClass("io.micrometer.tracing.Tracer")) {
             classes.addAll(VENDORED_TRACING);
         }
-        if (hasTx()) {
-            classes.addAll(VENDORED_TX);
-        }
+        classes.addAll(optionalVendored());
         for (String cls : classes) {
             Path target = dir.resolve(cls + ".java");
             if (Files.exists(target)) {
@@ -195,6 +210,7 @@ public final class SetupRules {
         classes.addAll(VENDORED_SERVLET);
         classes.addAll(VENDORED_TRACING);
         classes.addAll(VENDORED_TX);
+        classes.addAll(VENDORED_METRICS);
         OrderBuilder b = null;
         List<String> changed = new ArrayList<>();
         for (String cls : classes) {
@@ -214,7 +230,7 @@ public final class SetupRules {
             changed.add(cls);
         }
         // classes newer logast versions added (AfterCommit, …)
-        for (String cls : hasTx() ? VENDORED_TX : List.<String>of()) {
+        for (String cls : optionalVendored()) {
             Path target = dir.resolve(cls + ".java");
             if (Files.exists(target)) {
                 continue;

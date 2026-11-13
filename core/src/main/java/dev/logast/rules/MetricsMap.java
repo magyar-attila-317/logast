@@ -41,8 +41,15 @@ public final class MetricsMap {
 
     public record Map(List<String> exporters, String exportNote, java.util.Map<String, String> identity,
                       List<Measured> measured, List<String> unmeasuredEntrypoints, List<String> repositories,
-                      List<MeterCatalog.Meter> meters, List<Unmeasured> outcomes) {
+                      List<MeterCatalog.Meter> meters, List<Unmeasured> outcomes,
+                      @com.fasterxml.jackson.annotation.JsonIgnore List<Gap> gaps) {
     }
+
+    /** An uncounted outcome with the code it sits in, for rules that write the counting line. */
+    record Gap(Unmeasured outcome, MethodInfo method, LogCall log, String name, boolean tagAvailable) {
+    }
+
+    static final String RULE_IGNORE = "logast:ignore";
 
     private static final java.util.Map<String, String> EXPORTERS = new LinkedHashMap<>();
 
@@ -135,6 +142,7 @@ public final class MetricsMap {
         }
 
         List<Unmeasured> outcomes = new ArrayList<>();
+        List<Gap> gaps = new ArrayList<>();
         for (MethodInfo m : a.index.methods()) {
             if (m.owner().fqn().startsWith(a.supportPackage + ".") || m.facts().logs.isEmpty() || hasMeter(m, metered)) {
                 continue;
@@ -157,7 +165,7 @@ public final class MetricsMap {
                     Matcher o = OUTCOME.matcher(text);
                     event = o.find() ? o.group(1).toLowerCase(Locale.ROOT) : null;
                 }
-                if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank()) {
+                if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(m, lc)) {
                     continue;
                 }
                 // a plain "completed"/"failed" of an entrypoint the framework or a wrapper times is in its timer already
@@ -175,12 +183,38 @@ public final class MetricsMap {
                         + "(tags the running " + (eps.isEmpty() ? "" : eps.getFirst().label()) + " timer; same thread only)"
                         : null;
                 String counter = "Counter.builder(\"" + metric + "\").tag(\"outcome\", \"" + event + "\").register(meterRegistry).increment()";
-                outcomes.add(new Unmeasured(m.label(), m.file().relPath(), Pos.line(lc.call()), lc.level().name().toLowerCase(Locale.ROOT),
-                        text, event, paths, frequency(a, eps), tag, counter));
+                Unmeasured u = new Unmeasured(m.label(), m.file().relPath(), Pos.line(lc.call()), lc.level().name().toLowerCase(Locale.ROOT),
+                        text, event, paths, frequency(a, eps), tag, counter);
+                outcomes.add(u);
+                gaps.add(new Gap(u, m, lc, metric, tag != null));
             }
         }
         outcomes.sort(Comparator.comparing(Unmeasured::file).thenComparingInt(Unmeasured::line));
-        return new Map(exporters, note, identity, measured, unmeasuredEps, repositories, meters, outcomes);
+        gaps.sort(Comparator.comparing((Gap g) -> g.outcome().file()).thenComparingInt(g -> g.outcome().line()));
+        return new Map(exporters, note, identity, measured, unmeasuredEps, repositories, meters, outcomes, gaps);
+    }
+
+    /** An Outcomes.count/tag right after the log line, or an ignore comment for this rule on it or above it. */
+    private static boolean countedOrSkipped(MethodInfo m, LogCall lc) {
+        int line = Pos.line(lc.call());
+        int last = m.file().text().substring(0, Math.min(m.file().text().length(), Pos.end(lc.call()))).split("\n", -1).length;
+        for (int l = line - 1; l <= last + 2; l++) {
+            String t = l < 1 ? "" : m.file().lineText(l);
+            if (t == null) {
+                continue;
+            }
+            if (l > line - 1 && (t.contains("Outcomes.count(") || t.contains("Outcomes.tag("))) {
+                return true;
+            }
+            int i = t.indexOf(RULE_IGNORE);
+            if (i >= 0 && l <= last) {
+                String rest = t.substring(i + RULE_IGNORE.length()).trim();
+                if (rest.isEmpty() || rest.contains(Rules.METRIC_OUTCOME_UNMEASURED)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean hasMeter(MethodInfo m, Set<String> metered) {

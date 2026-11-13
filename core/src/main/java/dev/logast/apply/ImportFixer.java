@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  */
 final class ImportFixer {
     static final Set<String> SUPPORT = Set.of("MdcScope", "ObservedContext", "ContextPropagation", "ContextExecutors", "TraceContextEnv",
-            "AfterCommit");
+            "AfterCommit", "Outcomes");
     private static final Map<String, String> FIXED = Map.of("MDC", "org.slf4j.MDC", "Logger", "org.slf4j.Logger",
             "LoggerFactory", "org.slf4j.LoggerFactory");
     private static final Pattern IMPORT = Pattern.compile("(?m)^import\\s+(static\\s+)?([\\w.]+)(\\.\\*)?\\s*;[^\\n]*\\n?");
