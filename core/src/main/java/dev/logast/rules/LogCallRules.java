@@ -206,10 +206,15 @@ final class LogCallRules {
                 why = hit.substring(hit.lastIndexOf('.') + 1) + " is a client error (expected outcome); ERROR means someone must act";
             }
         }
-        if (target == null && lc.inLargeLoop(ctx.policy.levels().boundedLoopMax()) && lc.level() == Level.INFO
-                && ctx.policy.levels().noInfoInLoops()) {
+        int max = ctx.policy.levels().boundedLoopMax();
+        String mode = ctx.policy.levels().loopMode();
+        if (target == null && lc.level() == Level.INFO && lc.inCatch() == null
+                && (mode.equals("never") && lc.inLargeLoop(max) || mode.equals("size") && lc.inDataLoop(max))) {
             target = "debug";
-            why = "INFO once per loop iteration floods the logs; log a summary after the loop at INFO instead";
+            why = lc.loopBound() == dev.logast.model.LogCall.LARGE
+                    ? "INFO once per item of query/stream data (database rows, file lines, a Kafka batch): as many lines as there "
+                    + "is data. One summary line after the loop at INFO instead"
+                    : "INFO once per loop iteration floods the logs; log a summary after the loop at INFO instead";
         }
         int line = Pos.line(lc.call());
         if (target == null || target.equals(lc.level().method()) || ctx.ignored(m.file(), line, Rules.LOG_LEVEL)) {

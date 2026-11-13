@@ -131,9 +131,19 @@ levels:
   clientErrors:                 # exceptions caused by the caller (added to the built-in list)
     - com.example.BusinessRuleViolationException
   clientErrorLevel: warn        # client errors are never logged as ERROR
-  noInfoInLoops: false          # true = INFO inside a loop becomes DEBUG (high-volume batch services)
+  infoInLoops: size             # INFO once per loop item:
+                                #   size   = fine when the loop is small, DEBUG when it runs over query/stream data
+                                #            (database rows, file lines, Kafka batches), reported when unknown
+                                #   never  = DEBUG unless the loop is known to be small; always = no loop checks
   boundedLoopMax: 20            # a loop over at most this many items counts as small
   volumeBudget: 100000          # log lines per day one statement may produce (with traffic numbers)
+```
+
+Tell logast how big a loop is with a comment right above it (it can't see your data):
+```java
+// logast:loop-size 10        (or: small) INFO per item is fine here
+// logast:loop-size large     one line per item would flood: DEBUG, with a summary after the loop
+for (Store store : stores) { ... }
 ```
 
 ### `mdc`

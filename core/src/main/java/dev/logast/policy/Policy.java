@@ -141,14 +141,32 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
     /**
      * @param volumeBudget lines per day above which an INFO+ statement is a LOG_VOLUME finding (needs traffic data)
      */
+    /**
+     * @param infoInLoops size (default): INFO per item is fine in small loops, becomes DEBUG in loops over query/stream data,
+     *                    and is reported where the size is unknown (a {@code // logast:loop-size N} hint settles it);
+     *                    never: INFO in any loop that is not known to be small becomes DEBUG; always: no loop checks
+     */
     public record Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
-                         Integer boundedLoopMax) {
+                         Integer boundedLoopMax, String infoInLoops) {
+        public Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
+                      Integer boundedLoopMax) {
+            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null);
+        }
+
+        public String loopMode() {
+            return noInfoInLoops ? "never" : infoInLoops;
+        }
+
         public Levels {
             boundedLoopMax = boundedLoopMax == null ? 20 : boundedLoopMax;
             volumeBudget = volumeBudget == null ? 100_000d : volumeBudget;
             clientErrors = clientErrors == null ? List.of() : List.copyOf(clientErrors);
             clientErrorLevel = clientErrorLevel == null ? "warn" : clientErrorLevel.toLowerCase(Locale.ROOT);
             noInfoInLoops = noInfoInLoops != null && noInfoInLoops;
+            infoInLoops = infoInLoops == null ? "size" : infoInLoops.toLowerCase(Locale.ROOT);
+            if (!Set.of("size", "never", "always").contains(infoInLoops)) {
+                throw new IllegalArgumentException("levels.infoInLoops must be size, never or always, was " + infoInLoops);
+            }
         }
     }
 

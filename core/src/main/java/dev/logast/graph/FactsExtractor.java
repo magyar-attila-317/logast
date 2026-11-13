@@ -121,7 +121,8 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
                 || TypeUtils.isAssignableTo("java.util.Map", p.getMethodType().getDeclaringType()));
         if (perElement) {
             loopDepth++;
-            pushBound(bound(chainRoot(((J.MethodInvocation) getCursor().getParentTreeCursor().getValue()).getSelect())));
+            Integer hint = sizeHint(getCursor().firstEnclosing(Statement.class) instanceof Statement st && !(st instanceof J.Lambda) ? st : null);
+            pushBound(hint != null ? hint : bound(chainRoot(((J.MethodInvocation) getCursor().getParentTreeCursor().getValue()).getSelect())));
         }
         J.Lambda r = super.visitLambda(l, f);
         if (perElement) {
@@ -137,16 +138,86 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
     @Override
     public J.ForEachLoop visitForEachLoop(J.ForEachLoop loop, MethodFacts f) {
         loopDepth++;
-        pushBound(bound(loop.getControl().getIterable()));
+        Integer hint = sizeHint(loop);
+        pushBound(hint != null ? hint : bound(loop.getControl().getIterable()));
         J.ForEachLoop r = super.visitForEachLoop(loop, f);
         loopDepth--;
         loopBounds.pop();
         return r;
     }
 
+    /** Loop size: n &gt; 0 known, {@link LogCall#UNKNOWN} unknown, {@link LogCall#LARGE} data from a query/stream. */
     private void pushBound(int bound) {
         int outer = loopBounds.isEmpty() ? 1 : loopBounds.peek();
-        loopBounds.push(outer < 0 || bound < 0 ? -1 : outer * bound);
+        loopBounds.push(outer == LogCall.LARGE || bound == LogCall.LARGE ? LogCall.LARGE
+                : outer < 0 || bound < 0 ? LogCall.UNKNOWN : outer * bound);
+    }
+
+    private static final java.util.regex.Pattern SIZE_HINT = java.util.regex.Pattern.compile("logast:loop-size\\s+(\\d+|small|large)");
+
+    /** {@code // logast:loop-size 10} (or small / large) in the comments right above the loop statement. */
+    private Integer sizeHint(Statement loopStatement) {
+        if (loopStatement == null) {
+            return null;
+        }
+        for (org.openrewrite.java.tree.Comment c : loopStatement.getPrefix().getComments()) {
+            java.util.regex.Matcher m = SIZE_HINT.matcher(c.printComment(getCursor()));
+            if (m.find()) {
+                return switch (m.group(1)) {
+                    case "small" -> 1;
+                    case "large" -> LogCall.LARGE;
+                    default -> Integer.parseInt(m.group(1));
+                };
+            }
+        }
+        return null;
+    }
+
+    private static final Set<String> QUERY_PREFIXES = Set.of("find", "stream", "search", "query", "read", "get", "list", "load");
+
+    /**
+     * Collections that come from data, not code: repository queries (not by id), JDBC queries, pages, file lines,
+     * Kafka record batches. One INFO line per item of these is volume nobody chose.
+     */
+    private static boolean dataSource(Expression e) {
+        JavaType t = e.getType();
+        if (TypeUtils.isAssignableTo("org.apache.kafka.clients.consumer.ConsumerRecords", t)
+                || TypeUtils.isAssignableTo("org.springframework.data.domain.Slice", t)) {
+            return true;
+        }
+        if (!(e instanceof J.MethodInvocation mi) || mi.getMethodType() == null) {
+            return false;
+        }
+        JavaType.FullyQualified owner = mi.getMethodType().getDeclaringType();
+        String name = mi.getSimpleName();
+        if (TypeUtils.isAssignableTo("org.springframework.data.repository.Repository", owner)) {
+            return QUERY_PREFIXES.stream().anyMatch(name::startsWith) && !name.matches(".*ById$|.*ByUuid$|^get(One|ReferenceById)$");
+        }
+        String fqn = owner.getFullyQualifiedName();
+        return fqn.startsWith("org.springframework.jdbc.core.") && name.startsWith("query")
+                || fqn.equals("java.nio.file.Files") && (name.equals("lines") || name.equals("readAllLines"))
+                || name.equals("getContent") && TypeUtils.isAssignableTo("org.springframework.data.domain.Slice", owner)
+                || fqn.equals("jakarta.persistence.TypedQuery") && name.startsWith("getResult")
+                || fqn.equals("jakarta.persistence.Query") && name.startsWith("getResult");
+    }
+
+    /** Initializer of a local variable declared earlier in the method ({@code var orders = repository.findAll();}). */
+    private Expression localInitializer(String name) {
+        J.MethodDeclaration md = getCursor().firstEnclosing(J.MethodDeclaration.class);
+        if (md == null || md.getBody() == null) {
+            return null;
+        }
+        Expression[] found = {null};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable v, Integer p) {
+                if (v.getSimpleName().equals(name) && v.getInitializer() != null) {
+                    found[0] = v.getInitializer();
+                }
+                return v;
+            }
+        }.visit(md.getBody(), 0);
+        return found[0];
     }
 
     private int currentBound() {
@@ -172,6 +243,18 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
 
     /** Number of elements when it is fixed in the code (enum values, literal lists/arrays, same-class constants), else -1. */
     private int bound(Expression e) {
+        if (dataSource(e)) {
+            return LogCall.LARGE;
+        }
+        if (e instanceof J.Identifier local && local.getFieldType() != null && local.getFieldType().getOwner() instanceof JavaType.Method) {
+            Expression init = localInitializer(local.getSimpleName());
+            if (init != null && init != e) {
+                int b = bound(init);
+                if (b != LogCall.UNKNOWN) {
+                    return b;
+                }
+            }
+        }
         if (e instanceof J.MethodInvocation mi) {
             if (isEnumValues(mi)) {
                 return enumSize(((JavaType.Array) mi.getType()).getElemType());

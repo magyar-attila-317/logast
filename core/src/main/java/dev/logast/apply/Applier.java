@@ -26,11 +26,21 @@ public final class Applier {
     private static final int MAX_ROUNDS = 6;
     private static final Set<String> SKIP = Set.of("build", "target", ".git", ".gradle", ".idea", "node_modules", "out");
 
-    public record Selection(boolean auto, Set<String> only, Map<String, Fill> fills) {
+    /** @param lenientFills texts for orders that no longer exist are skipped silently (the automatic .logast/fills.json) */
+    public record Selection(boolean auto, Set<String> only, Map<String, Fill> fills, boolean lenientFills) {
+        public Selection(boolean auto, Set<String> only, Map<String, Fill> fills) {
+            this(auto, only, fills, false);
+        }
     }
 
+    /**
+     * @param before the scan of the code as it was; {@code after} the scan once every applied order is in (both left
+     *               out of the JSON output)
+     */
     public record Result(List<String> applied, Map<String, String> rejected, List<String> resolvedIndirectly,
-                         List<String> changedFiles, String diff, int rounds) {
+                         List<String> changedFiles, String diff, int rounds,
+                         @com.fasterxml.jackson.annotation.JsonIgnore ScanResult before,
+                         @com.fasterxml.jackson.annotation.JsonIgnore ScanResult after) {
     }
 
     private final Function<Path, ScanResult> scanner;
@@ -58,6 +68,7 @@ public final class Applier {
         Set<String> everSelected = new HashSet<>();
 
         ScanResult scan = scanner.apply(work);
+        ScanResult before = scan;
         select(scan, sel, pending, everSelected, rejected, Set.of());
         int round = 0;
         while (!pending.isEmpty() && round < MAX_ROUNDS) {
@@ -131,7 +142,7 @@ public final class Applier {
         if (write) {
             copyBack(root, work, changed);
         }
-        return new Result(applied, rejected, indirect, changed, diff.toString(), round);
+        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan);
     }
 
     private static void select(ScanResult scan, Selection sel, Set<String> pending, Set<String> everSelected,
@@ -146,7 +157,12 @@ public final class Applier {
                 pending.add(o.id());
             }
         }
+        Set<String> present = new HashSet<>();
+        scan.orders().forEach(o -> present.add(o.id()));
         for (String id : sel.fills().keySet()) {
+            if (sel.lenientFills() && !present.contains(id)) {
+                continue;   // a finished or outdated entry of .logast/fills.json
+            }
             if (everSelected.add(id)) {
                 pending.add(id); // reported as stale if it does not exist
             }

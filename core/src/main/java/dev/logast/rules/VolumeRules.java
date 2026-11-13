@@ -28,7 +28,7 @@ final class VolumeRules {
 
     void run() {
         boolean traffic = ctx.a.traffic.known() && ctx.enabled(Rules.LOG_VOLUME);
-        boolean loopRuleAlreadyFixes = ctx.policy.levels().noInfoInLoops() && ctx.enabled(Rules.LOG_LEVEL);
+        String mode = ctx.policy.levels().loopMode();
         for (MethodInfo m : ctx.methods()) {
             List<LogCall> logs = m.facts().logs;
             if (logs.isEmpty()) {
@@ -55,14 +55,16 @@ final class VolumeRules {
                                     ? "Log one summary line after the loop (count, ids in a [k=v]) and move the per-item line to DEBUG."
                                     : "Move it to DEBUG, log once per batch, or rate-limit it; keep INFO for state changes people act on."))
                             .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
-                } else if (lc.inLargeLoop(ctx.policy.levels().boundedLoopMax()) && lc.level() == Level.INFO
+                } else if (lc.loopBound() == dev.logast.model.LogCall.UNKNOWN && lc.level() == Level.INFO
                         && lc.inCatch() == null // per-item failures are fine
-                        && !loopRuleAlreadyFixes && ctx.enabled(Rules.LOG_IN_LOOP)
+                        && mode.equals("size") && ctx.enabled(Rules.LOG_IN_LOOP)
                         && !ctx.ignored(m.file(), line, Rules.LOG_IN_LOOP)) {
+                    // known small loops are fine and loops over data are lowered by LOG_LEVEL: only the unknown ones need a person
                     ctx.order(Rules.LOG_IN_LOOP, m, line, "loop" + i)
-                            .title("INFO log once per collection element: volume grows with the collection size")
-                            .suggestion("If the collection can be large, log one summary line after the loop and move this one to DEBUG. "
-                                    + "Provide .logast/traffic.yaml to see real lines/day (LOG_VOLUME).")
+                            .title("INFO log once per item of a collection whose size logast cannot tell: 10 items is fine, 50,000 is not")
+                            .suggestion("If it is always small, add `// logast:loop-size 10` above the loop (any number up to "
+                                    + ctx.policy.levels().boundedLoopMax() + " keeps INFO). If it can be large, add `// logast:loop-size large`: "
+                                    + "the line becomes DEBUG with a summary after the loop. With .logast/traffic.yaml, LOG_VOLUME shows lines/day.")
                             .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
                 }
             }

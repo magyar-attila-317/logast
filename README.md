@@ -202,8 +202,12 @@ logast apply . --auto --write       # make them
 ```
 
 Findings come in three kinds: **AUTO** (logast fixes it), **NEEDS TEXT** (someone writes one message: put it into
-`.logast/fills.json`, which the scan already created, and `apply` picks it up), and **REPORT-ONLY** (a decision for
-a person; the note says what to decide).
+`.logast/fills.json` and `apply` picks it up), and **REPORT-ONLY** (a decision for a person; the note says what to
+decide).
+
+`.logast/fills.json` follows the code by itself: `scan` and `apply` create it when it is missing, keep every entry you
+already have exactly as it is, add entries for new findings and remove the ones that are done. Nothing is rewritten
+when nothing changed.
 
 Output is coloured in a terminal. `NO_COLOR=1` turns colours off, `LOGAST_COLOR=always|never` forces them.
 
@@ -428,7 +432,22 @@ verify:
 
 ### 6. Noise: logs in loops, and real volume
 
-`LOG_IN_LOOP` flags an INFO line per collection element, skipping loops over enums and fixed lists. With rates
+INFO once per loop item is fine for 10 items and a flood for 50,000, so logast judges by where the items come from
+(`levels.infoInLoops: size`, the default):
+
+| loop over | INFO per item |
+|---|---|
+| a fixed list, enum values, a constant, up to `boundedLoopMax` (20) items | fine |
+| database rows (repository `find…`/`stream…`, JDBC queries, pages), file lines, a Kafka batch | lowered to DEBUG (LOG_LEVEL); the batch-summary rule adds one total after the loop |
+| anything else (size unknown) | reported (LOG_IN_LOOP); a comment above the loop settles it |
+
+```java
+// logast:loop-size 10       (or small): INFO stays
+// logast:loop-size large    DEBUG, plus a summary after the loop
+for (Store store : stores) { ... }
+```
+
+`never` lowers every loop that isn't known to be small, `always` turns the checks off. With rates
 in `.logast/traffic.yaml` (`logast traffic .` lists every entrypoint for you; a Prometheus query result works
 too), `LOG_VOLUME` reports lines/day per statement over your budget. logast never guesses traffic.
 
