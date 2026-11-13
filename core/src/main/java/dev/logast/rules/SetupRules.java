@@ -117,6 +117,12 @@ final class SetupRules {
     static final List<String> VENDORED_SERVLET = List.of("MdcHygieneFilter", "MdcHygieneConfiguration");
     /** Only copied when Micrometer Tracing is on the classpath. */
     static final List<String> VENDORED_TRACING = List.of("TraceContextEnvConfiguration");
+    /** Only copied when spring-tx is on the classpath (JdbcTemplate brings it). */
+    static final List<String> VENDORED_TX = List.of("AfterCommit");
+
+    private boolean hasTx() {
+        return ctx.a.project.probe().hasClass("org.springframework.transaction.support.TransactionSynchronizationManager");
+    }
     private static final Pattern AUTO_CONFIGURATION = Pattern.compile("@AutoConfiguration(\\([^)]*\\))?", Pattern.DOTALL);
 
     private void vendor(String buildRel, String buildText, boolean kts) {
@@ -136,6 +142,9 @@ final class SetupRules {
         }
         if (ctx.a.project.probe().hasClass("io.micrometer.tracing.Tracer")) {
             classes.addAll(VENDORED_TRACING);
+        }
+        if (hasTx()) {
+            classes.addAll(VENDORED_TX);
         }
         for (String cls : classes) {
             Path target = dir.resolve(cls + ".java");
@@ -182,6 +191,7 @@ final class SetupRules {
         List<String> classes = new ArrayList<>(VENDORED);
         classes.addAll(VENDORED_SERVLET);
         classes.addAll(VENDORED_TRACING);
+        classes.addAll(VENDORED_TX);
         OrderBuilder b = null;
         List<String> changed = new ArrayList<>();
         for (String cls : classes) {
@@ -199,6 +209,18 @@ final class SetupRules {
             }
             b.edit(Edit.replace(rel(target), 0, existing.length(), current));
             changed.add(cls);
+        }
+        // classes newer logast versions added (AfterCommit, …)
+        for (String cls : hasTx() ? VENDORED_TX : List.<String>of()) {
+            Path target = dir.resolve(cls + ".java");
+            if (Files.exists(target)) {
+                continue;
+            }
+            if (b == null) {
+                b = ctx.order(Rules.SETUP_SUPPORT_STARTER, "vendor-update|" + ctx.a.supportPackage).at(rel(target), 1);
+            }
+            b.edit(Edit.create(rel(target), vendoredSource(cls, ctx.a.supportPackage)));
+            changed.add(cls + " (new)");
         }
         if (b != null) {
             b.title("Update the copied logging support classes to this logast version: " + String.join(", ", changed))

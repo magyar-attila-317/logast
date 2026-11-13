@@ -147,10 +147,15 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      *                    never: INFO in any loop that is not known to be small becomes DEBUG; always: no loop checks
      */
     public record Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
-                         Integer boundedLoopMax, String infoInLoops) {
+                         Integer boundedLoopMax, String infoInLoops, Integer largeResult) {
         public Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
                       Integer boundedLoopMax) {
-            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null);
+            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null, null);
+        }
+
+        public Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
+                      Integer boundedLoopMax, String infoInLoops) {
+            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, infoInLoops, null);
         }
 
         public String loopMode() {
@@ -159,6 +164,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
         public Levels {
             boundedLoopMax = boundedLoopMax == null ? 20 : boundedLoopMax;
+            largeResult = largeResult == null ? 10_000 : largeResult;   // rows; a read above it gets a WARN line (0 = off)
             volumeBudget = volumeBudget == null ? 100_000d : volumeBudget;
             clientErrors = clientErrors == null ? List.of() : List.copyOf(clientErrors);
             clientErrorLevel = clientErrorLevel == null ? "warn" : clientErrorLevel.toLowerCase(Locale.ROOT);

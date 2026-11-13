@@ -19,11 +19,13 @@ dependencies {
     compileOnly("org.springframework:spring-web")
     compileOnly("io.micrometer:micrometer-tracing")
     compileOnly("jakarta.servlet:jakarta.servlet-api")
+    compileOnly("org.springframework:spring-tx")   // AfterCommit: only used where transactions exist
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-opentelemetry")
     testImplementation("org.springframework:spring-web")
     testImplementation("jakarta.servlet:jakarta.servlet-api")
+    testImplementation("org.springframework:spring-tx")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
