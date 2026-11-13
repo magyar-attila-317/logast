@@ -134,6 +134,21 @@ index a82b3b1..5153ba7 100644
          return new IncomeOutcome(false, result);
      }
  }
+diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
+index 6a002c4..13f7dd1 100644
+--- a/src/main/java/com/example/e2e/job/PublishRunJob.java
++++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
+@@ -17,8 +17,8 @@ 
+         ObservedContext.entrypoint("publishing")
+                 .quiet()
+                 .run(() -> {
+-                    log.info("Publishing started [runCode={}]", runCode);
+-                    log.info("Publishing completed [runCode={}]", runCode);
++                    log.info("Publishing started");
++                    log.info("Publishing completed");
+                 });
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/edge/CouponTask.java b/src/main/java/com/example/e2e/edge/CouponTask.java
 index b5b44e5..c942299 100644
 --- a/src/main/java/com/example/e2e/edge/CouponTask.java
