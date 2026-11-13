@@ -10,7 +10,8 @@ import java.util.regex.Pattern;
  * that is imported from somewhere else, or declared in the file's own package, is left alone.
  */
 final class ImportFixer {
-    static final Set<String> SUPPORT = Set.of("MdcScope", "ObservedContext", "ContextPropagation", "ContextExecutors", "TraceContextEnv");
+    static final Set<String> SUPPORT = Set.of("MdcScope", "ObservedContext", "ContextPropagation", "ContextExecutors", "TraceContextEnv",
+            "AfterCommit");
     private static final Map<String, String> FIXED = Map.of("MDC", "org.slf4j.MDC", "Logger", "org.slf4j.Logger",
             "LoggerFactory", "org.slf4j.LoggerFactory");
     private static final Pattern IMPORT = Pattern.compile("(?m)^import\\s+(static\\s+)?([\\w.]+)(\\.\\*)?\\s*;[^\\n]*\\n?");

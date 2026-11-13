@@ -137,6 +137,7 @@ levels:
                                 #            (database rows, file lines, Kafka batches), reported when unknown
                                 #   never  = DEBUG unless the loop is known to be small; always = no loop checks
   boundedLoopMax: 20            # a loop over at most this many items counts as small
+  largeResult: 10000            # a database read returning more rows gets a WARN line (0 = no check)
   volumeBudget: 100000          # log lines per day one statement may produce (with traffic numbers)
 ```
 
@@ -238,7 +239,7 @@ rules:
 ```
 
 `logast rules` lists every rule and its pack. The log-coverage rules (JOB_OUTCOME_MISSING, SKIP_UNLOGGED,
-STATE_CHANGE_UNLOGGED, BATCH_SUMMARY_MISSING) add log lines; switch off the ones a service does not want. A single finding is silenced in code with
+STATE_CHANGE_UNLOGGED, BATCH_SUMMARY_MISSING, DB_OUTCOME_UNLOGGED) add log lines; switch off the ones a service does not want. A single finding is silenced in code with
 `// logast:ignore RULE_NAME` on the line or the line above.
 
 ---

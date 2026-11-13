@@ -208,6 +208,14 @@ public final class RuleContext {
         }
     }
 
+    /** A support class generated code may use: added or updated by this run, or already there. */
+    boolean supportHas(String simpleName) {
+        if (!a.supportStarterPresent || supportUpdateOrderId != null) {
+            return true;
+        }
+        return a.index.clazz(support(simpleName)) != null || a.project.probe().hasClass(support(simpleName));
+    }
+
     /** The order that brings already-copied (vendor mode) support classes up to date, if any. */
     String supportUpdateOrderId;
 

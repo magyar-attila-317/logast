@@ -8,6 +8,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
     implementation("org.springframework.data:spring-data-commons")
+    implementation("org.springframework:spring-jdbc")      // JdbcTemplate repositories (DB_OUTCOME_UNLOGGED)
     implementation("org.springframework:spring-webflux")   // WebClient without Boot's webclient module
 
     testImplementation(platform(libs.junit.bom))
