@@ -89,6 +89,9 @@ public final class Applier {
         }
     }
 
+    /** Passes over the whole pipeline before apply stops (each pass only applies what is still open). */
+    static final int MAX_PASSES = 3;
+
     private Result run(Path root, Path work, Selection sel, boolean write) {
         List<String> applied = new ArrayList<>();
         Map<String, String> rejected = new LinkedHashMap<>();
@@ -103,6 +106,13 @@ public final class Applier {
         Set<String> carried = new LinkedHashSet<>();
         // the pipeline (docs/pipeline-plan.md): each step works on what the previous steps really produced
         Map<String, String> stepDiffs = new LinkedHashMap<>();
+        // the pipeline repeats until a pass applies nothing: a fix in a later step can open up one in an earlier step
+        // (a scope moved up makes a lower one redundant, then its messages can drop the key). One run = the end state.
+        for (int pass = 1; pass <= MAX_PASSES; pass++) {
+        int appliedBefore = applied.size();
+        if (pass > 1) {
+            progress.accept("pass " + pass + ": earlier fixes opened up new ones");
+        }
         for (Rules.Step step : Rules.Step.values()) {
             if (until != null && step.ordinal() > until.ordinal()) {
                 break;
@@ -201,8 +211,16 @@ public final class Applier {
             pending.forEach(id -> rejected.put(id, "could not be applied without conflicts after " + rounds + " rounds; rescan and retry"));
             String d = diffOf(work, beforeStep);
             if (!d.isEmpty()) {
-                stepDiffs.put(name, d);
+                stepDiffs.merge(name, d, String::concat);
             }
+        }
+        if (applied.size() == appliedBefore || until != null) {
+            break;
+        }
+        if (pass == MAX_PASSES && scan.orders().stream().anyMatch(o -> o.mechanical() && !applied.contains(o.id())
+                && sel.auto() && !rejected.containsKey(o.id()))) {
+            progress.accept("still changing after " + MAX_PASSES + " passes: the rest is left for the next run");
+        }
         }
         carried.forEach(id -> rejected.put(id, "waits for a fix that was not applied"));
 

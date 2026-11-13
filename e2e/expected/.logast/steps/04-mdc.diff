@@ -39,6 +39,38 @@ index b5ef221..74b60cd 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/stipend/StipendCalculator.java b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
+index 04a4db7..a82b3b1 100644
+--- a/src/main/java/com/example/e2e/stipend/StipendCalculator.java
++++ b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.stipend;
+ 
++import com.example.e2e.logging.MdcScope;
+ import java.math.BigDecimal;
+ import java.util.List;
+ import java.util.Optional;
+@@ -35,13 +36,15 @@
+     }
+ 
+     private static Optional<String> validatePledge(KioskTotals kioskData, PledgeDetails pledge) {
+-        for (PledgeCheck check : PledgeChecks.all()) {
+-            Optional<String> result = check.validate(pledge, kioskData);
+-            if (result.isPresent()) {
+-                return result;
++        try (var mdc = MdcScope.of("sponsorshipId", pledge.sponsorshipId())) {
++            for (PledgeCheck check : PledgeChecks.all()) {
++                Optional<String> result = check.validate(pledge, kioskData);
++                if (result.isPresent()) {
++                    return result;
++                }
+             }
++            return Optional.empty();
+         }
+-        return Optional.empty();
+     }
+ 
+     private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {
 diff --git a/src/main/java/com/example/e2e/stipend/TallyService.java b/src/main/java/com/example/e2e/stipend/TallyService.java
 index c12133d..49d439e 100644
 --- a/src/main/java/com/example/e2e/stipend/TallyService.java

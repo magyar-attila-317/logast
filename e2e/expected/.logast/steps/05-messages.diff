@@ -40,10 +40,10 @@ index 4441104..fcb1bd0 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/stipend/StipendCalculator.java b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
-index 9ca00bb..c5663df 100644
+index a82b3b1..5153ba7 100644
 --- a/src/main/java/com/example/e2e/stipend/StipendCalculator.java
 +++ b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
-@@ -13,10 +13,9 @@ 
+@@ -15,10 +15,9 @@ 
      }
  
      public static StipendOutcome calculate(KioskTotals kioskData, List<PledgeDetails> matchingPledges) {
@@ -56,15 +56,16 @@ index 9ca00bb..c5663df 100644
              return new StipendOutcome(true, BigDecimal.ZERO);
          }
          return evaluateOutcome(kioskData, matchingPledges);
-@@ -27,14 +26,14 @@
-             if (pledge.subsidyPercentage() != null) {
+@@ -30,7 +29,7 @@
+             if (exclusion.isEmpty()) {
                  return calculateStipend(kioskData, pledge);
              }
--            log.trace("Pledge excluded [pledgeId={}]", pledge.pledgeId());
-+            log.trace("Pledge excluded");
+-            log.trace("Pledge excluded [pledgeId={}, reason={}]", pledge.pledgeId(), exclusion.get());
++            log.trace("Pledge excluded [reason={}]", exclusion.get());
          }
          return new StipendOutcome(true, BigDecimal.ZERO);
      }
+@@ -49,7 +48,7 @@
  
      private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {
          BigDecimal result = kioskData.totalDiscount().multiply(pledge.subsidyPercentage());
@@ -87,6 +88,28 @@ index 1b9add7..0f5a523 100644
 +        log.info("Pledge sent");
      }
  }
+diff --git a/src/main/java/com/example/e2e/stipend/PledgeChecks.java b/src/main/java/com/example/e2e/stipend/PledgeChecks.java
+index 81fe38b..43456d4 100644
+--- a/src/main/java/com/example/e2e/stipend/PledgeChecks.java
++++ b/src/main/java/com/example/e2e/stipend/PledgeChecks.java
+@@ -22,7 +22,7 @@ 
+         public Optional<String> validate(PledgeDetails pledge, KioskTotals kioskData) {
+             log.trace(CHECK_LOG_MESSAGE, "approved", pledge.pledgeId(), pledge.sponsorshipId(), kioskData.kioskDay());
+             if (pledge.sponsorshipId() == null) {
+-                log.debug("Sponsorship missing [pledgeId={}, sponsorshipId={}]", pledge.pledgeId(), pledge.sponsorshipId());
++                log.debug("Sponsorship missing");
+                 return Optional.of("NO_SPONSORSHIP");
+             }
+             return Optional.empty();
+@@ -34,7 +34,7 @@
+         public Optional<String> validate(PledgeDetails pledge, KioskTotals kioskData) {
+             log.trace(CHECK_LOG_MESSAGE, "subsidy", pledge.pledgeId(), pledge.sponsorshipId(), kioskData.kioskDay());
+             if (pledge.subsidyPercentage() == null) {
+-                log.debug("No subsidy found [pledgeId={}, sponsorshipId={}]", pledge.pledgeId(), pledge.sponsorshipId());
++                log.debug("No subsidy found");
+                 return Optional.of("NO_SUBSIDY");
+             }
+             return Optional.empty();
 diff --git a/src/main/java/com/example/e2e/stipend/TallyService.java b/src/main/java/com/example/e2e/stipend/TallyService.java
 index 49d439e..1b7afce 100644
 --- a/src/main/java/com/example/e2e/stipend/TallyService.java

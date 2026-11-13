@@ -2,6 +2,7 @@ package com.example.e2e.stipend;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,12 +25,23 @@ public final class StipendCalculator {
 
     private static StipendOutcome evaluateOutcome(KioskTotals kioskData, List<PledgeDetails> sortedPledges) {
         for (PledgeDetails pledge : sortedPledges) {
-            if (pledge.subsidyPercentage() != null) {
+            Optional<String> exclusion = validatePledge(kioskData, pledge);
+            if (exclusion.isEmpty()) {
                 return calculateStipend(kioskData, pledge);
             }
-            log.trace("Pledge excluded [pledgeId={}]", pledge.pledgeId());
+            log.trace("Pledge excluded [pledgeId={}, reason={}]", pledge.pledgeId(), exclusion.get());
         }
         return new StipendOutcome(true, BigDecimal.ZERO);
+    }
+
+    private static Optional<String> validatePledge(KioskTotals kioskData, PledgeDetails pledge) {
+        for (PledgeCheck check : PledgeChecks.all()) {
+            Optional<String> result = check.validate(pledge, kioskData);
+            if (result.isPresent()) {
+                return result;
+            }
+        }
+        return Optional.empty();
     }
 
     private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {

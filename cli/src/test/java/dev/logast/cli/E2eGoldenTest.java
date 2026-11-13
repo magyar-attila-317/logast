@@ -141,6 +141,7 @@ class E2eGoldenTest {
                 import com.example.e2e.logging.MdcScope;
                 import java.math.BigDecimal;
                 import java.util.List;
+                import java.util.Optional;
                 import org.slf4j.Logger;
                 import org.slf4j.LoggerFactory;
 
@@ -163,12 +164,23 @@ class E2eGoldenTest {
 
                     private static StipendOutcome evaluateOutcome(KioskTotals kioskData, List<PledgeDetails> sortedPledges) {
                         for (PledgeDetails pledge : sortedPledges) {
-                            if (pledge.subsidyPercentage() != null) {
+                            Optional<String> exclusion = validatePledge(kioskData, pledge);
+                            if (exclusion.isEmpty()) {
                                 return calculateStipend(kioskData, pledge);
                             }
-                            log.trace("Pledge excluded [pledgeId={}]", pledge.pledgeId());
+                            log.trace("Pledge excluded [pledgeId={}, reason={}]", pledge.pledgeId(), exclusion.get());
                         }
                         return new StipendOutcome(true, BigDecimal.ZERO);
+                    }
+
+                    private static Optional<String> validatePledge(KioskTotals kioskData, PledgeDetails pledge) {
+                        for (PledgeCheck check : PledgeChecks.all()) {
+                            Optional<String> result = check.validate(pledge, kioskData);
+                            if (result.isPresent()) {
+                                return result;
+                            }
+                        }
+                        return Optional.empty();
                     }
 
                     private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {
@@ -181,11 +193,35 @@ class E2eGoldenTest {
                 }
                 """);
 
+        // and a check with a two-key scope (pledgeId + sponsorshipId), as earlier versions wrote them
+        Path checks = app.resolve("src/main/java/com/example/e2e/stipend/PledgeChecks.java");
+        Files.writeString(checks, Files.readString(checks)
+                .replace("import java.util.List;", "import com.example.e2e.logging.MdcScope;\nimport java.util.List;")
+                .replace("""
+                                    log.trace(CHECK_LOG_MESSAGE, "subsidy", pledge.pledgeId(), pledge.sponsorshipId(), kioskData.kioskDay());
+                                    if (pledge.subsidyPercentage() == null) {
+                                        log.debug("No subsidy found [pledgeId={}, sponsorshipId={}]", pledge.pledgeId(), pledge.sponsorshipId());
+                                        return Optional.of("NO_SUBSIDY");
+                                    }
+                                    return Optional.empty();
+                        """, """
+                                    try (var mdc = MdcScope.of("pledgeId", pledge.pledgeId(), "sponsorshipId", pledge.sponsorshipId())) {
+                                        log.trace(CHECK_LOG_MESSAGE, "subsidy", pledge.pledgeId(), pledge.sponsorshipId(), kioskData.kioskDay());
+                                        if (pledge.subsidyPercentage() == null) {
+                                            log.debug("No subsidy found");
+                                            return Optional.of("NO_SUBSIDY");
+                                        }
+                                        return Optional.empty();
+                                    }
+                        """));
+        assertThat(Files.readString(checks)).as("test setup").contains("MdcScope.of(\"pledgeId\", pledge.pledgeId(), \"sponsorshipId\"");
+
         String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         assertThat(out).doesNotContain("CHECK FAILED");
         assertThat(Files.readString(app.resolve("src/main/java/com/example/e2e/stipend/TallyService.java")))
                 .contains("MdcScope.of(\"pledgeId\", kioskData.pledgeId())");
-        assertThat(Files.readString(calc)).doesNotContain("MdcScope.of(");
+        assertThat(Files.readString(calc)).doesNotContain("\"pledgeId\"");
+        assertThat(Files.readString(checks)).as(Files.readString(checks)).doesNotContain("\"pledgeId\"");
         compile(app);
     }
 
