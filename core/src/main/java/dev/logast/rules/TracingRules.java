@@ -96,12 +96,8 @@ final class TracingRules {
                 .title("No tracing sampling set: Spring Boot exports 10% of traces, so 9 in 10 trace ids in the logs lead nowhere")
                 .suggestion("Sets 1.0 (every trace exported). With high traffic, sample in the collector instead (tail sampling).");
         String snippet = "management:\n  tracing:\n    sampling:\n      probability: 1.0\n";
-        Path file = ctx.a.project.root().resolve(yml[0]);
-        if (Files.exists(file)) {
-            String text = SetupRules.read(file);
-            b.edit(Edit.replace(yml[0], 0, text.length(), SetupRules.mergeYaml(text, snippet)));
-        } else {
-            b.edit(Edit.create(yml[0], snippet));
+        {
+            b.edit(Edit.yamlMerge(yml[0], snippet, false));
         }
     }
 
@@ -456,11 +452,8 @@ final class TracingRules {
                 .title("Kafka " + String.join(" and ", missing.keySet()) + " without observation: the trace stops at the topic");
         StringBuilder snippet = new StringBuilder("spring:\n  kafka:\n");
         missing.keySet().forEach(k -> snippet.append("    ").append(k).append(":\n      observation-enabled: true\n"));
-        if (Files.exists(yml)) {
-            String text = SetupRules.read(yml);
-            b.edit(Edit.replace(rel, 0, text.length(), SetupRules.mergeYaml(text, snippet.toString())));
-        } else {
-            b.edit(Edit.create(rel, snippet.toString()));
+        {
+            b.edit(Edit.yamlMerge(rel, snippet.toString(), false));
         }
         templateUses.forEach(t -> b.location(t[0], Integer.parseInt(t[1]), Rules.KAFKA_OBSERVATION_DISABLED));
         listeners.forEach(ep -> b.location(ep.method().file().relPath(), ep.method().line(), Rules.KAFKA_OBSERVATION_DISABLED));

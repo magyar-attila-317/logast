@@ -120,6 +120,10 @@ public final class CompactFormat {
         switch (main.kind()) {
             case "delete" -> out.add("- delete " + main.file());
             case "create" -> out.add("+ create " + main.file());
+            case "yaml-merge" -> {
+                out.add("+ merge into " + main.file() + ":");
+                main.text().lines().limit(6).forEach(l -> out.add("+   " + l));
+            }
             default -> {
                 String old = original(root, main);
                 if (!old.isBlank() && old.lines().count() <= 1) {

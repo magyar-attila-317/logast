@@ -24,7 +24,7 @@ public class SettlementJob implements CommandLineRunner {
         MDC.put("targetWeek", targetWeekResolver.targetWeek());
         log.info("Settlement export started");
         export();
-        log.info("Settlement export completed");
+        log.info("Settlement export completed"); // expect: METRIC_OUTCOME_UNMEASURED
         MDC.clear();
     }
 

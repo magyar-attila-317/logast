@@ -240,15 +240,20 @@ public final class Applier {
                     Files.deleteIfExists(p);
                     continue;
                 }
+                List<Edit> merges = fileEdits.stream().filter(e -> e.kind().equals("yaml-merge")).toList();
                 Optional<Edit> create = fileEdits.stream().filter(e -> e.kind().equals("create")).findFirst();
-                if (create.isPresent()) {
+                if (create.isPresent() || merges.size() == fileEdits.size() && !Files.exists(p)) {
                     Files.createDirectories(p.getParent());
-                    Files.writeString(p, create.get().text());
+                    String text = create.map(Edit::text).orElse("");
+                    for (Edit m : merges) {
+                        text = text.isBlank() ? m.text() : dev.logast.rules.SetupRules.mergeYaml(text, m.text(), m.start() == 1);
+                    }
+                    Files.writeString(p, text);
                     continue;
                 }
                 String before = Files.readString(p);
                 StringBuilder sb = new StringBuilder(before);
-                List<Edit> sorted = new ArrayList<>(fileEdits);
+                List<Edit> sorted = new ArrayList<>(fileEdits.stream().filter(e -> !e.kind().equals("yaml-merge")).toList());
                 // descending start; at equal start apply ranges before inserts so inserted text lands in front
                 sorted.sort(Comparator.comparingInt(Edit::start).reversed()
                         .thenComparing(e -> e.start() == e.end() ? 1 : 0));
@@ -256,6 +261,9 @@ public final class Applier {
                     sb.replace(e.start(), e.end(), e.text());
                 }
                 String after = sb.toString();
+                for (Edit m : merges) {   // against the text as it is now, so several orders can touch one YAML file per round
+                    after = after.isBlank() ? m.text() : dev.logast.rules.SetupRules.mergeYaml(after, m.text(), m.start() == 1);
+                }
                 if (p.toString().endsWith(".java")) {
                     after = ImportFixer.fix(after, ImportFixer.learn(edits.stream().map(Edit::text).toList()));
                 }

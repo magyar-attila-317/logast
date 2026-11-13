@@ -63,7 +63,8 @@ class RoundTripTest {
                         "METRIC_TAG_KEYS_MISMATCH", "METRIC_GAUGE_WEAK_REF", "METRIC_REGISTERED_PER_CALL",   // report-only
                         "HTTP_CLIENT_NO_TIMEOUT", "ERROR_DETAILS_EXPOSED", "UNMAPPED_EXCEPTION", "UNBOUNDED_EXECUTOR",
                         "KAFKA_NO_ERROR_HANDLER", "AUDIT_MISSING", "BLOCKING_WAIT_UNBOUNDED", "CLIENT_ERROR_AS_SERVER_ERROR",
-                        "PROBLEM_DETAILS_DISABLED", "MDC_CLEAR", "LOG_HELPER", "MESSAGE_VAGUE");
+                        "PROBLEM_DETAILS_DISABLED", "MDC_CLEAR", "LOG_HELPER", "MESSAGE_VAGUE",
+                        "METRIC_OUTCOME_UNMEASURED");
         assertThat(last.orders()).filteredOn(o -> o.rule().equals("ASYNC_CONTEXT_LOSS"))
                 .singleElement().satisfies(o -> assertThat(o.title()).startsWith("Parallel stream"));
         return results;

@@ -23,7 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Project-level checks: build dependencies, logback configuration, structured logging properties. */
-final class SetupRules {
+public final class SetupRules {
     private static final Pattern DEPENDENCIES = Pattern.compile("(?m)^dependencies\\s*\\{[^\\n]*$");
     private static final Set<String> STANDARD_APPENDERS = Set.of("ch.qos.logback.core.ConsoleAppender");
     private static final Set<String> STANDARD_ENCODERS = Set.of("", "ch.qos.logback.classic.encoder.PatternLayoutEncoder");
@@ -50,6 +50,9 @@ final class SetupRules {
         Path resources = app.map(c -> resourcesDir(c.file().absPath())).orElse(root.resolve("src/main/resources"));
         logback(resources);
         structuredLogging(resources);
+        if (app.isPresent()) {
+            serviceIdentity();
+        }
     }
 
     // ---- dependencies ------------------------------------------------------------------------
@@ -375,11 +378,7 @@ final class SetupRules {
         }
         StringBuilder snippet = new StringBuilder("logging:\n  level:\n");
         levels.forEach((k, v) -> snippet.append("    ").append(k).append(": ").append(v).append('\n'));
-        if (!Files.exists(yml)) {
-            return List.of(Edit.create(rel(yml), snippet.toString()));
-        }
-        String text = read(yml);
-        return List.of(Edit.replace(rel(yml), 0, text.length(), mergeYaml(text, snippet.toString())));
+        return List.of(Edit.yamlMerge(rel(yml), snippet.toString(), false));
     }
 
     /** Deep-merges {@code snippet} into the YAML document, keeping existing values (OpenRewrite MergeYamlVisitor). */
@@ -388,7 +387,7 @@ final class SetupRules {
     }
 
     /** @param overwrite true: the snippet's values replace existing ones (a fix that must change a value) */
-    static String mergeYaml(String existing, String snippet, boolean overwrite) {
+    public static String mergeYaml(String existing, String snippet, boolean overwrite) {
         Yaml.Documents docs = (Yaml.Documents) new YamlParser().parse(existing).findFirst().orElseThrow();
         Yaml.Document doc = docs.getDocuments().getFirst();
         Yaml incoming = ((Yaml.Documents) new YamlParser().parse(snippet).findFirst().orElseThrow())
@@ -424,6 +423,89 @@ final class SetupRules {
             out.append(l).append('\n');
         }
         return out.substring(0, out.length() - 1);
+    }
+
+    // ---- service identity: name and version on every log line, meter and span -----------------
+
+    /**
+     * Every log line, meter and span says which service and version wrote it. Spring Boot fills ECS/GELF log fields and
+     * the OTel resource from spring.application.name/version; Logstash JSON and meters need it spelled out.
+     */
+    private void serviceIdentity() {
+        if (!ctx.enabled(Rules.SETUP_SERVICE_IDENTITY)) {
+            return;
+        }
+        Map<String, String> props = dev.logast.SpringProperties.read(root);
+        StringBuilder yaml = new StringBuilder();
+        List<String> what = new ArrayList<>();
+        boolean name = !props.containsKey("spring.application.name");
+        boolean version = !props.containsKey("spring.application.version");
+        if (name || version) {
+            yaml.append("spring:\n  application:\n");
+            if (name) {
+                String n = ctx.policy.logging().serviceName() != null ? ctx.policy.logging().serviceName() : projectName();
+                yaml.append("    name: ").append(yamlValue(n)).append('\n');
+                what.add("spring.application.name");
+            }
+            if (version) {
+                yaml.append("    version: ").append(yamlValue(ctx.policy.logging().serviceVersion())).append('\n');
+                what.add("spring.application.version");
+            }
+        }
+        String format = props.getOrDefault("logging.structured.format.console", ctx.policy.logging().structuredFormat());
+        if (format.equals("ecs")) {
+            String used = dev.logast.ServiceSetup.detectLogFormat(root);
+            format = used != null ? used : format;
+        }
+        boolean logstashFields = format.equals("logstash") && props.keySet().stream().noneMatch(k -> k.startsWith("logging.structured.json.add"));
+        boolean meters = ctx.a.project.probe().hasClass("io.micrometer.core.instrument.MeterRegistry")
+                && props.keySet().stream().noneMatch(k -> k.startsWith("management.metrics.tags."));
+        boolean otel = ctx.a.project.probe().hasClass("io.opentelemetry.api.OpenTelemetry")
+                && props.keySet().stream().noneMatch(k -> k.startsWith("management.opentelemetry.resource-attributes"));
+        if (logstashFields) {
+            yaml.append("logging:\n  structured:\n    json:\n      add:\n")
+                    .append("        \"[service.name]\": ${spring.application.name}\n")
+                    .append("        \"[service.version]\": ${spring.application.version}\n");
+            what.add("service.name/version in Logstash JSON");
+        }
+        if (meters || otel) {
+            yaml.append("management:\n");
+            if (meters) {
+                yaml.append("  metrics:\n    tags:\n      application: ${spring.application.name}\n      version: ${spring.application.version}\n");
+                what.add("application/version tags on every meter");
+            }
+            if (otel) {
+                yaml.append("  opentelemetry:\n    resource-attributes:\n      \"[service.version]\": ${spring.application.version}\n");
+                what.add("service.version on spans and OTLP data");
+            }
+        }
+        if (what.isEmpty()) {
+            return;
+        }
+        String where = ServiceYaml.path(ctx);
+        OrderBuilder b = ctx.order(Rules.SETUP_SERVICE_IDENTITY, "identity|" + where).at(where, 1)
+                .title("Logs and metrics do not say which service and version wrote them: add " + String.join(", ", what))
+                .suggestion("Env vars still win at runtime (SPRING_APPLICATION_NAME, SPRING_APPLICATION_VERSION). Set "
+                        + "logging.serviceName / logging.serviceVersion in logast.yaml to the expressions your platform uses, "
+                        + "e.g. serviceVersion: \"${BUILD_VERSION:unknown}\". ECS and GELF logs take both from spring.application.*.");
+        ServiceYaml.merge(ctx, b, yaml.toString());
+    }
+
+    private String projectName() {
+        for (String n : List.of("settings.gradle.kts", "settings.gradle")) {
+            Path p = root.resolve(n);
+            if (Files.exists(p)) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("rootProject\\.name\\s*=\\s*[\"']([^\"']+)").matcher(read(p));
+                if (m.find()) {
+                    return m.group(1);
+                }
+            }
+        }
+        return root.getFileName().toString();
+    }
+
+    private static String yamlValue(String v) {
+        return v.matches("[\\w.\\-]+|\\$\\{[^}]*}") ? v : "\"" + v.replace("\"", "\\\"") + "\"";
     }
 
     // ---- structured logging properties ------------------------------------------------------
