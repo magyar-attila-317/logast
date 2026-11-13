@@ -45,6 +45,17 @@ public final class Applier {
 
     private final Function<Path, ScanResult> scanner;
     private final FillValidator validator;
+    private java.util.function.Consumer<String> progress = s -> {
+    };
+
+    /**
+     * Receives a short line for every step (copy, analysis, each round, re-checks); the CLI shows it as it goes.
+     * Lines starting with "~" are details: worth showing on a live status line, not worth a line of their own.
+     */
+    public Applier onProgress(java.util.function.Consumer<String> progress) {
+        this.progress = progress;
+        return this;
+    }
 
     public Applier(Function<Path, ScanResult> scanner, FillValidator validator) {
         this.scanner = scanner;
@@ -52,6 +63,7 @@ public final class Applier {
     }
 
     public Result apply(Path root, Selection sel, boolean write) {
+        progress.accept("copying the project to a scratch folder");
         Path work = copy(root);
         try {
             return run(root, work, sel, write);
@@ -67,12 +79,14 @@ public final class Applier {
         Set<String> pending = new LinkedHashSet<>();
         Set<String> everSelected = new HashSet<>();
 
+        progress.accept("analysing the code");
         ScanResult scan = scanner.apply(work);
         ScanResult before = scan;
         select(scan, sel, pending, everSelected, rejected, Set.of());
         int round = 0;
         while (!pending.isEmpty() && round < MAX_ROUNDS) {
             round++;
+            progress.accept("~round " + round + ": " + plural(pending.size(), "fix") + " to apply, " + applied.size() + " done");
             Map<String, WorkOrder> byId = new LinkedHashMap<>();
             scan.orders().forEach(o -> byId.put(o.id(), o));
             for (Iterator<String> it = pending.iterator(); it.hasNext(); ) {
@@ -118,6 +132,8 @@ public final class Applier {
             if (acceptedIds.isEmpty()) {
                 break;
             }
+            progress.accept("round " + round + ": applying " + plural(acceptedIds.size(), "fix") + " to "
+                    + plural((int) accepted.stream().map(Edit::file).distinct().count(), "file") + " (" + applied.size() + " done so far)");
             List<String> broken = applyEdits(work, accepted);
             for (String id : acceptedIds) {
                 WorkOrder o = byId.get(id);
@@ -128,6 +144,7 @@ public final class Applier {
                 }
                 pending.remove(id);
             }
+            progress.accept("~round " + round + ": checking the changed code (" + applied.size() + " done)");
             scan = scanner.apply(work);
             if (sel.auto()) {
                 select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied));
@@ -136,6 +153,7 @@ public final class Applier {
         int rounds = round;
         pending.forEach(id -> rejected.put(id, "could not be applied without conflicts after " + rounds + " rounds; rescan and retry"));
 
+        progress.accept("~comparing with the original (" + plural(applied.size(), "fix") + " in " + plural(round, "round") + ")");
         List<String> changed = new ArrayList<>();
         StringBuilder diff = new StringBuilder();
         compare(root, work, changed, diff);
@@ -167,6 +185,10 @@ public final class Applier {
                 pending.add(id); // reported as stale if it does not exist
             }
         }
+    }
+
+    private static String plural(int n, String word) {
+        return n + " " + (n == 1 ? word : word.endsWith("x") ? word + "es" : word + "s");
     }
 
     /** Structural changes first so that nested edits are recomputed against them. */
