@@ -162,13 +162,30 @@ final class MdcRules {
         return found[0];
     }
 
+    /** The try-with-resources whose only resource is this single-key MdcScope, without catch or finally; else null. */
+    private static J.Try scopeTry(MethodInfo m, MdcOp op) {
+        J.Try[] found = new J.Try[1];
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Try visitTry(J.Try t, Integer p) {
+                if (t.getResources() != null && t.getResources().size() == 1 && t.getCatches().isEmpty() && t.getFinally() == null
+                        && Pos.start(t) <= Pos.start(op.call()) && Pos.end(op.call()) <= Pos.start(t.getBody())   // in the try header
+                        && op.call().getSimpleName().equals("of") && op.call().getArguments().size() == 2) {
+                    found[0] = t;
+                }
+                return super.visitTry(t, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return found[0];
+    }
+
     /**
      * MDC_NESTED_KEY: the method scopes a key that every path into it already has in MDC. Two owners of one key: the
      * inner value hides the outer one, and the code that set it first no longer decides it.
      */
     private void nestedKeys(MethodInfo m) {
-        if (!ctx.enabled(Rules.MDC_NESTED_KEY) || !ctx.a.paths.reachable(m)) {
-            return;
+        if (!ctx.enabled(Rules.MDC_NESTED_KEY)) {
+            return;   // MDC on entry also covers flows that start where nothing in the code calls (PathContext roots)
         }
         Set<String> atEntry = ctx.a.paths.mdcAtEntry(m);
         Set<String> seen = new HashSet<>();
@@ -179,12 +196,24 @@ final class MdcRules {
                 if (ctx.ignored(m.file(), line, Rules.MDC_NESTED_KEY)) {
                     continue;
                 }
-                ctx.order(Rules.MDC_NESTED_KEY, m, line, "nested|" + op.key())
+                OrderBuilder b = ctx.order(Rules.MDC_NESTED_KEY, m, line, "nested|" + op.key())
                         .title("MDC key '" + op.key() + "' is already set on every path into " + m.label()
                                 + ": a nested scope for the same key")
-                        .suggestion("Drop this scope if the value is the same; if it differs, use a distinct key "
-                                + "(e.g. source." + op.key() + ") so both stay visible.")
                         .context(ctx.context(m, Pos.start(op.call()), Text.oneLine(op.call().printTrimmed(), 160), null));
+                // a single-key scope (often left by an earlier run) is unwrapped: one key, one value per flow
+                J.Try t = op.kind() == MdcOp.Kind.PUT_CLOSEABLE && op.inResource() ? scopeTry(m, op) : null;
+                int[] lines = t == null ? null : JavaEdits.statementLines(m.file().text(), t);
+                int[] inner = t == null ? null : JavaEdits.blockInner(m.file().text(), t.getBody());
+                if (t != null && lines != null && inner != null) {
+                    String text = m.file().text();
+                    String body = Text.dedent(text.substring(inner[0], inner[1]), Text.indentUnit(text));
+                    b.edit(Edit.replace(m.file().relPath(), lines[0], lines[1], body));
+                    b.suggestion("Unwraps the scope: " + op.key() + " is in MDC on every path into " + m.label()
+                            + " already. If the value really differs, keep it under a distinct key (e.g. source." + op.key() + ").");
+                } else {
+                    b.suggestion("Drop this scope if the value is the same; if it differs, use a distinct key "
+                            + "(e.g. source." + op.key() + ") so both stay visible.");
+                }
             }
         }
     }

@@ -265,15 +265,17 @@ class RepeatedChainTest {
                 .containsExactly("Coupons.method");
     }
 
+    /** A scope below no longer blocks the higher place: it becomes nested, and MDC_NESTED_KEY unwraps it next round. */
     @Test
-    void noScopeAboveAMethodThatSetsTheKeyItself(@TempDir Path dir) throws Exception {
+    void aScopeBelowDoesNotBlockTheHigherPlace(@TempDir Path dir) throws Exception {
         ScanResult r = scanStatic(dir, """
                         try (var mdc = MdcScope.of("couponId", current())) {
                             log.info("Coupon matched");
                             return "result";
                         }
                 """);
-        assertThat(r.orders()).noneMatch(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE));
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .containsExactly("Coupons.method");
     }
 
     @Test
