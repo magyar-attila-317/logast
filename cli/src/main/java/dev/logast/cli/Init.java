@@ -56,7 +56,7 @@ final class Init implements Callable<Integer> {
         System.out.println(Ansi.dim("Sets up this service once. Re-running keeps what you already edited."));
         System.out.println();
 
-        Path policyFile = r.resolve("logast.yaml");
+        Path policyFile = dev.logast.policy.PolicyLoader.defaultFile(r);
         if (Files.exists(policyFile) && !force) {
             Out.kept("logast.yaml", "already there, kept (--force writes a fresh one)");
         } else {
