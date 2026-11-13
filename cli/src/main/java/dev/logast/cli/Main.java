@@ -189,6 +189,14 @@ public final class Main {
                     }
                 }
             }
+            if (format.equals("compact") || format.equals("summary")) {
+                List<String[]> next = new ArrayList<>();
+                dev.logast.Todo.of(root(), r, policy, Logast.lastAnalysis, List.of(), false)
+                        .forEach(item -> next.add(new String[]{item.action(), item.why()}));
+                if (!next.isEmpty()) {
+                    Out.next(next);
+                }
+            }
             if (failOn != null && shown.stream().anyMatch(o -> CompactFormat.atLeast(o, failOn))) {
                 return 2;
             }
@@ -260,9 +268,9 @@ public final class Main {
             long t0 = System.nanoTime();
             Policy policy = policy();
             List<Path> cp = classpath();
-            Applier applier = new Applier(new dev.logast.IncrementalScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
-                    : Logast.policy(root, null).withPacks(packs)),
-                    new FillValidator(policy));
+            dev.logast.IncrementalScanner scanner = new dev.logast.IncrementalScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
+                    : Logast.policy(root, null).withPacks(packs));
+            Applier applier = new Applier(scanner, new FillValidator(policy));
             Applier.Result r;
             try (Out.Progress p = new Out.Progress("~starting")) {
                 applier.onProgress(p::update);
@@ -302,14 +310,36 @@ public final class Main {
             List<String[]> next = new ArrayList<>();
             if (!write && !r.applied().isEmpty()) {
                 next.add(new String[]{"logast apply . " + (auto ? "--auto " : "") + (fills != null ? "--fills " + fills + " " : "") + "--write",
-                        "make these changes"});
+                        "make these " + r.applied().size() + " changes"});
             }
             if (write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith("build.gradle") || fn.endsWith("build.gradle.kts"))) {
-                next.add(new String[]{"logast classpath .", "dependencies changed: refresh the classpath file"});
+                // dependencies changed: refresh the classpath right away, so the next scan sees the new types
+                Main.Classpath.Result cpr;
+                try (Out.Progress p = new Out.Progress("dependencies changed: running Gradle to refresh the classpath")) {
+                    cpr = Main.Classpath.write(root());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    cpr = new Main.Classpath.Result(130, 0, false);
+                }
+                if (cpr.exitCode() == 0) {
+                    Out.progress("classpath refreshed (" + cpr.entries() + " entries)");
+                } else {
+                    next.add(new String[]{"logast classpath .", "dependencies changed and Gradle failed (exit " + cpr.exitCode()
+                            + "): fix the build, then refresh the classpath"});
+                }
             }
-            if (write) {
-                next.add(new String[]{"git diff", "review the changes, then build and run the tests"});
+            if (write && !r.changedFiles().isEmpty()) {
+                next.add(new String[]{"git diff", "review the changes"});
             }
+            if (!r.rejected().isEmpty()) {
+                next.add(new String[]{"read the REJECTED lines above", (r.rejected().size() == 1 ? "1 fix" : r.rejected().size() + " fixes")
+                        + " could not be applied; each says why"});
+            }
+            // what is left after this run: the files to fill and the decisions to make
+            dev.logast.orders.ScanResult left = write ? r.after() : r.before();
+            dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, r.applied(), write).stream()
+                    .filter(t -> write || !t.action().startsWith("logast apply"))
+                    .forEach(t -> next.add(new String[]{t.action(), t.why()}));
             if (!next.isEmpty()) {
                 Out.next(next);
             }

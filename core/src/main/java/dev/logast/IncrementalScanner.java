@@ -30,6 +30,9 @@ public final class IncrementalScanner implements Function<Path, ScanResult> {
         this.policy = policy;
     }
 
+    /** The analysis behind the latest scan (entrypoints, policy), for what comes after an apply. */
+    public volatile Analysis lastAnalysis;
+
     @Override
     public ScanResult apply(Path root) {
         Path abs = root.toAbsolutePath().normalize();
@@ -55,7 +58,9 @@ public final class IncrementalScanner implements Function<Path, ScanResult> {
         } else {
             last = parser.parse(abs, classpath);
         }
-        ScanResult r = Rules.scan(Analysis.of(last, policy.apply(abs)).withTraffic(Traffic.load(abs, null)));
+        Analysis a = Analysis.of(last, policy.apply(abs)).withTraffic(Traffic.load(abs, null));
+        lastAnalysis = a;
+        ScanResult r = Rules.scan(a);
         if (System.getenv("LOGAST_TIMING") != null) {
             System.err.printf("timing: %s scan %d ms%n", mode, (System.nanoTime() - t0) / 1_000_000);
         }

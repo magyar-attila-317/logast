@@ -95,11 +95,7 @@ public final class CompactFormat {
             }
         }
         if (text > 0) {
-            sb.append("\n").append(Ansi.bold("Next")).append(": write the message for each NEEDS TEXT order into .logast/fills.json"
-                    + " (\"MSG\": plain text, no {} and no [k=v]; optional \"args\": [\"var\"] adds variables), then:"
-                    + " logast apply <root> --auto\n");
-        } else if (auto > 0) {
-            sb.append("\n").append(Ansi.bold("Next")).append(": logast apply <root> --auto   (preview; add --write to change files)\n");
+            sb.append("\n").append(Ansi.dim("fills.json: \"MSG\" is plain text, no {} and no [k=v]; optional \"args\": [\"var\"] adds variables")).append('\n');
         }
         return sb.toString();
     }
