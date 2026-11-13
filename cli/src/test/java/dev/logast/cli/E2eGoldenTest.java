@@ -141,6 +141,7 @@ class E2eGoldenTest {
                 import com.example.e2e.logging.MdcScope;
                 import java.math.BigDecimal;
                 import java.util.List;
+                import java.util.Optional;
                 import org.slf4j.Logger;
                 import org.slf4j.LoggerFactory;
 
@@ -163,12 +164,23 @@ class E2eGoldenTest {
 
                     private static IncomeOutcome evaluateOutcome(SalesTotals salesData, List<CouponDetails> sortedCoupons) {
                         for (CouponDetails coupon : sortedCoupons) {
-                            if (coupon.fundingPercentage() != null) {
+                            Optional<String> exclusion = validateCoupon(salesData, coupon);
+                            if (exclusion.isEmpty()) {
                                 return calculateIncome(salesData, coupon);
                             }
-                            log.trace("Coupon excluded [couponId={}]", coupon.couponId());
+                            log.trace("Coupon excluded [couponId={}, reason={}]", coupon.couponId(), exclusion.get());
                         }
                         return new IncomeOutcome(true, BigDecimal.ZERO);
+                    }
+
+                    private static Optional<String> validateCoupon(SalesTotals salesData, CouponDetails coupon) {
+                        for (CouponCheck check : CouponChecks.all()) {
+                            Optional<String> result = check.validate(coupon, salesData);
+                            if (result.isPresent()) {
+                                return result;
+                            }
+                        }
+                        return Optional.empty();
                     }
 
                     private static IncomeOutcome calculateIncome(SalesTotals salesData, CouponDetails coupon) {
@@ -181,11 +193,35 @@ class E2eGoldenTest {
                 }
                 """);
 
+        // and a check with a two-key scope (couponId + agreementId), as earlier versions wrote them
+        Path checks = app.resolve("src/main/java/com/example/e2e/income/CouponChecks.java");
+        Files.writeString(checks, Files.readString(checks)
+                .replace("import java.util.List;", "import com.example.e2e.logging.MdcScope;\nimport java.util.List;")
+                .replace("""
+                                    log.trace(CHECK_LOG_MESSAGE, "funding", coupon.couponId(), coupon.agreementId(), salesData.saleDay());
+                                    if (coupon.fundingPercentage() == null) {
+                                        log.debug("No funding found [couponId={}, agreementId={}]", coupon.couponId(), coupon.agreementId());
+                                        return Optional.of("NO_FUNDING");
+                                    }
+                                    return Optional.empty();
+                        """, """
+                                    try (var mdc = MdcScope.of("couponId", coupon.couponId(), "agreementId", coupon.agreementId())) {
+                                        log.trace(CHECK_LOG_MESSAGE, "funding", coupon.couponId(), coupon.agreementId(), salesData.saleDay());
+                                        if (coupon.fundingPercentage() == null) {
+                                            log.debug("No funding found");
+                                            return Optional.of("NO_FUNDING");
+                                        }
+                                        return Optional.empty();
+                                    }
+                        """));
+        assertThat(Files.readString(checks)).as("test setup").contains("MdcScope.of(\"couponId\", coupon.couponId(), \"agreementId\"");
+
         String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         assertThat(out).doesNotContain("CHECK FAILED");
         assertThat(Files.readString(app.resolve("src/main/java/com/example/e2e/income/CalculationService.java")))
                 .contains("MdcScope.of(\"couponId\", salesData.couponId())");
-        assertThat(Files.readString(calc)).doesNotContain("MdcScope.of(");
+        assertThat(Files.readString(calc)).doesNotContain("\"couponId\"");
+        assertThat(Files.readString(checks)).as(Files.readString(checks)).doesNotContain("\"couponId\"");
         compile(app);
     }
 

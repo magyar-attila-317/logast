@@ -204,7 +204,16 @@ final class MdcRules {
                 J.Try t = op.kind() == MdcOp.Kind.PUT_CLOSEABLE && op.inResource() ? scopeTry(m, op) : null;
                 int[] lines = t == null ? null : JavaEdits.statementLines(m.file().text(), t);
                 int[] inner = t == null ? null : JavaEdits.blockInner(m.file().text(), t.getBody());
-                if (t != null && lines != null && inner != null) {
+                List<Expression> args = op.call().getArguments();
+                int at = op.kind() == MdcOp.Kind.PUT_CLOSEABLE && op.call().getSimpleName().equals("of") ? args.indexOf(op.keyExpr()) : -1;
+                if (t == null && at >= 0 && at % 2 == 0 && args.size() > 2 && args.size() % 2 == 0) {
+                    // MdcScope.of("couponId", a, "agreementId", b): only the duplicate pair goes, the other keys stay
+                    int from = at + 2 < args.size() ? Pos.start(args.get(at)) : Pos.end(args.get(at - 1));
+                    int to = at + 2 < args.size() ? Pos.start(args.get(at + 2)) : Pos.end(args.get(at + 1));
+                    b.edit(Edit.replace(m.file().relPath(), from, to, ""));
+                    b.suggestion("Removes " + op.key() + " from this scope: it is in MDC on every path into " + m.label()
+                            + " already; the other keys stay.");
+                } else if (t != null && lines != null && inner != null) {
                     String text = m.file().text();
                     String body = Text.dedent(text.substring(inner[0], inner[1]), Text.indentUnit(text));
                     b.edit(Edit.replace(m.file().relPath(), lines[0], lines[1], body));

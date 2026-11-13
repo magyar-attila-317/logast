@@ -2,6 +2,7 @@ package com.example.e2e.income;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,12 +25,23 @@ public final class IncomeCalculator {
 
     private static IncomeOutcome evaluateOutcome(SalesTotals salesData, List<CouponDetails> sortedCoupons) {
         for (CouponDetails coupon : sortedCoupons) {
-            if (coupon.fundingPercentage() != null) {
+            Optional<String> exclusion = validateCoupon(salesData, coupon);
+            if (exclusion.isEmpty()) {
                 return calculateIncome(salesData, coupon);
             }
-            log.trace("Coupon excluded [couponId={}]", coupon.couponId());
+            log.trace("Coupon excluded [couponId={}, reason={}]", coupon.couponId(), exclusion.get());
         }
         return new IncomeOutcome(true, BigDecimal.ZERO);
+    }
+
+    private static Optional<String> validateCoupon(SalesTotals salesData, CouponDetails coupon) {
+        for (CouponCheck check : CouponChecks.all()) {
+            Optional<String> result = check.validate(coupon, salesData);
+            if (result.isPresent()) {
+                return result;
+            }
+        }
+        return Optional.empty();
     }
 
     private static IncomeOutcome calculateIncome(SalesTotals salesData, CouponDetails coupon) {
