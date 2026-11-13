@@ -26,8 +26,7 @@ import java.util.regex.Pattern;
  *       logging nothing gets one line after it. Write or read is told from the SQL (an upsert through
  *       {@code queryForObject} is a write). Writes: INFO, through {@code AfterCommit} inside transactions, so a
  *       rolled-back change is never announced. Reads: INFO only when every path to them is low-frequency (jobs,
- *       startup, or a traffic.yaml rate within the volume budget), else DEBUG; a list read also gets a WARN over
- *       {@code levels.largeResult} rows. Called inside a loop: DEBUG. The wording is generated from the table and
+ *       startup, or a traffic.yaml rate within the volume budget), else DEBUG. Called inside a loop: DEBUG. The wording is generated from the table and
  *       marked {@code // logast:wording};</li>
  *   <li>MESSAGE_SUGGESTED: a line with that marker asks for domain wording (NEEDS TEXT); the marker goes once the
  *       text is written.</li>
@@ -176,14 +175,6 @@ final class DbRules {
         StringBuilder add = new StringBuilder();
         add.append(indent).append(afterCommit ? "AfterCommit.log(() -> " + logCall + ");" : logCall + ";")
                 .append(' ').append(WORDING_MARKER).append('\n');
-        int max = ctx.policy.levels().largeResult();
-        if (!write && max > 0 && value[0].equals("count")) {
-            String unit = Text.indentUnit(text);
-            add.append(indent).append("if (").append(var).append(".size() > ").append(String.format(Locale.ROOT, "%,d", max).replace(',', '_')).append(") {\n")
-                    .append(indent).append(unit).append(logger.name()).append(".warn(")
-                    .append(Text.javaString(subject + " " + verb + ": large result [count={}]")).append(", ").append(var).append(".size());\n")
-                    .append(indent).append("}\n");
-        }
         if (tail.isEmpty()) {
             edits.add(Edit.insert(f.relPath(), lines[1], add.toString()));
         } else {

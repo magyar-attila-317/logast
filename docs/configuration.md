@@ -137,7 +137,6 @@ levels:
                                 #            (database rows, file lines, Kafka batches), reported when unknown
                                 #   never  = DEBUG unless the loop is known to be small; always = no loop checks
   boundedLoopMax: 20            # a loop over at most this many items counts as small
-  largeResult: 10000            # a database read returning more rows gets a WARN line (0 = no check)
   volumeBudget: 100000          # log lines per day one statement may produce (with traffic numbers)
 ```
 
