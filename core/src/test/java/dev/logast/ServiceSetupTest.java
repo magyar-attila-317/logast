@@ -38,7 +38,7 @@ class ServiceSetupTest {
                     void b(String tableId) {} void c(String tableId) {}
                     void d(String deviceId) {}
                 }""");
-        VocabularyHarvest.Result r = VocabularyHarvest.run(dir, null, 3);
+        VocabularyHarvest.Result r = VocabularyHarvest.run(dir, null, dev.logast.policy.KeyStyle.DOTTED, 3);
         var byName = new java.util.HashMap<String, VocabularyHarvest.Term>();
         r.terms().forEach(t -> byName.put(t.name(), t));
         assertThat(byName.get("order").key()).isEqualTo("order.id");
@@ -131,5 +131,20 @@ class ServiceSetupTest {
         assertThat(policy.canonicalMdcKey("job.name")).isEqualTo("jobName");
         assertThat(policy.canonicalMdcKey("traceId")).isNull();
         assertThat(policy.canonicalMdcKey("jobName")).isNull();
+    }
+
+    @Test
+    void detectsTheKeyStyleTheCodeUses(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("A.java"), """
+                class A {
+                    void a(String orderId, String tableId) {
+                        MDC.put("orderId", orderId);
+                        log.info("Order placed [tableId={}, order.id={}]", tableId, orderId);
+                        log.info("Table freed [tableId={}]", tableId);
+                    }
+                }""");
+        assertThat(VocabularyHarvest.detectStyle(dir)).isEqualTo(dev.logast.policy.KeyStyle.CAMEL);
+        assertThat(ServiceSetup.policyTemplate(List.of(), List.of(), false, null, null)).contains("  keyStyle: camel\n");
     }
 }

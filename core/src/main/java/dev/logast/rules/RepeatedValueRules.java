@@ -109,7 +109,7 @@ final class RepeatedValueRules {
                 .title(String.join(", ", keys) + " logged by " + count + " statements in " + m.label()
                         + ": put " + (keys.size() == 1 ? "it" : "them") + " into MDC once instead of into every message");
         String unit = Text.indentUnit(text);
-        String var = EntrypointRules.unique("mdc", ctx.vars(m, r.start()).keySet());
+        String var = EntrypointRules.unique("mdc", ctx.taken(m, r.start()));
         String body = text.substring(r.start(), r.end());
         String scope = EntrypointRules.mdcScope(cs.stream().map(c -> new DomainValues.Value(c.key(), c.expr())).toList());
         b.edit(Edit.replace(f.relPath(), r.start(), r.end(),

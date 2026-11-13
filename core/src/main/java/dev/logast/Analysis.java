@@ -59,7 +59,17 @@ public final class Analysis {
                 : project.probe().hasClass(supportPackage + ".ObservedContext");
         this.decoratorPresent = supportStarterPresent || hasTaskDecorator(index);
         this.paths = new PathContext(graph, entrypoints, new TreeSet<>(policy.mdc().ambientKeys()),
-                httpFilterKeys, decoratorPresent);
+                httpFilterKeys, decoratorPresent)
+                .withCanonicalKeys(canonicalKeys(policy), new TreeSet<>(policy.mdc().ambientKeys()), httpFilterKeys, decoratorPresent);
+    }
+
+    /** Key as written → the key logast uses for it (vocabulary alias, key style); memoised, called per key per method. */
+    public static java.util.function.UnaryOperator<String> canonicalKeys(Policy policy) {
+        Map<String, String> memo = new HashMap<>();
+        return k -> memo.computeIfAbsent(k, x -> {
+            String c = policy.canonicalMdcKey(x);
+            return c == null ? x : c;
+        });
     }
 
     public static Analysis of(ParsedProject parsed, Policy policy) {

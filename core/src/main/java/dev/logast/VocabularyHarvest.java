@@ -73,7 +73,7 @@ public final class VocabularyHarvest {
      * @param minDeclared declared-only identifiers (never logged, never in MDC) need this many declarations
      */
     public static Result run(Path root, Policy known, int minDeclared) {
-        return run(root, known, known == null ? KeyStyle.DOTTED : known.logging().style(), minDeclared);
+        return run(root, known, known == null ? KeyStyle.CAMEL : known.logging().style(), minDeclared);
     }
 
     /** @param style spelling of the canonical keys ({@code logging.keyStyle}) */
@@ -135,7 +135,7 @@ public final class VocabularyHarvest {
                 return;
             }
             boolean idLike = spellings.keySet().stream().anyMatch(k -> ID_SUFFIX.matcher(k).find());
-            KeyStyle ks = style == KeyStyle.KEEP ? KeyStyle.DOTTED : style;
+            KeyStyle ks = style == KeyStyle.KEEP ? KeyStyle.CAMEL : style;
             // the most used spelling, in the configured style ("order.id" → "orderId" for camel)
             String top = spellings.keySet().stream().max(Comparator.comparingInt(k -> spellings.get(k).total())).orElseThrow();
             String key = idLike && !ID_SUFFIX.matcher(top).find() ? ks.apply(name + ".id")
@@ -176,6 +176,39 @@ public final class VocabularyHarvest {
 
         List<ValueKey> valueKeys = values.entrySet().stream().map(e -> new ValueKey(e.getKey(), e.getValue())).toList();
         return new Result(used, unused, valueKeys, files.size(), style);
+    }
+
+    /**
+     * The key style the code already uses most: counted over MDC keys and [k=v] keys with more than one word
+     * ({@code orderId} camel, {@code order.id} dotted, {@code order_id} snake, {@code OrderId} pascal). Null when undecided.
+     */
+    public static KeyStyle detectStyle(Path root) {
+        Map<KeyStyle, Integer> votes = new EnumMap<>(KeyStyle.class);
+        for (Path p : javaFiles(root)) {
+            String text = read(p);
+            List<String> keys = new ArrayList<>();
+            Matcher m = MDC_CALL.matcher(text);
+            while (m.find()) {
+                keys.add(m.group(1));
+            }
+            Matcher lc = LOG_CALL.matcher(text);
+            while (lc.find()) {
+                for (String literal : literals(callText(text, lc.end()))) {
+                    Matcher k = LOG_KEY.matcher(literal);
+                    while (k.find()) {
+                        keys.add(k.group(1));
+                    }
+                }
+            }
+            for (String k : keys) {
+                KeyStyle s = k.contains(".") ? KeyStyle.DOTTED : k.contains("_") ? KeyStyle.SNAKE
+                        : k.matches("[a-z][a-z0-9]*[A-Z].*") ? KeyStyle.CAMEL : k.matches("[A-Z][a-z0-9]+[A-Z].*") ? KeyStyle.PASCAL : null;
+                if (s != null && !AMBIENT.contains(k.toLowerCase(Locale.ROOT))) {
+                    votes.merge(s, 1, Integer::sum);
+                }
+            }
+        }
+        return votes.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
     }
 
     /** The {@code vocabulary:} block (plus commented value keys), ready to paste into or append to a policy. */

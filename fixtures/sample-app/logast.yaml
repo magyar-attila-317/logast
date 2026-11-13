@@ -32,4 +32,5 @@ levels:
   noInfoInLoops: true
 packs: [logging, tracing, metrics, resilience, errors, audit]
 logging:
+  keyStyle: dotted               # the fixture tests the dotted spelling; camel is the default
   protectedMessages: ["^ALERT:"]
