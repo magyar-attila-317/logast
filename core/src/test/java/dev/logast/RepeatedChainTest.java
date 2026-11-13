@@ -130,4 +130,48 @@ class RepeatedChainTest {
         assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
                 .contains("PledgeService.publish");
     }
+
+    @Test
+    void valuesInMdcLeaveTheMessagesOfTheWholeFlow(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  pledge: { mdc: { key: pledgeId, sources: { params: [pledgeId] } } }
+                """);
+        Files.writeString(src.resolve("Pledges.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                class PledgeService {
+                    private static final Logger log = LoggerFactory.getLogger(PledgeService.class);
+                    private final PledgeSender sender = new PledgeSender();
+
+                    void publish(String pledgeId) {
+                        log.info("Publishing pledge {}", pledgeId);
+                        sender.send(pledgeId);
+                        log.info("Pledge {} published", pledgeId);
+                    }
+                }
+
+                class PledgeSender {
+                    private static final Logger log = LoggerFactory.getLogger(PledgeSender.class);
+
+                    void send(String pledgeId) {
+                        log.debug("Sending pledge {} to the channel", pledgeId);
+                        log.info("Pledge sent, pledgeId={}", pledgeId);
+                    }
+                }
+                """);
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        // no entrypoint reaches these methods: the scope in publish still covers send
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .containsExactly("PledgeService.publish");
+        String edits = String.join("\n", r.orders().stream().filter(WorkOrder::mechanical)
+                .flatMap(o -> o.edits().stream()).map(e -> e.text()).toList());
+        assertThat(edits).contains("\"Publishing pledge\"", "\"Pledge published\"", "\"Sending pledge to the channel\"", "\"Pledge sent\"");
+        assertThat(r.orders()).noneMatch(o -> !o.slots().isEmpty());          // nothing left for a person to word
+    }
 }

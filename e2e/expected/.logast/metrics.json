@@ -1,0 +1,73 @@
+{
+  "_readme" : "One entry per outcome the logs report and no metric counts. Set \"count\" to \"counter\" (Outcomes.count(name, outcome): a counter name{outcome=...}), \"tag\" (Outcomes.tag(outcome) on the timer already running; only where _tag says available) or \"skip\" (a // logast:ignore comment). Edit \"name\" and \"outcome\" freely (lower case, dots). Then: logast apply . --auto. `logast metrics . --format json` has the context.",
+  "OUM-f98513" : {
+    "count" : "",
+    "name" : "pledge.usage",
+    "outcome" : "saved",
+    "_message" : "INFO \"Pledge usage saved\"",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:34",
+    "_frequency" : "unknown: no rate for \"POST /pledges/{pledgeId}/use\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /pledges/{pledgeId}/use" ],
+    "_tag" : "available"
+  },
+  "OUM-bf7508" : {
+    "count" : "",
+    "name" : "pledge",
+    "outcome" : "sent",
+    "_message" : "INFO \"Pledge sent\"",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeSender.java:13",
+    "_frequency" : "unknown: no rate for \"POST /pledges/{pledgeId}/publish\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /pledges/{pledgeId}/publish" ],
+    "_tag" : "available"
+  },
+  "OUM-d73233" : {
+    "count" : "",
+    "name" : "pledge",
+    "outcome" : "published",
+    "_message" : "INFO \"Pledge published\"",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeService.java:23",
+    "_frequency" : "unknown: no rate for \"POST /pledges/{pledgeId}/publish\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /pledges/{pledgeId}/publish" ],
+    "_tag" : "available"
+  },
+  "OUM-84c094" : {
+    "count" : "",
+    "name" : "tally",
+    "outcome" : "completed",
+    "_message" : "INFO \"Tally completed\"",
+    "_where" : "src/main/java/com/example/e2e/job/TallyJob.java:16",
+    "_frequency" : "low",
+    "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
+    "_tag" : "available"
+  },
+  "OUM-4a207c" : {
+    "count" : "",
+    "name" : "export.job",
+    "outcome" : "completed",
+    "_message" : "INFO \"Export job completed\"",
+    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:16",
+    "_frequency" : "low",
+    "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
+    "_tag" : "available"
+  },
+  "OUM-6ccf26" : {
+    "count" : "",
+    "name" : "preload.export",
+    "outcome" : "completed",
+    "_message" : "INFO \"Preload export completed\"",
+    "_where" : "src/main/java/com/example/e2e/job/PreloadJob.java:16",
+    "_frequency" : "low",
+    "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
+    "_tag" : "available"
+  },
+  "OUM-566944" : {
+    "count" : "",
+    "name" : "order",
+    "outcome" : "placed",
+    "_message" : "INFO \"Order placed\"",
+    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:20",
+    "_frequency" : "unknown: no rate for \"POST /orders\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /orders" ],
+    "_tag" : "available"
+  }
+}

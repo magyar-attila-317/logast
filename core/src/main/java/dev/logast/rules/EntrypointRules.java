@@ -83,7 +83,7 @@ final class EntrypointRules {
         StringBuilder top = new StringBuilder();
         List<Edit> extra = new ArrayList<>();
         if (silent) {
-            JavaEdits.LoggerPlan logger = JavaEdits.logger(m.owner(), ctx.policy.logging().loggerName());
+            JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
             if (logger.name() == null) {
                 b.suggestion("Cannot add a logger to " + m.owner().simpleName() + " (interface/enum).");
                 silent = false;

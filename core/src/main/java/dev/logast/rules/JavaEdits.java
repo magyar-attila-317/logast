@@ -72,6 +72,11 @@ public final class JavaEdits {
     }
 
     public static LoggerPlan logger(ClassInfo owner, String preferredName) {
+        return logger(owner, preferredName, false);
+    }
+
+    /** @param lombok Lombok is on the classpath: a class without a logger gets {@code @Slf4j} (its logger is "log") */
+    public static LoggerPlan logger(ClassInfo owner, String preferredName, boolean lombok) {
         for (Statement s : owner.decl().getBody().getStatements()) {
             if (s instanceof J.VariableDeclarations vd && TypeUtils.isAssignableTo("org.slf4j.Logger", vd.getType())) {
                 return new LoggerPlan(vd.getVariables().getFirst().getSimpleName(), List.of());
@@ -87,6 +92,14 @@ public final class JavaEdits {
         }
         SourceFileInfo f = owner.file();
         String text = f.text();
+        if (lombok && preferredName.equals("log")) {
+            int at = Pos.start(owner.decl());
+            String indent = Text.indentAt(text, at);
+            List<Edit> edits = new ArrayList<>();
+            edits.add(Edit.insert(f.relPath(), at, "@Slf4j\n" + indent));
+            edits.addAll(imports(f, "lombok.extern.slf4j.Slf4j"));
+            return new LoggerPlan("log", edits);
+        }
         int brace = Pos.start(owner.decl().getBody());
         if (brace < 0 || text.charAt(brace) != '{' || !Text.blank(text, brace + 1, Text.lineEnd(text, brace))) {
             return new LoggerPlan(null, List.of());
