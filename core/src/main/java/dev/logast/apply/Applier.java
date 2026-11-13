@@ -108,8 +108,12 @@ public final class Applier {
         Map<String, String> stepDiffs = new LinkedHashMap<>();
         // the pipeline repeats until a pass applies nothing: a fix in a later step can open up one in an earlier step
         // (a scope moved up makes a lower one redundant, then its messages can drop the key). One run = the end state.
+        Set<String> appliedInPass = new HashSet<>();
         for (int pass = 1; pass <= MAX_PASSES; pass++) {
-        int appliedBefore = applied.size();
+        // an order applied in an earlier pass may come back when a later fix changed its code again (a scope unwrapped,
+        // then another one put there): within a pass an id is applied once, a new pass may apply it again
+        appliedInPass.clear();
+        everSelected.clear();
         if (pass > 1) {
             progress.accept("pass " + pass + ": earlier fixes opened up new ones");
         }
@@ -120,7 +124,7 @@ public final class Applier {
             Map<String, String> beforeStep = new LinkedHashMap<>();   // content of each file before this step touched it
             Set<String> pending = new LinkedHashSet<>(carried);
             carried.clear();
-            select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied), step, first);
+            select(scan, sel, pending, everSelected, rejected, new HashSet<>(appliedInPass), step, first);
             if (pending.isEmpty()) {
                 continue;
             }
@@ -197,7 +201,10 @@ public final class Applier {
                     if (o.edits().stream().anyMatch(e -> broken.contains(e.file()))) {
                         rejected.put(id, "produced code that does not parse in " + broken + " (batch reverted)");
                     } else {
-                        applied.add(id);
+                        appliedInPass.add(id);
+                        if (!applied.contains(id)) {
+                            applied.add(id);
+                        }
                     }
                     pending.remove(id);
                 }
@@ -214,11 +221,10 @@ public final class Applier {
                 stepDiffs.merge(name, d, String::concat);
             }
         }
-        if (applied.size() == appliedBefore || until != null) {
+        if (appliedInPass.isEmpty() || until != null) {
             break;
         }
-        if (pass == MAX_PASSES && scan.orders().stream().anyMatch(o -> o.mechanical() && !applied.contains(o.id())
-                && sel.auto() && !rejected.containsKey(o.id()))) {
+        if (pass == MAX_PASSES) {
             progress.accept("still changing after " + MAX_PASSES + " passes: the rest is left for the next run");
         }
         }
