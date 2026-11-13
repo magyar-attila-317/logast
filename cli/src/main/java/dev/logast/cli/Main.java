@@ -121,7 +121,7 @@ public final class Main {
             OrderJson.MAPPER.writeValue(target.toFile(), r);
             if (out == null) {
                 var fu = dev.logast.apply.FillsFile.update(root(), r.orders());
-                if (fu.entries() > 0 && (format.equals("compact") || format.equals("summary"))) {
+                if ((fu.entries() > 0 || fu.written()) && (format.equals("compact") || format.equals("summary"))) {
                     Out.progress(fillsLine(fu));
                 }
             }
@@ -309,6 +309,10 @@ public final class Main {
         }
         if (fu.removed() > 0) {
             parts.add(fu.removed() + " finished removed");
+        }
+        if (fu.entries() == 0) {
+            return dev.logast.apply.FillsFile.PATH + ": nothing needs a message text right now"
+                    + (fu.removed() > 0 ? " (" + fu.removed() + " finished removed)" : "");
         }
         return dev.logast.apply.FillsFile.PATH + ": " + fu.entries() + " orders need a message text, " + fu.filled() + " written"
                 + (parts.isEmpty() ? "" : " (" + String.join(", ", parts) + ")") + "; `logast apply . --auto` uses the ones you fill in";
