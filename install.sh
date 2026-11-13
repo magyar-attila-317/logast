@@ -42,6 +42,12 @@ rm -rf "$PREFIX"; mkdir -p "$(dirname "$PREFIX")" "$BIN_DIR"
 mv "$tmp"/logast-* "$PREFIX"
 ln -sf "$PREFIX/bin/logast" "$BIN_DIR/logast"
 echo "installed: $BIN_DIR/logast -> $PREFIX ($("$BIN_DIR/logast" --version)${old:+, was: $old})"
+# another logast earlier on PATH (an older install, a copied script) would shadow this one
+found="$(command -v logast 2>/dev/null || true)"
+if [ -n "$found" ] && [ "$found" != "$BIN_DIR/logast" ]; then
+  echo "WARNING: 'logast' on your PATH is $found ($("$found" --version 2>/dev/null || echo '?')), not $BIN_DIR/logast." >&2
+  echo "         Remove it or put $BIN_DIR first on PATH; run 'hash -r' in open shells." >&2
+fi
 
 if [ "$SKILL" = 1 ] || [ -f "$HOME/.claude/skills/logast/SKILL.md" ]; then   # re-runs refresh an installed skill
   mkdir -p "$HOME/.claude/skills/logast"

@@ -44,7 +44,7 @@ public final class Main {
                     p.load(in);
                 }
             }
-            return new String[]{"logast " + p.getProperty("version", "dev")};
+            return new String[]{"logast " + p.getProperty("version", "dev") + " (" + p.getProperty("commit", "unknown") + ")"};
         }
     }
 
