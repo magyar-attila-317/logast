@@ -235,10 +235,13 @@ final class RepeatedValueRules {
         Map<String, Plan> out = new LinkedHashMap<>();
         for (Candidate c : byKey.values()) {
             int total = c.logs().size() + chainCount(m, c.key(), 0, new HashSet<>(Set.of(m.key())));
-            if (total < min || setBelow(m, c.key(), 0, new HashSet<>())) {
+            if (setBelow(m, c.key(), 0, new HashSet<>())) {
                 continue;
             }
             Region r = region(m, text, c);
+            if (total < min) {
+                continue;
+            }
             if (r != null) {
                 out.put(c.key(), new Plan(c, r, total));
             }
@@ -302,7 +305,7 @@ final class RepeatedValueRules {
                 r = new Region(inner[0], inner[1], Text.indentAt(text, Pos.start(body)) + Text.indentUnit(text), true);
             }
         } else if (!param) {
-            r = afterDeclaration(text, body, c.root());
+            r = afterDeclaration(text, body, c.root());   // a loop variable changes every pass: never scoped
         }
         if (r == null) {
             return null;
