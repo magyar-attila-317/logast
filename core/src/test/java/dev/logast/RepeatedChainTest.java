@@ -85,4 +85,49 @@ class RepeatedChainTest {
         assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
                 .containsExactly("One.run");
     }
+
+    @Test
+    void aWrappedListenerDoesNotSwallowTheScope(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  coupon: { mdc: { key: couponId, sources: { params: [couponId] } } }
+                """);
+        Files.writeString(src.resolve("Coupons.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.boot.context.event.ApplicationReadyEvent;
+                import org.springframework.context.event.EventListener;
+
+                class CouponListener {
+                    private static final Logger log = LoggerFactory.getLogger(CouponListener.class);
+                    private final CouponService service = new CouponService();
+
+                    @EventListener(ApplicationReadyEvent.class)
+                    public void onReady() {
+                        String couponId = service.next();
+                        log.info("Coupon picked [couponId={}]", couponId);
+                        service.publish(couponId);
+                    }
+                }
+
+                class CouponService {
+                    private static final Logger log = LoggerFactory.getLogger(CouponService.class);
+
+                    String next() { return "c-1"; }
+
+                    void publish(String couponId) {
+                        log.info("Coupon publication started [couponId={}]", couponId);
+                        log.info("Coupon publication completed [couponId={}]", couponId);
+                    }
+                }
+                """);
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        // the listener gets an observation wrapper (not this rule); the service must still scope couponId itself
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .contains("CouponService.publish");
+    }
 }
