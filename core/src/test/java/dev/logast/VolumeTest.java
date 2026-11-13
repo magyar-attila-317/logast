@@ -62,6 +62,17 @@ class VolumeTest {
         String again = Traffic.template(a.entrypoints, Traffic.load(tmp, f));
         assertThat(again).contains("\"POST /orders\": 120000", "\"@Scheduled ReconciliationJob.reconcile\": ",
                 "#  \"GET /legacy\": 5.0");
-        assertThat(again.lines().filter(l -> l.startsWith("  \"")).count()).isEqualTo(a.entrypoints.size());
+        assertThat(again.lines().filter(l -> l.startsWith("  \"")).count())
+                .isEqualTo(a.entrypoints.stream().map(dev.logast.model.Entrypoint::label).distinct().count());
+    }
+
+    @Test
+    void sameMethodAndPathIsOneKey() {
+        var eps = Fixtures.analysis().entrypoints;
+        var csv = new dev.logast.model.Entrypoint(eps.get(0).method(), dev.logast.model.Entrypoint.Kind.HTTP, "GET /report", true);
+        var json = new dev.logast.model.Entrypoint(eps.get(1).method(), dev.logast.model.Entrypoint.Kind.HTTP, "GET /report", true);
+        String t = Traffic.template(java.util.List.of(csv, json), Traffic.none());
+        assertThat(t.lines().filter(l -> l.startsWith("  \"GET /report\"")).toList()).singleElement()
+                .satisfies(l -> assertThat(l).contains(eps.get(0).method().label() + " + " + eps.get(1).method().label()));
     }
 }
