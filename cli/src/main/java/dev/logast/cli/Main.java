@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
         subcommands = {Main.Scan.class, Main.Explain.class, Main.Apply.class, Main.Classpath.class, Main.RulesCmd.class,
-                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class})
+                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class, Main.WhyCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override
@@ -513,6 +513,32 @@ public final class Main {
             dev.logast.rules.MetricsMap.Map map = dev.logast.rules.MetricsMap.of(a);
             System.out.print(format.equals("json") ? OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(map) + "\n"
                     : dev.logast.rules.MetricsMap.text(map));
+            return 0;
+        }
+    }
+
+    @Command(name = "why", description = "Why an MDC key is (or is not) scoped where it is: every method that logs it, "
+            + "the decision and the reason")
+    static class WhyCmd extends Common implements Callable<Integer> {
+        @CommandLine.Parameters(index = "1", description = "MDC key, e.g. couponId")
+        String key;
+
+        @Override
+        public Integer call() throws IOException {
+            Analysis a = Logast.analyse(root(), classpath(), policy());
+            Rules.scan(a);
+            List<dev.logast.rules.RepeatedValueRules.Decision> ds = Rules.lastMdcDecisions.stream()
+                    .filter(d -> d.key().equals(key)).distinct().toList();   // one per method and outcome
+            if (ds.isEmpty()) {
+                System.out.println("No method logs " + key + " (or it is not a vocabulary key). `logast vocabulary .` lists the keys.");
+                return 0;
+            }
+            Map<String, List<dev.logast.rules.RepeatedValueRules.Decision>> byOutcome = new TreeMap<>();
+            ds.forEach(d -> byOutcome.computeIfAbsent(d.outcome(), x -> new ArrayList<>()).add(d));
+            for (var e : byOutcome.entrySet()) {
+                System.out.println(Ansi.bold(e.getKey()) + " (" + e.getValue().size() + ")");
+                e.getValue().forEach(d -> System.out.println("  " + d.method() + Ansi.dim("  " + d.location()) + "\n    " + d.reason()));
+            }
             return 0;
         }
     }

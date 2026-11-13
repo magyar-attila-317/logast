@@ -71,6 +71,18 @@ public final class DomainValues {
                 }
             }
         }
+        // an accessor named like a source parameter carries that key: request.couponId(), event.getCouponId(), cmd.couponId
+        String name = arg instanceof J.MethodInvocation mi && mi.getSelect() != null && FactsArgs.noArgs(mi) ? mi.getSimpleName()
+                : arg instanceof J.FieldAccess fa ? fa.getSimpleName() : null;
+        if (name != null) {
+            String bare = name.startsWith("get") && name.length() > 3 && Character.isUpperCase(name.charAt(3))
+                    ? Character.toLowerCase(name.charAt(3)) + name.substring(4) : name;
+            for (var e : policy.mdcRegistry().entrySet()) {
+                if (e.getValue().params().contains(bare)) {
+                    return Optional.of(e.getKey());
+                }
+            }
+        }
         return Optional.empty();
     }
 

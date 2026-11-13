@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
  * for a local. Values must be side-effect free (a variable or a getter chain on one) and never reassigned; a getter
  * on a variable that the code null-checks is skipped, since evaluating it earlier could throw.
  */
-final class RepeatedValueRules {
+public final class RepeatedValueRules {
     private final RuleContext ctx;
 
     RepeatedValueRules(RuleContext ctx) {
@@ -36,6 +36,14 @@ final class RepeatedValueRules {
     }
 
     private record Region(int start, int end, String indent, boolean wholeBody) {
+    }
+
+    /** Why a key was or was not put into MDC in a method: shown by `logast why <key>`. */
+    public record Decision(String key, String method, String location, String outcome, String reason) {
+    }
+
+    private void decide(String key, MethodInfo m, String outcome, String reason) {
+        ctx.mdcDecisions.add(new Decision(key, m.label(), m.file().relPath() + ":" + m.line(), outcome, reason));
     }
 
     void run() {
@@ -54,13 +62,101 @@ final class RepeatedValueRules {
                 }
             }
         }
+        lift(plans);
         // phase 2: a method leaves a key to its callers only when every caller really scopes it (or has it in MDC)
         for (var e : plans.entrySet()) {
             MethodInfo m = ctx.a.index.method(e.getKey());
             Map<String, Plan> mine = new LinkedHashMap<>(e.getValue());
-            mine.keySet().removeIf(key -> coveredByCallers(m, key, plans, 0, new HashSet<>()));
+            mine.keySet().removeIf(key -> {
+                boolean covered = coveredByCallers(m, key, plans, 0, new HashSet<>());
+                if (covered) {
+                    decide(key, m, "covered", "every caller has it in MDC or scopes it higher up");
+                }
+                return covered;
+            });
+            mine.forEach((key, p) -> {
+                List<String> open = uncovered(m, key, plans).stream().map(MethodInfo::label).toList();
+                decide(key, m, "scope", "logged by " + p.total() + " lines here and below"
+                        + (ctx.a.entrypoints.stream().anyMatch(ep -> ep.method().key().equals(m.key())) ? "; the start of the flow (an entrypoint)"
+                        : ctx.a.graph.in(m).isEmpty() ? "; nothing in the code calls this method"
+                        : open.isEmpty() ? "" : "; needed for the path(s) through " + String.join(", ", open)));
+            });
             emit(m, mine);
         }
+    }
+
+    /** Callers of {@code m} through which {@code key} does not arrive in MDC (in MDC, scoped, or covered higher up). */
+    private List<MethodInfo> uncovered(MethodInfo m, String key, Map<String, Map<String, Plan>> plans) {
+        List<MethodInfo> out = new ArrayList<>();
+        for (var e : ctx.a.graph.in(m)) {
+            MethodInfo c = e.from();
+            Map<String, Plan> theirs = plans.get(c.key());
+            if (!c.key().equals(m.key()) && !ctx.mdcInside(c).contains(key) && (theirs == null || !theirs.containsKey(key))
+                    && !coveredByCallers(c, key, plans, 0, new HashSet<>()) && !out.contains(c)) {
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * When only some callers of a method bring the key, a scope in the method would repeat it on the covered paths.
+     * The uncovered callers get the scope instead, when they have the value as a stable variable; the method below
+     * then has the key on every path. If any of them cannot (a literal, a computed value), the scope stays below.
+     */
+    private void lift(Map<String, Map<String, Plan>> plans) {
+        for (int round = 0; round < CHAIN_DEPTH; round++) {
+            boolean changed = false;
+            for (var entry : new ArrayList<>(plans.entrySet())) {
+                MethodInfo m = ctx.a.index.method(entry.getKey());
+                for (var keyPlan : new ArrayList<>(entry.getValue().entrySet())) {
+                    String key = keyPlan.getKey();
+                    List<MethodInfo> open = uncovered(m, key, plans);
+                    int callers = (int) ctx.a.graph.in(m).stream().map(e -> e.from().key()).distinct().count();
+                    if (open.isEmpty() || open.size() == callers) {
+                        continue;   // covered everywhere (dropped later), or nowhere: the method itself is the place
+                    }
+                    Map<String, Plan> lifted = new LinkedHashMap<>();
+                    for (MethodInfo c : open) {
+                        Plan p = liftTo(c, m, key, keyPlan.getValue().total());
+                        if (p == null) {
+                            lifted = null;
+                            break;
+                        }
+                        lifted.put(c.key(), p);
+                    }
+                    if (lifted != null) {
+                        lifted.forEach((ck, p) -> {
+                            plans.computeIfAbsent(ck, x -> new LinkedHashMap<>()).put(key, p);
+                            decide(key, ctx.a.index.method(ck), "lifted", "scoped here instead of in " + m.label()
+                                    + ", which other paths reach with " + key + " in MDC already");
+                        });
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed) {
+                return;
+            }
+        }
+    }
+
+    /** A plan for caller {@code c} that scopes the value it hands to {@code m}; null when it has no stable variable for it. */
+    private Plan liftTo(MethodInfo c, MethodInfo m, String key, int total) {
+        if (c.decl().getBody() == null || ctx.wrappedMethods.contains(c.key()) || ctx.legacyMdc(c)
+                || c.owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
+            return null;
+        }
+        Expression passed = passes(c, key).stream().filter(p -> p.getKey().to().key().equals(m.key()))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+        String root = passed == null ? null : root(passed);
+        String expr = passed == null ? null : handedOn(passed, key);
+        if (root == null || expr == null || setBelow(c, key, 0, new HashSet<>())) {
+            return null;
+        }
+        Candidate cand = new Candidate(key, expr, root, new ArrayList<>());
+        Region r = region(c, c.file().text(), cand);
+        return r == null ? null : new Plan(cand, r, total);
     }
 
     private record Plan(Candidate candidate, Region region, int total) {
@@ -136,17 +232,37 @@ final class RepeatedValueRules {
         return n;
     }
 
-    /** Calls in {@code m} that pass {@code key}'s value on (an argument carrying the key), with the argument. */
+    /**
+     * Calls in {@code m} that pass {@code key}'s value on, with the argument: an argument carrying the key, or one
+     * that goes into a parameter of the callee that is a source of the key ({@code method1(request.code())} into
+     * {@code method1(String couponId)}).
+     */
     private List<Map.Entry<dev.logast.graph.CallGraph.Edge, Expression>> passes(MethodInfo m, String key) {
         List<Map.Entry<dev.logast.graph.CallGraph.Edge, Expression>> out = new ArrayList<>();
+        Policy.KeySource src = ctx.policy.mdcRegistry().get(key);
         for (var e : ctx.a.graph.out(m)) {
             if (e.site() != null && e.site().tree() instanceof J.MethodInvocation mi) {
-                for (Expression a : mi.getArguments()) {
-                    if (handedOn(a, key) != null) {
+                List<Expression> args = mi.getArguments();
+                List<String> params = paramNames(e.to());
+                for (int i = 0; i < args.size(); i++) {
+                    Expression a = args.get(i);
+                    boolean intoKeyParam = src != null && i < params.size() && src.params().contains(params.get(i))
+                            && !(a instanceof J.Literal) && root(a) != null;
+                    if (handedOn(a, key) != null || intoKeyParam) {
                         out.add(Map.entry(e, a));
                         break;
                     }
                 }
+            }
+        }
+        return out;
+    }
+
+    private static List<String> paramNames(MethodInfo m) {
+        List<String> out = new ArrayList<>();
+        for (var p : m.decl().getParameters()) {
+            if (p instanceof J.VariableDeclarations vd) {
+                vd.getVariables().forEach(v -> out.add(v.getSimpleName()));
             }
         }
         return out;
@@ -202,13 +318,19 @@ final class RepeatedValueRules {
                 String given = i < named.size() ? named.get(i) : null;
                 String key = ctx.domain.keyOf(e).orElse(given == null ? null
                         : registry.contains(given) ? given : aliases.get(given));
-                if (key == null || inMdc.contains(key) || ambiguous.contains(key)) {
+                if (key == null || ambiguous.contains(key)) {
+                    continue;
+                }
+                if (inMdc.contains(key)) {
+                    decide(key, m, "in MDC", "already in MDC here: the message rules drop it from the lines");
                     continue;
                 }
                 String root = root(e);
                 String expr = e.printTrimmed().replaceAll("\\s+", "");
                 Candidate c = byKey.get(key);
                 if (root == null || c != null && !c.expr().equals(expr)) {
+                    decide(key, m, "no scope", root == null ? "the value '" + Text.oneLine(e.printTrimmed(), 50)
+                            + "' is not a stable variable (a call or computation)" : "two different values are logged as " + key);
                     ambiguous.add(key);      // two different values for one key: not one context
                     byKey.remove(key);
                     continue;
@@ -225,9 +347,16 @@ final class RepeatedValueRules {
         // values this method does not log itself but passes on to methods that do
         for (var e : ctx.a.graph.out(m)) {
             if (e.site() != null && e.site().tree() instanceof J.MethodInvocation mi) {
-                for (Expression a : mi.getArguments()) {
+                List<String> params = paramNames(e.to());
+                for (int i = 0; i < mi.getArguments().size(); i++) {
+                    Expression a = mi.getArguments().get(i);
+                    String param = i < params.size() ? params.get(i) : null;
                     for (String key : ctx.policy.mdcRegistry().keySet()) {
                         String expr = handedOn(a, key);
+                        if (expr == null && param != null && ctx.policy.mdcRegistry().get(key).params().contains(param)
+                                && !(a instanceof J.Literal)) {
+                            expr = a.printTrimmed().replaceAll("\\s+", "");   // goes into a couponId parameter
+                        }
                         String root = expr == null ? null : root(a);
                         if (root != null && !inMdc.contains(key) && !ambiguous.contains(key) && !byKey.containsKey(key)) {
                             byKey.put(key, new Candidate(key, expr, root, new ArrayList<>()));
@@ -241,14 +370,20 @@ final class RepeatedValueRules {
         for (Candidate c : byKey.values()) {
             int total = c.logs().size() + chainCount(m, c.key(), 0, new HashSet<>(Set.of(m.key())));
             if (setBelow(m, c.key(), 0, new HashSet<>())) {
+                decide(c.key(), m, "no scope", "a method below sets " + c.key() + " in MDC itself: a scope here would nest");
                 continue;
             }
             Region r = region(m, text, c);
             if (total < min) {
+                if (!c.logs().isEmpty()) {
+                    decide(c.key(), m, "no scope", "logged by " + total + " line(s) here and below; the threshold is " + min);
+                }
                 continue;
             }
             if (r != null) {
                 out.put(c.key(), new Plan(c, r, total));
+            } else {
+                decide(c.key(), m, "no scope", "'" + c.root() + "' is reassigned, null-checked or a loop variable: not stable");
             }
         }
         return out;

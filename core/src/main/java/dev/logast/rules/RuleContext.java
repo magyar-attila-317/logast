@@ -33,6 +33,8 @@ public final class RuleContext {
     final Map<String, String> entryOrders = new HashMap<>();
     /** Entrypoints that ENTRYPOINT_SILENT gives a "started" line. */
     final Set<String> silentPlanned = new HashSet<>();
+    /** MDC placement decisions with reasons (REPEATED_LOG_VALUE), for `logast why <key>`. */
+    public final List<RepeatedValueRules.Decision> mdcDecisions = new ArrayList<>();
     /** Methods whose body an entrypoint order already rewraps. */
     final Set<String> wrappedMethods = new HashSet<>();
     String supportOrderId;
