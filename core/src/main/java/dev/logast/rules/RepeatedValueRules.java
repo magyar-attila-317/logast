@@ -213,6 +213,34 @@ public final class RepeatedValueRules {
             if (accessor != null) {
                 return id.getSimpleName() + "." + accessor;
             }
+            String found = src == null ? null : accessorFor(a.getType(), src.params());
+            if (found != null) {
+                return id.getSimpleName() + "." + found;   // salesData → salesData.couponId(): the object carries it
+            }
+        }
+        return null;
+    }
+
+    /**
+     * An accessor of {@code type} named like a source parameter of the key: {@code couponId()} or {@code getCouponId()},
+     * or a record component / field {@code couponId}. Records and DTOs carry their ids this way without a mapping.
+     */
+    static String accessorFor(org.openrewrite.java.tree.JavaType type, List<String> names) {
+        if (!(org.openrewrite.java.tree.TypeUtils.asFullyQualified(type) instanceof org.openrewrite.java.tree.JavaType.FullyQualified fq)) {
+            return null;
+        }
+        for (String n : names) {
+            String getter = "get" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
+            for (var mt : fq.getMethods()) {
+                if (mt.getParameterTypes().isEmpty() && (mt.getName().equals(n) || mt.getName().equals(getter))) {
+                    return mt.getName() + "()";
+                }
+            }
+            for (var v : fq.getMembers()) {
+                if (v.getName().equals(n)) {
+                    return fq.getKind() == org.openrewrite.java.tree.JavaType.FullyQualified.Kind.Record ? n + "()" : null;
+                }
+            }
         }
         return null;
     }

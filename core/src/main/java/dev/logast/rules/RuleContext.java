@@ -33,6 +33,16 @@ public final class RuleContext {
     final Map<String, String> entryOrders = new HashMap<>();
     /** Entrypoints that ENTRYPOINT_SILENT gives a "started" line. */
     final Set<String> silentPlanned = new HashSet<>();
+    private LifecyclePlan lifecycle;
+
+    /** Who owns which lifecycle line of every flow (built after the entrypoint rules, which plan wrappers and start lines). */
+    public LifecyclePlan lifecycle() {
+        if (lifecycle == null) {
+            lifecycle = new LifecyclePlan(this);
+        }
+        return lifecycle;
+    }
+
     /** MDC placement decisions with reasons (REPEATED_LOG_VALUE), for `logast why <key>`. */
     public final List<RepeatedValueRules.Decision> mdcDecisions = new ArrayList<>();
     /** Methods whose body an entrypoint order already rewraps. */

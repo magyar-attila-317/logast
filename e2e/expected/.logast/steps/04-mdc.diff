@@ -39,6 +39,32 @@ index b5ef221..74b60cd 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/income/CalculationService.java b/src/main/java/com/example/e2e/income/CalculationService.java
+index c12133d..49d439e 100644
+--- a/src/main/java/com/example/e2e/income/CalculationService.java
++++ b/src/main/java/com/example/e2e/income/CalculationService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.income;
+ 
++import com.example.e2e.logging.MdcScope;
+ import java.util.List;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -17,9 +18,11 @@
+     }
+ 
+     private IncomeOutcome processRow(SalesTotals salesData, List<CouponDetails> allCouponDetails) {
+-        log.trace("Processing coupon [couponId={}]", salesData.couponId());
+-        List<CouponDetails> matchingCoupons = filterMatchingCoupons(allCouponDetails, salesData.couponId());
+-        return IncomeCalculator.calculate(salesData, matchingCoupons);
++        try (var mdc = MdcScope.of("couponId", salesData.couponId())) {
++            log.trace("Processing coupon [couponId={}]", salesData.couponId());
++            List<CouponDetails> matchingCoupons = filterMatchingCoupons(allCouponDetails, salesData.couponId());
++            return IncomeCalculator.calculate(salesData, matchingCoupons);
++        }
+     }
+ 
+     private List<CouponDetails> filterMatchingCoupons(List<CouponDetails> allCoupons, String couponId) {
 diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
 index 445b9d1..4441104 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponService.java

@@ -30,52 +30,12 @@ final class FamilyRules {
         if (!ctx.enabled(Rules.LIFECYCLE_UNEVEN)) {
             return;
         }
-        Set<String> done = new HashSet<>();
-        for (MethodInfo base : ctx.a.index.methods()) {
-            if (base.hasBody() || base.decl().getMethodType() == null) {
-                continue;   // only abstract / interface methods define a family
-            }
-            List<MethodInfo> impls = ctx.a.index.resolve(base.decl().getMethodType()).stream()
-                    .filter(m -> !m.key().equals(base.key()) && m.decl().getBody() != null && done.add(m.key()))
-                    .filter(m -> !m.owner().fqn().startsWith(ctx.a.supportPackage + "."))
-                    .toList();
-            if (impls.size() < 2) {
-                continue;
-            }
-            Map<String, Map<String, String>> lifecycle = new LinkedHashMap<>();   // impl -> event -> subject
-            impls.forEach(m -> lifecycle.put(m.key(), events(m)));
-            Set<String> wanted = new LinkedHashSet<>();
-            lifecycle.values().forEach(ev -> wanted.addAll(ev.keySet()));
-            if (wanted.isEmpty()) {
-                continue;   // none of them logs a lifecycle: nothing to even out
-            }
-            for (MethodInfo m : impls) {
-                Map<String, String> has = lifecycle.get(m.key());
-                List<String> missing = EVENTS.stream().filter(wanted::contains).filter(e -> !has.containsKey(e)).toList();
-                if (!missing.isEmpty()) {
-                    even(base, m, has, missing, impls.size());
-                }
-            }
+        // which implementation misses which line is decided in the lifecycle plan; this rule adds them
+        for (LifecyclePlan.Family family : ctx.lifecycle().families()) {
+            MethodInfo base = ctx.a.index.method(family.base());
+            family.missing().forEach((impl, missing) ->
+                    even(base, ctx.a.index.method(impl), family.has().get(impl), missing, family.has().size()));
         }
-    }
-
-    /** Lifecycle events the method logs at INFO+ on its normal path, with their subject (by role or by wording). */
-    private Map<String, String> events(MethodInfo m) {
-        Map<String, String> out = new LinkedHashMap<>();
-        CoverageRules.roles(m).forEach(role -> out.put(role, ""));
-        for (LogCall lc : m.facts().logs) {
-            if (lc.level().compareTo(Level.INFO) < 0 || lc.inCatch() != null || !(lc.template() instanceof J.Literal l)
-                    || !(l.getValue() instanceof String raw)) {
-                continue;
-            }
-            String text = MessageTemplate.compliantBase(raw).strip();
-            String event = ctx.phrasing.eventOf(text);
-            if (event != null && EVENTS.contains(event)) {
-                String subject = ctx.phrasing.subjectOf(text);
-                out.merge(event, subject == null ? "" : subject, (had, now) -> had.isBlank() ? now : had);
-            }
-        }
-        return out;
     }
 
     private void even(MethodInfo base, MethodInfo m, Map<String, String> has, List<String> missing, int siblings) {

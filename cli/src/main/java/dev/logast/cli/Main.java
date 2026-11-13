@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
         subcommands = {Main.Scan.class, Main.Explain.class, Main.Apply.class, Main.Classpath.class, Main.RulesCmd.class,
-                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class, Main.WhyCmd.class})
+                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class, Main.WhyCmd.class, Main.LifecycleCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override
@@ -538,6 +538,43 @@ public final class Main {
             for (var e : byOutcome.entrySet()) {
                 System.out.println(Ansi.bold(e.getKey()) + " (" + e.getValue().size() + ")");
                 e.getValue().forEach(d -> System.out.println("  " + d.method() + Ansi.dim("  " + d.location()) + "\n    " + d.reason()));
+            }
+            return 0;
+        }
+    }
+
+    @Command(name = "lifecycle", description = "Every flow's lifecycle lines: kind, which lines exist, who owns the start and "
+            + "the outcome, and what logast will add; plus implementation families that log unevenly")
+    static class LifecycleCmd extends Common implements Callable<Integer> {
+        @Override
+        public Integer call() throws IOException {
+            Analysis a = Logast.analyse(root(), classpath(), policy());
+            Rules.scan(a);
+            var plan = Rules.lastLifecycle;
+            Map<String, List<dev.logast.rules.LifecyclePlan.Flow>> byKind = new TreeMap<>();
+            a.entrypoints.forEach(ep -> {
+                var f = plan.flow(ep);
+                byKind.computeIfAbsent(f.kind().name().toLowerCase(java.util.Locale.ROOT), k -> new ArrayList<>()).add(f);
+            });
+            for (var e : byKind.entrySet()) {
+                long open = e.getValue().stream().filter(f -> !f.missing().isEmpty()).count();
+                System.out.println(Ansi.bold(e.getKey() + " (" + e.getValue().size() + ")") + Ansi.dim(open == 0 ? "" : "   " + open + " missing lines"));
+                for (var f : e.getValue()) {
+                    System.out.println("  " + f.label() + Ansi.dim("  " + f.location()));
+                    System.out.println("    start: " + (f.started() ? "present" : "none") + Ansi.dim(" (" + f.startOwner() + ")")
+                            + "   outcome: " + (f.outcome() ? "present" : "none") + Ansi.dim(" (" + f.outcomeOwner() + ")")
+                            + (f.missing().isEmpty() ? "" : Ansi.yellow("   adds: " + String.join(", ", f.missing()))));
+                }
+            }
+            var families = plan.families();
+            if (!families.isEmpty()) {
+                System.out.println(Ansi.bold("implementation families (" + families.size() + ")"));
+                for (var fam : families) {
+                    System.out.println("  " + a.index.method(fam.base()).label());
+                    fam.has().forEach((impl, has) -> System.out.println("    " + a.index.method(impl).label() + ": "
+                            + (has.isEmpty() ? "no lifecycle lines" : String.join(", ", has.keySet()))
+                            + (fam.missing().containsKey(impl) ? Ansi.yellow("   adds: " + String.join(", ", fam.missing().get(impl))) : "")));
+                }
             }
             return 0;
         }

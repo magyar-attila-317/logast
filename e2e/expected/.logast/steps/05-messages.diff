@@ -39,6 +39,40 @@ index 4441104..fcb1bd0 100644
          }
      }
  }
+diff --git a/src/main/java/com/example/e2e/income/IncomeCalculator.java b/src/main/java/com/example/e2e/income/IncomeCalculator.java
+index 9ca00bb..c5663df 100644
+--- a/src/main/java/com/example/e2e/income/IncomeCalculator.java
++++ b/src/main/java/com/example/e2e/income/IncomeCalculator.java
+@@ -13,10 +13,9 @@ 
+     }
+ 
+     public static IncomeOutcome calculate(SalesTotals salesData, List<CouponDetails> matchingCoupons) {
+-        log.debug("Calculating income [couponId={}, saleDay={}, matchingCoupons={}]", salesData.couponId(), salesData.saleDay(),
+-                matchingCoupons.size());
++        log.debug("Calculating income [saleDay={}, matchingCoupons={}]", salesData.saleDay(), matchingCoupons.size());
+         if (matchingCoupons.isEmpty()) {
+-            log.debug("Coupon {} not found in the coupon list", salesData.couponId());
++            log.debug("Coupon not found in the coupon list");
+             return new IncomeOutcome(true, BigDecimal.ZERO);
+         }
+         return evaluateOutcome(salesData, matchingCoupons);
+@@ -27,14 +26,14 @@
+             if (coupon.fundingPercentage() != null) {
+                 return calculateIncome(salesData, coupon);
+             }
+-            log.trace("Coupon excluded [couponId={}]", coupon.couponId());
++            log.trace("Coupon excluded");
+         }
+         return new IncomeOutcome(true, BigDecimal.ZERO);
+     }
+ 
+     private static IncomeOutcome calculateIncome(SalesTotals salesData, CouponDetails coupon) {
+         BigDecimal result = salesData.totalDiscount().multiply(coupon.fundingPercentage());
+-        log.debug("Income calculated [couponId={}, saleDay={}, result={}]", coupon.couponId(), salesData.saleDay(), result);
++        log.debug("Income calculated [saleDay={}, result={}]", salesData.saleDay(), result);
+         return new IncomeOutcome(false, result);
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponSender.java b/src/main/java/com/example/e2e/coupon/CouponSender.java
 index 1b9add7..0f5a523 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponSender.java
@@ -53,6 +87,19 @@ index 1b9add7..0f5a523 100644
 +        log.info("Coupon sent");
      }
  }
+diff --git a/src/main/java/com/example/e2e/income/CalculationService.java b/src/main/java/com/example/e2e/income/CalculationService.java
+index 49d439e..1b7afce 100644
+--- a/src/main/java/com/example/e2e/income/CalculationService.java
++++ b/src/main/java/com/example/e2e/income/CalculationService.java
+@@ -19,7 +19,7 @@ 
+ 
+     private IncomeOutcome processRow(SalesTotals salesData, List<CouponDetails> allCouponDetails) {
+         try (var mdc = MdcScope.of("couponId", salesData.couponId())) {
+-            log.trace("Processing coupon [couponId={}]", salesData.couponId());
++            log.trace("Processing coupon");
+             List<CouponDetails> matchingCoupons = filterMatchingCoupons(allCouponDetails, salesData.couponId());
+             return IncomeCalculator.calculate(salesData, matchingCoupons);
+         }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
 index 08f9ee6..7704c24 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java

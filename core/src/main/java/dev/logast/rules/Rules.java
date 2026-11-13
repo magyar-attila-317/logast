@@ -304,12 +304,16 @@ public final class Rules {
         }
     }
 
+    /** The lifecycle plan of the latest scan (for `logast lifecycle`). */
+    public static volatile LifecyclePlan lastLifecycle;
+
     /** MDC decisions of the latest scan (for `logast why`). */
     public static volatile List<RepeatedValueRules.Decision> lastMdcDecisions = List.of();
 
     public static ScanResult scan(Analysis a) {
         RuleContext ctx = new RuleContext(a);
         lastMdcDecisions = ctx.mdcDecisions;
+        lastLifecycle = ctx.lifecycle();
         new SetupRules(ctx).run();
         new TracingRules(ctx).run();
         new EntrypointRules(ctx).run();
