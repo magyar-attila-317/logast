@@ -161,4 +161,10 @@ class ServiceSetupTest {
         assertThat(ServiceSetup.policyTemplate(java.util.List.of(), java.util.List.of(), false, null, null, "logstash", null))
                 .contains("structuredFormat: logstash");
     }
+
+    @Test
+    void logastYmlIsReadToo(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("logast.yml"), "logging:\n  structuredFormat: logstash\n");
+        assertThat(dev.logast.policy.Policy.resolve(dir, null).logging().structuredFormat()).isEqualTo("logstash");
+    }
 }

@@ -86,6 +86,9 @@ final class LogCallRules {
             return false;
         }
         b.edit(JavaEdits.deleteStatement(m.file(), lc.call()));
+        for (Expression arg : lc.args()) {   // the context it carried must be in MDC first
+            ctx.domain.keyOf(arg).map(k -> ctx.plannedBy(m, k)).ifPresent(b::dependsOn);
+        }
         for (String dep : swallowingCallers(m, lc.inCatch())) {
             b.dependsOn(dep);
         }

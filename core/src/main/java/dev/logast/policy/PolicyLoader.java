@@ -45,12 +45,19 @@ public final class PolicyLoader {
     private PolicyLoader() {
     }
 
-    /** @param explicit policy file; null → {@code <root>/logast.yaml} when present, else defaults only */
+    /** {@code <root>/logast.yaml}, or {@code logast.yml} when only that exists. */
+    public static Path defaultFile(Path root) {
+        Path yaml = root.resolve("logast.yaml");
+        Path yml = root.resolve("logast.yml");
+        return !Files.exists(yaml) && Files.exists(yml) ? yml : yaml;
+    }
+
+    /** @param explicit policy file; null → {@code <root>/logast.yaml} (or .yml) when present, else defaults only */
     public static Policy load(Path root, Path explicit) {
         PolicyLoader loader = new PolicyLoader();
         ObjectNode merged = JsonNodeFactory.instance.objectNode();
         loader.layer(merged, DEFAULTS, null);
-        Path file = explicit != null ? explicit : root == null ? null : root.resolve("logast.yaml");
+        Path file = explicit != null ? explicit : root == null ? null : defaultFile(root);
         if (file != null && Files.exists(file)) {
             loader.layer(merged, file.toAbsolutePath().normalize().toString(), null);
         } else if (explicit != null) {

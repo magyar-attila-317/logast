@@ -468,7 +468,10 @@ public final class SetupRules {
                 what.add("spring.application.version");
             }
         }
-        String format = props.getOrDefault("logging.structured.format.console", ctx.policy.logging().structuredFormat());
+        String policyFormat = ctx.policy.logging().structuredFormat();
+        // a non-default logast.yaml format wins (the format rule switches the service to it); else what the service has
+        String format = !policyFormat.equals("ecs") && !policyFormat.equals("none") ? policyFormat
+                : props.getOrDefault("logging.structured.format.console", policyFormat);
         if (format.equals("ecs")) {
             String used = dev.logast.ServiceSetup.detectLogFormat(root);
             format = used != null ? used : format;
@@ -499,7 +502,7 @@ public final class SetupRules {
             return;
         }
         String where = ServiceYaml.path(ctx);
-        OrderBuilder b = ctx.order(Rules.SETUP_SERVICE_IDENTITY, "identity|" + where).at(where, 1)
+        OrderBuilder b = ctx.order(Rules.SETUP_SERVICE_IDENTITY, "identity|" + where + "|" + String.join(",", what)).at(where, 1)
                 .title("Logs and metrics do not say which service and version wrote them: add " + String.join(", ", what))
                 .suggestion("Env vars still win at runtime (SPRING_APPLICATION_NAME, SPRING_APPLICATION_VERSION). Set "
                         + "logging.serviceName / logging.serviceVersion in logast.yaml to the expressions your platform uses, "
@@ -561,7 +564,20 @@ public final class SetupRules {
             format = used;
             why = ", the format the service already uses";
         }
-        if (format.equals("none") || ServiceYaml.mentioned(ctx, "structured.format.console") || ServiceYaml.mentioned(ctx, "format:\n      console")) {
+        if (format.equals("none")) {
+            return;
+        }
+        String configured = dev.logast.SpringProperties.read(root).get("logging.structured.format.console");
+        if (configured != null && JSON_FORMATS.contains(configured) && !configured.equals(format) && !format.equals("ecs")) {
+            // logast.yaml asks for another JSON format than the service has (e.g. ecs written by an earlier run)
+            String where = ServiceYaml.path(ctx);
+            OrderBuilder b = ctx.order(Rules.SETUP_STRUCTURED_LOGGING, "structured-format-change|" + where).at(where, 1)
+                    .title("Console log format is " + configured + ", logast.yaml says " + format + ": switch it")
+                    .suggestion("logging.structuredFormat in logast.yaml decides; set it to " + configured + " to keep the current one.");
+            ServiceYaml.merge(ctx, b, "logging:\n  structured:\n    format:\n      console: " + format + "\n", true);
+            return;
+        }
+        if (ServiceYaml.mentioned(ctx, "structured.format.console") || ServiceYaml.mentioned(ctx, "format:\n      console")) {
             return;
         }
         for (String name : List.of("application.yml", "application.yaml", "application.properties")) {
