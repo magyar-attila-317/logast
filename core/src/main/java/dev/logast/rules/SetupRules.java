@@ -63,6 +63,8 @@ final class SetupRules {
         if (ctx.policy.support().vendor()) {
             if (!ctx.a.supportStarterPresent && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
                 vendor(rel, text, kts);
+            } else if (ctx.a.supportStarterPresent && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
+                updateVendored();
             }
         } else if (!ctx.a.supportStarterPresent && !text.contains(ctx.policy.support().groupAndArtifact())
                 && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
@@ -165,6 +167,45 @@ final class SetupRules {
         }
         asyncLocations(b);
         ctx.supportOrderId = b.id();
+    }
+
+    /**
+     * Copied support classes that differ from the current version are replaced (they are logast's code, and newer
+     * generated code needs the newer API). The dry run shows the diff; edits made to the copies show up there too.
+     */
+    private void updateVendored() {
+        var oc = ctx.a.index.clazz(ctx.a.supportPackage + ".ObservedContext");
+        if (oc == null) {
+            return;
+        }
+        Path dir = oc.file().absPath().getParent();
+        List<String> classes = new ArrayList<>(VENDORED);
+        classes.addAll(VENDORED_SERVLET);
+        classes.addAll(VENDORED_TRACING);
+        OrderBuilder b = null;
+        List<String> changed = new ArrayList<>();
+        for (String cls : classes) {
+            Path target = dir.resolve(cls + ".java");
+            if (!Files.exists(target)) {
+                continue;
+            }
+            String current = vendoredSource(cls, ctx.a.supportPackage);
+            String existing = read(target);
+            if (existing.strip().equals(current.strip())) {
+                continue;
+            }
+            if (b == null) {
+                b = ctx.order(Rules.SETUP_SUPPORT_STARTER, "vendor-update|" + ctx.a.supportPackage).at(rel(target), 1);
+            }
+            b.edit(Edit.replace(rel(target), 0, existing.length(), current));
+            changed.add(cls);
+        }
+        if (b != null) {
+            b.title("Update the copied logging support classes to this logast version: " + String.join(", ", changed))
+                    .suggestion("They are logast's own code, copied in vendor mode; newer generated code (e.g. ObservedContext.run) "
+                            + "needs the newer version. Check the diff if you edited them.");
+            ctx.supportUpdateOrderId = b.id();
+        }
     }
 
     /** Starter source with its package rewritten; the auto-configuration becomes a component-scanned @Configuration. */
@@ -393,6 +434,13 @@ final class SetupRules {
      */
     private void explicitJsonFormat(Path resources) {
         String format = ctx.policy.logging().structuredFormat();
+        // the built-in default (ecs) gives way to the format the service already uses (e.g. logstash-logback-encoder)
+        String used = format.equals("ecs") ? dev.logast.ServiceSetup.detectLogFormat(root) : null;
+        String why = "";
+        if (used != null && !used.equals(format)) {
+            format = used;
+            why = ", the format the service already uses";
+        }
         if (format.equals("none") || ServiceYaml.mentioned(ctx, "structured.format.console") || ServiceYaml.mentioned(ctx, "format:\n      console")) {
             return;
         }
@@ -408,7 +456,7 @@ final class SetupRules {
         String where = yml ? ServiceYaml.path(ctx) : rel(props);
         OrderBuilder b = ctx.order(Rules.SETUP_STRUCTURED_LOGGING, "structured-format|" + where).at(where, 1)
                 .title("No structured log format in the service's config: logs are JSON only while the logging-support "
-                        + "starter's default applies; make it explicit (" + format + ")")
+                        + "starter's default applies; make it explicit (" + format + why + ")")
                 .suggestion("Sets logging.structured.format.console=" + format + ". Service name and version come from "
                         + "spring.application.name / spring.application.version.");
         if (yml) {

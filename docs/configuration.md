@@ -99,7 +99,8 @@ logging:
   keyStyle: dotted              # how MDC and [k=v] keys are spelled: dotted (order.id), camel (orderId),
                                 #   pascal (OrderId), snake (order_id), keep. Applies to vocabulary keys too.
   structuredFormat: ecs         # JSON log format logast writes to application.yml (logging.structured.format.console)
-                                #   when the service sets none: ecs, logstash, gelf; none = leave the config alone
+                                #   when the service sets none: ecs, logstash, gelf; none = leave the config alone.
+                                #   A service that already uses logstash-logback-encoder (or GELF) keeps that format.
   rewriteExistingMessages: true # false = keep the wording of existing messages; only fix structure
                                 #   (concatenation, lost exceptions, banned words). Good for legacy services.
   loggerName: log               # the field name used when logast adds a logger
