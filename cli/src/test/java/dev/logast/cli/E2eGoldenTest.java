@@ -69,6 +69,44 @@ class E2eGoldenTest {
                 + "then review `git diff e2e/expected`)").isEmpty();
     }
 
+    /**
+     * A person rewords every line logast asked about (keeping the form it requires), then applies again: the result
+     * must settle (a further apply changes nothing) and still pass the migration invariants.
+     */
+    @Test
+    void rewordingTheGeneratedLinesConverges() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+
+        Path fills = app.resolve(".logast/fills.json");
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(fills.toFile());
+        int n = 0;
+        for (var it = root.fields(); it.hasNext(); ) {
+            var e = it.next();
+            if (e.getKey().startsWith("_") || !(e.getValue() instanceof com.fasterxml.jackson.databind.node.ObjectNode entry)) {
+                continue;
+            }
+            for (var f = entry.fieldNames(); f.hasNext(); ) {
+                String slot = f.next();
+                if (slot.startsWith("_") || slot.equals("args")) {
+                    continue;
+                }
+                String hint = entry.path("_" + slot).asText("");
+                java.util.regex.Matcher form = java.util.regex.Pattern.compile("must read as: (\\{subject} \\w+)").matcher(hint);
+                entry.put(slot, form.find() ? form.group(1).replace("{subject}", "Reworded step " + (++n)) : "Reworded line " + (++n));
+            }
+        }
+        mapper.writerWithDefaultPrettyPrinter().writeValue(fills.toFile(), root);
+
+        String second = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(second).as("the reworded lines are applied").doesNotContain("REJECTED").doesNotContain("CHECK FAILED");
+        assertThat(third).as("nothing left to change after the rewording:\n" + third).contains("applied (0)").doesNotContain("CHECK FAILED");
+        compile(app);
+    }
+
     /** Runs the CLI in-process; stdout with the temp path, timings and colours normalised. */
     private static String run(Path app, String... args) {
         PrintStream out = System.out;

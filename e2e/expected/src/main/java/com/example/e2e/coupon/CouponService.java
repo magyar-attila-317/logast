@@ -1,5 +1,6 @@
 package com.example.e2e.coupon;
 
+import com.example.e2e.logging.MdcScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -21,5 +22,13 @@ public class CouponService {
         sender.send(couponId);
         repository.close(couponId);
         log.info("Coupon published");
+    }
+
+    public void redeem(RedeemRequest request) {
+        try (var mdc = MdcScope.of("couponId", request.code())) {
+            log.info("Coupon redemption started");
+            sender.send(request.code());
+            log.info("Coupon redemption completed [tableId={}]", request.tableId());
+        }
     }
 }

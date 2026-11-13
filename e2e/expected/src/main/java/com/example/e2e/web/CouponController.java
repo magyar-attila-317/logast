@@ -39,6 +39,11 @@ public class CouponController {
         }
     }
 
+    @PostMapping("/coupons/redeem")
+    public void redeem(@RequestBody com.example.e2e.coupon.RedeemRequest request) {
+        coupons.redeem(request);
+    }
+
     @PostMapping("/orders")
     public void place(@RequestBody Order order) {
         try (var mdc = MdcScope.of("orderId", order.id())) {

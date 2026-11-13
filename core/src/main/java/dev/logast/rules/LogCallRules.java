@@ -299,7 +299,11 @@ final class LogCallRules {
                 String raw0 = given != null ? given : DomainValues.derivedKey(e);
                 key = styled(raw0 == null ? Text.camel(src(f, e)) : raw0);
             }
-            args.add(new Arg(e, src(f, e), key, reg.isPresent() || mdcAliases.containsValue(key)));
+            // the same recognition as REPEATED_LOG_VALUE: a vocabulary source, an alias, or the [key={}] name it is logged
+            // under; otherwise a value put into MDC there would stay in the message here
+            boolean registry = reg.isPresent() || mdcAliases.containsValue(key)
+                    || given != null && ctx.policy.mdcRegistry().containsKey(given);
+            args.add(new Arg(e, src(f, e), key, registry));
         }
 
         // "Coupon {} published" with couponId in MDC: the placeholder right after its own noun goes, the sentence stays
