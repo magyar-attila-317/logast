@@ -144,7 +144,7 @@ final class EventMetricRules {
         }
         String unit = Text.indentUnit(text);
         String indent = Text.indentAt(text, Pos.start(m.decl().getBody())) + unit;
-        Set<String> taken = ctx.vars(m, inner[0]).keySet();
+        Set<String> taken = ctx.taken(m, inner[0]);
         String obs = EntrypointRules.unique("observed", taken);
         String err = EntrypointRules.unique("t", taken);
         String body = text.substring(inner[0], inner[1]);

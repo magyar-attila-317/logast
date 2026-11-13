@@ -411,7 +411,7 @@ final class MdcRules {
             pairs.add((canonical != null ? "\"" + canonical + "\"" : src(f, put.getArguments().getFirst())) + ", "
                     + src(f, put.getArguments().get(1)));
         }
-        String var = EntrypointRules.unique("mdc", ctx.vars(m, Pos.start(op.call())).keySet());
+        String var = EntrypointRules.unique("mdc", ctx.taken(m, Pos.start(op.call())));
         String replacement = pairs.isEmpty() ? Text.dedent(region, unit)
                 : indent + "try (var " + var + " = MdcScope.of(" + String.join(", ", pairs) + ")) {\n" + region + indent + "}\n";
         b.edit(Edit.replace(f.relPath(), pLines[0], replaceEnd, replacement));
@@ -501,7 +501,7 @@ final class MdcRules {
         String rest = text.substring(restStart, inner[1]);
         rest = rest.replaceFirst("^(\\s*\n)+", "");
         String indent = Text.indentAt(text, Pos.start(t));
-        String var = EntrypointRules.unique("mdc", ctx.vars(m, Pos.start(t)).keySet());
+        String var = EntrypointRules.unique("mdc", ctx.taken(m, Pos.start(t)));
         String replacement = pairs.isEmpty()
                 ? Text.dedent(rest, Text.indentUnit(text))
                 : indent + "try (var " + var + " = MdcScope.of(" + String.join(", ", pairs) + ")) {\n" + rest + indent + "}\n";

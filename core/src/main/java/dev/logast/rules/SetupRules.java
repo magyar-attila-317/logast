@@ -194,7 +194,7 @@ final class SetupRules {
         return null;
     }
 
-    private static Edit dependencyInsert(String rel, String text, boolean kts, String coordinates) {
+    static Edit dependencyInsert(String rel, String text, boolean kts, String coordinates) {
         Matcher m = DEPENDENCIES.matcher(text);
         if (!m.find()) {
             return null;
@@ -369,6 +369,7 @@ final class SetupRules {
         if (!ctx.enabled(Rules.SETUP_STRUCTURED_LOGGING)) {
             return;
         }
+        explicitJsonFormat(resources);
         for (String name : List.of("application.yml", "application.yaml", "application.properties")) {
             Path p = resources.resolve(name);
             if (!Files.exists(p)) {
@@ -383,6 +384,39 @@ final class SetupRules {
                             .suggestion("Use ecs (default from logging-support), logstash or gelf, or remove the property.");
                 }
             }
+        }
+    }
+
+    /**
+     * No {@code logging.structured.format.console} in any application file: write it, so the JSON log format is visible
+     * in the service's own configuration (the starter's runtime default stays as a fallback).
+     */
+    private void explicitJsonFormat(Path resources) {
+        String format = ctx.policy.logging().structuredFormat();
+        if (format.equals("none") || ServiceYaml.mentioned(ctx, "structured.format.console") || ServiceYaml.mentioned(ctx, "format:\n      console")) {
+            return;
+        }
+        for (String name : List.of("application.yml", "application.yaml", "application.properties")) {
+            Path p = resources.resolve(name);
+            if (Files.exists(p) && read(p).matches("(?s).*structured:\\s*\\n\\s*format:\\s*\\n\\s*console:.*")) {
+                return;
+            }
+        }
+        Path props = resources.resolve("application.properties");
+        boolean yml = Files.exists(resources.resolve("application.yml")) || Files.exists(resources.resolve("application.yaml"))
+                || !Files.exists(props);
+        String where = yml ? ServiceYaml.path(ctx) : rel(props);
+        OrderBuilder b = ctx.order(Rules.SETUP_STRUCTURED_LOGGING, "structured-format|" + where).at(where, 1)
+                .title("No structured log format in the service's config: logs are JSON only while the logging-support "
+                        + "starter's default applies; make it explicit (" + format + ")")
+                .suggestion("Sets logging.structured.format.console=" + format + ". Service name and version come from "
+                        + "spring.application.name / spring.application.version.");
+        if (yml) {
+            ServiceYaml.merge(ctx, b, "logging:\n  structured:\n    format:\n      console: " + format + "\n");
+        } else {
+            String text = read(props);
+            b.edit(Edit.insert(where, text.length(), (text.isEmpty() || text.endsWith("\n") ? "" : "\n")
+                    + "logging.structured.format.console=" + format + "\n"));
         }
     }
 

@@ -223,11 +223,29 @@ final class TracingRules {
         boolean constructorOfBean = m.decl().isConstructor() && isBean(m.owner());
         boolean beanMethod = m.decl().getLeadingAnnotations().stream()
                 .anyMatch(a -> Annotations.is(a, "org.springframework.context.annotation.Bean"));
-        boolean builderAvailable = client.builderImport() == null || ctx.a.project.probe().hasClass(client.builderImport());
-        if (hit[1] == null || !(constructorOfBean || beanMethod) || !builderAvailable) {
-            b.suggestion("Inject Spring's " + client.builderType() + " (instrumented with tracing) and build the client from it"
-                    + (builderAvailable ? "" : "; add spring-boot-starter-restclient") + ".");
+        // Spring Boot provides the builder bean (traced, with codecs/customizers) only with its auto-configuration module
+        String starter = client == WEB_CLIENT ? "org.springframework.boot:spring-boot-starter-webclient"
+                : "org.springframework.boot:spring-boot-starter-restclient";
+        boolean autoConfigured = autoConfigured(client);
+        Edit addStarter = null;
+        if (!autoConfigured) {
+            Path build = buildFile(f);
+            if (build != null) {
+                String buildText = SetupRules.read(build);
+                String rel = ctx.a.project.root().relativize(build).toString().replace('\\', '/');
+                addStarter = buildText.contains(starter.substring(starter.indexOf(':') + 1)) ? null
+                        : SetupRules.dependencyInsert(rel, buildText, build.toString().endsWith(".kts"), starter);
+            }
+        }
+        if (hit[1] == null || !(constructorOfBean || beanMethod) || !autoConfigured && addStarter == null) {
+            b.suggestion("Inject Spring's " + client.builderType() + " (auto-configured by Spring Boot, already traced) and build "
+                    + "the client from it" + (autoConfigured ? "" : "; that bean needs " + starter) + ".");
             return;
+        }
+        if (addStarter != null) {
+            b.edit(addStarter);
+            b.suggestion("Adds " + starter + ": Spring Boot then provides the " + client.builderType() + " bean (traced, with your "
+                    + "codecs and customizers). Run `logast classpath .` afterwards.");
         }
         b.edit(Edit.replace(f.relPath(), Pos.start(tree), Pos.end(tree), hit[1]));
         Edit param = addParameter(m, client.builderType(), client.param());
@@ -237,6 +255,31 @@ final class TracingRules {
         if (client.builderImport() != null) {
             b.edits(JavaEdits.imports(f, client.builderImport()));
         }
+    }
+
+    /** Spring Boot's auto-configuration that provides the client's builder bean (Boot 4 module, or Boot 3 location). */
+    private boolean autoConfigured(Client client) {
+        var probe = ctx.a.project.probe();
+        return client == WEB_CLIENT
+                ? probe.hasClass("org.springframework.boot.webclient.autoconfigure.WebClientAutoConfiguration")
+                || probe.hasClass("org.springframework.boot.autoconfigure.web.reactive.function.client.WebClientAutoConfiguration")
+                : client == REST_CLIENT
+                ? probe.hasClass("org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration")
+                || probe.hasClass("org.springframework.boot.autoconfigure.web.client.RestClientAutoConfiguration")
+                : probe.hasClass("org.springframework.boot.restclient.autoconfigure.RestTemplateAutoConfiguration")
+                || probe.hasClass("org.springframework.boot.autoconfigure.web.client.RestTemplateAutoConfiguration");
+    }
+
+    /** The Gradle build file of the module the source file belongs to. */
+    private Path buildFile(SourceFileInfo f) {
+        for (Path dir = f.absPath().getParent(); dir != null && dir.startsWith(ctx.a.project.root()); dir = dir.getParent()) {
+            for (String n : List.of("build.gradle.kts", "build.gradle")) {
+                if (Files.exists(dir.resolve(n))) {
+                    return dir.resolve(n);
+                }
+            }
+        }
+        return null;
     }
 
     /** Inserts {@code Type name} as the last parameter (unless a parameter with that name exists). */

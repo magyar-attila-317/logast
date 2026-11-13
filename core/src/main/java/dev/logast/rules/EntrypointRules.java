@@ -77,7 +77,7 @@ final class EntrypointRules {
         String unit = Text.indentUnit(text);
         String indent = Text.indentAt(text, Pos.start(m.decl().getBody())) + unit;
         String body = text.substring(inner[0], inner[1]);
-        Set<String> taken = ctx.vars(m, inner[0]).keySet();
+        Set<String> taken = ctx.taken(m, inner[0]);
 
         StringBuilder top = new StringBuilder();
         List<Edit> extra = new ArrayList<>();

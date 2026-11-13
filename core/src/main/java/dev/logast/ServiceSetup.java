@@ -64,9 +64,9 @@ public final class ServiceSetup {
         sb.append("# Which checks run. Default: logging, tracing. Add any of: metrics, resilience, errors, audit.\n");
         sb.append("packs: [").append(String.join(", ", packs.isEmpty() ? List.of("logging", "tracing") : packs)).append("]\n\n");
         sb.append("logging:\n");
-        sb.append("  # How MDC keys and [key=value] keys are spelled: dotted (order.id), camel (orderId), pascal (OrderId),\n");
+        sb.append("  # How MDC keys and [key=value] keys are spelled: camel (orderId), dotted (order.id), pascal (OrderId),\n");
         sb.append("  # snake (order_id). Applies to the vocabulary below too.\n");
-        sb.append(keyStyle != null ? "  keyStyle: " + keyStyle + "\n" : "  # keyStyle: camel\n");
+        sb.append("  keyStyle: ").append(keyStyle != null ? keyStyle : "camel").append('\n');
         sb.append("  # true: logast may reword existing messages. false: keep their words, fix only the structure.\n");
         sb.append("  rewriteExistingMessages: ").append(!keepWording).append('\n');
         sb.append("  # Messages that alerts or dashboards search for (regex): logast never changes them, it only reports.\n");

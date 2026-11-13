@@ -56,7 +56,9 @@ public final class RuleContext {
     /** Called after the entrypoint rules: MDC context as it will be once their orders are applied. */
     void freezePlan() {
         planned = new PathContext(a.graph, a.entrypoints, new TreeSet<>(policy.mdc().ambientKeys()),
-                a.httpFilterKeys, a.decoratorPresent || starterPlanned(), plannedEntryKeys, plannedOwnKeys);
+                a.httpFilterKeys, a.decoratorPresent || starterPlanned(), plannedEntryKeys, plannedOwnKeys)
+                .withCanonicalKeys(dev.logast.Analysis.canonicalKeys(policy), new TreeSet<>(policy.mdc().ambientKeys()),
+                        a.httpFilterKeys, a.decoratorPresent || starterPlanned());
     }
 
     /** MDC keys guaranteed on entry to {@code m}, with the planned entrypoint/whole-method scopes applied. */
@@ -161,6 +163,25 @@ public final class RuleContext {
         Map<String, String> vars = new LinkedHashMap<>();
         ScopeResolver.varsAt(m, offset, false).forEach((k, v) -> vars.put(k, Types.display(v)));
         return new WorkOrder.Context(List.copyOf(mdcInside(m)), vars, code, argsSlot);
+    }
+
+    /**
+     * Names a generated variable must not use: the variables in scope at {@code offset} and every variable declared
+     * anywhere in the method (a wrap around existing code must not reuse a name declared inside it).
+     */
+    public Set<String> taken(MethodInfo m, int offset) {
+        Set<String> out = new HashSet<>(vars(m, offset).keySet());
+        if (m.decl().getBody() != null) {
+            new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+                @Override
+                public org.openrewrite.java.tree.J.VariableDeclarations.NamedVariable visitVariable(
+                        org.openrewrite.java.tree.J.VariableDeclarations.NamedVariable v, Integer p) {
+                    out.add(v.getSimpleName());
+                    return super.visitVariable(v, p);
+                }
+            }.visit(m.decl().getBody(), 0);
+        }
+        return out;
     }
 
     public Map<String, JavaType> vars(MethodInfo m, int offset) {

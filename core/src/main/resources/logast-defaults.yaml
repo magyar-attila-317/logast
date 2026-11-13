@@ -16,7 +16,8 @@ logging:
     - "^something went wrong"
     - "^(publishing|completed publishing|finished publishing)\\b"
     - "^(in|inside|entering|leaving|exiting) (method )?\\w+\\(?\\)?\\.*$"
-  keyStyle: dotted                 # MDC and [k=v] keys outside the vocabulary: dotted (order.id), camel (orderId),
+  structuredFormat: ecs            # JSON console format written to application.yml: ecs, logstash, gelf; none = leave it
+  keyStyle: camel                 # MDC and [k=v] keys (vocabulary keys too): camel (orderId, default), dotted (order.id),
                                    # pascal (OrderId), snake (order_id), keep. Also the spelling `logast vocabulary` proposes.
 
 # One way to say lifecycle events. "{subject}" is what happens, in domain terms ("Order sync").

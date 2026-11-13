@@ -19,6 +19,8 @@ public final class PathContext {
 
     private final Map<String, Set<String>> extraEntryKeys;
     private final Map<String, Set<String>> extraOwnKeys;
+    /** Old spelling → canonical key (vocabulary alias, key style): "income.type.id" in code counts as incomeTypeId. */
+    private java.util.function.UnaryOperator<String> canonical = k -> k;
 
     public PathContext(CallGraph graph, List<Entrypoint> entrypoints, Set<String> ambient,
                        Set<String> httpFilterKeys, boolean decoratorPresent) {
@@ -75,7 +77,7 @@ public final class PathContext {
         while (!work.isEmpty()) {
             MethodInfo m = work.poll();
             Set<String> out = new TreeSet<>(mdcIn.get(m.key()));
-            out.addAll(ownKeys(m));
+            out.addAll(canonicalKeys(m));
             out.addAll(extraOwnKeys.getOrDefault(m.key(), Set.of()));
             for (CallGraph.Edge e : graph.out(m)) {
                 Set<String> passed = switch (e.async()) {
@@ -99,6 +101,25 @@ public final class PathContext {
         return current.retainAll(incoming);
     }
 
+    /** Recompute with keys normalised: a key written in an old spelling still counts as the canonical key. */
+    public PathContext withCanonicalKeys(java.util.function.UnaryOperator<String> canonical,
+                                         Set<String> ambient, Set<String> filterKeys, boolean decoratorPresent) {
+        this.canonical = canonical;
+        mdcIn.clear();
+        computeMdc(ambient, filterKeys.stream().map(canonical).collect(java.util.stream.Collectors.toSet()), decoratorPresent);
+        return this;
+    }
+
+    /** The method's own keys as written, plus their canonical spelling. */
+    private Set<String> canonicalKeys(MethodInfo m) {
+        Set<String> keys = new TreeSet<>();
+        for (String k : ownKeys(m)) {
+            keys.add(k);
+            keys.add(canonical.apply(k));
+        }
+        return keys;
+    }
+
     /** Literal MDC keys this method sets itself. */
     public static Set<String> ownKeys(MethodInfo m) {
         Set<String> keys = new TreeSet<>();
@@ -118,7 +139,7 @@ public final class PathContext {
     /** MDC keys available inside {@code m}: entry keys plus the ones it sets itself. */
     public Set<String> mdcInside(MethodInfo m) {
         Set<String> s = new TreeSet<>(mdcAtEntry(m));
-        s.addAll(ownKeys(m));
+        s.addAll(canonicalKeys(m));
         s.addAll(extraOwnKeys.getOrDefault(m.key(), Set.of()));
         return s;
     }
