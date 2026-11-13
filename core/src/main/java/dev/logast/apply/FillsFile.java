@@ -59,6 +59,10 @@ public final class FillsFile {
         Map<String, Object> template = template(orders);
         ObjectNode out = OrderJson.MAPPER.createObjectNode();
         out.set("_readme", previous.getOrDefault("_readme", OrderJson.MAPPER.getNodeFactory().textNode(README)));
+        // always says where things stand, so an empty file reads as "nothing to write", not as "something went wrong"
+        out.put("_status", template.isEmpty()
+                ? "Nothing needs a message text right now: every finding is fixed automatically or only reported."
+                : template.size() + " finding(s) below need a message text.");
         int filled = 0, removed = 0, added = 0;
         for (var e : previous.entrySet()) {
             if (e.getKey().startsWith("_")) {
@@ -93,9 +97,6 @@ public final class FillsFile {
             }
         }
         boolean exists = Files.exists(file);
-        if (template.isEmpty() && !exists) {
-            return new Update(0, 0, 0, 0, false);
-        }
         boolean changed = !exists || added > 0 || removed > 0 || !out.equals(OrderJson.MAPPER.valueToTree(previous));
         if (changed) {
             try {
