@@ -46,7 +46,7 @@ public class OrderController {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<String> invalid(MethodArgumentNotValidException e) {
-        log.error("Order request rejected", e); // expect: LOG_LEVEL
+        log.error("Order request rejected", e); // expect: LOG_LEVEL, METRIC_OUTCOME_UNMEASURED
         return ResponseEntity.badRequest().body("invalid");
     }
 

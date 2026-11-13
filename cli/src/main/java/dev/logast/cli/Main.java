@@ -418,21 +418,23 @@ public final class Main {
         }
     }
 
-    @Command(name = "metrics", description = "List every meter the service publishes: name, type, tag keys, where it is "
-            + "defined (code, annotations, observations, Spring's own for observed entrypoints)")
+    @Command(name = "metrics", description = "What the service measures and what it does not: exporters, service/version "
+            + "identity, the metric (and tag values) covering each entrypoint, meters in code, and outcomes the logs report "
+            + "that no metric counts")
     static class MetricsCmd extends Common implements Callable<Integer> {
-        @Option(names = "--format", defaultValue = "table", description = "table | json")
+        @Option(names = "--format", defaultValue = "map", description = "map (default) | json (the same, for tools and LLMs) | table (meters only)")
         String format;
 
         @Override
         public Integer call() throws IOException {
             Analysis a = Logast.analyse(root(), classpath(), policy());
-            List<dev.logast.metrics.MeterCatalog.Meter> meters = dev.logast.metrics.MeterCatalog.of(a);
-            if (format.equals("json")) {
-                System.out.println(OrderJson.MAPPER.writeValueAsString(meters));
-            } else {
-                System.out.print(dev.logast.metrics.MeterCatalog.table(meters));
+            if (format.equals("table")) {
+                System.out.print(dev.logast.metrics.MeterCatalog.table(dev.logast.metrics.MeterCatalog.of(a)));
+                return 0;
             }
+            dev.logast.rules.MetricsMap.Map map = dev.logast.rules.MetricsMap.of(a);
+            System.out.print(format.equals("json") ? OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(map) + "\n"
+                    : dev.logast.rules.MetricsMap.text(map));
             return 0;
         }
     }

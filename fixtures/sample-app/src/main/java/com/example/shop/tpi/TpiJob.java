@@ -24,7 +24,7 @@ public class TpiJob implements CommandLineRunner {
         MDC.put("targetWeek", targetWeekResolver.targetWeek());
         log.info("TPI export started");
         export();
-        log.info("TPI export completed");
+        log.info("TPI export completed"); // expect: METRIC_OUTCOME_UNMEASURED
         MDC.clear();
     }
 

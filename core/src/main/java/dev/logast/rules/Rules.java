@@ -43,6 +43,8 @@ public final class Rules {
     public static final String STATE_CHANGE_UNLOGGED = "STATE_CHANGE_UNLOGGED";
     public static final String BATCH_SUMMARY_MISSING = "BATCH_SUMMARY_MISSING";
     public static final String DB_OUTCOME_UNLOGGED = "DB_OUTCOME_UNLOGGED";
+    public static final String SETUP_SERVICE_IDENTITY = "SETUP_SERVICE_IDENTITY";
+    public static final String METRIC_OUTCOME_UNMEASURED = "METRIC_OUTCOME_UNMEASURED";
     public static final String MESSAGE_SUGGESTED = "MESSAGE_SUGGESTED";
     public static final String LOG_OBJECT_ARGUMENT = "LOG_OBJECT_ARGUMENT";
     public static final String LOG_COLLECTION_ARGUMENT = "LOG_COLLECTION_ARGUMENT";
@@ -118,6 +120,8 @@ public final class Rules {
             PACKS.put(r, Set.of("audit"));
         }
         PACKS.put(SETUP_SUPPORT_STARTER, Set.of("logging", "tracing", "metrics"));
+        PACKS.put(SETUP_SERVICE_IDENTITY, Set.of("logging", "tracing", "metrics"));
+        PACKS.put(METRIC_OUTCOME_UNMEASURED, Set.of("metrics"));
     }
 
     public static Set<String> packsOf(String rule) {
@@ -141,7 +145,8 @@ public final class Rules {
             Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_STYLE, "low"), Map.entry(REPEATED_LOG_VALUE, "medium"),
             Map.entry(MDC_CLEAR, "high"), Map.entry(MDC_NOT_OWNER, "high"),
             Map.entry(JOB_OUTCOME_MISSING, "medium"), Map.entry(SKIP_UNLOGGED, "low"), Map.entry(STATE_CHANGE_UNLOGGED, "medium"),
-            Map.entry(BATCH_SUMMARY_MISSING, "low"), Map.entry(DB_OUTCOME_UNLOGGED, "medium"), Map.entry(MESSAGE_SUGGESTED, "low"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
+            Map.entry(BATCH_SUMMARY_MISSING, "low"), Map.entry(DB_OUTCOME_UNLOGGED, "medium"),
+            Map.entry(SETUP_SERVICE_IDENTITY, "medium"), Map.entry(METRIC_OUTCOME_UNMEASURED, "low"), Map.entry(MESSAGE_SUGGESTED, "low"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
             Map.entry(LOG_COLLECTION_ARGUMENT, "medium"), Map.entry(LOG_HELPER, "medium"), Map.entry(MESSAGE_VAGUE, "low"),
             Map.entry(LOG_KEY_VALUE_IN_MDC, "low"),
             Map.entry(AREA_MDC_MISSING, "medium"), Map.entry(LOG_LEVEL, "medium"), Map.entry(EXCEPTION_LOGGED_TWICE, "medium"),
@@ -181,6 +186,17 @@ public final class Rules {
         };
     }
 
+    /** METRIC_OUTCOME_UNMEASURED: outcomes the logs report and no metric counts; a person or LLM picks the ones to count. */
+    private static void outcomeGaps(RuleContext ctx) {
+        for (MetricsMap.Unmeasured u : MetricsMap.of(ctx.a).outcomes()) {
+            ctx.order(METRIC_OUTCOME_UNMEASURED, u.file() + "|" + u.line() + "|" + u.event()).at(u.file(), u.line())
+                    .title("\"" + u.message() + "\" is logged but not counted (outcome=" + u.event() + ", frequency " + u.frequency() + ")")
+                    .suggestion((u.tagOption() != null ? "As a tag on the running timer: " + u.tagOption() + ". " : "")
+                            + "As a counter: " + u.counter() + ". Count it only if a dashboard or alert needs it; "
+                            + "`logast metrics .` lists every outcome with its paths.");
+        }
+    }
+
     public static ScanResult scan(Analysis a) {
         RuleContext ctx = new RuleContext(a);
         new SetupRules(ctx).run();
@@ -201,6 +217,9 @@ public final class Rules {
         new MetricRules(ctx).run();
         new EventMetricRules(ctx).run();
         MetricRules.tagKeyMismatch(ctx);
+        if (ctx.enabled(METRIC_OUTCOME_UNMEASURED)) {
+            outcomeGaps(ctx);
+        }
         new ResilienceRules(ctx).run();
         new ErrorRules(ctx).run();
         new AuditRules(ctx).run();

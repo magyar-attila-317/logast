@@ -89,7 +89,7 @@ class RulesTest {
                 .satisfies(o -> {
                     assertThat(o.edits()).extracting(e -> e.kind() + " " + e.file())
                             .containsExactly("delete src/main/resources/logback-spring.xml",
-                                    "replace src/main/resources/application.yml");
+                                    "yaml-merge src/main/resources/application.yml");
                     assertThat(o.edits().get(1).text()).contains("com.example.shop: DEBUG");
                 });
     }

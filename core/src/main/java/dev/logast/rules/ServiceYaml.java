@@ -27,14 +27,7 @@ final class ServiceYaml {
 
     /** @param overwrite the snippet's values replace existing ones (for fixes that change a setting) */
     static void merge(RuleContext ctx, OrderBuilder b, String snippet, boolean overwrite) {
-        String rel = path(ctx);
-        Path file = ctx.a.project.root().resolve(rel);
-        if (Files.exists(file)) {
-            String text = SetupRules.read(file);
-            b.edit(Edit.replace(rel, 0, text.length(), SetupRules.mergeYaml(text, snippet, overwrite)));
-        } else {
-            b.edit(Edit.create(rel, snippet));
-        }
+        b.edit(Edit.yamlMerge(path(ctx), snippet, overwrite));
     }
 
     /** True when any application*.yml/.properties mentions {@code text} (profiles and env-specific files included). */

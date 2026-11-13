@@ -10,6 +10,6 @@ public class InboxProcessor {
 
     @InboxHandler
     public void handle(ShipmentEvent event) { // expect: ENTRYPOINT_NOT_OBSERVED, MISSING_DOMAIN_MDC, JOB_OUTCOME_MISSING
-        log.info("Inbox message handled [shipmentId={}]", event.shipmentId()); // expect: LOG_KEY_STYLE
+        log.info("Inbox message handled [shipmentId={}]", event.shipmentId()); // expect: LOG_KEY_STYLE, METRIC_OUTCOME_UNMEASURED
     }
 }
