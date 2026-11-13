@@ -194,6 +194,13 @@ final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
             return QUERY_PREFIXES.stream().anyMatch(name::startsWith) && !name.matches(".*ById$|.*ByUuid$|^get(One|ReferenceById)$");
         }
         String fqn = owner.getFullyQualifiedName();
+        // the service's own data access (a JdbcTemplate / JPA repository class) returning rows
+        boolean ownRepository = owner.getAnnotations().stream().anyMatch(an -> an.getFullyQualifiedName().equals("org.springframework.stereotype.Repository"))
+                || fqn.matches(".*(Repository|Dao|RepositoryImpl|DaoImpl)$");
+        if (ownRepository && (TypeUtils.isAssignableTo("java.lang.Iterable", mi.getType()) || TypeUtils.isAssignableTo("java.util.stream.Stream", mi.getType()))
+                && !name.matches(".*ById$|.*ByUuid$")) {
+            return true;
+        }
         return fqn.startsWith("org.springframework.jdbc.core.") && name.startsWith("query")
                 || fqn.equals("java.nio.file.Files") && (name.equals("lines") || name.equals("readAllLines"))
                 || name.equals("getContent") && TypeUtils.isAssignableTo("org.springframework.data.domain.Slice", owner)

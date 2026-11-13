@@ -302,6 +302,43 @@ final class LogCallRules {
             args.add(new Arg(e, src(f, e), key, reg.isPresent() || mdcAliases.containsValue(key)));
         }
 
+        // "Coupon {} published" with couponId in MDC: the placeholder right after its own noun goes, the sentence stays
+        List<String> inPlaceDeps = new ArrayList<>();
+        if (MessageTemplate.count(raw) == args.size() && !args.isEmpty()) {
+            Set<String> inMdcNow = ctx.mdcInside(m);
+            java.util.regex.Matcher ph = java.util.regex.Pattern.compile("\\{}").matcher(raw);
+            StringBuilder sb = new StringBuilder();
+            List<Arg> keptArgs = new ArrayList<>();
+            int from = 0;
+            int i = 0;
+            boolean changed = false;
+            while (ph.find()) {
+                Arg a = args.get(i++);
+                String before = raw.substring(from, ph.start());
+                String stem = java.util.regex.Pattern.quote(MessageTemplate.stem(a.key()));
+                java.util.regex.Matcher noun = java.util.regex.Pattern
+                        .compile("(?i)(\\b" + stem + "s?)((?:\\s+(?:id|no\\.?|number))?\\s*#?\\s*)$").matcher(before);
+                if (a.registry() && inMdcNow.contains(a.key()) && noun.find()) {
+                    sb.append(before, 0, noun.end(1));
+                    String wrap = ctx.plannedBy(m, a.key());
+                    if (wrap != null) {
+                        inPlaceDeps.add(wrap);
+                    }
+                    changed = true;
+                } else {
+                    sb.append(before).append("{}");
+                    keptArgs.add(a);
+                }
+                from = ph.end();
+            }
+            if (changed) {
+                sb.append(raw.substring(from));
+                raw = sb.toString().replaceAll(" {2,}", " ").replaceAll(" ([,.;:!?])", "$1");
+                args = keptArgs;
+                issues.add(Rules.LOG_FORMAT);
+            }
+        }
+
         boolean mismatch = MessageTemplate.count(raw) != args.size();
         List<String> existingKeys = MessageTemplate.compliantKeys(raw);
         boolean compliant = existingKeys != null && existingKeys.size() == args.size() && !mismatch;
@@ -319,7 +356,7 @@ final class LogCallRules {
 
         // drop values already in MDC, PII and e.getMessage() when the exception itself is logged
         Set<String> inMdc = ctx.mdcInside(m);
-        List<String> plannedDeps = new ArrayList<>();
+        List<String> plannedDeps = new ArrayList<>(inPlaceDeps);
         List<Arg> kept = new ArrayList<>();
         List<String> droppedStems = new ArrayList<>();
         for (Arg a : args) {

@@ -87,6 +87,12 @@ on PATH; the `/usr/bin/java` stub alone is not a JDK. `~/.local/bin` is not on t
 
 `LOGAST_HOME` / `LOGAST_BIN` override the install locations.
 
+**End-to-end test.** `e2e/before` is a small service with the shapes real services showed (values passed down call
+chains, an id travelling inside an object, abstract jobs behind a listener, a JdbcTemplate repository, a Logstash
+setup). `./gradlew :cli:test` runs `logast apply . --auto --write` on a copy, compiles the result and compares every
+file and the printed output with `e2e/expected`. After an intended behaviour change, `./gradlew :cli:test
+-Pe2e.update` rewrites the snapshot; review it with `git diff e2e/expected` before committing.
+
 ### Publish the starter to your company repository
 
 ```bash

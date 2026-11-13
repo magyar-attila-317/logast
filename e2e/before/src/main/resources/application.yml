@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: e2e-shop
+logging:
+  structured:
+    format:
+      console: ecs

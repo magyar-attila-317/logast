@@ -46,3 +46,25 @@ tasks.startScripts {
             |""".trimMargin()))
     }
 }
+
+dependencies {
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj)
+    testRuntimeOnly(libs.junit.launcher)
+}
+
+// e2e golden test: `./gradlew :cli:test -Pe2e.update` rewrites e2e/expected after an intended behaviour change
+tasks.test {
+    useJUnitPlatform()
+    dependsOn(":fixtures:sample-app:writeClasspath")
+    systemProperty("logast.e2e.before", rootProject.file("e2e/before").absolutePath)
+    systemProperty("logast.e2e.expected", rootProject.file("e2e/expected").absolutePath)
+    systemProperty("logast.e2e.classpath", project(":fixtures:sample-app").layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
+    systemProperty("logast.e2e.update", providers.gradleProperty("e2e.update").isPresent.toString())
+    inputs.dir(rootProject.file("e2e"))
+    maxHeapSize = "2g"
+}
+
+// test-capture is a JUnit listener for *services'* tests (it needs logback); keep it out of logast's own tests
+configurations.testRuntimeClasspath { exclude(group = rootProject.group.toString(), module = "test-capture") }

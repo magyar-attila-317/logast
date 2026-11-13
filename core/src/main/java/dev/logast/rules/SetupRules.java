@@ -483,8 +483,7 @@ public final class SetupRules {
                 && props.keySet().stream().noneMatch(k -> k.startsWith("management.opentelemetry.resource-attributes"));
         if (logstashFields) {
             yaml.append("logging:\n  structured:\n    json:\n      add:\n")
-                    .append("        \"[service.name]\": ${spring.application.name}\n")
-                    .append("        \"[service.version]\": ${spring.application.version}\n");
+                    .append("        service:\n          name: ${spring.application.name}\n          version: ${spring.application.version}\n");
             what.add("service.name/version in Logstash JSON");
         }
         if (meters || otel) {
@@ -494,7 +493,7 @@ public final class SetupRules {
                 what.add("application/version tags on every meter");
             }
             if (otel) {
-                yaml.append("  opentelemetry:\n    resource-attributes:\n      \"[service.version]\": ${spring.application.version}\n");
+                yaml.append("  opentelemetry:\n    resource-attributes:\n      service:\n        version: ${spring.application.version}\n");
                 what.add("service.version on spans and OTLP data");
             }
         }
