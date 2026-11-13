@@ -1,0 +1,105 @@
+diff --git a/src/main/java/com/example/e2e/coupon/CouponRepository.java b/src/main/java/com/example/e2e/coupon/CouponRepository.java
+index 0d60ea5..ca15584 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponRepository.java
++++ b/src/main/java/com/example/e2e/coupon/CouponRepository.java
+@@ -1,12 +1,17 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import java.util.List;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /** JdbcTemplate repository: an update, an upsert through queryForObject, a list read. */
+ @Repository
+ public class CouponRepository {
++    private static final Logger log = LoggerFactory.getLogger(CouponRepository.class);
++
+     private static final String CLOSE = "UPDATE coupons SET closed = true WHERE coupon_id = ?";
+     private static final String COUNT_USE = """
+             INSERT INTO coupon_usage (coupon_id, uses) VALUES (?, 1)
+@@ -20,14 +25,19 @@
+     }
+ 
+     public void close(String couponId) {
+-        jdbcTemplate.update(CLOSE, couponId);
++        int rows = jdbcTemplate.update(CLOSE, couponId);
++        AfterCommit.log(() -> log.debug("Coupons updated [rows={}]", rows)); // logast:wording
+     }
+ 
+     public int countUse(String couponId) {
+-        return jdbcTemplate.queryForObject(COUNT_USE, Integer.class, couponId);
++        int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, couponId);
++        AfterCommit.log(() -> log.info("Coupon usage saved [uses={}]", uses)); // logast:wording
++        return uses;
+     }
+ 
+     public List<String> findOpen() {
+-        return jdbcTemplate.queryForList("SELECT coupon_id FROM coupons WHERE closed = false", String.class);
++        List<String> result = jdbcTemplate.queryForList("SELECT coupon_id FROM coupons WHERE closed = false", String.class);
++        log.debug("Coupons read [count={}]", result.size()); // logast:wording
++        return result;
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
+index db901bd..84cd343 100644
+--- a/src/main/java/com/example/e2e/job/CalculationJob.java
++++ b/src/main/java/com/example/e2e/job/CalculationJob.java
+@@ -12,6 +12,7 @@ 
+ 
+     @Override
+     protected void doExecute() {
++        log.info("Calculation started"); // logast:wording
+         log.info("Calculation done");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 9c7595e..8905b07 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -1,12 +1,18 @@ 
+ package com.example.e2e.job;
+ 
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+ import org.springframework.stereotype.Component;
+ 
+ @Component
+ @Profile("export")
+ public class ExportJob extends TpiJob {
++    private static final Logger log = LoggerFactory.getLogger(ExportJob.class);
++
+     @Override
+     protected void doExecute() {
++        log.info("Export job started"); // logast:wording
++        log.info("Export job completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+index 20a83cc..08f9ee6 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.scheduling.annotation.Scheduled;
+@@ -19,9 +20,12 @@
+     @Scheduled(cron = "0 0 2 * * *")
+     @Transactional
+     public void cleanup() {
+-        for (String couponId : repository.findOpen()) {
++        log.info("Coupon cleanup started"); // logast:wording
++        var couponIds = repository.findOpen();
++        for (String couponId : couponIds) {
+             log.info("Closing stale coupon {}", couponId);
+             repository.close(couponId);
+         }
++        AfterCommit.log(() -> log.info("Coupon cleanup completed [couponCount={}]", couponIds.size())); // logast:wording
+     }
+ }

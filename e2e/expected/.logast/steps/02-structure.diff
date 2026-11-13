@@ -1,0 +1,23 @@
+diff --git a/src/main/java/com/example/e2e/job/TpiJobExecutor.java b/src/main/java/com/example/e2e/job/TpiJobExecutor.java
+index b2e38bd..0819a35 100644
+--- a/src/main/java/com/example/e2e/job/TpiJobExecutor.java
++++ b/src/main/java/com/example/e2e/job/TpiJobExecutor.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.boot.context.event.ApplicationReadyEvent;
+ import org.springframework.context.event.EventListener;
+ import org.springframework.stereotype.Component;
+@@ -14,6 +15,10 @@
+ 
+     @EventListener(ApplicationReadyEvent.class)
+     public void onReady() {
+-        job.execute();
++        ObservedContext.entrypoint("tpi-job-executor.on-ready")
++                .failureLoggedByCaller()
++                .run(() -> {
++                    job.execute();
++                });
+     }
+ }

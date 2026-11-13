@@ -1,0 +1,80 @@
+diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
+index 3bbf835..953f5f0 100644
+--- a/src/main/java/com/example/e2e/order/OrderService.java
++++ b/src/main/java/com/example/e2e/order/OrderService.java
+@@ -15,8 +15,8 @@ 
+     }
+ 
+     public void place(Order order) {
+-        log.info("Placing order {}", order.id());
++        log.info("Placing order");
+         payments.charge(order);
+-        log.info("Order {} placed", order.id());
++        log.info("Order placed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
+index 4441104..fcb1bd0 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponService.java
++++ b/src/main/java/com/example/e2e/coupon/CouponService.java
+@@ -18,17 +18,17 @@ 
+     }
+ 
+     public void publish(String couponId) {
+-        log.info("Publishing coupon {}", couponId);
++        log.info("Publishing coupon");
+         sender.send(couponId);
+         repository.close(couponId);
+-        log.info("Coupon {} published", couponId);
++        log.info("Coupon published");
+     }
+ 
+     public void redeem(RedeemRequest request) {
+         try (var mdc = MdcScope.of("couponId", request.code())) {
+-            log.info("Coupon redemption started [couponId={}]", request.code());
++            log.info("Coupon redemption started");
+             sender.send(request.code());
+-            log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
++            log.info("Coupon redemption completed [tableId={}]", request.tableId());
+         }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponSender.java b/src/main/java/com/example/e2e/coupon/CouponSender.java
+index 1b9add7..0f5a523 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponSender.java
++++ b/src/main/java/com/example/e2e/coupon/CouponSender.java
+@@ -9,7 +9,7 @@ 
+     private static final Logger log = LoggerFactory.getLogger(CouponSender.class);
+ 
+     public void send(String couponId) {
+-        log.debug("Sending coupon {} to the channel", couponId);
+-        log.info("Coupon sent, couponId={}", couponId);
++        log.debug("Sending coupon to the channel");
++        log.info("Coupon sent");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+index 08f9ee6..7704c24 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+@@ -23,7 +23,7 @@ 
+         log.info("Coupon cleanup started"); // logast:wording
+         var couponIds = repository.findOpen();
+         for (String couponId : couponIds) {
+-            log.info("Closing stale coupon {}", couponId);
++            log.info("Closing stale coupon [couponId={}]", couponId);
+             repository.close(couponId);
+         }
+         AfterCommit.log(() -> log.info("Coupon cleanup completed [couponCount={}]", couponIds.size())); // logast:wording
+diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
+index 84cd343..1e94776 100644
+--- a/src/main/java/com/example/e2e/job/CalculationJob.java
++++ b/src/main/java/com/example/e2e/job/CalculationJob.java
+@@ -13,6 +13,6 @@ 
+     @Override
+     protected void doExecute() {
+         log.info("Calculation started"); // logast:wording
+-        log.info("Calculation done");
++        log.info("Calculation completed");
+     }
+ }

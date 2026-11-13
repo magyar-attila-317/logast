@@ -1,0 +1,12 @@
+diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
+index 49305f1..1709e45 100644
+--- a/src/main/java/com/example/e2e/order/PaymentClient.java
++++ b/src/main/java/com/example/e2e/order/PaymentClient.java
+@@ -13,7 +13,6 @@ 
+             log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
+             gateway(order);
+         } catch (IllegalStateException e) {
+-            log.error("Charge failed for order {}", order.id(), e);
+             throw new PaymentException("charge failed", e);
+         }
+     }

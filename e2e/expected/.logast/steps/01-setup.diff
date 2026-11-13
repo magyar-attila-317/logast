@@ -1,0 +1,1162 @@
+diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
+index 6bd81fc..8c19909 100644
+--- a/src/main/resources/application.yml
++++ b/src/main/resources/application.yml
+@@ -1,7 +1,25 @@ 
+ spring:
+   application:
+     name: e2e-shop
++    version: ${APPLICATION_VERSION:unknown}
+ logging:
+   structured:
+     format:
+-      console: ecs
++      console: logstash
++    json:
++      add:
++        service:
++          name: ${spring.application.name}
++          version: ${spring.application.version}
++management:
++  metrics:
++    tags:
++      application: ${spring.application.name}
++      version: ${spring.application.version}
++  opentelemetry:
++    resource-attributes:
++      service:
++        version: ${spring.application.version}
++  tracing:
++    sampling:
++      probability: 1.0
+diff --git a/src/main/java/com/example/e2e/logging/BatchTraceListener.java b/src/main/java/com/example/e2e/logging/BatchTraceListener.java
+new file mode 100644
+index 0000000..09e7354
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/BatchTraceListener.java
+@@ -0,0 +1,95 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import io.micrometer.observation.ObservationRegistry;
++import org.springframework.boot.ApplicationRunner;
++import org.springframework.boot.CommandLineRunner;
++import org.springframework.boot.context.event.ApplicationFailedEvent;
++import org.springframework.boot.context.event.ApplicationReadyEvent;
++import org.springframework.boot.context.event.ApplicationStartedEvent;
++import org.springframework.context.ApplicationEvent;
++import org.springframework.context.ApplicationListener;
++import org.springframework.core.env.Environment;
++
++import java.security.SecureRandom;
++import java.util.HexFormat;
++import java.util.LinkedHashMap;
++import java.util.Map;
++import java.util.regex.Pattern;
++
++/**
++ * Batch jobs: one Observation (span) around all CommandLineRunner/ApplicationRunner beans (only when the
++ * application has any). Spring Boot calls the
++ * runners on the main thread between ApplicationStartedEvent and ApplicationReadyEvent, so no proxies are needed.
++ *
++ * <p>Trace parent, in this order: {@code TRACEPARENT} (+ {@code TRACESTATE}) as defined by the OpenTelemetry
++ * environment-variable carrier spec; {@code TRACE_ID} (32 hex chars) for orchestrators that only know a trace id;
++ * otherwise a new trace is started. Both are read through the Spring Environment, so system properties and
++ * application properties work as well (handy for tests).
++ */
++public final class BatchTraceListener implements ApplicationListener<ApplicationEvent> {
++    private static final Pattern TRACE_ID = Pattern.compile("[0-9a-f]{32}");
++    private static final SecureRandom RANDOM = new SecureRandom();
++
++    private final ObservationRegistry registry;
++    private final Environment environment;
++    private ObservedContext context;
++
++    public BatchTraceListener(ObservationRegistry registry, Environment environment) {
++        this.registry = registry;
++        this.environment = environment;
++    }
++
++    @Override
++    public void onApplicationEvent(ApplicationEvent event) {
++        if (event instanceof ApplicationStartedEvent started && context == null && hasRunners(started)) {
++            String name = environment.getProperty("spring.application.name", "batch");
++            context = ObservedContext.entrypoint("batch.run", registry)
++                    .contextualName(name)
++                    .tag("batch.name", name)
++                    .remoteParent(carrier(environment))
++                    .start();
++        } else if (event instanceof ApplicationReadyEvent && context != null) {
++            finish(null);
++        } else if (event instanceof ApplicationFailedEvent failed && context != null) {
++            finish(failed.getException());
++        }
++    }
++
++    /** Only applications with runners are batch-like; whether spring-web is on the classpath does not matter. */
++    private static boolean hasRunners(ApplicationStartedEvent event) {
++        var ctx = event.getApplicationContext();
++        return ctx.getBeanNamesForType(CommandLineRunner.class).length > 0
++                || ctx.getBeanNamesForType(ApplicationRunner.class).length > 0;
++    }
++
++    private void finish(Throwable error) {
++        ObservedContext c = context;
++        context = null;
++        c.close();
++        if (error != null) {
++            c.error(error);
++        }
++        c.stop();
++    }
++
++    static Map<String, String> carrier(Environment env) {
++        Map<String, String> carrier = new LinkedHashMap<>();
++        String traceparent = env.getProperty("TRACEPARENT");
++        if (traceparent != null && !traceparent.isBlank()) {
++            carrier.put("traceparent", traceparent.trim());
++            String tracestate = env.getProperty("TRACESTATE");
++            if (tracestate != null && !tracestate.isBlank()) {
++                carrier.put("tracestate", tracestate.trim());
++            }
++            return carrier;
++        }
++        String traceId = env.getProperty("TRACE_ID");
++        if (traceId != null && TRACE_ID.matcher(traceId.trim().toLowerCase()).matches()) {
++            byte[] span = new byte[8];
++            RANDOM.nextBytes(span);
++            carrier.put("traceparent", "00-" + traceId.trim().toLowerCase() + "-" + HexFormat.of().formatHex(span) + "-01");
++        }
++        return carrier;
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/ContextExecutors.java b/src/main/java/com/example/e2e/logging/ContextExecutors.java
+new file mode 100644
+index 0000000..5ced6c9
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/ContextExecutors.java
+@@ -0,0 +1,97 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import java.util.Collection;
++import java.util.List;
++import java.util.concurrent.*;
++
++/**
++ * Wraps executors that Spring does not manage so tasks run with the submitter's MDC and trace context:
++ * {@code private final ExecutorService executor = ContextExecutors.wrap(Executors.newFixedThreadPool(2));}
++ */
++public final class ContextExecutors {
++    private ContextExecutors() {
++    }
++
++    public static Executor wrap(Executor delegate) {
++        return command -> delegate.execute(ContextPropagation.wrap(command));
++    }
++
++    public static ExecutorService wrap(ExecutorService delegate) {
++        return new ContextExecutorService<>(delegate);
++    }
++
++    public static ScheduledExecutorService wrap(ScheduledExecutorService delegate) {
++        return new ContextScheduledExecutorService(delegate);
++    }
++
++    private static class ContextExecutorService<E extends ExecutorService> extends AbstractExecutorService {
++        final E delegate;
++
++        ContextExecutorService(E delegate) {
++            this.delegate = delegate;
++        }
++
++        @Override
++        public void execute(Runnable command) {
++            delegate.execute(ContextPropagation.wrap(command));
++        }
++
++        @Override
++        public void shutdown() {
++            delegate.shutdown();
++        }
++
++        @Override
++        public List<Runnable> shutdownNow() {
++            return delegate.shutdownNow();
++        }
++
++        @Override
++        public boolean isShutdown() {
++            return delegate.isShutdown();
++        }
++
++        @Override
++        public boolean isTerminated() {
++            return delegate.isTerminated();
++        }
++
++        @Override
++        public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
++            return delegate.awaitTermination(timeout, unit);
++        }
++
++        @Override
++        public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks) throws InterruptedException {
++            return delegate.invokeAll(tasks.stream().map(ContextPropagation::wrap).toList());
++        }
++    }
++
++    private static final class ContextScheduledExecutorService extends ContextExecutorService<ScheduledExecutorService>
++            implements ScheduledExecutorService {
++        ContextScheduledExecutorService(ScheduledExecutorService delegate) {
++            super(delegate);
++        }
++
++        @Override
++        public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
++            return delegate.schedule(ContextPropagation.wrap(command), delay, unit);
++        }
++
++        @Override
++        public <V> ScheduledFuture<V> schedule(Callable<V> callable, long delay, TimeUnit unit) {
++            return delegate.schedule(ContextPropagation.wrap(callable), delay, unit);
++        }
++
++        @Override
++        public ScheduledFuture<?> scheduleAtFixedRate(Runnable command, long initialDelay, long period, TimeUnit unit) {
++            return delegate.scheduleAtFixedRate(ContextPropagation.wrap(command), initialDelay, period, unit);
++        }
++
++        @Override
++        public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command, long initialDelay, long delay, TimeUnit unit) {
++            return delegate.scheduleWithFixedDelay(ContextPropagation.wrap(command), initialDelay, delay, unit);
++        }
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/ContextPropagation.java b/src/main/java/com/example/e2e/logging/ContextPropagation.java
+new file mode 100644
+index 0000000..7642827
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/ContextPropagation.java
+@@ -0,0 +1,77 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import io.micrometer.context.ContextSnapshot;
++import io.micrometer.context.ContextSnapshotFactory;
++import org.slf4j.MDC;
++
++import java.util.Map;
++import java.util.concurrent.Callable;
++
++/** Captures MDC and registered thread locals (current Observation/span) and restores them in another thread. */
++public final class ContextPropagation {
++    private static final ContextSnapshotFactory FACTORY = ContextSnapshotFactory.builder().build();
++
++    private ContextPropagation() {
++    }
++
++    public static Runnable wrap(Runnable task) {
++        Map<String, String> mdc = MDC.getCopyOfContextMap();
++        ContextSnapshot snapshot = FACTORY.captureAll();
++        return () -> {
++            Map<String, String> previous = MDC.getCopyOfContextMap();
++            try (ContextSnapshot.Scope ignored = snapshot.setThreadLocals()) {
++                restore(mdc);
++                task.run();
++            } finally {
++                MdcHygiene.report("an async task", MdcHygiene.leaked(mdc, MDC.getCopyOfContextMap()));
++                // restore, never clear: with a caller-runs policy this is the caller's own thread and context
++                restore(previous);
++            }
++        };
++    }
++
++    /** Same as {@link #wrap(Runnable)}; a distinct name so lambdas never resolve to the Callable overload. */
++    public static Runnable wrapRunnable(Runnable task) {
++        return wrap(task);
++    }
++
++    /** A callback that runs with the MDC and trace of the thread that registered it (e.g. {@code SseEmitter.onError}). */
++    public static <T> java.util.function.Consumer<T> wrapConsumer(java.util.function.Consumer<T> callback) {
++        java.util.Objects.requireNonNull(callback, "callback");
++        Map<String, String> mdc = MDC.getCopyOfContextMap();
++        ContextSnapshot snapshot = FACTORY.captureAll();
++        return value -> {
++            Map<String, String> previous = MDC.getCopyOfContextMap();
++            try (ContextSnapshot.Scope ignored = snapshot.setThreadLocals()) {
++                restore(mdc);
++                callback.accept(value);
++            } finally {
++                restore(previous);
++            }
++        };
++    }
++
++    public static <T> Callable<T> wrap(Callable<T> task) {
++        Map<String, String> mdc = MDC.getCopyOfContextMap();
++        ContextSnapshot snapshot = FACTORY.captureAll();
++        return () -> {
++            Map<String, String> previous = MDC.getCopyOfContextMap();
++            try (ContextSnapshot.Scope ignored = snapshot.setThreadLocals()) {
++                restore(mdc);
++                return task.call();
++            } finally {
++                MdcHygiene.report("an async task", MdcHygiene.leaked(mdc, MDC.getCopyOfContextMap()));
++                restore(previous);
++            }
++        };
++    }
++
++    private static void restore(Map<String, String> mdc) {
++        if (mdc == null) {
++            MDC.clear();
++        } else {
++            MDC.setContextMap(mdc);
++        }
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java b/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java
+new file mode 100644
+index 0000000..c433a14
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java
+@@ -0,0 +1,29 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import org.springframework.boot.EnvironmentPostProcessor;
++import org.springframework.boot.SpringApplication;
++import org.springframework.core.env.ConfigurableEnvironment;
++import org.springframework.core.env.MapPropertySource;
++
++import java.util.Map;
++
++/**
++ * Lowest-precedence defaults: ECS JSON console logs whose {@code service.name}/{@code service.version} come from
++ * the {@code SERVICE_NAME}/{@code APP_VERSION} environment variables, falling back to {@code spring.application.name}
++ * and {@code spring.application.version}. Anything set in application.yml or the environment wins.
++ */
++public final class LoggingDefaultsEnvironmentPostProcessor implements EnvironmentPostProcessor {
++    static final String SOURCE = "logging-support-defaults";
++
++    @Override
++    public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
++        if (environment.getPropertySources().contains(SOURCE)) {
++            return;
++        }
++        environment.getPropertySources().addLast(new MapPropertySource(SOURCE, Map.of(
++                "logging.structured.format.console", "ecs",
++                "logging.structured.ecs.service.name", "${SERVICE_NAME:${spring.application.name:application}}",
++                "logging.structured.ecs.service.version", "${APP_VERSION:${spring.application.version:unknown}}")));
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java b/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java
+new file mode 100644
+index 0000000..df478fc
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java
+@@ -0,0 +1,38 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import io.micrometer.observation.ObservationRegistry;
++import org.springframework.beans.factory.ObjectProvider;
++import org.springframework.beans.factory.SmartInitializingSingleton;
++import org.springframework.context.annotation.Configuration;
++import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
++import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
++import org.springframework.context.annotation.Bean;
++import org.springframework.core.env.Environment;
++import org.springframework.core.task.TaskDecorator;
++
++/**
++ * Registers the MDC/trace propagating {@link TaskDecorator} (picked up by Spring Boot's task executors, so
++ * {@code @Async} and injected executors keep context), publishes the ObservationRegistry for
++ * {@link ObservedContext}, and traces batch runs.
++ */
++@Configuration(proxyBeanMethods = false)
++public class LoggingSupportAutoConfiguration {
++
++    @Bean
++    @ConditionalOnMissingBean(TaskDecorator.class)
++    public TaskDecorator contextPropagatingTaskDecorator() {
++        return ContextPropagation::wrap;
++    }
++
++    @Bean
++    public SmartInitializingSingleton observationRegistryHolderInitializer(ObjectProvider<ObservationRegistry> registry) {
++        return () -> ObservationRegistryHolder.set(registry.getIfAvailable(() -> ObservationRegistry.NOOP));
++    }
++
++    @Bean
++    @ConditionalOnProperty(name = "logging-support.batch-trace.enabled", matchIfMissing = true)
++    public BatchTraceListener batchTraceListener(ObjectProvider<ObservationRegistry> registry, Environment environment) {
++        return new BatchTraceListener(registry.getIfAvailable(() -> ObservationRegistry.NOOP), environment);
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/MdcHygiene.java b/src/main/java/com/example/e2e/logging/MdcHygiene.java
+new file mode 100644
+index 0000000..a14814d
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/MdcHygiene.java
+@@ -0,0 +1,58 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.util.Map;
++import java.util.Set;
++import java.util.TreeSet;
++import java.util.concurrent.ConcurrentHashMap;
++
++/**
++ * Detects MDC entries that outlive the unit of work that set them. Each distinct leak (boundary + keys) is
++ * logged once at WARN so the culprit can be found without flooding the logs.
++ */
++public final class MdcHygiene {
++    private static final Logger log = LoggerFactory.getLogger(MdcHygiene.class);
++    private static final int MAX_REPORTED = 500;
++    private static final Set<String> REPORTED = ConcurrentHashMap.newKeySet();
++    private static volatile Set<String> ambientKeys = Set.of("traceId", "spanId");
++
++    private MdcHygiene() {
++    }
++
++    /** Keys maintained by tracing; never reported as leaks. */
++    public static void ambientKeys(Set<String> keys) {
++        ambientKeys = Set.copyOf(keys);
++    }
++
++    /** Non-ambient keys present in {@code after} that were not present in {@code before}. */
++    public static Set<String> leaked(Map<String, String> before, Map<String, String> after) {
++        Set<String> out = new TreeSet<>();
++        if (after != null) {
++            for (String key : after.keySet()) {
++                if (!ambientKeys.contains(key) && (before == null || !before.containsKey(key))) {
++                    out.add(key);
++                }
++            }
++        }
++        return out;
++    }
++
++    /** Non-ambient keys in a map that should be empty (e.g. a pooled thread before a new request). */
++    public static Set<String> leftovers(Map<String, String> mdc) {
++        return leaked(null, mdc);
++    }
++
++    public static void report(String boundary, Set<String> keys) {
++        if (keys.isEmpty() || REPORTED.size() >= MAX_REPORTED || !REPORTED.add(boundary + keys)) {
++            return;
++        }
++        log.warn("MDC entries leaked past {} [keys={}]; scope them with MdcScope (try-with-resources)", boundary, keys);
++    }
++
++    static void resetForTests() {
++        REPORTED.clear();
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/MdcScope.java b/src/main/java/com/example/e2e/logging/MdcScope.java
+new file mode 100644
+index 0000000..0c9da99
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/MdcScope.java
+@@ -0,0 +1,74 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import org.slf4j.MDC;
++
++import java.util.ArrayDeque;
++import java.util.Deque;
++
++/**
++ * MDC entries for the duration of a try-with-resources block. Unlike {@code MDC.putCloseable}, closing
++ * restores the value each key had before (instead of removing it), so nested scopes are safe.
++ *
++ * <pre>{@code
++ * try (var mdc = MdcScope.of("order.id", orderId).and("customer.id", customerId)) {
++ *     ...
++ * }
++ * }</pre>
++ * Null values are ignored, so an outer value is never cleared by accident.
++ */
++public final class MdcScope implements AutoCloseable {
++    private final Deque<String[]> previous = new ArrayDeque<>();
++
++    private MdcScope() {
++    }
++
++    public static MdcScope empty() {
++        return new MdcScope();
++    }
++
++    /**
++     * Opens a scope with one or more entries: {@code MdcScope.of("order.id", id, "customer.id", customerId)}.
++     * All values are evaluated by Java before anything touches the MDC, so an exception while computing a value
++     * cannot leave half of the entries behind (which a chained {@code of(..).and(..)} could).
++     */
++    public static MdcScope of(String key, Object value, Object... moreKeyValues) {
++        if (moreKeyValues.length % 2 != 0) {
++            throw new IllegalArgumentException("MdcScope.of expects key/value pairs");
++        }
++        for (int i = 0; i < moreKeyValues.length; i += 2) {
++            if (!(moreKeyValues[i] instanceof String)) {
++                throw new IllegalArgumentException("MdcScope key at position " + (i + 2) + " is not a String");
++            }
++        }
++        MdcScope scope = new MdcScope().and(key, value);
++        for (int i = 0; i < moreKeyValues.length; i += 2) {
++            scope.and((String) moreKeyValues[i], moreKeyValues[i + 1]);
++        }
++        return scope;
++    }
++
++    /**
++     * Adds an entry to an open scope (restored on close). Prefer passing all entries to {@link #of}: in a chain
++     * {@code of(..).and(expr)} a throwing {@code expr} leaves the first entry set with no scope to close it.
++     */
++    public MdcScope and(String key, Object value) {
++        if (value != null) {
++            previous.push(new String[]{key, MDC.get(key)});
++            MDC.put(key, String.valueOf(value));
++        }
++        return this;
++    }
++
++    @Override
++    public void close() {
++        while (!previous.isEmpty()) {
++            String[] entry = previous.pop();
++            if (entry[1] == null) {
++                MDC.remove(entry[0]);
++            } else {
++                MDC.put(entry[0], entry[1]);
++            }
++        }
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java b/src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java
+new file mode 100644
+index 0000000..d8f1916
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java
+@@ -0,0 +1,20 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import io.micrometer.observation.ObservationRegistry;
++
++/** The application's ObservationRegistry for static entry points; a no-op registry until Spring sets it. */
++public final class ObservationRegistryHolder {
++    private static volatile ObservationRegistry registry = ObservationRegistry.NOOP;
++
++    private ObservationRegistryHolder() {
++    }
++
++    public static ObservationRegistry get() {
++        return registry;
++    }
++
++    public static void set(ObservationRegistry r) {
++        registry = r == null ? ObservationRegistry.NOOP : r;
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/ObservedContext.java b/src/main/java/com/example/e2e/logging/ObservedContext.java
+new file mode 100644
+index 0000000..fc69f81
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/ObservedContext.java
+@@ -0,0 +1,305 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import io.micrometer.observation.Observation;
++import io.micrometer.observation.ObservationRegistry;
++import io.micrometer.observation.transport.ReceiverContext;
++
++import java.util.LinkedHashMap;
++import java.util.Map;
++
++/**
++ * An {@link Observation} (and therefore a span/trace) plus MDC entries around a unit of work, usually an
++ * entrypoint that the framework does not observe itself (event listeners, message listeners, batch jobs).
++ *
++ * <pre>{@code
++ * ObservedContext.entrypoint("shipment-listener.on-shipped")
++ *         .mdc("order.id", event.orderId())
++ *         .run(() -> {
++ *             ...
++ *         });
++ * return ObservedContext.entrypoint("order-export").call(() -> exporter.export());   // with a result
++ * }</pre>
++ * The same by hand, for code a lambda does not fit (reassigned parameters, several checked exceptions):
++ * <pre>{@code
++ * ObservedContext observed = ObservedContext.entrypoint("shipment-listener.on-shipped")
++ *         .mdc("order.id", event.orderId())
++ *         .start();
++ * try (observed) {
++ *     ...
++ * } catch (Throwable t) {
++ *     observed.error(t);
++ *     throw t;
++ * } finally {
++ *     observed.stop();
++ * }
++ * }</pre>
++ * {@link #close()} restores MDC and closes the scope; it runs before the catch block, which is why recording the
++ * error and stopping are separate calls (the pattern Micrometer documents for {@code openScope()}).
++ * <p>
++ * {@link #stop()} logs the outcome, with the MDC entries and the trace id of the context (put back for that one
++ * line): {@code "<name> completed [durationMs=12]"} at INFO, or {@code "<name> failed [durationMs=12]"} at ERROR with
++ * the exception passed to {@link #error}. That is the one place the failure is logged with its context: code below
++ * should not log and rethrow. The exception is always rethrown: rollback, retries and dead-letter routing depend on it.
++ * {@code describe("Shipment handling")} sets the subject, {@code debugOnSuccess()} lowers the success line
++ * (per-message listeners), {@code failureLoggedByCaller()} lowers the failure line to DEBUG where the exception goes
++ * back to code that logs it with its own handler (a synchronous event listener), {@code quiet()} turns both off.
++ * MDC values are also attached to the observation as high-cardinality key values (span attributes).
++ */
++public final class ObservedContext implements AutoCloseable {
++    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ObservedContext.class);
++
++    private final Observation observation;
++    private final Observation.Scope scope;
++    private final MdcScope mdc;
++    private final Map<String, Object> mdcEntries;
++    private final String subject;
++    private final Outcome outcome;
++    private final long startNanos = System.nanoTime();
++    private Throwable error;
++    private boolean stopped;
++
++    private enum Outcome { INFO, DEBUG_ON_SUCCESS, QUIET }
++
++    private boolean failureLoggedByCaller;
++
++    private ObservedContext(Observation observation, Observation.Scope scope, MdcScope mdc, Map<String, Object> mdcEntries,
++                            String subject, Outcome outcome) {
++        this.observation = observation;
++        this.scope = scope;
++        this.mdc = mdc;
++        this.mdcEntries = mdcEntries;
++        this.subject = subject;
++        this.outcome = outcome;
++    }
++
++    public static Builder entrypoint(String name) {
++        return new Builder(name, ObservationRegistryHolder.get());
++    }
++
++    public static Builder entrypoint(String name, ObservationRegistry registry) {
++        return new Builder(name, registry);
++    }
++
++    /**
++     * A task that runs in its own new observation (and trace) every time it executes: for periodic work started
++     * with {@code scheduleAtFixedRate}/{@code scheduleWithFixedDelay}, which otherwise logs without any trace.
++     */
++    public static Runnable observed(String name, Runnable task) {
++        java.util.Objects.requireNonNull(task, "task");
++        return () -> {
++            ObservedContext observed = entrypoint(name).start();
++            try (observed) {
++                task.run();
++            } catch (RuntimeException | Error t) {
++                observed.error(t);
++                throw t;
++            } finally {
++                observed.stop();
++            }
++        };
++    }
++
++    /** Adds an MDC entry (restored on close) and a span attribute while the context is open. */
++    public ObservedContext mdc(String key, Object value) {
++        if (value != null) {
++            mdc.and(key, value);
++            mdcEntries.put(key, value);
++            observation.highCardinalityKeyValue(key, String.valueOf(value));
++        }
++        return this;
++    }
++
++    public void error(Throwable t) {
++        error = t;
++        observation.error(t);
++    }
++
++    /** Logs the outcome (see the class comment) and stops the observation; a second call does nothing. */
++    public void stop() {
++        if (stopped) {
++            return;
++        }
++        stopped = true;
++        try {
++            logOutcome();
++        } finally {
++            observation.stop();
++        }
++    }
++
++    private void logOutcome() {
++        boolean failed = error != null;
++        boolean wanted = failed ? (failureLoggedByCaller ? LOG.isDebugEnabled() : LOG.isErrorEnabled())
++                : (outcome == Outcome.INFO ? LOG.isInfoEnabled() : LOG.isDebugEnabled());
++        if (outcome == Outcome.QUIET || !wanted) {
++            return;
++        }
++        long ms = (System.nanoTime() - startNanos) / 1_000_000;
++        // the scope and MDC were closed by close(), before the catch block: put them back for this one line
++        try (Observation.Scope ignored = observation.openScope(); MdcScope m = MdcScope.empty()) {
++            mdcEntries.forEach(m::and);
++            if (failed && failureLoggedByCaller) {
++                LOG.debug("{} failed [durationMs={}]: {}", subject, ms, String.valueOf(error));
++            } else if (failed) {
++                LOG.error("{} failed [durationMs={}]", subject, ms, error);
++            } else if (outcome == Outcome.INFO) {
++                LOG.info("{} completed [durationMs={}]", subject, ms);
++            } else {
++                LOG.debug("{} completed [durationMs={}]", subject, ms);
++            }
++        } catch (RuntimeException e) {
++            // logging the outcome must never replace the work's own result or exception
++        }
++    }
++
++    public Observation observation() {
++        return observation;
++    }
++
++    @Override
++    public void close() {
++        mdc.close();
++        scope.close();
++    }
++
++    /** A body that may throw: checked exceptions pass through {@link Builder#run} unchanged. */
++    @FunctionalInterface
++    public interface Work<E extends Throwable> {
++        void run() throws E;
++    }
++
++    /** A body with a result: checked exceptions pass through {@link Builder#call} unchanged. */
++    @FunctionalInterface
++    public interface Result<T, E extends Throwable> {
++        T call() throws E;
++    }
++
++    public static final class Builder {
++        private final String name;
++        private final ObservationRegistry registry;
++        private final Map<String, Object> mdc = new LinkedHashMap<>();
++        private final Map<String, String> tags = new LinkedHashMap<>();
++        private Map<String, String> carrier;
++        private String contextualName;
++        private String subject;
++        private Outcome outcome = Outcome.INFO;
++
++        private Builder(String name, ObservationRegistry registry) {
++            this.name = name;
++            this.registry = registry == null ? ObservationRegistry.NOOP : registry;
++        }
++
++        public Builder mdc(String key, Object value) {
++            mdc.put(key, value);
++            return this;
++        }
++
++        /** Low-cardinality tag (metric dimension and span attribute). */
++        public Builder tag(String key, String value) {
++            tags.put(key, value);
++            return this;
++        }
++
++        /** The subject of the outcome line: "Shipment handling" → "Shipment handling completed [durationMs=12]". */
++        public Builder describe(String subject) {
++            this.subject = subject;
++            return this;
++        }
++
++        /** Success at DEBUG (failures stay ERROR): for entrypoints that run per message or per request. */
++        public Builder debugOnSuccess() {
++            this.outcome = Outcome.DEBUG_ON_SUCCESS;
++            return this;
++        }
++
++        /**
++         * The failure goes back to code that logs it (a synchronous event listener: the publisher's handler): the
++         * failure line drops to DEBUG, so one failure is one ERROR. It is still recorded on the span and metrics.
++         */
++        public Builder failureLoggedByCaller() {
++            this.failureLoggedByCaller = true;
++            return this;
++        }
++
++        private boolean failureLoggedByCaller;
++
++        /** No outcome lines at all (the code logs its own). */
++        public Builder quiet() {
++            this.outcome = Outcome.QUIET;
++            return this;
++        }
++
++        public Builder contextualName(String contextualName) {
++            this.contextualName = contextualName;
++            return this;
++        }
++
++        /**
++         * Continue a remote trace: {@code carrier} holds W3C headers ({@code traceparent}, {@code tracestate}),
++         * extracted by the tracing bridge. With no usable carrier a new trace is started.
++         */
++        public Builder remoteParent(Map<String, String> carrier) {
++            this.carrier = carrier;
++            return this;
++        }
++
++        /** Starts the context, runs the work, records a failure, stops and logs the outcome. */
++        public <E extends Throwable> void run(Work<E> work) throws E {
++            ObservedContext observed = start();
++            try (observed) {
++                work.run();
++            } catch (Throwable t) {
++                observed.error(t);
++                throw t;
++            } finally {
++                observed.stop();
++            }
++        }
++
++        /** {@link #run} for work with a result. */
++        public <T, E extends Throwable> T call(Result<T, E> work) throws E {
++            ObservedContext observed = start();
++            try (observed) {
++                return work.call();
++            } catch (Throwable t) {
++                observed.error(t);
++                throw t;
++            } finally {
++                observed.stop();
++            }
++        }
++
++        public ObservedContext start() {
++            Observation observation = carrier == null || carrier.isEmpty()
++                    ? Observation.createNotStarted(name, registry)
++                    : Observation.createNotStarted(name, () -> {
++                        ReceiverContext<Map<String, String>> ctx = new ReceiverContext<>((c, key) -> c.get(key));
++                        ctx.setCarrier(carrier);
++                        return ctx;
++                    }, registry);
++            tags.forEach(observation::lowCardinalityKeyValue);
++            if (contextualName != null) {
++                observation.contextualName(contextualName);
++            }
++            mdc.forEach((k, v) -> {
++                if (v != null) {
++                    observation.highCardinalityKeyValue(k, String.valueOf(v));
++                }
++            });
++            observation.start();
++            Observation.Scope scope = observation.openScope();
++            MdcScope m = MdcScope.empty();
++            Map<String, Object> entries = new LinkedHashMap<>();
++            mdc.forEach((k, v) -> {
++                if (v != null) {
++                    m.and(k, v);
++                    entries.put(k, v);
++                }
++            });
++            ObservedContext oc = new ObservedContext(observation, scope, m, entries, subject != null ? subject : name, outcome);
++            oc.failureLoggedByCaller = failureLoggedByCaller;
++            return oc;
++        }
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/TraceContextEnv.java b/src/main/java/com/example/e2e/logging/TraceContextEnv.java
+new file mode 100644
+index 0000000..bf7753e
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/TraceContextEnv.java
+@@ -0,0 +1,34 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import java.util.Map;
++import java.util.function.Supplier;
++
++/**
++ * The current trace context as environment variables, for handing a trace to another process: an orchestrator
++ * starting a Kubernetes job pod or a local process. The receiving side is {@link BatchTraceListener}
++ * ({@code TRACEPARENT} / {@code TRACESTATE}, the OpenTelemetry environment-variable carrier).
++ *
++ * <pre>{@code
++ * processBuilder.environment().putAll(TraceContextEnv.current());
++ * containerBuilder.addAllToEnv(TraceContextEnv.current().entrySet().stream()
++ *         .map(e -> new EnvVar(e.getKey(), e.getValue(), null)).toList());
++ * }</pre>
++ * Empty when there is no current span or no tracer (never null).
++ */
++public final class TraceContextEnv {
++    private static volatile Supplier<Map<String, String>> source = Map::of;
++
++    private TraceContextEnv() {
++    }
++
++    public static Map<String, String> current() {
++        Map<String, String> env = source.get();
++        return env == null ? Map.of() : env;
++    }
++
++    /** Set by {@link TraceContextEnvConfiguration} when Micrometer Tracing is present. */
++    public static void source(Supplier<Map<String, String>> supplier) {
++        source = supplier == null ? Map::of : supplier;
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/MdcHygieneFilter.java b/src/main/java/com/example/e2e/logging/MdcHygieneFilter.java
+new file mode 100644
+index 0000000..87e2cfb
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/MdcHygieneFilter.java
+@@ -0,0 +1,35 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import org.slf4j.MDC;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++import java.io.IOException;
++import java.util.Map;
++
++/**
++ * Outermost filter: every request starts with an empty MDC and leaves an empty MDC behind, whatever the code in
++ * between did. Leftovers from earlier work on the pooled thread and keys the request forgot to remove are reported
++ * once each ({@link MdcHygiene}), so the leak can be fixed at its source.
++ */
++public class MdcHygieneFilter extends OncePerRequestFilter {
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        Map<String, String> before = MDC.getCopyOfContextMap();
++        if (before != null && !before.isEmpty()) {
++            MdcHygiene.report("earlier work on this request thread", MdcHygiene.leftovers(before));
++            MDC.clear();
++        }
++        try {
++            chain.doFilter(request, response);
++        } finally {
++            MdcHygiene.report("an HTTP request", MdcHygiene.leftovers(MDC.getCopyOfContextMap()));
++            MDC.clear();
++        }
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java b/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java
+new file mode 100644
+index 0000000..dbfa1d6
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java
+@@ -0,0 +1,24 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import org.springframework.context.annotation.Configuration;
++import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
++import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
++import org.springframework.boot.web.servlet.FilterRegistrationBean;
++import org.springframework.context.annotation.Bean;
++import org.springframework.core.Ordered;
++
++/** Registers {@link MdcHygieneFilter} before every other filter in servlet applications. */
++@Configuration(proxyBeanMethods = false)
++@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
++@ConditionalOnProperty(name = "logging-support.mdc-hygiene.enabled", matchIfMissing = true)
++public class MdcHygieneConfiguration {
++
++    @Bean
++    public FilterRegistrationBean<MdcHygieneFilter> mdcHygieneFilter() {
++        FilterRegistrationBean<MdcHygieneFilter> registration = new FilterRegistrationBean<>(new MdcHygieneFilter());
++        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
++        registration.setName("mdcHygieneFilter");
++        return registration;
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java b/src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java
+new file mode 100644
+index 0000000..08e5f57
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java
+@@ -0,0 +1,48 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import io.micrometer.tracing.Span;
++import io.micrometer.tracing.Tracer;
++import io.micrometer.tracing.propagation.Propagator;
++import org.springframework.beans.factory.ObjectProvider;
++import org.springframework.beans.factory.SmartInitializingSingleton;
++import org.springframework.context.annotation.Configuration;
++import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
++import org.springframework.context.annotation.Bean;
++
++import java.util.HashMap;
++import java.util.Locale;
++import java.util.Map;
++
++/** Connects {@link TraceContextEnv} to the application's Tracer and Propagator (W3C traceparent by default). */
++@Configuration(proxyBeanMethods = false)
++@ConditionalOnClass(name = "io.micrometer.tracing.Tracer")
++public class TraceContextEnvConfiguration {
++
++    @Bean
++    public SmartInitializingSingleton traceContextEnvInitializer(ObjectProvider<Tracer> tracer, ObjectProvider<Propagator> propagator) {
++        return () -> {
++            Tracer t = tracer.getIfAvailable();
++            Propagator p = propagator.getIfAvailable();
++            if (t == null || p == null) {
++                return;
++            }
++            TraceContextEnv.source(() -> {
++                Span span = t.currentSpan();
++                if (span == null) {
++                    return Map.of();
++                }
++                Map<String, String> headers = new HashMap<>();
++                p.inject(span.context(), headers, Map::put);
++                Map<String, String> env = new HashMap<>();
++                headers.forEach((k, v) -> {
++                    String key = k.toLowerCase(Locale.ROOT);
++                    if (key.equals("traceparent") || key.equals("tracestate")) {
++                        env.put(key.toUpperCase(Locale.ROOT), v);
++                    }
++                });
++                return env;
++            });
++        };
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/AfterCommit.java b/src/main/java/com/example/e2e/logging/AfterCommit.java
+new file mode 100644
+index 0000000..c861522
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/AfterCommit.java
+@@ -0,0 +1,59 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import io.micrometer.observation.Observation;
++import org.slf4j.MDC;
++import org.springframework.transaction.support.TransactionSynchronization;
++import org.springframework.transaction.support.TransactionSynchronizationManager;
++
++import java.util.Map;
++
++/**
++ * A log line about a database change that is written only once the change is real.
++ * <pre>{@code
++ * int rows = jdbcTemplate.update(CLOSE_ITEMS, orderId);
++ * AfterCommit.log(() -> log.info("Order items updated [rows={}]", rows));
++ * }</pre>
++ * Inside a transaction the line waits for the commit and is dropped on rollback (the failure itself is logged where
++ * the exception is handled), so the log never claims a change that was rolled back. Outside a transaction it is
++ * written at once. The MDC entries and the trace of the moment of the call are put back for the line.
++ */
++public final class AfterCommit {
++    private AfterCommit() {
++    }
++
++    public static void log(Runnable line) {
++        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
++            line.run();
++            return;
++        }
++        Map<String, String> mdc = MDC.getCopyOfContextMap();
++        Observation observation = ObservationRegistryHolder.get().getCurrentObservation();
++        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
++            @Override
++            public void afterCommit() {
++                Map<String, String> before = MDC.getCopyOfContextMap();
++                Observation.Scope scope = observation == null ? null : observation.openScope();
++                try {
++                    if (mdc == null) {
++                        MDC.clear();
++                    } else {
++                        MDC.setContextMap(mdc);
++                    }
++                    line.run();
++                } catch (RuntimeException e) {
++                    // a log line must never fail the code that committed
++                } finally {
++                    if (scope != null) {
++                        scope.close();
++                    }
++                    if (before == null) {
++                        MDC.clear();
++                    } else {
++                        MDC.setContextMap(before);
++                    }
++                }
++            }
++        });
++    }
++}
+diff --git a/src/main/java/com/example/e2e/logging/Outcomes.java b/src/main/java/com/example/e2e/logging/Outcomes.java
+new file mode 100644
+index 0000000..29ee90f
+--- /dev/null
++++ b/src/main/java/com/example/e2e/logging/Outcomes.java
+@@ -0,0 +1,40 @@ 
++// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++package com.example.e2e.logging;
++
++import io.micrometer.core.instrument.Counter;
++import io.micrometer.core.instrument.Metrics;
++import io.micrometer.observation.Observation;
++
++import java.util.Map;
++import java.util.concurrent.ConcurrentHashMap;
++
++/**
++ * Counts business outcomes with one line next to the log line that reports them.
++ * <pre>{@code
++ * log.info("Bill request closed");
++ * Outcomes.count("bill.request", "closed");     // counter bill.request{outcome="closed"}
++ * Outcomes.tag("skipped");                      // outcome="skipped" on the timer already running (same thread)
++ * }</pre>
++ * Counters go to Micrometer's global registry, which Spring Boot connects to the application's registry
++ * ({@code management.metrics.use-global-registry}, on by default). Each counter is created once and cached, so the
++ * call is cheap on every request. One meter per subject: its outcomes are values of the {@code outcome} tag.
++ */
++public final class Outcomes {
++    private static final Map<String, Counter> COUNTERS = new ConcurrentHashMap<>();
++
++    private Outcomes() {
++    }
++
++    public static void count(String name, String outcome) {
++        COUNTERS.computeIfAbsent(name + '\u0000' + outcome,
++                k -> Counter.builder(name).tag("outcome", outcome).register(Metrics.globalRegistry)).increment();
++    }
++
++    /** Tags the observation running on this thread (an HTTP request, a job, an ObservedContext); no-op without one. */
++    public static void tag(String outcome) {
++        Observation current = ObservationRegistryHolder.get().getCurrentObservation();
++        if (current != null) {
++            current.lowCardinalityKeyValue("outcome", outcome);
++        }
++    }
++}
+diff --git a/src/main/resources/META-INF/spring.factories b/src/main/resources/META-INF/spring.factories
+new file mode 100644
+index 0000000..48366c8
+--- /dev/null
++++ b/src/main/resources/META-INF/spring.factories
+@@ -0,0 +1,2 @@ 
++org.springframework.boot.EnvironmentPostProcessor=\
++  com.example.e2e.logging.LoggingDefaultsEnvironmentPostProcessor

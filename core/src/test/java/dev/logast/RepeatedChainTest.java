@@ -209,4 +209,70 @@ class RepeatedChainTest {
                 .flatMap(o -> o.edits().stream()).map(e -> e.text()).toList());
         assertThat(edits).contains("\"Coupon publication started\"", "\"Coupon publication completed\"").doesNotContain("couponId={}");
     }
+
+    private static ScanResult scanStatic(Path dir, String method3Body) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  coupon: { mdc: { key: couponId, sources: { params: [couponId] } } }
+                """);
+        Files.writeString(src.resolve("Coupons.java"), """
+                package x;
+
+                import java.util.List;
+                import dev.logast.support.MdcScope;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public class Coupons {
+                    private static final Logger log = LoggerFactory.getLogger(Coupons.class);
+
+                    public static Object method(String couponId) {
+                        log.info("Checking coupon [couponId={}]", couponId);
+                        log.info("Coupon accepted [couponId={}]", couponId);
+                        return method2();
+                    }
+
+                    private static Object method2() {
+                        for (String x : List.of("a", "b")) {
+                            method3();
+                        }
+                        return "ok";
+                    }
+
+                    private static Object method3() {
+                """ + method3Body + """
+                    }
+
+                    private static String current() {
+                        return "c-1";
+                    }
+                }
+                """);
+        return Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+    }
+
+    @Test
+    void aScopeTwoCallsUpCoversTheMethodBelow(@TempDir Path dir) throws Exception {
+        ScanResult r = scanStatic(dir, """
+                        String couponId = current();
+                        log.info("Coupon matched [couponId={}]", couponId);
+                        log.info("Coupon recorded [couponId={}]", couponId);
+                        return "result";
+                """);
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .containsExactly("Coupons.method");
+    }
+
+    @Test
+    void noScopeAboveAMethodThatSetsTheKeyItself(@TempDir Path dir) throws Exception {
+        ScanResult r = scanStatic(dir, """
+                        try (var mdc = MdcScope.of("couponId", current())) {
+                            log.info("Coupon matched");
+                            return "result";
+                        }
+                """);
+        assertThat(r.orders()).noneMatch(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE));
+    }
 }
