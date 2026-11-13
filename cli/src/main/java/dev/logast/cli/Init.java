@@ -61,13 +61,17 @@ final class Init implements Callable<Integer> {
             Out.kept("logast.yaml", "already there, kept (--force writes a fresh one)");
         } else {
             // first without vocabulary, so the harvest can leave out what the extended company layers already define
-            String style = keyStyle == null ? null : dev.logast.policy.KeyStyle.parse(keyStyle).toString();
+            // the key style: given, else the one the code already uses most, else the default (camel); always written out
+            dev.logast.policy.KeyStyle detected = keyStyle == null ? VocabularyHarvest.detectStyle(r) : null;
+            String style = keyStyle != null ? dev.logast.policy.KeyStyle.parse(keyStyle).toString()
+                    : (detected != null ? detected : dev.logast.policy.KeyStyle.CAMEL).toString();
             String mode = support == null ? null : new dev.logast.policy.Policy.Support(null, null, support, null).mode();
             Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, null));
             VocabularyHarvest.Result h = VocabularyHarvest.run(r, Logast.policy(r, null), 3);
             Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, VocabularyHarvest.yaml(h)));
-            Out.step("logast.yaml", "your settings: which checks run, key style, and " + h.terms().size()
-                    + " business terms found in the code (review them)");
+            Out.step("logast.yaml", "your settings: which checks run, key style " + style
+                    + (keyStyle != null ? "" : detected != null ? " (what the code uses most)" : " (default)") + ", and "
+                    + h.terms().size() + " business terms found in the code (review them)");
         }
 
         List<String> added = ServiceSetup.updateGitignore(r);

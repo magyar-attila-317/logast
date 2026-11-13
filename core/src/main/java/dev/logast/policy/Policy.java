@@ -227,13 +227,14 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param protectedMessages regexes of messages that alerts or dashboards depend on: never reworded or reformatted,
      *                          only reported (expand-contract: add a stable event field first, change the text later)
      * @param vagueMessages     regexes of avoid-listed wording (MESSAGE_VAGUE), matched case-insensitively on the text
+     * @param structuredFormat  JSON console format written to application.yml: ecs (default), logstash, gelf; none = leave it
      */
     public record Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
                           Boolean rewriteExistingMessages, String keyStyle, List<String> protectedMessages,
-                          List<String> vagueMessages) {
+                          List<String> vagueMessages, String structuredFormat) {
         public Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
                        Boolean rewriteExistingMessages, String keyStyle) {
-            this(loggerName, swallowedLevel, entryLevel, minEntrypointLevel, rewriteExistingMessages, keyStyle, null, null);
+            this(loggerName, swallowedLevel, entryLevel, minEntrypointLevel, rewriteExistingMessages, keyStyle, null, null, null);
         }
 
         public boolean protectedMessage(String text) {
@@ -243,6 +244,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         public Logging {
             protectedMessages = protectedMessages == null ? List.of() : List.copyOf(protectedMessages);
             vagueMessages = vagueMessages == null ? List.of() : List.copyOf(vagueMessages);
+            structuredFormat = structuredFormat == null ? "ecs" : structuredFormat.toLowerCase(Locale.ROOT);
             keyStyle = KeyStyle.parse(keyStyle).toString();   // fails fast on an unknown style
             rewriteExistingMessages = rewriteExistingMessages == null || rewriteExistingMessages;
             loggerName = loggerName == null ? "log" : loggerName;

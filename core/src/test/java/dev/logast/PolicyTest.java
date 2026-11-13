@@ -62,7 +62,8 @@ class PolicyTest {
         assertThat(p.logging().swallowedLevel()).isEqualTo("warn");
         assertThat(p.overrides()).anyMatch(o -> o.contains("overrides vocabulary.ticket"))
                 .anyMatch(o -> o.contains("logging.swallowedLevel") && o.contains("company.yaml"));
-        assertThat(p.mdcAliases()).containsEntry("orderId", "order.id");
+        // default keyStyle camel: the company layer's "order.id" is used as orderId, its spelling becomes an alias
+        assertThat(p.mdcAliases()).containsEntry("order.id", "orderId");
         assertThat(p.synonyms(null)).containsEntry("purchase", "order").containsEntry("check", "order");
         assertThat(p.synonyms("kds")).containsEntry("order", "ticket");                 // area meaning wins
         assertThat(p.areaOf("com.x.kitchen.KdsService")).isEqualTo("kds");

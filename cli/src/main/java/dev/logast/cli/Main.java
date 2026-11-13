@@ -281,7 +281,7 @@ public final class Main {
                 next.add(new String[]{"logast apply . " + (auto ? "--auto " : "") + (fills != null ? "--fills " + fills + " " : "") + "--write",
                         "make these changes"});
             }
-            if (write && r.applied().stream().anyMatch(id -> id.startsWith("SUP-") || id.startsWith("OTL-"))) {
+            if (write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith("build.gradle") || fn.endsWith("build.gradle.kts"))) {
                 next.add(new String[]{"logast classpath .", "dependencies changed: refresh the classpath file"});
             }
             if (write) {

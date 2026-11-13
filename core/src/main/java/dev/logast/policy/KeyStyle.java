@@ -10,7 +10,7 @@ public enum KeyStyle {
 
     public static KeyStyle parse(String s) {
         if (s == null) {
-            return DOTTED;
+            return CAMEL;   // orderId: Java naming, and no "order" object vs "order.id" field conflict in Elasticsearch
         }
         return switch (s.toLowerCase(Locale.ROOT).replaceAll("[\\s_.\\-]", "")) {
             case "dotted", "dot", "dotcase" -> DOTTED;

@@ -215,7 +215,7 @@ final class CoverageRules {
         }
         String loopVar = loop.getControl().getVariable() instanceof J.VariableDeclarations vd
                 ? vd.getVariables().getFirst().getSimpleName() : "item";
-        String var = EntrypointRules.unique(DomainValues.singular(loopVar) + "s", ctx.vars(m, Pos.start(loop)).keySet());
+        String var = EntrypointRules.unique(DomainValues.singular(loopVar) + "s", ctx.taken(m, Pos.start(loop)));
         String text = f.text();
         int lineStart = Text.lineStart(text, Pos.start(loop));
         b.edit(Edit.insert(f.relPath(), lineStart, Text.indentAt(text, Pos.start(loop)) + "var " + var + " = " + src(f, it) + ";\n"));
@@ -236,7 +236,7 @@ final class CoverageRules {
         if (e instanceof J.Identifier id) {
             var = id.getSimpleName();
         } else {
-            var = EntrypointRules.unique("result", ctx.vars(m, Pos.start(ret)).keySet());
+            var = EntrypointRules.unique("result", ctx.taken(m, Pos.start(ret)));
             prefix = indent + "var " + var + " = " + src(f, e) + ";\n";
         }
         String[] value = resultValue(e, var);
