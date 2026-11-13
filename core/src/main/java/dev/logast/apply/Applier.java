@@ -41,7 +41,8 @@ public final class Applier {
                          List<String> changedFiles, String diff, int rounds,
                          @com.fasterxml.jackson.annotation.JsonIgnore ScanResult before,
                          @com.fasterxml.jackson.annotation.JsonIgnore ScanResult after,
-                         List<String> violations) {
+                         List<String> violations,
+                         @com.fasterxml.jackson.annotation.JsonIgnore Map<String, String> stepDiffs) {
     }
 
     private final Function<Path, ScanResult> scanner;
@@ -49,6 +50,14 @@ public final class Applier {
     private java.util.function.Consumer<String> progress = s -> {
     };
     private java.util.function.BiFunction<Path, List<String>, List<String>> invariants = (work, files) -> List.of();
+
+    private Rules.Step until;
+
+    /** Stop after this pipeline step (null: run all), e.g. only setup and new lines first. */
+    public Applier until(Rules.Step step) {
+        this.until = step;
+        return this;
+    }
 
     /** Properties the changed files must have (Invariants): checked on the scratch copy before anything is written. */
     public Applier onInvariants(java.util.function.BiFunction<Path, List<String>, List<String>> check) {
@@ -93,7 +102,12 @@ public final class Applier {
         boolean first = true;
         Set<String> carried = new LinkedHashSet<>();
         // the pipeline (docs/pipeline-plan.md): each step works on what the previous steps really produced
+        Map<String, String> stepDiffs = new LinkedHashMap<>();
         for (Rules.Step step : Rules.Step.values()) {
+            if (until != null && step.ordinal() > until.ordinal()) {
+                break;
+            }
+            Map<String, String> beforeStep = new LinkedHashMap<>();   // content of each file before this step touched it
             Set<String> pending = new LinkedHashSet<>(carried);
             carried.clear();
             select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied), step, first);
@@ -161,6 +175,12 @@ public final class Applier {
                 }
                 progress.accept(name + ", round " + stepRounds + ": applying " + plural(acceptedIds.size(), "fix") + " to "
                         + plural((int) accepted.stream().map(Edit::file).distinct().count(), "file") + " (" + applied.size() + " done so far)");
+                for (Edit e : accepted) {
+                    if (!beforeStep.containsKey(e.file())) {   // null = the step creates the file
+                        Path p = work.resolve(e.file());
+                        beforeStep.put(e.file(), Files.exists(p) ? text(bytes(p)) : null);
+                    }
+                }
                 List<String> broken = applyEdits(work, accepted);
                 for (String id : acceptedIds) {
                     WorkOrder o = byId.get(id);
@@ -179,6 +199,10 @@ public final class Applier {
             }
             int rounds = stepRounds;
             pending.forEach(id -> rejected.put(id, "could not be applied without conflicts after " + rounds + " rounds; rescan and retry"));
+            String d = diffOf(work, beforeStep);
+            if (!d.isEmpty()) {
+                stepDiffs.put(name, d);
+            }
         }
         carried.forEach(id -> rejected.put(id, "waits for a fix that was not applied"));
 
@@ -191,7 +215,7 @@ public final class Applier {
         if (write) {
             copyBack(root, work, changed);
         }
-        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations);
+        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs);
     }
 
     private static void select(ScanResult scan, Selection sel, Set<String> pending, Set<String> everSelected,
@@ -380,6 +404,24 @@ public final class Applier {
                 diff.append(d.getDiff());
             }
         }
+    }
+
+    /** Unified diff of the files a step touched: their content before the step against their content now. */
+    private static String diffOf(Path work, Map<String, String> before) {
+        StringBuilder sb = new StringBuilder();
+        for (var e : before.entrySet()) {
+            Path p = work.resolve(e.getKey());
+            String now = Files.exists(p) ? text(bytes(p)) : null;
+            if (Objects.equals(now, e.getValue())) {
+                continue;
+            }
+            Path rel = Path.of(e.getKey());
+            try (InMemoryDiffEntry d = new InMemoryDiffEntry(e.getValue() == null ? null : rel, now == null ? null : rel, null,
+                    e.getValue() == null ? "" : e.getValue(), now == null ? "" : now, Set.of())) {
+                sb.append(d.getDiff());
+            }
+        }
+        return sb.toString();
     }
 
     private static byte[] bytes(Path p) {

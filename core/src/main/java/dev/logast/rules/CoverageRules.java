@@ -138,6 +138,45 @@ final class CoverageRules {
                 .anyMatch(x -> x.facts().logs.stream().anyMatch(l -> l.level().compareTo(Level.INFO) >= 0));
     }
 
+    /**
+     * Lifecycle lines recognised by their role, not their words: an INFO+ log that is the first statement of the
+     * method's (innermost) body is its "started" line; one that is the last statement, also inside
+     * {@code AfterCommit.log(() -> ...)}, is its "completed" line. A person may reword a generated line freely; the
+     * rule that added it still sees it there and does not add another.
+     */
+    static Set<String> roles(MethodInfo m) {
+        Set<String> out = new HashSet<>();
+        if (m.decl().getBody() == null) {
+            return out;
+        }
+        List<Statement> stmts = innermost(m.decl().getBody()).getStatements();
+        if (stmts.size() < 2) {
+            return out;   // a lone line is first and last at once: its wording decides
+        }
+        if (infoLogIn(m, stmts.getFirst())) {
+            out.add("started");
+        }
+        Statement last = stmts.getLast();
+        if (last instanceof J.Return && stmts.size() > 1) {
+            last = stmts.get(stmts.size() - 2);   // the line before the final return
+        }
+        if (last != stmts.getFirst() && infoLogIn(m, last)) {
+            out.add("completed");
+        }
+        return out;
+    }
+
+    /** The statement is an INFO+ log call (directly, or the line inside an AfterCommit.log lambda), not in a catch. */
+    private static boolean infoLogIn(MethodInfo m, Statement s) {
+        if (!(s instanceof J.MethodInvocation)) {
+            return false;
+        }
+        int from = Pos.start(s);
+        int to = Pos.end(s);
+        return m.facts().logs.stream().anyMatch(lc -> lc.inCatch() == null && lc.level().compareTo(Level.INFO) >= 0
+                && Pos.start(lc.call()) >= from && Pos.end(lc.call()) <= to);
+    }
+
     private String event(LogCall lc) {
         String text = MessageTemplate.text(lc.template());
         if (text == null) {
@@ -154,9 +193,11 @@ final class CoverageRules {
         List<LogCall> logs = m.facts().logs;
         // a run (schedule, batch) gets started + outcome; a message (Kafka, events, ...) only its outcome: half the volume
         boolean run = ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH;
-        boolean started = !run || logs.stream().anyMatch(l -> "started".equals(event(l)) && l.level().compareTo(Level.INFO) >= 0);
-        boolean outcome = logs.stream().anyMatch(l -> event(l) != null && Set.of("completed", "failed", "skipped").contains(event(l))
-                && l.level().compareTo(Level.INFO) >= 0);
+        Set<String> roles = roles(m);
+        boolean started = !run || roles.contains("started")
+                || logs.stream().anyMatch(l -> "started".equals(event(l)) && l.level().compareTo(Level.INFO) >= 0);
+        boolean outcome = roles.contains("completed") || logs.stream().anyMatch(l -> event(l) != null
+                && Set.of("completed", "failed", "skipped").contains(event(l)) && l.level().compareTo(Level.INFO) >= 0);
         count("jobs", started && outcome);
         boolean silentPlanned = ctx.silentPlanned.contains(m.key());   // ENTRYPOINT_SILENT adds the start line itself
         // an ObservedContext wrapper (existing or planned) logs the outcome itself: completed/failed with duration
@@ -330,7 +371,7 @@ final class CoverageRules {
     }
 
     /** Inside the scopes logast wraps entrypoints in (MdcScope / ObservedContext), so the line keeps the context. */
-    private static J.Block innermost(J.Block block) {
+    static J.Block innermost(J.Block block) {
         while (true) {
             List<Statement> s = block.getStatements();
             if (s.size() == 1 && s.getFirst() instanceof J.Try t && t.getResources() != null) {

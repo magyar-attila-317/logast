@@ -1,0 +1,105 @@
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+index 0d60ea5..ca15584 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+@@ -1,12 +1,17 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import java.util.List;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /** JdbcTemplate repository: an update, an upsert through queryForObject, a list read. */
+ @Repository
+ public class PledgeRepository {
++    private static final Logger log = LoggerFactory.getLogger(PledgeRepository.class);
++
+     private static final String CLOSE = "UPDATE pledges SET closed = true WHERE pledge_id = ?";
+     private static final String COUNT_USE = """
+             INSERT INTO pledge_usage (pledge_id, uses) VALUES (?, 1)
+@@ -20,14 +25,19 @@
+     }
+ 
+     public void close(String pledgeId) {
+-        jdbcTemplate.update(CLOSE, pledgeId);
++        int rows = jdbcTemplate.update(CLOSE, pledgeId);
++        AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
+     }
+ 
+     public int countUse(String pledgeId) {
+-        return jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
++        int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
++        AfterCommit.log(() -> log.info("Pledge usage saved [uses={}]", uses)); // logast:wording
++        return uses;
+     }
+ 
+     public List<String> findOpen() {
+-        return jdbcTemplate.queryForList("SELECT pledge_id FROM pledges WHERE closed = false", String.class);
++        List<String> result = jdbcTemplate.queryForList("SELECT pledge_id FROM pledges WHERE closed = false", String.class);
++        log.debug("Pledges read [count={}]", result.size()); // logast:wording
++        return result;
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
+index db901bd..84cd343 100644
+--- a/src/main/java/com/example/e2e/job/TallyJob.java
++++ b/src/main/java/com/example/e2e/job/TallyJob.java
+@@ -12,6 +12,7 @@ 
+ 
+     @Override
+     protected void doExecute() {
++        log.info("Tally started"); // logast:wording
+         log.info("Tally done");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 9c7595e..8905b07 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -1,12 +1,18 @@ 
+ package com.example.e2e.job;
+ 
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+ import org.springframework.stereotype.Component;
+ 
+ @Component
+ @Profile("export")
+ public class ExportJob extends SettlementJob {
++    private static final Logger log = LoggerFactory.getLogger(ExportJob.class);
++
+     @Override
+     protected void doExecute() {
++        log.info("Export job started"); // logast:wording
++        log.info("Export job completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+index 20a83cc..08f9ee6 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.scheduling.annotation.Scheduled;
+@@ -19,9 +20,12 @@
+     @Scheduled(cron = "0 0 2 * * *")
+     @Transactional
+     public void cleanup() {
+-        for (String pledgeId : repository.findOpen()) {
++        log.info("Pledge cleanup started"); // logast:wording
++        var pledgeIds = repository.findOpen();
++        for (String pledgeId : pledgeIds) {
+             log.info("Closing stale pledge {}", pledgeId);
+             repository.close(pledgeId);
+         }
++        AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
+     }
+ }

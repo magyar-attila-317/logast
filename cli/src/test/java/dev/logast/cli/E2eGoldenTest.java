@@ -107,6 +107,24 @@ class E2eGoldenTest {
         compile(app);
     }
 
+    /** A person rewrites a generated line in the code, in their own words: logast must not add another one. */
+    @Test
+    void freelyRewordedLifecycleLinesAreRecognisedByTheirRole() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        Path job = app.resolve("src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java");
+        String text = Files.readString(job);
+        assertThat(text).contains("\"Pledge cleanup started\"", "\"Pledge cleanup completed [pledgeCount={}]\"");
+        Files.writeString(job, text.replace("\"Pledge cleanup started\"", "\"Nightly sweep begins\"")
+                .replace("\"Pledge cleanup completed [pledgeCount={}]\"", "\"Nightly sweep done, closed {} pledges\""));
+
+        run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        String after = Files.readString(job);
+        assertThat(after).doesNotContain("Pledge cleanup started").doesNotContain("Pledge cleanup completed");
+        assertThat(after.split("log\\.info\\(", -1).length - 1).as(after).isEqualTo(2);   // still one start, one end
+    }
+
     /** Runs the CLI in-process; stdout with the temp path, timings and colours normalised. */
     private static String run(Path app, String... args) {
         PrintStream out = System.out;

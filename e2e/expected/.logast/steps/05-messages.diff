@@ -1,0 +1,80 @@
+diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
+index 3bbf835..953f5f0 100644
+--- a/src/main/java/com/example/e2e/order/OrderService.java
++++ b/src/main/java/com/example/e2e/order/OrderService.java
+@@ -15,8 +15,8 @@ 
+     }
+ 
+     public void place(Order order) {
+-        log.info("Placing order {}", order.id());
++        log.info("Placing order");
+         payments.charge(order);
+-        log.info("Order {} placed", order.id());
++        log.info("Order placed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeService.java b/src/main/java/com/example/e2e/pledge/PledgeService.java
+index 4441104..fcb1bd0 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeService.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeService.java
+@@ -18,17 +18,17 @@ 
+     }
+ 
+     public void publish(String pledgeId) {
+-        log.info("Publishing pledge {}", pledgeId);
++        log.info("Publishing pledge");
+         sender.send(pledgeId);
+         repository.close(pledgeId);
+-        log.info("Pledge {} published", pledgeId);
++        log.info("Pledge published");
+     }
+ 
+     public void allot(AllotRequest request) {
+         try (var mdc = MdcScope.of("pledgeId", request.code())) {
+-            log.info("Pledge allotment started [pledgeId={}]", request.code());
++            log.info("Pledge allotment started");
+             sender.send(request.code());
+-            log.info("Pledge allotment completed [pledgeId={}, tableId={}]", request.code(), request.tableId());
++            log.info("Pledge allotment completed [tableId={}]", request.tableId());
+         }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+index 1b9add7..0f5a523 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+@@ -9,7 +9,7 @@ 
+     private static final Logger log = LoggerFactory.getLogger(PledgeSender.class);
+ 
+     public void send(String pledgeId) {
+-        log.debug("Sending pledge {} to the channel", pledgeId);
+-        log.info("Pledge sent, pledgeId={}", pledgeId);
++        log.debug("Sending pledge to the channel");
++        log.info("Pledge sent");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+index 08f9ee6..7704c24 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+@@ -23,7 +23,7 @@ 
+         log.info("Pledge cleanup started"); // logast:wording
+         var pledgeIds = repository.findOpen();
+         for (String pledgeId : pledgeIds) {
+-            log.info("Closing stale pledge {}", pledgeId);
++            log.info("Closing stale pledge [pledgeId={}]", pledgeId);
+             repository.close(pledgeId);
+         }
+         AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
+diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
+index 84cd343..1e94776 100644
+--- a/src/main/java/com/example/e2e/job/TallyJob.java
++++ b/src/main/java/com/example/e2e/job/TallyJob.java
+@@ -13,6 +13,6 @@ 
+     @Override
+     protected void doExecute() {
+         log.info("Tally started"); // logast:wording
+-        log.info("Tally done");
++        log.info("Tally completed");
+     }
+ }

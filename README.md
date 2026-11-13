@@ -217,6 +217,13 @@ Next steps
   5. logast scan . --format summary                      24 findings are decisions for a person (AUDIT_MISSING 2, …); each says what to decide
   6. logast verify .                                     build and run the tests with log capture
 ```
+`apply` runs in steps (setup, structure, lines, MDC, messages, exceptions, levels, reports), each on the result of
+the previous one, and saves one diff per step in `.logast/steps/` (`01-setup.diff`, `02-structure.diff`, ...). They
+apply in order with `git apply`, so a whole kind of change can be reviewed on its own, or dropped: later steps build
+on earlier ones, so drop from the end, or rerun with `--until lines` (stop after a step). Every run also checks its
+result before writing (no key both in MDC and in a message, no nested scope, one started/completed per method) and
+prints `CHECK FAILED file:line` if something breaks that.
+
 Fill the files, run `logast apply . --auto --write` again, repeat until the list is empty. `logast scan .` shows the
 same list without changing anything; `logast apply . --auto` (no `--write`) previews the diff.
 

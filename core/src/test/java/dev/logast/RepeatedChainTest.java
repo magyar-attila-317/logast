@@ -209,4 +209,70 @@ class RepeatedChainTest {
                 .flatMap(o -> o.edits().stream()).map(e -> e.text()).toList());
         assertThat(edits).contains("\"Pledge publication started\"", "\"Pledge publication completed\"").doesNotContain("pledgeId={}");
     }
+
+    private static ScanResult scanStatic(Path dir, String method3Body) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  pledge: { mdc: { key: pledgeId, sources: { params: [pledgeId] } } }
+                """);
+        Files.writeString(src.resolve("Pledges.java"), """
+                package x;
+
+                import java.util.List;
+                import dev.logast.support.MdcScope;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public class Pledges {
+                    private static final Logger log = LoggerFactory.getLogger(Pledges.class);
+
+                    public static Object method(String pledgeId) {
+                        log.info("Checking pledge [pledgeId={}]", pledgeId);
+                        log.info("Pledge accepted [pledgeId={}]", pledgeId);
+                        return method2();
+                    }
+
+                    private static Object method2() {
+                        for (String x : List.of("a", "b")) {
+                            method3();
+                        }
+                        return "ok";
+                    }
+
+                    private static Object method3() {
+                """ + method3Body + """
+                    }
+
+                    private static String current() {
+                        return "c-1";
+                    }
+                }
+                """);
+        return Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+    }
+
+    @Test
+    void aScopeTwoCallsUpCoversTheMethodBelow(@TempDir Path dir) throws Exception {
+        ScanResult r = scanStatic(dir, """
+                        String pledgeId = current();
+                        log.info("Pledge matched [pledgeId={}]", pledgeId);
+                        log.info("Pledge recorded [pledgeId={}]", pledgeId);
+                        return "result";
+                """);
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .containsExactly("Pledges.method");
+    }
+
+    @Test
+    void noScopeAboveAMethodThatSetsTheKeyItself(@TempDir Path dir) throws Exception {
+        ScanResult r = scanStatic(dir, """
+                        try (var mdc = MdcScope.of("pledgeId", current())) {
+                            log.info("Pledge matched");
+                            return "result";
+                        }
+                """);
+        assertThat(r.orders()).noneMatch(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE));
+    }
 }
