@@ -59,13 +59,30 @@ final class EventMetricRules {
         }
         for (var entry : candidates.entrySet()) {
             MethodInfo m = ctx.a.index.method(entry.getKey());
-            boolean insideObservation = ctx.a.graph.in(m).stream().map(CallGraph.Edge::from).anyMatch(caller ->
-                    candidates.containsKey(caller.key()) || timed.contains(caller.key())
-                            || ctx.wrappedMethods.contains(caller.key()) || caller.decl().getBody() != null && measured(caller));
-            if (!insideObservation) {
+            if (!insideObservation(m, candidates, timed, 0, new HashSet<>())) {
                 emit(m, entry.getValue());
             }
         }
+    }
+
+    /**
+     * Called (up to {@link EntrypointRules#OWN_FLOW_DEPTH} levels up) by a method that is observed or will be: its
+     * timer already covers this work. E.g. listener (observed) → job.execute() → doExecute() overrides: one timer for
+     * the run, not a nested one for whichever implementation happens to log a lifecycle.
+     */
+    private boolean insideObservation(MethodInfo m, Map<String, Event> candidates, Set<String> timed, int depth, Set<String> seen) {
+        if (depth >= EntrypointRules.OWN_FLOW_DEPTH || !seen.add(m.key())) {
+            return false;
+        }
+        for (CallGraph.Edge e : ctx.a.graph.in(m)) {
+            MethodInfo caller = e.from();
+            if (candidates.containsKey(caller.key()) || timed.contains(caller.key()) || ctx.wrappedMethods.contains(caller.key())
+                    || caller.decl().getBody() != null && measured(caller)
+                    || insideObservation(caller, candidates, timed, depth + 1, seen)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The business event a method logs: its subject and the first lifecycle log line. */

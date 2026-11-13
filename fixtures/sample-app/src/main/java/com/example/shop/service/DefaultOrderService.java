@@ -31,7 +31,7 @@ public class DefaultOrderService implements OrderService {
     }
 
     @Override
-    public Order place(CreateOrderRequest request) {
+    public Order place(CreateOrderRequest request) { // expect: REPEATED_LOG_VALUE
         Order order = new Order(UUID.randomUUID().toString(), request.customerId(), request.email(), request.lines());
         request.lines().forEach(this::validateLine);
         long amount = priceCalculator.total(order.lines());
