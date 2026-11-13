@@ -391,7 +391,7 @@ public Invoice cancel(String invoiceId) {
   Write or read is told from the SQL (an upsert through `queryForObject` is a write). Writes: INFO, written only
   once the transaction commits (`AfterCommit`), so a rolled-back change is never announced. Reads: INFO when only
   low-frequency paths reach them (jobs, startup, or a `traffic.yaml` rate within `levels.volumeBudget`), DEBUG
-  otherwise; a list read also gets a WARN above `levels.largeResult` rows (10,000). Called inside a loop: DEBUG.
+  otherwise. Called inside a loop: DEBUG.
   The wording comes from the table name; `// logast:wording` marks it, and `fills.json` asks for a better one
   (MESSAGE_SUGGESTED). Sequences and DDL are left alone.
 - **Batch summaries**: a loop on a job path that does I/O per item (repository, HTTP, messaging). Loops over a call

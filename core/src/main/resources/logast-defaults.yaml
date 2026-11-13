@@ -67,8 +67,6 @@ levels:
   # never: always DEBUG unless known small. always: no loop checks.
   infoInLoops: size
   boundedLoopMax: 20
-  # A database read returning more rows than this gets a WARN line (DB_OUTCOME_UNLOGGED). 0 = no check.
-  largeResult: 10000
 
 metrics:
   events: true                     # business events (lifecycle log messages) without a metric get an Observation
