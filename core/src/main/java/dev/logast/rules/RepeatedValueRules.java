@@ -306,7 +306,10 @@ public final class RepeatedValueRules {
             if (!seen.add(callee.key())) {
                 continue;
             }
-            if (callee.facts().mdc.stream().anyMatch(op -> key.equals(op.key()) || key.equals(ctx.policy.mdcAliases().get(op.key())))
+            // an old-style MDC.put below blocks a scope here; a scope below does not: once this one is in, the one below
+            // has the key on entry and MDC_NESTED_KEY unwraps it (the scope moves up)
+            if (callee.facts().mdc.stream().anyMatch(op -> op.kind() != MdcOp.Kind.PUT_CLOSEABLE
+                    && (key.equals(op.key()) || key.equals(ctx.policy.mdcAliases().get(op.key()))))
                     || setBelow(callee, key, depth + 1, seen)) {
                 return true;
             }

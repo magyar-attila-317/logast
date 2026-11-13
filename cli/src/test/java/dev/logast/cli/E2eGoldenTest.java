@@ -125,6 +125,70 @@ class E2eGoldenTest {
         assertThat(after.split("log\\.info\\(", -1).length - 1).as(after).isEqualTo(2);   // still one start, one end
     }
 
+    /**
+     * A service migrated by an earlier logast version has its scopes too low (calculate, calculateStipend). A new run
+     * puts the scope at the top of the flow (processRow) and unwraps the old ones: they are nested now.
+     */
+    @Test
+    void scopesLeftTooLowByAnEarlierRunMoveUp() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path calc = app.resolve("src/main/java/com/example/e2e/stipend/StipendCalculator.java");
+        // the calculator as an earlier logast version left it: scopes in calculate and calculateStipend
+        Files.writeString(calc, """
+                package com.example.e2e.stipend;
+
+                import com.example.e2e.logging.MdcScope;
+                import java.math.BigDecimal;
+                import java.util.List;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public final class StipendCalculator {
+                    private static final Logger log = LoggerFactory.getLogger(StipendCalculator.class);
+
+                    private StipendCalculator() {
+                    }
+
+                    public static StipendOutcome calculate(KioskTotals kioskData, List<PledgeDetails> matchingPledges) {
+                        try (var mdc = MdcScope.of("pledgeId", kioskData.pledgeId())) {
+                            log.debug("Calculating stipend [kioskDay={}, matchingPledges={}]", kioskData.kioskDay(), matchingPledges.size());
+                            if (matchingPledges.isEmpty()) {
+                                log.debug("Pledge not found in the pledge list");
+                                return new StipendOutcome(true, BigDecimal.ZERO);
+                            }
+                            return evaluateOutcome(kioskData, matchingPledges);
+                        }
+                    }
+
+                    private static StipendOutcome evaluateOutcome(KioskTotals kioskData, List<PledgeDetails> sortedPledges) {
+                        for (PledgeDetails pledge : sortedPledges) {
+                            if (pledge.subsidyPercentage() != null) {
+                                return calculateStipend(kioskData, pledge);
+                            }
+                            log.trace("Pledge excluded [pledgeId={}]", pledge.pledgeId());
+                        }
+                        return new StipendOutcome(true, BigDecimal.ZERO);
+                    }
+
+                    private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {
+                        try (var mdc = MdcScope.of("pledgeId", pledge.pledgeId())) {
+                            BigDecimal result = kioskData.totalDiscount().multiply(pledge.subsidyPercentage());
+                            log.debug("Stipend calculated [kioskDay={}, result={}]", kioskData.kioskDay(), result);
+                            return new StipendOutcome(false, result);
+                        }
+                    }
+                }
+                """);
+
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(out).doesNotContain("CHECK FAILED");
+        assertThat(Files.readString(app.resolve("src/main/java/com/example/e2e/stipend/TallyService.java")))
+                .contains("MdcScope.of(\"pledgeId\", kioskData.pledgeId())");
+        assertThat(Files.readString(calc)).doesNotContain("MdcScope.of(");
+        compile(app);
+    }
+
     /** Runs the CLI in-process; stdout with the temp path, timings and colours normalised. */
     private static String run(Path app, String... args) {
         PrintStream out = System.out;
