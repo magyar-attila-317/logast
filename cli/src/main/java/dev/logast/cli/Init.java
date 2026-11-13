@@ -66,11 +66,13 @@ final class Init implements Callable<Integer> {
             String style = keyStyle != null ? dev.logast.policy.KeyStyle.parse(keyStyle).toString()
                     : (detected != null ? detected : dev.logast.policy.KeyStyle.CAMEL).toString();
             String mode = support == null ? null : new dev.logast.policy.Policy.Support(null, null, support, null).mode();
-            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, null));
+            String logFormat = ServiceSetup.detectLogFormat(r);
+            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, logFormat, null));
             VocabularyHarvest.Result h = VocabularyHarvest.run(r, Logast.policy(r, null), 3);
-            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, VocabularyHarvest.yaml(h)));
+            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, logFormat, VocabularyHarvest.yaml(h)));
             Out.step("logast.yaml", "your settings: which checks run, key style " + style
-                    + (keyStyle != null ? "" : detected != null ? " (what the code uses most)" : " (default)") + ", and "
+                    + (keyStyle != null ? "" : detected != null ? " (what the code uses most)" : " (default)")
+                    + ", log format " + (logFormat != null ? logFormat + " (what the service already uses)" : "ecs (default)") + ", and "
                     + h.terms().size() + " business terms found in the code (review them)");
         }
 

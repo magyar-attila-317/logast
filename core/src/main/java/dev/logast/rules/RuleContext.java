@@ -203,8 +203,27 @@ public final class RuleContext {
     }
 
     public void dependOnStarter(OrderBuilder b) {
-        if (!a.supportStarterPresent) {
-            b.dependsOn(supportOrderId);
+        if (!a.supportStarterPresent || supportUpdateOrderId != null) {
+            b.dependsOn(supportUpdateOrderId != null ? supportUpdateOrderId : supportOrderId);
         }
+    }
+
+    /** The order that brings already-copied (vendor mode) support classes up to date, if any. */
+    String supportUpdateOrderId;
+
+    /**
+     * Whether generated code may use {@code ObservedContext…run(() -> …)}: the support classes are added or updated
+     * by this run, or the ones there (copied or on the classpath) already have it.
+     */
+    boolean supportHasRun() {
+        if (!a.supportStarterPresent || supportUpdateOrderId != null) {
+            return true;
+        }
+        String fqn = a.supportPackage + ".ObservedContext";
+        var cls = a.index.clazz(fqn);
+        if (cls != null) {
+            return cls.file().text().contains("interface Work");
+        }
+        return a.project.probe().hasClass(fqn + "$Work");
     }
 }

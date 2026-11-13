@@ -265,17 +265,22 @@ Swallowed exception, written text in **bold**:
 
 Entrypoint the framework doesn't trace (`@EventListener`, custom listeners), with the ids from its parameters:
 ```java
-ObservedContext observed = ObservedContext.entrypoint("inbox-processor.handle")
-        .mdc("order.id", event.orderId()).start();
-try (observed) {
-    ...
-} catch (Throwable t) {
-    observed.error(t);
-    throw t;
-} finally {
-    observed.stop();
-}
+ObservedContext.entrypoint("inbox-processor.handle")
+        .mdc("order.id", event.orderId())
+        .run(() -> {
+            ...
+        });
+// with a result: return ObservedContext.entrypoint("…").call(() -> { … });
 ```
+It records failures on the span and metrics, and logs the outcome once, with the MDC keys and trace id:
+`inbox-processor.handle completed [durationMs=12]` (INFO; DEBUG for per-message listeners), or
+`inbox-processor.handle failed [durationMs=12]` (ERROR, with the exception). Checked exceptions pass through.
+The exception is always rethrown (rollback, retries and dead-letter routing depend on it). A synchronous
+`@EventListener` gets `.failureLoggedByCaller()`: the exception goes back to the publisher's code, which logs it, so
+the wrapper's failure line drops to DEBUG and one failure stays one ERROR. `.describe("Inbox handling")` sets the
+wording, `.quiet()` turns the lines off. In vendor mode, copied support classes from an older logast are updated by
+an AUTO order (the dry run shows the diff). Where a lambda can't compile (a
+parameter reassigned in the body, several checked exceptions), logast writes the same as try/catch/finally.
 
 `MDC.put` / `finally { MDC.clear(); }` (which also wipes the caller's context) becomes:
 ```java
@@ -340,6 +345,11 @@ logging:
 ```
 
 Where logs are missing (log coverage): logast adds the line, someone writes the sentence.
+
+An entrypoint (an endpoint that changes something, a listener, a job) is "silent" when its own flow logs nothing at
+INFO on the normal path: the method itself, the service it calls and one level below. Lines deeper in shared code
+(event publishers, audit, helpers) and lines in catch blocks don't count; they don't say which flow ran. GET
+endpoints are left alone. Plain helper classes get no log lines of their own: logs belong to flows.
 ```java
 @Scheduled(cron = "0 0 2 * * *")
 public void export() {
@@ -468,12 +478,13 @@ Turn it on with `packs: [logging, tracing, metrics]`. A business event that is l
 Observation, which gives a timer (count, duration, errors) and a span in one:
 ```java
 public void refund(String orderId, long amountCents) {
-    ObservedContext observed = ObservedContext.entrypoint("refund").start();
-    try (observed) {
-        log.info("Refund started");
-        …
-        log.info("Refund completed");
-    } catch (Throwable t) { observed.error(t); throw t; } finally { observed.stop(); }
+    ObservedContext.entrypoint("refund")
+            .quiet()                         // the method logs its own lines; this adds the timer and span
+            .run(() -> {
+                log.info("Refund started");
+                …
+                log.info("Refund completed");
+            });
 }
 ```
 A business event is a method logging "X started" / "X completed" (the phrasing rules), where X names a vocabulary
