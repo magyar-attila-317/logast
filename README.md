@@ -382,6 +382,18 @@ public Invoice cancel(String invoiceId) {
 - **Skipped work**: an early `return` in a job or the methods it calls directly (INFO in scheduled/batch runs,
   DEBUG elsewhere). Only `void` methods: an early return that hands back a value is logic, not a skip.
 - **State changes**: a repository save/delete in a method that logs nothing; the entity's id is logged.
+- **Database outcomes** (`JdbcTemplate`, `NamedParameterJdbcTemplate`, `JdbcClient`): a method running one statement
+  and logging nothing gets its outcome logged in the method itself, the one place that has the facts:
+  ```java
+  int rows = jdbcTemplate.update(CLOSE_ITEMS, orderId);
+  AfterCommit.log(() -> log.info("Order items updated [rows={}]", rows)); // logast:wording
+  ```
+  Write or read is told from the SQL (an upsert through `queryForObject` is a write). Writes: INFO, written only
+  once the transaction commits (`AfterCommit`), so a rolled-back change is never announced. Reads: INFO when only
+  low-frequency paths reach them (jobs, startup, or a `traffic.yaml` rate within `levels.volumeBudget`), DEBUG
+  otherwise; a list read also gets a WARN above `levels.largeResult` rows (10,000). Called inside a loop: DEBUG.
+  The wording comes from the table name; `// logast:wording` marks it, and `fills.json` asks for a better one
+  (MESSAGE_SUGGESTED). Sequences and DDL are left alone.
 - **Batch summaries**: a loop on a job path that does I/O per item (repository, HTTP, messaging). Loops over a call
   (`for (Order o : repository.findAll())`) get the call extracted into a variable first, so the count doesn't run
   the query again.
@@ -574,7 +586,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 
 | pack | rules |
 |---|---|
-| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
+| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · DB_OUTCOME_UNLOGGED · MESSAGE_SUGGESTED · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |

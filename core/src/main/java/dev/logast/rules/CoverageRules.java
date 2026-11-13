@@ -479,7 +479,7 @@ final class CoverageRules {
     }
 
     /** The statement (a direct child of a block) that contains {@code tree}. */
-    private static J enclosingStatement(MethodInfo m, J tree) {
+    static J enclosingStatement(MethodInfo m, J tree) {
         J[] found = {null};
         new JavaIsoVisitor<Integer>() {
             @Override
