@@ -190,23 +190,13 @@ final class CoverageRules {
 
     private void jobOutcome(Entrypoint ep) {
         MethodInfo m = ep.method();
-        List<LogCall> logs = m.facts().logs;
-        // a run (schedule, batch) gets started + outcome; a message (Kafka, events, ...) only its outcome: half the volume
-        boolean run = ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH;
-        Set<String> roles = roles(m);
-        boolean started = !run || roles.contains("started")
-                || logs.stream().anyMatch(l -> "started".equals(event(l)) && l.level().compareTo(Level.INFO) >= 0);
-        boolean outcome = roles.contains("completed") || logs.stream().anyMatch(l -> event(l) != null
-                && Set.of("completed", "failed", "skipped").contains(event(l)) && l.level().compareTo(Level.INFO) >= 0);
-        count("jobs", started && outcome);
-        boolean silentPlanned = ctx.silentPlanned.contains(m.key());   // ENTRYPOINT_SILENT adds the start line itself
-        // an ObservedContext wrapper (existing or planned) logs the outcome itself: completed/failed with duration
-        String body = m.decl().getBody() == null ? "" : m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
-        if (ctx.wrappedMethods.contains(m.key()) || body.contains("ObservedContext.entrypoint(") && !body.contains(".quiet()")) {
-            outcome = true;
-            started = started || !run;
-        }
-        if (outcome && (started || silentPlanned) || !ctx.enabled(Rules.JOB_OUTCOME_MISSING) || ctx.ignored(m.file(), m.line(), Rules.JOB_OUTCOME_MISSING)) {
+        // who owns which line is decided in one place (LifecyclePlan); this rule adds what the plan says is missing
+        LifecyclePlan.Flow flow = ctx.lifecycle().flow(ep);
+        boolean run = flow.kind() == LifecyclePlan.Kind.RUN;
+        count("jobs", (!run || flow.started()) && flow.outcome());
+        boolean addStart = flow.missing().contains("started");
+        boolean addOutcome = flow.missing().contains("completed");
+        if (!addStart && !addOutcome || !ctx.enabled(Rules.JOB_OUTCOME_MISSING) || ctx.ignored(m.file(), m.line(), Rules.JOB_OUTCOME_MISSING)) {
             return;
         }
         SourceFileInfo f = m.file();
@@ -219,17 +209,18 @@ final class CoverageRules {
         }
         String indent = Text.indentAt(text, Pos.start(block.getStatements().getFirst()));
         OrderBuilder b = ctx.order(Rules.JOB_OUTCOME_MISSING, m, m.line(), "outcome")
-                .title(ep.label() + " has no " + (!started && !silentPlanned ? "'started' and no " : "") + "outcome log: "
+                .title(ep.label() + " has no " + (addStart && addOutcome ? "'started' and no outcome log: " : addStart ? "'started' log: "
+                        : "outcome log: ")
                         + (run ? "a run that did nothing looks the same as a run that never happened"
                         : "nothing shows that the message was handled, or what it changed"))
                 .context(ctx.context(m, inner[0], Text.oneLine(ep.label(), 160), "MSG"));
         b.edits(logger.edits());
         // generated wording from the job's name, applied right away and marked for rewording (MESSAGE_SUGGESTED)
         String subject = jobSubject(m);
-        Edit startEdit = !started && !silentPlanned ? Edit.insert(f.relPath(), inner[0], indent + logger.name() + "."
+        Edit startEdit = addStart ? Edit.insert(f.relPath(), inner[0], indent + logger.name() + "."
                 + ctx.policy.logging().entryLevel() + "(" + Text.javaString(phrase("started", subject)) + "); " + DbRules.WORDING_MARKER + "\n")
                 : null;
-        if (!outcome) {
+        if (addOutcome) {
             Statement last = block.getStatements().getLast();
             List<String[]> values = new ArrayList<>();   // {key, expression}
             for (Statement s : block.getStatements()) {
