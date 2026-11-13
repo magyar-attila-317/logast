@@ -71,6 +71,109 @@ index 04a4db7..a82b3b1 100644
      }
  
      private static IncomeOutcome calculateIncome(SalesTotals salesData, CouponDetails coupon) {
+diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
+index 445b9d1..4441104 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponService.java
++++ b/src/main/java/com/example/e2e/coupon/CouponService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -24,8 +25,10 @@
+     }
+ 
+     public void redeem(RedeemRequest request) {
+-        log.info("Coupon redemption started [couponId={}]", request.code());
+-        sender.send(request.code());
+-        log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
++        try (var mdc = MdcScope.of("couponId", request.code())) {
++            log.info("Coupon redemption started [couponId={}]", request.code());
++            sender.send(request.code());
++            log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
++        }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 953396f..671ba3a 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -3,6 +3,7 @@ 
+ import com.example.e2e.income.CouponCheck;
+ import com.example.e2e.income.CouponDetails;
+ import com.example.e2e.income.SalesTotals;
++import com.example.e2e.logging.MdcScope;
+ import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+@@ -15,34 +16,38 @@
+ @Service
+ public class EdgeFlow implements Audited {
+     public void process(SalesTotals salesData) {
+-        log.info("Edge processing started [couponId={}]", salesData.couponId());
+-        CouponRules.check(salesData.couponId());                                   // @UtilityClass, methods not declared static
+-        List.of(salesData).forEach(this::publishOne);                              // method reference
+-        for (Exclusion exclusion : Exclusion.values()) {                           // enum constants with bodies
+-            exclusion.test(salesData);
+-        }
+-        CouponDetails coupon = new CouponDetails(salesData.couponId(), null, null, null);
+-        CouponCheck inline = (c, s) -> {                                           // lambda implementing an interface
+-            log.debug("Inline check [couponId={}]", c.couponId());
+-            return Optional.empty();
+-        };
+-        inline.validate(coupon, salesData);
+-        new CouponCheck() {                                                        // anonymous implementation
+-            @Override
+-            public Optional<String> validate(CouponDetails c, SalesTotals s) {
+-                log.debug("Anonymous check [couponId={}]", c.couponId());
+-                return Optional.empty();
++        try (var mdc2 = MdcScope.of("couponId", salesData.couponId())) {
++            log.info("Edge processing started [couponId={}]", salesData.couponId());
++            CouponRules.check(salesData.couponId());                                   // @UtilityClass, methods not declared static
++            List.of(salesData).forEach(this::publishOne);                              // method reference
++            for (Exclusion exclusion : Exclusion.values()) {                           // enum constants with bodies
++                exclusion.test(salesData);
+             }
+-        }.validate(coupon, salesData);
+-        Check<CouponDetails> origin = new OriginCheck();                           // generic interface
+-        origin.test(coupon);
+-        audit(salesData.couponId());                                               // default method of an interface
+-        EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
+-        CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+-                log.info("Coupon archived [couponId={}]", salesData.couponId()));
+-        log.info("Coupon parsed [couponId={}]", UUID.nameUUIDFromBytes(salesData.couponId().getBytes())); // a transformed value
+-        new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
+-        log.info("Edge processing completed [couponId={}]", salesData.couponId());
++            CouponDetails coupon = new CouponDetails(salesData.couponId(), null, null, null);
++            try (var mdc = MdcScope.of("agreementId", coupon.agreementId())) {
++                CouponCheck inline = (c, s) -> {                                           // lambda implementing an interface
++                    log.debug("Inline check [couponId={}]", c.couponId());
++                    return Optional.empty();
++                };
++                inline.validate(coupon, salesData);
++                new CouponCheck() {                                                        // anonymous implementation
++                    @Override
++                    public Optional<String> validate(CouponDetails c, SalesTotals s) {
++                        log.debug("Anonymous check [couponId={}]", c.couponId());
++                        return Optional.empty();
++                    }
++                }.validate(coupon, salesData);
++                Check<CouponDetails> origin = new OriginCheck();                           // generic interface
++                origin.test(coupon);
++                audit(salesData.couponId());                                               // default method of an interface
++                EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
++                CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
++                        log.info("Coupon archived [couponId={}]", salesData.couponId()));
++                log.info("Coupon parsed [couponId={}]", UUID.nameUUIDFromBytes(salesData.couponId().getBytes())); // a transformed value
++                new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
++                log.info("Edge processing completed [couponId={}]", salesData.couponId());
++            }
++        }
+     }
+ 
+     private void publishOne(SalesTotals row) {
 diff --git a/src/main/java/com/example/e2e/income/CalculationService.java b/src/main/java/com/example/e2e/income/CalculationService.java
 index c12133d..49d439e 100644
 --- a/src/main/java/com/example/e2e/income/CalculationService.java
@@ -97,28 +200,3 @@ index c12133d..49d439e 100644
      }
  
      private List<CouponDetails> filterMatchingCoupons(List<CouponDetails> allCoupons, String couponId) {
-diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
-index 445b9d1..4441104 100644
---- a/src/main/java/com/example/e2e/coupon/CouponService.java
-+++ b/src/main/java/com/example/e2e/coupon/CouponService.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.coupon;
- 
-+import com.example.e2e.logging.MdcScope;
- import org.slf4j.Logger;
- import org.slf4j.LoggerFactory;
- import org.springframework.stereotype.Service;
-@@ -24,8 +25,10 @@
-     }
- 
-     public void redeem(RedeemRequest request) {
--        log.info("Coupon redemption started [couponId={}]", request.code());
--        sender.send(request.code());
--        log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
-+        try (var mdc = MdcScope.of("couponId", request.code())) {
-+            log.info("Coupon redemption started [couponId={}]", request.code());
-+            sender.send(request.code());
-+            log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
-+        }
-     }
- }

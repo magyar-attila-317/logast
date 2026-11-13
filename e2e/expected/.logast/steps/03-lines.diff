@@ -1,26 +1,22 @@
 diff --git a/src/main/java/com/example/e2e/coupon/CouponRepository.java b/src/main/java/com/example/e2e/coupon/CouponRepository.java
-index 0d60ea5..ca15584 100644
+index 0d60ea5..436af48 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponRepository.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponRepository.java
-@@ -1,12 +1,17 @@ 
+@@ -1,10 +1,13 @@ 
  package com.example.e2e.coupon;
  
 +import com.example.e2e.logging.AfterCommit;
  import java.util.List;
-+import org.slf4j.Logger;
-+import org.slf4j.LoggerFactory;
++import lombok.extern.slf4j.Slf4j;
  import org.springframework.jdbc.core.JdbcTemplate;
  import org.springframework.stereotype.Repository;
  
  /** JdbcTemplate repository: an update, an upsert through queryForObject, a list read. */
++@Slf4j
  @Repository
  public class CouponRepository {
-+    private static final Logger log = LoggerFactory.getLogger(CouponRepository.class);
-+
      private static final String CLOSE = "UPDATE coupons SET closed = true WHERE coupon_id = ?";
-     private static final String COUNT_USE = """
-             INSERT INTO coupon_usage (coupon_id, uses) VALUES (?, 1)
-@@ -20,14 +25,19 @@
+@@ -20,14 +23,19 @@
      }
  
      public void close(String couponId) {
@@ -56,28 +52,57 @@ index db901bd..84cd343 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 9c7595e..8905b07 100644
+index 9c7595e..7bf2b77 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
-@@ -1,12 +1,18 @@ 
+@@ -1,12 +1,16 @@ 
  package com.example.e2e.job;
  
-+import org.slf4j.Logger;
-+import org.slf4j.LoggerFactory;
++import lombok.extern.slf4j.Slf4j;
  import org.springframework.context.annotation.Profile;
  import org.springframework.stereotype.Component;
  
++@Slf4j
  @Component
  @Profile("export")
  public class ExportJob extends TpiJob {
-+    private static final Logger log = LoggerFactory.getLogger(ExportJob.class);
-+
      @Override
      protected void doExecute() {
 +        log.info("Export job started"); // logast:wording
 +        log.info("Export job completed"); // logast:wording
      }
  }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
+index c6154fe..25c31a9 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeJob.java
++++ b/src/main/java/com/example/e2e/edge/EdgeJob.java
+@@ -2,10 +2,12 @@ 
+ 
+ import com.example.e2e.income.SalesTotals;
+ import java.util.List;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.stereotype.Component;
+ 
+ /** Drives the edge-case shapes row by row. */
++@Slf4j
+ @Component
+ public class EdgeJob {
+     private final EdgeFlow flow;
+@@ -16,9 +18,12 @@
+ 
+     @Scheduled(cron = "0 30 3 * * *")
+     public void run() {
+-        for (SalesTotals row : pending()) {
++        log.info("Edge started"); // logast:wording
++        var rows = pending();
++        for (SalesTotals row : rows) {
+             flow.process(row);
+         }
++        log.info("Edge completed [salesTotalsCount={}]", rows.size()); // logast:wording
+     }
+ 
+     private List<SalesTotals> pending() {
 diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
 index 20a83cc..08f9ee6 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java

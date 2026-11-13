@@ -18,6 +18,8 @@ public final class CodeIndex {
     private final Map<String, List<MethodInfo>> byClass = new HashMap<>();
     private final Map<String, Set<String>> subtypes = new HashMap<>();
     private final ParsedProject project;
+    /** Anonymous classes and enum constant bodies: their type, for registering what they implement. */
+    private final Map<String, JavaType.FullyQualified> anonTypes = new HashMap<>();
 
     private CodeIndex(ParsedProject project) {
         this.project = project;
@@ -31,6 +33,7 @@ public final class CodeIndex {
         for (ClassInfo c : index.classes.values()) {
             index.registerAncestors(c.fqn(), c.type(), new HashSet<>());
         }
+        index.anonTypes.forEach((fqn, type) -> index.registerAncestors(fqn, type, new HashSet<>()));
         for (MethodInfo m : index.methods.values()) {
             m.facts(FactsExtractor.extract(m));
         }
@@ -58,11 +61,18 @@ public final class CodeIndex {
             public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration md, Integer p) {
                 JavaType.Method mt = md.getMethodType();
                 ClassInfo owner = stack.peek();
-                // Methods of anonymous classes have a different declaring type than the enclosing class: skip them.
                 if (mt != null && owner != null && Types.fqn(mt.getDeclaringType()).equals(owner.fqn())) {
                     MethodInfo m = new MethodInfo(Types.key(mt), md, mt, owner);
                     methods.put(m.key(), m);
                     byClass.computeIfAbsent(owner.fqn(), k -> new ArrayList<>()).add(m);
+                } else if (mt != null && owner != null && mt.getDeclaringType() != null) {
+                    // an anonymous class or an enum constant body: indexed under the enclosing class (its file and
+                    // logger), and registered as an implementation of its parent type, so interface/abstract calls reach it
+                    String anon = Types.fqn(mt.getDeclaringType());
+                    MethodInfo m = new MethodInfo(Types.key(mt), md, mt, owner);
+                    methods.put(m.key(), m);
+                    byClass.computeIfAbsent(anon, k -> new ArrayList<>()).add(m);
+                    anonTypes.put(anon, mt.getDeclaringType());
                 }
                 return super.visitMethodDeclaration(md, p);
             }

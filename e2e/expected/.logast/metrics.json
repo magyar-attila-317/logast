@@ -5,7 +5,7 @@
     "name" : "coupon.usage",
     "outcome" : "saved",
     "_message" : "INFO \"Coupon usage saved\"",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:34",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:32",
     "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/use\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /coupons/{couponId}/use" ],
     "_tag" : "available"
@@ -40,6 +40,46 @@
     "_paths" : [ "http POST /coupons/redeem" ],
     "_tag" : "available"
   },
+  "OUM-beef64" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "audited",
+    "_message" : "INFO \"Coupon audited\"",
+    "_where" : "src/main/java/com/example/e2e/edge/Audited.java:11",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-c62768" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "archived",
+    "_message" : "INFO \"Coupon archived\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:45",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-1dbbf8" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "parsed",
+    "_message" : "INFO \"Coupon parsed\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:46",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-5119ae" : {
+    "count" : "",
+    "name" : "edge.processing",
+    "outcome" : "completed",
+    "_message" : "INFO \"Edge processing completed\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:48",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
   "OUM-84c094" : {
     "count" : "",
     "name" : "calculation",
@@ -55,7 +95,7 @@
     "name" : "export.job",
     "outcome" : "completed",
     "_message" : "INFO \"Export job completed\"",
-    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:16",
+    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:14",
     "_frequency" : "low",
     "_paths" : [ "event @EventListener TpiJobExecutor.onReady(ApplicationReadyEvent)" ],
     "_tag" : "available"

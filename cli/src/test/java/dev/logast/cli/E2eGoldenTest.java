@@ -26,7 +26,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 class E2eGoldenTest {
     private static final Path BEFORE = Path.of(System.getProperty("logast.e2e.before"));
     private static final Path EXPECTED = Path.of(System.getProperty("logast.e2e.expected"));
-    private static final String CLASSPATH = System.getProperty("logast.e2e.classpath");
+    /** The fixture's classpath plus Lombok (real services use it): written once per run into a temp file. */
+    private static final String CLASSPATH = e2eClasspath();
+    private static final String LOMBOK = System.getProperty("logast.e2e.lombok", "");
+
+    private static String e2eClasspath() {
+        try {
+            List<String> lines = new ArrayList<>(Files.readAllLines(Path.of(System.getProperty("logast.e2e.classpath"))));
+            for (String p : System.getProperty("logast.e2e.lombok", "").split(java.io.File.pathSeparator)) {
+                if (!p.isBlank()) {
+                    lines.add(p);
+                }
+            }
+            Path f = Files.createTempFile("logast-e2e-classpath", ".txt");
+            Files.write(f, lines);
+            f.toFile().deleteOnExit();
+            return f.toString();
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
     private static final boolean UPDATE = Boolean.getBoolean("logast.e2e.update");
     /** Generated each run or machine-specific: not part of the snapshot. */
     private static final Set<String> SKIP = Set.of(".logast/orders.json");
@@ -286,8 +305,8 @@ class E2eGoldenTest {
             sources = s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).toList();
         }
         List<String> cp = Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList();
-        List<String> args = new ArrayList<>(List.of("-d", root.resolve("out").toString(), "-proc:none",
-                "-cp", String.join(java.io.File.pathSeparator, cp)));
+        List<String> args = new ArrayList<>(List.of("-d", root.resolve("out").toString(), "-proc:full",
+                "-processorpath", LOMBOK, "-cp", String.join(java.io.File.pathSeparator, cp)));
         args.addAll(sources);
         JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
         ByteArrayOutputStream err = new ByteArrayOutputStream();

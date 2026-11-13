@@ -309,7 +309,7 @@ final class LogCallRules {
         // "Coupon {} published" with couponId in MDC: the placeholder right after its own noun goes, the sentence stays
         List<String> inPlaceDeps = new ArrayList<>();
         if (MessageTemplate.count(raw) == args.size() && !args.isEmpty()) {
-            Set<String> inMdcNow = ctx.mdcInside(m);
+            Set<String> inMdcNow = lc.offThread() ? Set.of() : ctx.mdcInside(m);   // another thread: MDC is empty there
             java.util.regex.Matcher ph = java.util.regex.Pattern.compile("\\{}").matcher(raw);
             StringBuilder sb = new StringBuilder();
             List<Arg> keptArgs = new ArrayList<>();
@@ -358,8 +358,9 @@ final class LogCallRules {
             issues.add(Rules.LOG_FORMAT);
         }
 
-        // drop values already in MDC, PII and e.getMessage() when the exception itself is logged
-        Set<String> inMdc = ctx.mdcInside(m);
+        // drop values already in MDC, PII and e.getMessage() when the exception itself is logged; a line that runs on
+        // another thread (no MDC propagation) keeps its values: MDC is empty there
+        Set<String> inMdc = lc.offThread() ? Set.of() : ctx.mdcInside(m);
         List<String> plannedDeps = new ArrayList<>(inPlaceDeps);
         List<Arg> kept = new ArrayList<>();
         List<String> droppedStems = new ArrayList<>();
