@@ -249,6 +249,9 @@ public final class RepeatedValueRules {
     private int ownCount(MethodInfo m, String key) {
         int n = 0;
         for (LogCall lc : m.facts().logs) {
+            if (lc.offThread()) {
+                continue;
+            }
             List<String> named = lc.template() instanceof J.Literal l && l.getValue() instanceof String s
                     ? MessageTemplate.placeholderNames(s) : List.of();
             for (int i = 0; i < lc.args().size(); i++) {
@@ -283,6 +286,32 @@ public final class RepeatedValueRules {
                 }
             }
         }
+        return out;
+    }
+
+    /** Parameters and locals of the method itself (not of its lambdas or anonymous classes). */
+    private static Set<String> methodLevelNames(MethodInfo m) {
+        Set<String> out = new HashSet<>(paramNames(m));
+        if (m.decl().getBody() == null) {
+            return out;
+        }
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Lambda visitLambda(J.Lambda l, Integer p) {
+                return l;
+            }
+
+            @Override
+            public J.NewClass visitNewClass(J.NewClass n, Integer p) {
+                return n.getBody() == null ? super.visitNewClass(n, p) : n;
+            }
+
+            @Override
+            public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable v, Integer p) {
+                out.add(v.getSimpleName());
+                return super.visitVariable(v, p);
+            }
+        }.visit(m.decl().getBody(), 0);
         return out;
     }
 
@@ -341,7 +370,12 @@ public final class RepeatedValueRules {
 
         Map<String, Candidate> byKey = new LinkedHashMap<>();
         Set<String> ambiguous = new HashSet<>();
+        Set<String> ownParams = new HashSet<>(paramNames(m));
+        Set<String> methodLevel = methodLevelNames(m);
         for (LogCall lc : m.facts().logs) {
+            if (lc.offThread()) {
+                continue;   // runs on another thread: a scope here does not reach it
+            }
             List<String> named = lc.template() instanceof J.Literal l && l.getValue() instanceof String s
                     ? MessageTemplate.placeholderNames(s) : List.of();
             for (int i = 0; i < lc.args().size(); i++) {
@@ -358,13 +392,15 @@ public final class RepeatedValueRules {
                 }
                 String root = root(e);
                 String expr = e.printTrimmed().replaceAll("\\s+", "");
+                if (root == null || !methodLevel.contains(root)) {
+                    continue;   // a computed value or a lambda's own parameter: it does not decide where the key goes
+                }
                 Candidate c = byKey.get(key);
-                if (root == null || c != null && !c.expr().equals(expr)) {
-                    decide(key, m, "no scope", root == null ? "the value '" + Text.oneLine(e.printTrimmed(), 50)
-                            + "' is not a stable variable (a call or computation)" : "two different values are logged as " + key);
-                    ambiguous.add(key);      // two different values for one key: not one context
-                    byKey.remove(key);
-                    continue;
+                if (c != null && !c.expr().equals(expr)) {
+                    // one key, one value per flow: keep the value that exists for the whole method (a parameter)
+                    if (ownParams.contains(root) && !ownParams.contains(c.root())) {
+                        byKey.put(key, c = new Candidate(key, expr, root, new ArrayList<>(c.logs())));
+                    }
                 }
                 if (c == null) {
                     byKey.put(key, c = new Candidate(key, expr, root, new ArrayList<>()));
@@ -444,7 +480,7 @@ public final class RepeatedValueRules {
         int own = (int) cs.stream().flatMap(c -> c.logs().stream()).distinct().count();
         int total = cs.stream().mapToInt(c -> totals.getOrDefault(c.key(), 0)).max().orElse(own);
         List<String> keys = cs.stream().map(Candidate::key).toList();
-        OrderBuilder b = ctx.order(Rules.REPEATED_LOG_VALUE, m, firstLine, "repeat")
+        OrderBuilder b = ctx.order(Rules.REPEATED_LOG_VALUE, m, firstLine, "repeat|" + String.join(",", keys))
                 .title(String.join(", ", keys) + " logged by " + total + " statements in " + m.label()
                         + (total > own ? " and the methods it passes " + (keys.size() == 1 ? "it" : "them") + " to" : "")
                         + ": put " + (keys.size() == 1 ? "it" : "them") + " into MDC once, here, instead of into every message");

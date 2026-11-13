@@ -40,7 +40,7 @@ public final class Invariants {
             Set<String> inside = paths.mdcInside(m);
             Map<String, Integer> lifecycle = new HashMap<>();
             for (LogCall lc : m.facts().logs) {
-                if (!(lc.template() instanceof J.Literal l) || !(l.getValue() instanceof String raw)) {
+                if (lc.offThread() || !(lc.template() instanceof J.Literal l) || !(l.getValue() instanceof String raw)) {
                     continue;
                 }
                 List<String> keys = MessageTemplate.compliantKeys(raw);

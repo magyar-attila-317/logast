@@ -2,16 +2,14 @@ package com.example.e2e.pledge;
 
 import com.example.e2e.logging.AfterCommit;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** JdbcTemplate repository: an update, an upsert through queryForObject, a list read. */
+@Slf4j
 @Repository
 public class PledgeRepository {
-    private static final Logger log = LoggerFactory.getLogger(PledgeRepository.class);
-
     private static final String CLOSE = "UPDATE pledges SET closed = true WHERE pledge_id = ?";
     private static final String COUNT_USE = """
             INSERT INTO pledge_usage (pledge_id, uses) VALUES (?, 1)

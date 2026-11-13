@@ -71,6 +71,109 @@ index 04a4db7..a82b3b1 100644
      }
  
      private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeService.java b/src/main/java/com/example/e2e/pledge/PledgeService.java
+index 445b9d1..4441104 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeService.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -24,8 +25,10 @@
+     }
+ 
+     public void allot(AllotRequest request) {
+-        log.info("Pledge allotment started [pledgeId={}]", request.code());
+-        sender.send(request.code());
+-        log.info("Pledge allotment completed [pledgeId={}, tableId={}]", request.code(), request.tableId());
++        try (var mdc = MdcScope.of("pledgeId", request.code())) {
++            log.info("Pledge allotment started [pledgeId={}]", request.code());
++            sender.send(request.code());
++            log.info("Pledge allotment completed [pledgeId={}, tableId={}]", request.code(), request.tableId());
++        }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 953396f..671ba3a 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -3,6 +3,7 @@ 
+ import com.example.e2e.stipend.PledgeCheck;
+ import com.example.e2e.stipend.PledgeDetails;
+ import com.example.e2e.stipend.KioskTotals;
++import com.example.e2e.logging.MdcScope;
+ import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+@@ -15,34 +16,38 @@
+ @Service
+ public class EdgeFlow implements Audited {
+     public void process(KioskTotals kioskData) {
+-        log.info("Edge processing started [pledgeId={}]", kioskData.pledgeId());
+-        PledgeRules.check(kioskData.pledgeId());                                   // @UtilityClass, methods not declared static
+-        List.of(kioskData).forEach(this::publishOne);                              // method reference
+-        for (Exclusion exclusion : Exclusion.values()) {                           // enum constants with bodies
+-            exclusion.test(kioskData);
+-        }
+-        PledgeDetails pledge = new PledgeDetails(kioskData.pledgeId(), null, null, null);
+-        PledgeCheck inline = (c, s) -> {                                           // lambda implementing an interface
+-            log.debug("Inline check [pledgeId={}]", c.pledgeId());
+-            return Optional.empty();
+-        };
+-        inline.validate(pledge, kioskData);
+-        new PledgeCheck() {                                                        // anonymous implementation
+-            @Override
+-            public Optional<String> validate(PledgeDetails c, KioskTotals s) {
+-                log.debug("Anonymous check [pledgeId={}]", c.pledgeId());
+-                return Optional.empty();
++        try (var mdc2 = MdcScope.of("pledgeId", kioskData.pledgeId())) {
++            log.info("Edge processing started [pledgeId={}]", kioskData.pledgeId());
++            PledgeRules.check(kioskData.pledgeId());                                   // @UtilityClass, methods not declared static
++            List.of(kioskData).forEach(this::publishOne);                              // method reference
++            for (Exclusion exclusion : Exclusion.values()) {                           // enum constants with bodies
++                exclusion.test(kioskData);
+             }
+-        }.validate(pledge, kioskData);
+-        Check<PledgeDetails> origin = new OriginCheck();                           // generic interface
+-        origin.test(pledge);
+-        audit(kioskData.pledgeId());                                               // default method of an interface
+-        EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
+-        CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+-                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
+-        log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
+-        new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
+-        log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());
++            PledgeDetails pledge = new PledgeDetails(kioskData.pledgeId(), null, null, null);
++            try (var mdc = MdcScope.of("sponsorshipId", pledge.sponsorshipId())) {
++                PledgeCheck inline = (c, s) -> {                                           // lambda implementing an interface
++                    log.debug("Inline check [pledgeId={}]", c.pledgeId());
++                    return Optional.empty();
++                };
++                inline.validate(pledge, kioskData);
++                new PledgeCheck() {                                                        // anonymous implementation
++                    @Override
++                    public Optional<String> validate(PledgeDetails c, KioskTotals s) {
++                        log.debug("Anonymous check [pledgeId={}]", c.pledgeId());
++                        return Optional.empty();
++                    }
++                }.validate(pledge, kioskData);
++                Check<PledgeDetails> origin = new OriginCheck();                           // generic interface
++                origin.test(pledge);
++                audit(kioskData.pledgeId());                                               // default method of an interface
++                EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
++                CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
++                        log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
++                log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
++                new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
++                log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());
++            }
++        }
+     }
+ 
+     private void publishOne(KioskTotals row) {
 diff --git a/src/main/java/com/example/e2e/stipend/TallyService.java b/src/main/java/com/example/e2e/stipend/TallyService.java
 index c12133d..49d439e 100644
 --- a/src/main/java/com/example/e2e/stipend/TallyService.java
@@ -97,28 +200,3 @@ index c12133d..49d439e 100644
      }
  
      private List<PledgeDetails> filterMatchingPledges(List<PledgeDetails> allPledges, String pledgeId) {
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeService.java b/src/main/java/com/example/e2e/pledge/PledgeService.java
-index 445b9d1..4441104 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeService.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeService.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.pledge;
- 
-+import com.example.e2e.logging.MdcScope;
- import org.slf4j.Logger;
- import org.slf4j.LoggerFactory;
- import org.springframework.stereotype.Service;
-@@ -24,8 +25,10 @@
-     }
- 
-     public void allot(AllotRequest request) {
--        log.info("Pledge allotment started [pledgeId={}]", request.code());
--        sender.send(request.code());
--        log.info("Pledge allotment completed [pledgeId={}, tableId={}]", request.code(), request.tableId());
-+        try (var mdc = MdcScope.of("pledgeId", request.code())) {
-+            log.info("Pledge allotment started [pledgeId={}]", request.code());
-+            sender.send(request.code());
-+            log.info("Pledge allotment completed [pledgeId={}, tableId={}]", request.code(), request.tableId());
-+        }
-     }
- }
