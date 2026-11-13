@@ -338,7 +338,7 @@ final class DbRules {
         }
         double budget = ctx.policy.levels().volumeBudget();
         for (Entrypoint ep : eps) {
-            if (LOW_FREQUENCY.contains(ep.kind())) {
+            if (LOW_FREQUENCY.contains(ep.kind()) || MetricsMap.lowFrequency(ep)) {
                 continue;
             }
             Double rate = ctx.a.traffic.known() ? ctx.a.traffic.perDay(ep.label()) : null;

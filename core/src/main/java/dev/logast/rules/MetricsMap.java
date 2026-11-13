@@ -229,18 +229,26 @@ public final class MetricsMap {
         }
         double budget = a.policy.levels().volumeBudget();
         for (Entrypoint ep : eps) {
-            if (ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.MAIN) {
+            if (lowFrequency(ep)) {
                 continue;
             }
             Double rate = a.traffic.known() ? a.traffic.perDay(ep.label()) : null;
             if (rate == null) {
-                return "unknown: " + ep.label() + " has no traffic.yaml rate";
+                return "unknown: no rate for \"" + ep.label() + "\" in .logast/traffic.yaml";
             }
             if (rate > budget) {
                 return "high: " + ep.label() + " " + VolumeRules.human(rate) + "/day";
             }
         }
         return "low";
+    }
+
+    private static final Pattern STARTUP_EVENT = Pattern.compile("\\((Application(Ready|Started|Prepared)Event|ContextRefreshedEvent|WebServerInitializedEvent)\\)");
+
+    /** Runs a handful of times a day by its nature: jobs, batch runners, main, and listeners of startup events. */
+    static boolean lowFrequency(Entrypoint ep) {
+        return ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.MAIN
+                || ep.kind() == Entrypoint.Kind.EVENT && STARTUP_EVENT.matcher(ep.label()).find();
     }
 
     /** Plain text: counts and examples; {@code --format json} has every entry with its snippets. */
