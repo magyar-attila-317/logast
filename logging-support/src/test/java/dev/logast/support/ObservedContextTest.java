@@ -69,6 +69,45 @@ class ObservedContextTest {
     }
 
     @Test
+    void outcomeIsLoggedWithTheContextsMdc() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ObservedContext.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> app = new ch.qos.logback.core.read.ListAppender<>();
+        app.start();
+        logger.addAppender(app);
+        try {
+            work(false);
+            assertThatThrownBy(() -> work(true)).hasMessage("boom");
+        } finally {
+            logger.detachAppender(app);
+        }
+        assertThat(app.list).extracting(e -> e.getLevel() + " " + e.getFormattedMessage().replaceAll("\\d+]", "N]")
+                        + " " + e.getMDCPropertyMap().get("order.id"))
+                .containsExactly("INFO shipment-listener.on-shipped completed [durationMs=N] o-1",
+                        "ERROR shipment-listener.on-shipped failed [durationMs=N] o-1");
+        assertThat(app.list.get(1).getThrowableProxy().getMessage()).isEqualTo("boom");
+        assertThat(MDC.get("order.id")).isNull();                                  // put back only for the line
+    }
+
+    @Test
+    void runRethrowsAndCanLeaveTheFailureLogToTheCaller() throws Exception {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ObservedContext.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> app = new ch.qos.logback.core.read.ListAppender<>();
+        app.start();
+        logger.addAppender(app);
+        try {
+            assertThatThrownBy(() -> ObservedContext.entrypoint("sync-listener", registry).failureLoggedByCaller()
+                    .run(() -> {
+                        throw new java.io.IOException("disk");                   // checked: passes through as is
+                    })).isInstanceOf(java.io.IOException.class);
+            assertThat(ObservedContext.entrypoint("job", registry).call(() -> 42)).isEqualTo(42);
+        } finally {
+            logger.detachAppender(app);
+        }
+        assertThat(app.list).noneMatch(e -> e.getLevel() == ch.qos.logback.classic.Level.ERROR);   // the caller logs it
+        assertThat(events).contains("error disk", "stop sync-listener", "stop job");
+    }
+
+    @Test
     void errorIsRecordedBeforeStop() {
         assertThatThrownBy(() -> work(true)).hasMessage("boom");
         assertThat(events).containsExactly("start shipment-listener.on-shipped [order.id=o-1]", "error boom",

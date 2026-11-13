@@ -33,11 +33,58 @@ public final class ServiceSetup {
         return policyTemplate(extendsList, packs, keepWording, keyStyle, null, vocabulary);
     }
 
+    /**
+     * The JSON log format a service already uses, from its build and logging config: logstash
+     * (logstash-logback-encoder, LogstashEncoder), gelf (logback-gelf, GelfEncoder), ecs (co.elastic.logging); null if none.
+     */
+    public static String detectLogFormat(Path root) {
+        StringBuilder all = new StringBuilder();
+        try (var files = java.nio.file.Files.walk(root, 6)) {
+            files.filter(p -> !p.toString().contains("/build/") && !p.toString().contains("/.gradle/") && !p.toString().contains("/node_modules/"))
+                    .filter(p -> {
+                        String n = p.getFileName().toString();
+                        return n.startsWith("build.gradle") || n.equals("libs.versions.toml") || n.startsWith("logback") && n.endsWith(".xml")
+                                || n.startsWith("application") && (n.endsWith(".yml") || n.endsWith(".yaml") || n.endsWith(".properties"));
+                    })
+                    .forEach(p -> {
+                        try {
+                            all.append(java.nio.file.Files.readString(p)).append('\n');
+                        } catch (java.io.IOException | java.io.UncheckedIOException ignored) {
+                            // unreadable file: not evidence either way
+                        }
+                    });
+        } catch (java.io.IOException | java.io.UncheckedIOException e) {
+            return null;
+        }
+        String t = all.toString();
+        java.util.regex.Matcher configured = java.util.regex.Pattern
+                .compile("structured\\.format\\.console\\s*[=:]\\s*(ecs|logstash|gelf)|console:\\s*(ecs|logstash|gelf)\\b").matcher(t);
+        if (configured.find()) {
+            return configured.group(1) != null ? configured.group(1) : configured.group(2);
+        }
+        if (t.contains("logstash-logback-encoder") || t.contains("LogstashEncoder") || t.contains("logstash.logback")) {
+            return "logstash";
+        }
+        if (t.contains("logback-gelf") || t.contains("GelfEncoder") || t.contains("GelfLayout")) {
+            return "gelf";
+        }
+        if (t.contains("co.elastic.logging") || t.contains("EcsEncoder")) {
+            return "ecs";
+        }
+        return null;
+    }
+
     static final String GUIDE = "https://github.com/magyar-attila-317/logast/blob/main/docs/configuration.md";
 
     /** @param supportMode null → not written (dependency, or what the company layer says); "vendor" → copy the classes */
     public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
                                         String supportMode, String vocabulary) {
+        return policyTemplate(extendsList, packs, keepWording, keyStyle, supportMode, null, vocabulary);
+    }
+
+    /** @param logFormat the JSON log format the service already uses (null → ecs, the default) */
+    public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
+                                        String supportMode, String logFormat, String vocabulary) {
         StringBuilder sb = new StringBuilder();
         sb.append("""
                 # =============================================================================================
@@ -69,6 +116,9 @@ public final class ServiceSetup {
         sb.append("  keyStyle: ").append(keyStyle != null ? keyStyle : "camel").append('\n');
         sb.append("  # true: logast may reword existing messages. false: keep their words, fix only the structure.\n");
         sb.append("  rewriteExistingMessages: ").append(!keepWording).append('\n');
+        sb.append("  # JSON log format (logging.structured.format.console): ecs, logstash or gelf, whichever your log\n");
+        sb.append("  # backend reads. none: logast leaves the log format alone.\n");
+        sb.append("  structuredFormat: ").append(logFormat != null ? logFormat + "   # what this service already uses" : "ecs").append('\n');
         sb.append("  # Messages that alerts or dashboards search for (regex): logast never changes them, it only reports.\n");
         sb.append("  # protectedMessages: [\"^ALERT:\"]\n\n");
         sb.append("""

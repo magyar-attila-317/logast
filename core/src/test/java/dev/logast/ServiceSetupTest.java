@@ -147,4 +147,18 @@ class ServiceSetupTest {
         assertThat(VocabularyHarvest.detectStyle(dir)).isEqualTo(dev.logast.policy.KeyStyle.CAMEL);
         assertThat(ServiceSetup.policyTemplate(List.of(), List.of(), false, null, null)).contains("  keyStyle: camel\n");
     }
+
+    @Test
+    void detectsTheJsonLogFormatTheServiceAlreadyUses(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("build.gradle.kts"), "dependencies { implementation(\"org.springframework.boot:spring-boot-starter\") }\n");
+        assertThat(ServiceSetup.detectLogFormat(dir)).isNull();
+        Files.writeString(dir.resolve("build.gradle.kts"),
+                "dependencies { implementation(\"net.logstash.logback:logstash-logback-encoder:8.0\") }\n");
+        assertThat(ServiceSetup.detectLogFormat(dir)).isEqualTo("logstash");
+        Path res = Files.createDirectories(dir.resolve("src/main/resources"));
+        Files.writeString(res.resolve("application.yml"), "logging:\n  structured:\n    format:\n      console: gelf\n");
+        assertThat(ServiceSetup.detectLogFormat(dir)).isEqualTo("gelf");          // what the config says wins
+        assertThat(ServiceSetup.policyTemplate(java.util.List.of(), java.util.List.of(), false, null, null, "logstash", null))
+                .contains("structuredFormat: logstash");
+    }
 }

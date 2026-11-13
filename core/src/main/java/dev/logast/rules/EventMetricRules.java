@@ -145,18 +145,10 @@ final class EventMetricRules {
         String unit = Text.indentUnit(text);
         String indent = Text.indentAt(text, Pos.start(m.decl().getBody())) + unit;
         Set<String> taken = ctx.taken(m, inner[0]);
-        String obs = EntrypointRules.unique("observed", taken);
-        String err = EntrypointRules.unique("t", taken);
         String body = text.substring(inner[0], inner[1]);
-        String replacement = indent + "ObservedContext " + obs + " = ObservedContext.entrypoint(\"" + name + "\").start();\n"
-                + indent + "try (" + obs + ") {\n"
-                + Text.reindent(body, unit)
-                + indent + "} catch (Throwable " + err + ") {\n"
-                + indent + unit + obs + ".error(" + err + ");\n"
-                + indent + unit + "throw " + err + ";\n"
-                + indent + "} finally {\n"
-                + indent + unit + obs + ".stop();\n"
-                + indent + "}\n";
+        // quiet: the method already logs the event itself; this adds the count, duration and span
+        String replacement = EntrypointRules.observedWrap(m, name, List.of(".quiet()"), Text.reindent(body, unit), indent, unit, taken,
+                ctx.supportHasRun());
         b.suggestion("Observation '" + name + "': Micrometer derives the timer " + name + " (count, duration, error tag) "
                 + "and a span; rename it if the subject is not the business name.");
         b.edit(Edit.replace(f.relPath(), inner[0], inner[1], replacement));
