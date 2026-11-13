@@ -365,7 +365,9 @@ final class LogCallRules {
         List<Arg> kept = new ArrayList<>();
         List<String> droppedStems = new ArrayList<>();
         for (Arg a : args) {
-            if (a.registry() && inMdc.contains(a.key())) {
+            // a vocabulary key, or a key outside the vocabulary that an existing scope sets, logged from the variable of the
+            // same name (base class scopes "qaoCode" around the abstract step, the step logs [qaoCode={}] again)
+            if (inMdc.contains(a.key()) && (a.registry() || a.src().equals(a.key()))) {
                 String wrap = ctx.plannedBy(m, a.key());
                 if (wrap != null) {
                     plannedDeps.add(wrap);

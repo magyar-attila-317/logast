@@ -63,6 +63,7 @@ final class FamilyRules {
         for (String event : missing) {
             String message = ctx.phrasing.canonicalOf(event) == null ? subject + " " + event
                     : ctx.phrasing.canonicalOf(event).replace("{subject}", subject);
+            message = message.isEmpty() ? message : Character.toUpperCase(message.charAt(0)) + message.substring(1);
             String stmt = indent + logger.name() + ".info(" + Text.javaString(message) + "); " + DbRules.WORDING_MARKER + "\n";
             if (event.equals("started")) {
                 top.append(stmt);
