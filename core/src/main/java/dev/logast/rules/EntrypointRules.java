@@ -53,7 +53,7 @@ final class EntrypointRules {
                 : List.of();
         boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
         boolean silent = !readEndpoint && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(f, line, Rules.ENTRYPOINT_SILENT)
-                && !logsBelow(m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
+                && !LifecyclePlan.ownFlowLogs(ctx, m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
         if (!notObserved && missing.isEmpty() && !silent) {
             return;
         }
@@ -254,27 +254,6 @@ final class EntrypointRules {
      * the entrypoint or of a method at most {@link #OWN_FLOW_DEPTH} calls below it. Lines deeper down sit in shared
      * code (event publishers, audit, helpers) that many flows reach: they don't tell which flow ran.
      */
-    private boolean logsBelow(MethodInfo root, Level min) {
-        Deque<Map.Entry<MethodInfo, Integer>> queue = new ArrayDeque<>(List.of(Map.entry(root, 0)));
-        Set<String> seen = new HashSet<>();
-        while (!queue.isEmpty()) {
-            var cur = queue.poll();
-            MethodInfo m = cur.getKey();
-            if (!seen.add(m.key())) {
-                continue;
-            }
-            if (m.facts().logs.stream().anyMatch(l -> l.level().compareTo(min) >= 0 && l.inCatch() == null)) {
-                return true;
-            }
-            if (cur.getValue() < OWN_FLOW_DEPTH) {
-                for (CallGraph.Edge e : ctx.a.graph.out(m)) {
-                    queue.add(Map.entry(e.to(), cur.getValue() + 1));
-                }
-            }
-        }
-        return false;
-    }
-
     private static String observationName(MethodInfo m) {
         return Text.kebab(m.owner().simpleName()) + "." + Text.kebab(m.name());
     }

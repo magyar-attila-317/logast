@@ -39,6 +39,32 @@ index b5ef221..74b60cd 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/stipend/TallyService.java b/src/main/java/com/example/e2e/stipend/TallyService.java
+index c12133d..49d439e 100644
+--- a/src/main/java/com/example/e2e/stipend/TallyService.java
++++ b/src/main/java/com/example/e2e/stipend/TallyService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.stipend;
+ 
++import com.example.e2e.logging.MdcScope;
+ import java.util.List;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -17,9 +18,11 @@
+     }
+ 
+     private StipendOutcome processRow(KioskTotals kioskData, List<PledgeDetails> allPledgeDetails) {
+-        log.trace("Processing pledge [pledgeId={}]", kioskData.pledgeId());
+-        List<PledgeDetails> matchingPledges = filterMatchingPledges(allPledgeDetails, kioskData.pledgeId());
+-        return StipendCalculator.calculate(kioskData, matchingPledges);
++        try (var mdc = MdcScope.of("pledgeId", kioskData.pledgeId())) {
++            log.trace("Processing pledge [pledgeId={}]", kioskData.pledgeId());
++            List<PledgeDetails> matchingPledges = filterMatchingPledges(allPledgeDetails, kioskData.pledgeId());
++            return StipendCalculator.calculate(kioskData, matchingPledges);
++        }
+     }
+ 
+     private List<PledgeDetails> filterMatchingPledges(List<PledgeDetails> allPledges, String pledgeId) {
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeService.java b/src/main/java/com/example/e2e/pledge/PledgeService.java
 index 445b9d1..4441104 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeService.java

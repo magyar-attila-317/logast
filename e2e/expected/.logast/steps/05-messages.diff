@@ -39,6 +39,40 @@ index 4441104..fcb1bd0 100644
          }
      }
  }
+diff --git a/src/main/java/com/example/e2e/stipend/StipendCalculator.java b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
+index 9ca00bb..c5663df 100644
+--- a/src/main/java/com/example/e2e/stipend/StipendCalculator.java
++++ b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
+@@ -13,10 +13,9 @@ 
+     }
+ 
+     public static StipendOutcome calculate(KioskTotals kioskData, List<PledgeDetails> matchingPledges) {
+-        log.debug("Calculating stipend [pledgeId={}, kioskDay={}, matchingPledges={}]", kioskData.pledgeId(), kioskData.kioskDay(),
+-                matchingPledges.size());
++        log.debug("Calculating stipend [kioskDay={}, matchingPledges={}]", kioskData.kioskDay(), matchingPledges.size());
+         if (matchingPledges.isEmpty()) {
+-            log.debug("Pledge {} not found in the pledge list", kioskData.pledgeId());
++            log.debug("Pledge not found in the pledge list");
+             return new StipendOutcome(true, BigDecimal.ZERO);
+         }
+         return evaluateOutcome(kioskData, matchingPledges);
+@@ -27,14 +26,14 @@
+             if (pledge.subsidyPercentage() != null) {
+                 return calculateStipend(kioskData, pledge);
+             }
+-            log.trace("Pledge excluded [pledgeId={}]", pledge.pledgeId());
++            log.trace("Pledge excluded");
+         }
+         return new StipendOutcome(true, BigDecimal.ZERO);
+     }
+ 
+     private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {
+         BigDecimal result = kioskData.totalDiscount().multiply(pledge.subsidyPercentage());
+-        log.debug("Stipend calculated [pledgeId={}, kioskDay={}, result={}]", pledge.pledgeId(), kioskData.kioskDay(), result);
++        log.debug("Stipend calculated [kioskDay={}, result={}]", kioskData.kioskDay(), result);
+         return new StipendOutcome(false, result);
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 index 1b9add7..0f5a523 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
@@ -53,6 +87,19 @@ index 1b9add7..0f5a523 100644
 +        log.info("Pledge sent");
      }
  }
+diff --git a/src/main/java/com/example/e2e/stipend/TallyService.java b/src/main/java/com/example/e2e/stipend/TallyService.java
+index 49d439e..1b7afce 100644
+--- a/src/main/java/com/example/e2e/stipend/TallyService.java
++++ b/src/main/java/com/example/e2e/stipend/TallyService.java
+@@ -19,7 +19,7 @@ 
+ 
+     private StipendOutcome processRow(KioskTotals kioskData, List<PledgeDetails> allPledgeDetails) {
+         try (var mdc = MdcScope.of("pledgeId", kioskData.pledgeId())) {
+-            log.trace("Processing pledge [pledgeId={}]", kioskData.pledgeId());
++            log.trace("Processing pledge");
+             List<PledgeDetails> matchingPledges = filterMatchingPledges(allPledgeDetails, kioskData.pledgeId());
+             return StipendCalculator.calculate(kioskData, matchingPledges);
+         }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
 index 08f9ee6..7704c24 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
