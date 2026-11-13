@@ -61,9 +61,12 @@ levels:
     - org.springframework.dao.EmptyResultDataAccessException
     - jakarta.persistence.EntityNotFoundException
   clientErrorLevel: warn
-  # Opt-in: INFO per collection element -> DEBUG. Off by default because per-item INFO is often a business event
-  # (a merged table, a moved order); turn on for high-volume batch services.
-  noInfoInLoops: false
+  # INFO once per item of a loop. size: fine for small loops (fixed lists, up to boundedLoopMax items, or a
+  # `// logast:loop-size 10` hint above the loop); lowered to DEBUG for loops over query/stream data (database rows,
+  # file lines, Kafka batches, or a `// logast:loop-size large` hint); reported where the size is unknown.
+  # never: always DEBUG unless known small. always: no loop checks.
+  infoInLoops: size
+  boundedLoopMax: 20
 
 metrics:
   events: true                     # business events (lifecycle log messages) without a metric get an Observation
