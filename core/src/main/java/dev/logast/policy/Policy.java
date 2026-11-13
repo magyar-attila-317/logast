@@ -249,10 +249,10 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      */
     public record Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
                           Boolean rewriteExistingMessages, String keyStyle, List<String> protectedMessages,
-                          List<String> vagueMessages, String structuredFormat) {
+                          List<String> vagueMessages, String structuredFormat, String serviceName, String serviceVersion) {
         public Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
                        Boolean rewriteExistingMessages, String keyStyle) {
-            this(loggerName, swallowedLevel, entryLevel, minEntrypointLevel, rewriteExistingMessages, keyStyle, null, null, null);
+            this(loggerName, swallowedLevel, entryLevel, minEntrypointLevel, rewriteExistingMessages, keyStyle, null, null, null, null, null);
         }
 
         public boolean protectedMessage(String text) {
@@ -263,6 +263,9 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
             protectedMessages = protectedMessages == null ? List.of() : List.copyOf(protectedMessages);
             vagueMessages = vagueMessages == null ? List.of() : List.copyOf(vagueMessages);
             structuredFormat = structuredFormat == null ? "ecs" : structuredFormat.toLowerCase(Locale.ROOT);
+            // written to spring.application.name / .version when a service sets neither (null name: the project's name);
+            // SPRING_APPLICATION_NAME / SPRING_APPLICATION_VERSION env vars still win over the file at runtime
+            serviceVersion = serviceVersion == null ? "${APPLICATION_VERSION:unknown}" : serviceVersion;
             keyStyle = KeyStyle.parse(keyStyle).toString();   // fails fast on an unknown style
             rewriteExistingMessages = rewriteExistingMessages == null || rewriteExistingMessages;
             loggerName = loggerName == null ? "log" : loggerName;

@@ -15,7 +15,7 @@ public class ReportExporter {
     public void export(List<Order> orders) {
         log.info("Starting report export [count={}]", orders.size()); // expect: MESSAGE_PHRASING
         for (Order order : orders) {
-            log.info("Report line exported [order.id={}]", order.id()); // expect: LOG_LEVEL
+            log.info("Report line exported [order.id={}]", order.id()); // expect: LOG_LEVEL, METRIC_OUTCOME_UNMEASURED
         }
         new Thread(() -> write(orders)).start(); // expect: ASYNC_CONTEXT_LOSS
         orders.parallelStream().forEach(this::writeOne); // expect: ASYNC_CONTEXT_LOSS
@@ -33,7 +33,7 @@ public class ReportExporter {
         try {
             render(orders);
         } catch (IllegalStateException e) {
-            log.warn("Report export failed", e);
+            log.warn("Report export failed", e); // expect: METRIC_OUTCOME_UNMEASURED
         }
     }
 
@@ -43,7 +43,7 @@ public class ReportExporter {
                 throw new IllegalStateException("nothing to render");
             }
         } catch (IllegalStateException e) {
-            log.error("Report rendering failed", e); // expect: EXCEPTION_LOGGED_TWICE
+            log.error("Report rendering failed", e); // expect: EXCEPTION_LOGGED_TWICE, METRIC_OUTCOME_UNMEASURED
             throw e;
         }
     }
@@ -53,7 +53,7 @@ public class ReportExporter {
     /** Bounded loops (enum values, literal lists, constants): a fixed handful of lines, not noise. */
     public void trackStatuses() {
         for (OrderStatus status : OrderStatus.values()) {
-            log.info("Status tracked [status={}]", status);
+            log.info("Status tracked [status={}]", status); // expect: METRIC_OUTCOME_UNMEASURED
         }
         List.of("daily", "weekly").forEach(period -> log.info("Report period enabled [period={}]", period));
         for (String channel : CHANNELS) {

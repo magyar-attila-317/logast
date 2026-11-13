@@ -15,7 +15,7 @@ public class CacheWarmup {
     public void warmUp() { // expect: ENTRYPOINT_NOT_OBSERVED
         log.info("Cache warm-up started");
         load();
-        log.info("Cache warm-up completed");
+        log.info("Cache warm-up completed"); // expect: METRIC_OUTCOME_UNMEASURED
     }
 
     @EventListener

@@ -486,7 +486,34 @@ A complete GitHub Actions job is in [`examples/github-actions.yml`](examples/git
 
 ### 8. Metrics (opt-in pack)
 
-Turn it on with `packs: [logging, tracing, metrics]`. A business event that is logged but not measured gets an
+Start with the map: what is measured and what is not, rich enough to choose metrics without reading code.
+```
+$ logast metrics .
+Export: none
+  No exporter on the classpath: meters are collected but never leave the application.
+Identity
+  spring.application.name: pos-backend
+  spring.application.version: (not set: manifest Implementation-Version, if any)
+Measured without code: 661 entrypoints
+  631 by Spring MVC, e.g. http.server.requests{method="POST", uri="/api/orders/{id}/close"}
+  30 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="…", code.function="nightly"}
+Entrypoints no metric covers: 184
+Outcomes logged but not counted: 264  failed 165, skipped 27, completed 12, …
+  src/…/BillService.java:88  BillService.close
+    INFO "Bill request closed"  outcome=closed  frequency unknown: POST /bills/{id}/close has no traffic.yaml rate
+```
+`--format json` has every entry, with the exact metric and tag values to query and, for each uncounted outcome, a
+ready snippet: an `outcome` tag on the timer that is already running, or a counter. With the metrics pack on, the
+same outcomes are METRIC_OUTCOME_UNMEASURED findings (REPORT-ONLY): logast does not decide which business metrics
+matter, the LLM or a person picks.
+
+Every log line and meter also says which service and version wrote it (SETUP_SERVICE_IDENTITY, AUTO): logast adds
+`spring.application.name`/`version` when missing (env vars still win at runtime; set `logging.serviceName` /
+`logging.serviceVersion` in logast.yaml to your platform's expressions, default `${APPLICATION_VERSION:unknown}`),
+`application`/`version` tags on every meter, `service.name`/`version` in Logstash JSON (ECS and GELF take them
+from `spring.application.*`), and `service.version` on the OTel resource.
+
+Turn the pack on with `packs: [logging, tracing, metrics]`. A business event that is logged but not measured gets an
 Observation, which gives a timer (count, duration, errors) and a span in one:
 ```java
 public void refund(String orderId, long amountCents) {
@@ -567,7 +594,7 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 | command | what it does |
 |---|---|
 | `logast init [svc]` | one-time setup: policy, .gitignore, classpath, traffic template (`--baseline` for CI) |
-| `logast metrics [svc]` | every meter the service publishes: name, type, tag keys, where (`--format json`) |
+| `logast metrics [svc]` | the metrics map: exporters, identity, metric per entrypoint, meters in code, outcomes not counted (`--format json`, `--format table` = meters only) |
 | `logast vocabulary [svc]` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
 | `logast scan <svc>` | finds gaps, writes `.logast/orders.json`, prints the work orders |
@@ -586,13 +613,13 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 
 | pack | rules |
 |---|---|
-| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · DB_OUTCOME_UNLOGGED · MESSAGE_SUGGESTED · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
+| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · DB_OUTCOME_UNLOGGED · MESSAGE_SUGGESTED · SETUP_SERVICE_IDENTITY · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |
 | errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED |
 | audit (opt-in) | AUDIT_MISSING · AUDIT_SECURITY_EVENTS |
-| metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
+| metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
 | runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
 
 Suppress a single finding with `// logast:ignore RULE` on the line or the line above. Tune or disable rules in the

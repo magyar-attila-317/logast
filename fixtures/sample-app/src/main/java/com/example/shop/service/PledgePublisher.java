@@ -17,17 +17,17 @@ public class PledgePublisher {
 
     public void publish(List<String> pledgeIds, Order order) {
         log.info("Pledge batch received [pledgeIds={}]", pledgeIds); // expect: LOG_COLLECTION_ARGUMENT, LOG_KEY_STYLE
-        log.info("Order pledges attached [order={}]", order); // expect: LOG_OBJECT_ARGUMENT
+        log.info("Order pledges attached [order={}]", order); // expect: LOG_OBJECT_ARGUMENT, METRIC_OUTCOME_UNMEASURED
         log.debug("Publishing pledges"); // expect: MESSAGE_VAGUE
         log.info("No Order pledges found, won't publish"); // expect: MESSAGE_VAGUE
-        log.info("Pledge channels checked [channels={}]", CHANNELS);
+        log.info("Pledge channels checked [channels={}]", CHANNELS); // expect: METRIC_OUTCOME_UNMEASURED
         log.warn("ALERT: pledge feed stalled for order " + order.id());
         LogHelper.logCollection(log, "Pledges prepared", pledgeIds); // expect: LOG_HELPER
     }
 
     public void reserve(String orderId) {
         try (var ignored = MDC.putCloseable("order.id", orderId)) {
-            log.atInfo().addKeyValue("order.id", orderId).log("Pledge reserved"); // expect: LOG_KEY_VALUE_IN_MDC
+            log.atInfo().addKeyValue("order.id", orderId).log("Pledge reserved"); // expect: LOG_KEY_VALUE_IN_MDC, METRIC_OUTCOME_UNMEASURED
         }
     }
 
