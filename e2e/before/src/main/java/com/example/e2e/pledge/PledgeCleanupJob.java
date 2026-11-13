@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /** A nightly job looping over a query result. */
 @Component
@@ -16,6 +17,7 @@ public class PledgeCleanupJob {
     }
 
     @Scheduled(cron = "0 0 2 * * *")
+    @Transactional
     public void cleanup() {
         for (String pledgeId : repository.findOpen()) {
             log.info("Closing stale pledge {}", pledgeId);

@@ -1,9 +1,11 @@
 package com.example.e2e.pledge;
 
+import com.example.e2e.logging.AfterCommit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /** A nightly job looping over a query result. */
 @Component
@@ -16,10 +18,14 @@ public class PledgeCleanupJob {
     }
 
     @Scheduled(cron = "0 0 2 * * *")
+    @Transactional
     public void cleanup() {
-        for (String pledgeId : repository.findOpen()) {
+        log.info("Pledge cleanup started"); // logast:wording
+        var pledgeIds = repository.findOpen();
+        for (String pledgeId : pledgeIds) {
             log.debug("Closing stale pledge [pledgeId={}]", pledgeId);
             repository.close(pledgeId);
         }
+        AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
     }
 }

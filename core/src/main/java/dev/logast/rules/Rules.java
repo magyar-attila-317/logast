@@ -45,6 +45,7 @@ public final class Rules {
     public static final String DB_OUTCOME_UNLOGGED = "DB_OUTCOME_UNLOGGED";
     public static final String SETUP_SERVICE_IDENTITY = "SETUP_SERVICE_IDENTITY";
     public static final String LIFECYCLE_UNEVEN = "LIFECYCLE_UNEVEN";
+    public static final String ROW_BY_ROW_WRITE = "ROW_BY_ROW_WRITE";
     public static final String METRIC_OUTCOME_UNMEASURED = "METRIC_OUTCOME_UNMEASURED";
     public static final String MESSAGE_SUGGESTED = "MESSAGE_SUGGESTED";
     public static final String LOG_OBJECT_ARGUMENT = "LOG_OBJECT_ARGUMENT";
@@ -111,7 +112,7 @@ public final class Rules {
                 METRIC_TAG_VALUE, METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, BUSINESS_EVENT_UNMEASURED, METRIC_TAG_KEYS_MISMATCH)) {
             PACKS.put(r, Set.of("metrics"));
         }
-        for (String r : List.of(HTTP_CLIENT_NO_TIMEOUT, KAFKA_NO_ERROR_HANDLER, UNBOUNDED_EXECUTOR, BLOCKING_WAIT_UNBOUNDED)) {
+        for (String r : List.of(HTTP_CLIENT_NO_TIMEOUT, KAFKA_NO_ERROR_HANDLER, UNBOUNDED_EXECUTOR, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE)) {
             PACKS.put(r, Set.of("resilience"));
         }
         for (String r : List.of(ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED)) {
@@ -123,6 +124,59 @@ public final class Rules {
         PACKS.put(SETUP_SUPPORT_STARTER, Set.of("logging", "tracing", "metrics"));
         PACKS.put(SETUP_SERVICE_IDENTITY, Set.of("logging", "tracing", "metrics"));
         PACKS.put(METRIC_OUTCOME_UNMEASURED, Set.of("metrics"));
+    }
+
+    /**
+     * The pipeline step a rule belongs to (docs/pipeline-plan.md). {@code apply} runs the steps in this order on a
+     * scratch copy, with a rescan in between, so each step sees the real result of the previous ones: first add what
+     * is missing (setup, structure, lines), then polish (MDC, messages, exceptions, levels), then report.
+     */
+    public enum Step { SETUP, STRUCTURE, LINES, MDC, MESSAGES, EXCEPTIONS, LEVELS, REPORTS }
+
+    private static final Map<String, Step> STEPS = new HashMap<>();
+
+    static {
+        for (String r : List.of(SETUP_SUPPORT_STARTER, SETUP_OTEL_STARTER, SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING,
+                SETUP_SERVICE_IDENTITY, TRACING_SAMPLING, KAFKA_OBSERVATION_DISABLED, HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT,
+                JOB_LAUNCH_UNTRACED)) {
+            STEPS.put(r, Step.SETUP);
+        }
+        for (String r : List.of(MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NOT_OWNER, ENTRYPOINT_NOT_OBSERVED, SCHEDULED_TASK_UNTRACED,
+                ASYNC_CONTEXT_LOSS, BUSINESS_EVENT_UNMEASURED)) {
+            STEPS.put(r, Step.STRUCTURE);
+        }
+        for (String r : List.of(ENTRYPOINT_SILENT, JOB_OUTCOME_MISSING, BATCH_SUMMARY_MISSING, SKIP_UNLOGGED, STATE_CHANGE_UNLOGGED,
+                DB_OUTCOME_UNLOGGED, LIFECYCLE_UNEVEN, SWALLOWED_EXCEPTION, LOST_THROWABLE)) {
+            STEPS.put(r, Step.LINES);
+        }
+        for (String r : List.of(MISSING_DOMAIN_MDC, REPEATED_LOG_VALUE, MDC_KEY_ALIAS, MDC_NESTED_KEY, AREA_MDC_MISSING)) {
+            STEPS.put(r, Step.MDC);
+        }
+        for (String r : List.of(LOG_FORMAT, STRING_CONCAT_LOG, LOG_KEY_STYLE, GLOSSARY_VIOLATION, MESSAGE_PHRASING, PII_IN_LOG,
+                LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_KEY_VALUE_IN_MDC, MESSAGE_SUGGESTED, MESSAGE_VAGUE, LOG_HELPER)) {
+            STEPS.put(r, Step.MESSAGES);
+        }
+        for (String r : List.of(LOG_AND_RETHROW, EXCEPTION_LOGGED_TWICE)) {
+            STEPS.put(r, Step.EXCEPTIONS);
+        }
+        for (String r : List.of(LOG_LEVEL, LOG_IN_LOOP, LOG_VOLUME)) {
+            STEPS.put(r, Step.LEVELS);
+        }
+        for (String r : List.of(METRIC_NAMING, METRIC_HIGH_CARDINALITY_TAG, METRIC_DIRECT_REGISTRY, METRIC_TAG_KEY, METRIC_TAG_VALUE,
+                METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, METRIC_TAG_KEYS_MISMATCH, METRIC_OUTCOME_UNMEASURED,
+                UNBOUNDED_EXECUTOR, KAFKA_NO_ERROR_HANDLER, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE, ERROR_DETAILS_EXPOSED,
+                UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED, AUDIT_MISSING, AUDIT_SECURITY_EVENTS,
+                MANUAL_TRACE_MDC, RUNTIME_TRACE_LOST, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE)) {
+            STEPS.put(r, Step.REPORTS);
+        }
+    }
+
+    public static Step stepOf(String rule) {
+        Step s = STEPS.get(rule);
+        if (s == null) {
+            throw new IllegalStateException("rule " + rule + " has no pipeline step (Rules.STEPS)");
+        }
+        return s;
     }
 
     public static Set<String> packsOf(String rule) {
@@ -147,7 +201,7 @@ public final class Rules {
             Map.entry(MDC_CLEAR, "high"), Map.entry(MDC_NOT_OWNER, "high"),
             Map.entry(JOB_OUTCOME_MISSING, "medium"), Map.entry(SKIP_UNLOGGED, "low"), Map.entry(STATE_CHANGE_UNLOGGED, "medium"),
             Map.entry(BATCH_SUMMARY_MISSING, "low"), Map.entry(DB_OUTCOME_UNLOGGED, "medium"),
-            Map.entry(SETUP_SERVICE_IDENTITY, "medium"), Map.entry(LIFECYCLE_UNEVEN, "low"), Map.entry(METRIC_OUTCOME_UNMEASURED, "low"), Map.entry(MESSAGE_SUGGESTED, "low"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
+            Map.entry(SETUP_SERVICE_IDENTITY, "medium"), Map.entry(LIFECYCLE_UNEVEN, "low"), Map.entry(ROW_BY_ROW_WRITE, "medium"), Map.entry(METRIC_OUTCOME_UNMEASURED, "low"), Map.entry(MESSAGE_SUGGESTED, "low"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
             Map.entry(LOG_COLLECTION_ARGUMENT, "medium"), Map.entry(LOG_HELPER, "medium"), Map.entry(MESSAGE_VAGUE, "low"),
             Map.entry(LOG_KEY_VALUE_IN_MDC, "low"),
             Map.entry(AREA_MDC_MISSING, "medium"), Map.entry(LOG_LEVEL, "medium"), Map.entry(EXCEPTION_LOGGED_TWICE, "medium"),
@@ -190,9 +244,12 @@ public final class Rules {
     /** METRIC_OUTCOME_UNMEASURED: outcomes the logs report and no metric counts; a person or LLM picks the ones to count. */
     private static void outcomeGaps(RuleContext ctx) {
         var decisions = dev.logast.apply.MetricsFile.read(ctx.a.project.root());
+        Map<String, Integer> seen = new HashMap<>();
         for (MetricsMap.Gap g : MetricsMap.of(ctx.a).gaps()) {
             MetricsMap.Unmeasured u = g.outcome();
-            OrderBuilder b = ctx.order(METRIC_OUTCOME_UNMEASURED, u.file() + "|" + u.method() + "|" + u.message() + "|" + u.event()).at(u.file(), u.line())
+            String anchor = u.file() + "|" + u.method() + "|" + u.message() + "|" + u.event();
+            int n = seen.merge(anchor, 1, Integer::sum);   // the same message twice in one method: number the repeats
+            OrderBuilder b = ctx.order(METRIC_OUTCOME_UNMEASURED, n == 1 ? anchor : anchor + "|" + n).at(u.file(), u.line())
                     .title("\"" + u.message() + "\" is logged but not counted (outcome=" + u.event() + ", frequency " + u.frequency() + ")")
                     .data("name", g.name()).data("outcome", u.event()).data("message", u.level().toUpperCase(java.util.Locale.ROOT) + " \"" + u.message() + "\"")
                     .data("frequency", u.frequency()).data("paths", u.paths()).data("tagAvailable", g.tagAvailable());
@@ -262,6 +319,7 @@ public final class Rules {
         dev.logast.orders.LogCoverage coverage = new CoverageRules(ctx).run();
         new DbRules(ctx).run();
         new FamilyRules(ctx).run();
+        new RowLoopRules(ctx).run();
         new MdcRules(ctx).run();
         new AsyncRules(ctx).run();
         new AreaRules(ctx).run();

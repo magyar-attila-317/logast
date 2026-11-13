@@ -1,20 +1,15 @@
 {
   "_readme" : "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.",
-  "_status" : "10 finding(s) below need a message text.",
-  "OUT-b146dc" : {
+  "_status" : "9 finding(s) below need a message text.",
+  "SUG-bc8896" : {
     "MSG" : "",
-    "_MSG" : "Completion log for @Scheduled PledgeCleanupJob.cleanup: what finished, e.g. 'Invoice export completed' | must read as: {subject} completed | suffix keys added by the tool: [pledgeCount]",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:19 PledgeCleanupJob.cleanup"
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge cleanup started | must read as: {subject} started",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23 PledgeCleanupJob.cleanup"
   },
-  "SIL-75d6ff" : {
+  "SUG-44443e" : {
     "MSG" : "",
-    "_MSG" : "Entry log for @Scheduled PledgeCleanupJob.cleanup (PledgeCleanupJob.cleanup): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:19 PledgeCleanupJob.cleanup"
-  },
-  "OUT-7a1f0a" : {
-    "MSG" : "",
-    "_MSG" : "Completion log for @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent): what finished, e.g. 'Invoice export completed' | must read as: {subject} completed",
-    "_where" : "src/main/java/com/example/e2e/job/SettlementJobExecutor.java:17 SettlementJobExecutor.onReady"
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge cleanup completed | must read as: {subject} completed | suffix keys added by the tool: [pledgeCount]",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29 PledgeCleanupJob.cleanup"
   },
   "SUG-d99e11" : {
     "MSG" : "",
@@ -33,17 +28,17 @@
   },
   "SUG-a2a43c" : {
     "MSG" : "",
-    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Tally started",
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Tally started | must read as: {subject} started",
     "_where" : "src/main/java/com/example/e2e/job/TallyJob.java:15 TallyJob.doExecute"
   },
   "SUG-4dc17a" : {
     "MSG" : "",
-    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Export job started",
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Export job started | must read as: {subject} started",
     "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:15 ExportJob.doExecute"
   },
   "SUG-7055a3" : {
     "MSG" : "",
-    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Export job completed",
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Export job completed | must read as: {subject} completed",
     "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:16 ExportJob.doExecute"
   },
   "FMT-93dcb8" : {

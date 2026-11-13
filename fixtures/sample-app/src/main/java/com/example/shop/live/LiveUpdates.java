@@ -29,7 +29,7 @@ public class LiveUpdates {
     }
 
     @MessageMapping("/orders/ack")
-    public void acknowledge(String orderId) { // expect: ENTRYPOINT_NOT_OBSERVED, MISSING_DOMAIN_MDC, JOB_OUTCOME_MISSING
+    public void acknowledge(String orderId) { // expect: ENTRYPOINT_NOT_OBSERVED, MISSING_DOMAIN_MDC
         log.info("Order acknowledged [order.id={}]", orderId); // expect: LOG_FORMAT, METRIC_OUTCOME_UNMEASURED
     }
 }
