@@ -174,4 +174,39 @@ class RepeatedChainTest {
         assertThat(edits).contains("\"Publishing pledge\"", "\"Pledge published\"", "\"Sending pledge to the channel\"", "\"Pledge sent\"");
         assertThat(r.orders()).noneMatch(o -> !o.slots().isEmpty());          // nothing left for a person to word
     }
+
+    @Test
+    void aValueRecognisedByItsMessageKeyIsDroppedToo(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  pledge: { mdc: { key: pledgeId, sources: { params: [pledgeId] } } }
+                """);
+        Files.writeString(src.resolve("Pledges.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                record PledgeRequest(String code) {
+                }
+
+                class PledgeService {
+                    private static final Logger log = LoggerFactory.getLogger(PledgeService.class);
+
+                    void publish(PledgeRequest request) {
+                        log.info("Pledge publication started [pledgeId={}]", request.code());
+                        log.info("Pledge publication completed [pledgeId={}]", request.code());
+                    }
+                }
+                """);
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .containsExactly("PledgeService.publish");
+        // the same recognition drops it from the messages: no line keeps [pledgeId={}] under the new scope
+        String edits = String.join("\n", r.orders().stream().filter(o -> o.rule().equals(Rules.LOG_FORMAT) || o.fixes().contains(Rules.LOG_FORMAT))
+                .flatMap(o -> o.edits().stream()).map(e -> e.text()).toList());
+        assertThat(edits).contains("\"Pledge publication started\"", "\"Pledge publication completed\"").doesNotContain("pledgeId={}");
+    }
 }

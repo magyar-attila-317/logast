@@ -5,6 +5,7 @@
 entrypoints:
   # http
   "GET /pledges":     # http, PledgeController.open
+  "POST /pledges/allot":     # http, PledgeController.allot
   "POST /pledges/{pledgeId}/publish":     # http, PledgeController.publish
   "POST /pledges/{pledgeId}/use":     # http, PledgeController.use
   "POST /orders":     # http, PledgeController.place

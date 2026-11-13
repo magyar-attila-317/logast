@@ -16,8 +16,8 @@
     "outcome" : "sent",
     "_message" : "INFO \"Pledge sent\"",
     "_where" : "src/main/java/com/example/e2e/pledge/PledgeSender.java:13",
-    "_frequency" : "unknown: no rate for \"POST /pledges/{pledgeId}/publish\" in .logast/traffic.yaml",
-    "_paths" : [ "http POST /pledges/{pledgeId}/publish" ],
+    "_frequency" : "unknown: no rate for \"POST /pledges/allot\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /pledges/allot", "http POST /pledges/{pledgeId}/publish" ],
     "_tag" : "available"
   },
   "OUM-d73233" : {
@@ -25,9 +25,19 @@
     "name" : "pledge",
     "outcome" : "published",
     "_message" : "INFO \"Pledge published\"",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeService.java:23",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeService.java:24",
     "_frequency" : "unknown: no rate for \"POST /pledges/{pledgeId}/publish\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /pledges/{pledgeId}/publish" ],
+    "_tag" : "available"
+  },
+  "OUM-bd3c2e" : {
+    "count" : "",
+    "name" : "pledge.allotment",
+    "outcome" : "completed",
+    "_message" : "INFO \"Pledge allotment completed\"",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeService.java:31",
+    "_frequency" : "unknown: no rate for \"POST /pledges/allot\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /pledges/allot" ],
     "_tag" : "available"
   },
   "OUM-84c094" : {

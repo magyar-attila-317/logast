@@ -40,13 +40,21 @@ public final class Applier {
     public record Result(List<String> applied, Map<String, String> rejected, List<String> resolvedIndirectly,
                          List<String> changedFiles, String diff, int rounds,
                          @com.fasterxml.jackson.annotation.JsonIgnore ScanResult before,
-                         @com.fasterxml.jackson.annotation.JsonIgnore ScanResult after) {
+                         @com.fasterxml.jackson.annotation.JsonIgnore ScanResult after,
+                         List<String> violations) {
     }
 
     private final Function<Path, ScanResult> scanner;
     private final FillValidator validator;
     private java.util.function.Consumer<String> progress = s -> {
     };
+    private java.util.function.BiFunction<Path, List<String>, List<String>> invariants = (work, files) -> List.of();
+
+    /** Properties the changed files must have (Invariants): checked on the scratch copy before anything is written. */
+    public Applier onInvariants(java.util.function.BiFunction<Path, List<String>, List<String>> check) {
+        this.invariants = check;
+        return this;
+    }
 
     /**
      * Receives a short line for every step (copy, analysis, each round, re-checks); the CLI shows it as it goes.
@@ -178,10 +186,12 @@ public final class Applier {
         List<String> changed = new ArrayList<>();
         StringBuilder diff = new StringBuilder();
         compare(root, work, changed, diff);
+        progress.accept("~checking the result");
+        List<String> violations = changed.isEmpty() ? List.of() : invariants.apply(work, changed);
         if (write) {
             copyBack(root, work, changed);
         }
-        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan);
+        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations);
     }
 
     private static void select(ScanResult scan, Selection sel, Set<String> pending, Set<String> everSelected,

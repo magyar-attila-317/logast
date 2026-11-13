@@ -81,9 +81,8 @@ final class RepeatedValueRules {
                 continue;
             }
             Map<String, Plan> theirs = plans.get(caller.key());
-            boolean passesOn = passes(caller, key).stream().anyMatch(p -> p.getKey().to().key().equals(m.key()));
-            if (theirs == null || !theirs.containsKey(key) || !passesOn) {
-                return false;
+            if (theirs == null || !theirs.containsKey(key)) {
+                return false;   // a caller that scopes the key covers this method too: a scope here would nest
             }
         }
         return true;

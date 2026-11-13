@@ -22,4 +22,10 @@ public class PledgeService {
         repository.close(pledgeId);
         log.info("Pledge {} published", pledgeId);
     }
+
+    public void allot(AllotRequest request) {
+        log.info("Pledge allotment started [pledgeId={}]", request.code());
+        sender.send(request.code());
+        log.info("Pledge allotment completed [pledgeId={}, tableId={}]", request.code(), request.tableId());
+    }
 }

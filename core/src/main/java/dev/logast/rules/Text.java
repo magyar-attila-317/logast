@@ -51,7 +51,7 @@ public final class Text {
             while (n < line.length() && line.charAt(n) == ' ') {
                 n++;
             }
-            if (n > 0 && n < line.length()) {
+            if (n > 0 && n < line.length() && line.charAt(n) != '*') {   // " * text" in a Javadoc is not indentation
                 min = Math.min(min, n);
             }
         }

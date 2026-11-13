@@ -34,6 +34,11 @@ public class PledgeController {
         return repository.countUse(pledgeId);
     }
 
+    @PostMapping("/pledges/allot")
+    public void allot(@RequestBody com.example.e2e.pledge.AllotRequest request) {
+        pledges.allot(request);
+    }
+
     @PostMapping("/orders")
     public void place(@RequestBody Order order) {
         orders.place(order);

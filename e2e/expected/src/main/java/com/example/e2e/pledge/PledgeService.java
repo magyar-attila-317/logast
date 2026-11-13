@@ -1,5 +1,6 @@
 package com.example.e2e.pledge;
 
+import com.example.e2e.logging.MdcScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -21,5 +22,13 @@ public class PledgeService {
         sender.send(pledgeId);
         repository.close(pledgeId);
         log.info("Pledge published");
+    }
+
+    public void allot(AllotRequest request) {
+        try (var mdc = MdcScope.of("pledgeId", request.code())) {
+            log.info("Pledge allotment started");
+            sender.send(request.code());
+            log.info("Pledge allotment completed [tableId={}]", request.tableId());
+        }
     }
 }
