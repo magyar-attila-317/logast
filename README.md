@@ -192,14 +192,27 @@ for a complete one (terms, aliases, MDC keys and their sources, areas where word
 [`docs/vocabulary.md`](docs/vocabulary.md) for how layers, overrides, phrasing and levels work.
 `logast policy .` prints the merged result and every override.
 
-### 3. Scan, then apply
+### 3. Apply
 
+The whole migration is two commands; everything else is filling in what only a person knows:
 ```bash
-logast scan . --format summary      # what would change, per rule
-logast scan .                       # every finding, with a preview of the change
-logast apply . --auto               # preview the automatic fixes (a diff); nothing is written
-logast apply . --auto --write       # make them
+logast init . --pack logging,tracing,metrics,resilience,errors,audit
+logast apply . --auto --write
 ```
+`apply` fixes everything it can (best effort, across all selected packs), refreshes the classpath when it changed
+a build file, creates the files to fill (`.logast/fills.json`, `.logast/metrics.json`, `.logast/traffic.yaml`), and ends
+with one line per thing left to do:
+```
+Next steps
+  1. git diff                                            review the changes
+  2. write "MSG" texts in .logast/fills.json             18 log lines need wording only a person knows; then apply again
+  3. set "count" in .logast/metrics.json                 14 logged outcomes are not counted: counter, tag or skip each; then apply again
+  4. fill calls/day in .logast/traffic.yaml (optional)   18 of 18 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  5. logast scan . --format summary                      24 findings are decisions for a person (AUDIT_MISSING 2, …); each says what to decide
+  6. logast verify .                                     build and run the tests with log capture
+```
+Fill the files, run `logast apply . --auto --write` again, repeat until the list is empty. `logast scan .` shows the
+same list without changing anything; `logast apply . --auto` (no `--write`) previews the diff.
 
 Findings come in three kinds: **AUTO** (logast fixes it), **NEEDS TEXT** (someone writes one message: put it into
 `.logast/fills.json` and `apply` picks it up), and **REPORT-ONLY** (a decision for a person; the note says what to
