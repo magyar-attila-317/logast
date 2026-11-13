@@ -85,4 +85,49 @@ class RepeatedChainTest {
         assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
                 .containsExactly("One.run");
     }
+
+    @Test
+    void aWrappedListenerDoesNotSwallowTheScope(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  pledge: { mdc: { key: pledgeId, sources: { params: [pledgeId] } } }
+                """);
+        Files.writeString(src.resolve("Pledges.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.boot.context.event.ApplicationReadyEvent;
+                import org.springframework.context.event.EventListener;
+
+                class PledgeListener {
+                    private static final Logger log = LoggerFactory.getLogger(PledgeListener.class);
+                    private final PledgeService service = new PledgeService();
+
+                    @EventListener(ApplicationReadyEvent.class)
+                    public void onReady() {
+                        String pledgeId = service.next();
+                        log.info("Pledge picked [pledgeId={}]", pledgeId);
+                        service.publish(pledgeId);
+                    }
+                }
+
+                class PledgeService {
+                    private static final Logger log = LoggerFactory.getLogger(PledgeService.class);
+
+                    String next() { return "c-1"; }
+
+                    void publish(String pledgeId) {
+                        log.info("Pledge publication started [pledgeId={}]", pledgeId);
+                        log.info("Pledge publication completed [pledgeId={}]", pledgeId);
+                    }
+                }
+                """);
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        // the listener gets an observation wrapper (not this rule); the service must still scope pledgeId itself
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .contains("PledgeService.publish");
+    }
 }

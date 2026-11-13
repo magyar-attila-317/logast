@@ -43,12 +43,50 @@ final class RepeatedValueRules {
         if (!ctx.enabled(Rules.REPEATED_LOG_VALUE) || min <= 0) {
             return;
         }
+        // phase 1: what every method would scope, under exactly the conditions that produce an order
+        Map<String, Map<String, Plan>> plans = new LinkedHashMap<>();
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() != null && !ctx.wrappedMethods.contains(m.key())
                     && !ctx.legacyMdc(m)) {   // MDC_NOT_CLOSEABLE / MDC_CLEAR come first
-                method(m, min);
+                Map<String, Plan> p = plans(m, min);
+                if (!p.isEmpty()) {
+                    plans.put(m.key(), p);
+                }
             }
         }
+        // phase 2: a method leaves a key to its callers only when every caller really scopes it (or has it in MDC)
+        for (var e : plans.entrySet()) {
+            MethodInfo m = ctx.a.index.method(e.getKey());
+            Map<String, Plan> mine = new LinkedHashMap<>(e.getValue());
+            mine.keySet().removeIf(key -> coveredByCallers(m, key, plans));
+            emit(m, mine);
+        }
+    }
+
+    private record Plan(Candidate candidate, Region region, int total) {
+    }
+
+    /** Every caller has {@code key} in MDC already, or scopes it itself and passes the value on to {@code m}. */
+    private boolean coveredByCallers(MethodInfo m, String key, Map<String, Map<String, Plan>> plans) {
+        var in = ctx.a.graph.in(m);
+        if (in.isEmpty()) {
+            return false;
+        }
+        for (var e : in) {
+            MethodInfo caller = e.from();
+            if (caller.key().equals(m.key())) {
+                return false;   // recursion: scope here
+            }
+            if (ctx.mdcInside(caller).contains(key)) {
+                continue;
+            }
+            Map<String, Plan> theirs = plans.get(caller.key());
+            boolean passesOn = passes(caller, key).stream().anyMatch(p -> p.getKey().to().key().equals(m.key()));
+            if (theirs == null || !theirs.containsKey(key) || !passesOn) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static final int CHAIN_DEPTH = 4;
@@ -142,36 +180,7 @@ final class RepeatedValueRules {
         return n;
     }
 
-    /** Every caller passes the value on from a stable variable of its own and reaches the threshold there: MDC goes higher. */
-    private boolean coveredByCallers(MethodInfo m, String key, int min, int depth) {
-        var in = ctx.a.graph.in(m);
-        if (in.isEmpty() || depth > CHAIN_DEPTH) {
-            return false;
-        }
-        for (var e : in) {
-            MethodInfo caller = e.from();
-            if (caller.decl().getBody() == null || caller.owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
-                return false;
-            }
-            Expression passed = passes(caller, key).stream().filter(p -> p.getKey().to().key().equals(m.key()))
-                    .map(Map.Entry::getValue).findFirst().orElse(null);
-            if (ctx.mdcInside(caller).contains(key)) {
-                continue;   // in MDC on this path already (or planned there in this scan)
-            }
-            String root = passed == null ? null : root(passed);
-            if (root == null) {
-                return false;
-            }
-            Candidate c = new Candidate(key, handedOn(passed, key), root, new ArrayList<>());
-            if (region(caller, caller.file().text(), c) == null
-                    || ownCount(caller, key) + chainCount(caller, key, 0, new HashSet<>(Set.of(caller.key()))) < min) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private void method(MethodInfo m, int min) {
+    private Map<String, Plan> plans(MethodInfo m, int min) {
         SourceFileInfo f = m.file();
         String text = f.text();
         Set<String> inMdc = ctx.mdcInside(m);
@@ -223,19 +232,32 @@ final class RepeatedValueRules {
             }
         }
 
-        Map<Region, List<Candidate>> byRegion = new LinkedHashMap<>();
-        Map<String, Integer> totals = new HashMap<>();
+        Map<String, Plan> out = new LinkedHashMap<>();
         for (Candidate c : byKey.values()) {
             int total = c.logs().size() + chainCount(m, c.key(), 0, new HashSet<>(Set.of(m.key())));
-            if (total < min || coveredByCallers(m, c.key(), min, 0) || setBelow(m, c.key(), 0, new HashSet<>())) {
+            if (total < min || setBelow(m, c.key(), 0, new HashSet<>())) {
                 continue;
             }
-            totals.put(c.key(), total);
             Region r = region(m, text, c);
             if (r != null) {
-                byRegion.computeIfAbsent(r, x -> new ArrayList<>()).add(c);
+                out.put(c.key(), new Plan(c, r, total));
             }
         }
+        return out;
+    }
+
+    private void emit(MethodInfo m, Map<String, Plan> plans) {
+        if (plans.isEmpty()) {
+            return;
+        }
+        Map<Region, List<Candidate>> byRegion = new LinkedHashMap<>();
+        Map<String, Integer> totals = new HashMap<>();
+        plans.forEach((key, p) -> {
+            totals.put(key, p.total());
+            byRegion.computeIfAbsent(p.region(), x -> new ArrayList<>()).add(p.candidate());
+        });
+        SourceFileInfo f = m.file();
+        String text = f.text();
         // one wrap per method and round; overlapping regions come back after the rescan
         byRegion.entrySet().stream()
                 .max(Comparator.comparingInt((Map.Entry<Region, List<Candidate>> e) -> e.getValue().size())
