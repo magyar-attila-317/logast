@@ -1,8 +1,8 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 3bbf835..953f5f0 100644
+index 32d760f..04300cc 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
-@@ -15,8 +15,8 @@ 
+@@ -15,9 +15,9 @@ 
      }
  
      public void place(Order order) {
@@ -12,7 +12,8 @@ index 3bbf835..953f5f0 100644
 -        log.info("Order {} placed", order.id());
 +        log.info("Order placed");
      }
- }
+ 
+     /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 index 671ba3a..0c14077 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java

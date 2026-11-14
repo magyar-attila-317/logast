@@ -5,5 +5,5 @@ build/
 out/
 .idea/
 *.iml
-# the e2e snapshot keeps the files apply creates there
-!e2e/expected/.logast/
+# the e2e snapshots keep the files apply creates there
+!e2e/expected*/.logast/

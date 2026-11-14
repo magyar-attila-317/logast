@@ -154,6 +154,73 @@ class E2eGoldenTest {
         }));
     }
 
+    /**
+     * The whole process: migrate, then write every message text logast asks for (fills.json) and count every outcome
+     * (metrics.json), then apply once more. Every decision must land, also the ones on lines the texts reword (their
+     * ids used to include the message text, so a reworded line lost its decision without a word). Every file must
+     * equal e2e/expected-decided.
+     */
+    @Test
+    void filledTextsAndMetricDecisionsAllLand() throws IOException {
+        Path app = tmp.resolve("app");
+        migrate(app, CLASSPATH, a -> {
+        });
+        Path fills = app.resolve(".logast/fills.json");
+        String f = Files.readString(fills);
+        String filledTexts = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*)\"_MSG\" : \"([^\"]*?must read as: \\{subject} (\\w+)[^\"]*)\"")
+                .matcher(f).replaceAll("\"MSG\" : \"Coupon sweep $3\",$1\"_MSG\" : \"$2\"");
+        assertThat(filledTexts).as("fills.json has texts to write").isNotEqualTo(f);
+        Files.writeString(fills, filledTexts);
+        Path metrics = app.resolve(".logast/metrics.json");
+        String m = Files.readString(metrics);
+        assertThat(m).as("metrics.json has outcomes to decide").contains("\"count\" : \"\"");
+        // count every outcome; where the line logs a number, count that too: the first entry per run, the rest totals
+        String counted0 = m.replace("\"count\" : \"\"", "\"count\" : \"counter\"");
+        java.util.regex.Matcher am = java.util.regex.Pattern.compile("\"amount\" : \"\",(\\s*)\"as\" : \"\",(\\s*)\"_amounts\" : \\[ \"(\\w+)\"")
+                .matcher(counted0);
+        StringBuilder sb = new StringBuilder();
+        int amounts = 0;
+        while (am.find()) {
+            am.appendReplacement(sb, "\"amount\" : \"$3\",$1\"as\" : \"" + (amounts++ == 0 ? "per-run" : "") + "\",$2\"_amounts\" : [ \"$3\"");
+        }
+        am.appendTail(sb);
+        assertThat(amounts).as("some outcome lines log a number to count").isPositive();
+        Files.writeString(metrics, sb.toString());
+        long decided = m.lines().filter(l -> l.contains("\"count\" : \"\"")).count();
+
+        String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        Files.writeString(app.resolve("OUTPUT.txt"), Files.readString(app.resolve("OUTPUT.txt"))
+                + "\n=== after writing every text and counting every outcome\n" + third);
+        compile(app);
+        Map<String, String> actual = files(app);
+        long counted = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)
+                .mapToLong(t -> t.lines().filter(l -> l.contains("Outcomes.count(\"") || l.contains("Outcomes.record(\"")).count()).sum();
+        assertThat(counted).as("every outcome decided in metrics.json is counted").isEqualTo(decided);
+        long withAmount = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)
+                .mapToLong(t -> t.lines().filter(l -> l.matches(".*Outcomes\\.(count|record)\\(\"[^\"]+\", \"[^\"]+\", \"[^\"]+\", .+\\);.*")).count()).sum();
+        assertThat(withAmount).as("every amount named in metrics.json is counted").isEqualTo(amounts);
+        golden(EXPECTED.resolveSibling("expected-decided"), actual);
+    }
+
+    /**
+     * metrics.amounts: off in logast.yaml: metrics.json offers no amounts, and nothing else changes. Every file equals
+     * e2e/expected, metrics.json without its amount fields.
+     */
+    @Test
+    void amountsOffOffersNoAmountsAndChangesNothingElse() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml) + "metrics:\n  amounts: off\n");
+        });
+        Map<String, String> expected = new TreeMap<>(files(EXPECTED));
+        expected.put("logast.yml", expected.get("logast.yml") + "metrics:\n  amounts: off\n");
+        String metrics = expected.get(".logast/metrics.json");
+        assertThat(metrics).as("the golden metrics.json offers amounts").contains("\"_amounts\"");
+        expected.put(".logast/metrics.json", metrics.replaceAll("(?m)^ *\"(amount|as)\" : \"\",\\n", "")
+                .replaceAll("(?m)^ *\"_amounts\" : \\[[^\\]]*\\],\\n", ""));
+        assertSameFiles(expected, actual);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);

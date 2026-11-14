@@ -19,4 +19,10 @@ public class OrderService {
         payments.charge(order);
         log.info("Order {} placed", order.id());
     }
+
+    /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
+    public void ship(java.util.List<Order> orders, int batchNumber) {
+        orders.forEach(payments::charge);
+        log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
+    }
 }

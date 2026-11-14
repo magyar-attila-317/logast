@@ -200,3 +200,35 @@ index c12133d..49d439e 100644
      }
  
      private List<CouponDetails> filterMatchingCoupons(List<CouponDetails> allCoupons, String couponId) {
+diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
+index 49305f1..3c78462 100644
+--- a/src/main/java/com/example/e2e/order/PaymentClient.java
++++ b/src/main/java/com/example/e2e/order/PaymentClient.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.order;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Component;
+@@ -9,12 +10,14 @@
+     private static final Logger log = LoggerFactory.getLogger(PaymentClient.class);
+ 
+     public void charge(Order order) {
+-        try {
+-            log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
+-            gateway(order);
+-        } catch (IllegalStateException e) {
+-            log.error("Charge failed for order {}", order.id(), e);
+-            throw new PaymentException("charge failed", e);
++        try (var mdc = MdcScope.of("orderId", order.id())) {
++            try {
++                log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
++                gateway(order);
++            } catch (IllegalStateException e) {
++                log.error("Charge failed for order {}", order.id(), e);
++                throw new PaymentException("charge failed", e);
++            }
+         }
+     }
+ 

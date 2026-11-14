@@ -70,6 +70,9 @@ levels:
 
 metrics:
   events: true                     # business events (lifecycle log messages) without a metric get an Observation
+  amounts: total                   # an outcome line that logs a number ([rows={}]) can count it too, if metrics.json
+                                   # names it ("amount"): total = a counter grows by it, per-run = each one a sample of
+                                   # a distribution summary, off = metrics.json does not offer it
   tags:                            # tag vocabulary: aliases are renamed to the key (METRIC_TAG_KEY)
     outcome:
       aliases: [result, success, succeeded]
