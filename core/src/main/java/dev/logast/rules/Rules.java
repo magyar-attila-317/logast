@@ -47,6 +47,7 @@ public final class Rules {
     public static final String LIFECYCLE_UNEVEN = "LIFECYCLE_UNEVEN";
     public static final String ROW_BY_ROW_WRITE = "ROW_BY_ROW_WRITE";
     public static final String METRIC_OUTCOME_UNMEASURED = "METRIC_OUTCOME_UNMEASURED";
+    public static final String METRIC_CATALOG = "METRIC_CATALOG";
     public static final String MESSAGE_SUGGESTED = "MESSAGE_SUGGESTED";
     public static final String LOG_OBJECT_ARGUMENT = "LOG_OBJECT_ARGUMENT";
     public static final String LOG_COLLECTION_ARGUMENT = "LOG_COLLECTION_ARGUMENT";
@@ -124,6 +125,7 @@ public final class Rules {
         PACKS.put(SETUP_SUPPORT_STARTER, Set.of("logging", "tracing", "metrics"));
         PACKS.put(SETUP_SERVICE_IDENTITY, Set.of("logging", "tracing", "metrics"));
         PACKS.put(METRIC_OUTCOME_UNMEASURED, Set.of("metrics"));
+        PACKS.put(METRIC_CATALOG, Set.of("metrics"));
     }
 
     /**
@@ -163,7 +165,7 @@ public final class Rules {
             STEPS.put(r, Step.LEVELS);
         }
         for (String r : List.of(METRIC_NAMING, METRIC_HIGH_CARDINALITY_TAG, METRIC_DIRECT_REGISTRY, METRIC_TAG_KEY, METRIC_TAG_VALUE,
-                METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, METRIC_TAG_KEYS_MISMATCH, METRIC_OUTCOME_UNMEASURED,
+                METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, METRIC_TAG_KEYS_MISMATCH, METRIC_OUTCOME_UNMEASURED, METRIC_CATALOG,
                 UNBOUNDED_EXECUTOR, KAFKA_NO_ERROR_HANDLER, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE, ERROR_DETAILS_EXPOSED,
                 UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED, AUDIT_MISSING, AUDIT_SECURITY_EVENTS,
                 MANUAL_TRACE_MDC, RUNTIME_TRACE_LOST, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE)) {
@@ -201,7 +203,7 @@ public final class Rules {
             Map.entry(MDC_CLEAR, "high"), Map.entry(MDC_NOT_OWNER, "high"),
             Map.entry(JOB_OUTCOME_MISSING, "medium"), Map.entry(SKIP_UNLOGGED, "low"), Map.entry(STATE_CHANGE_UNLOGGED, "medium"),
             Map.entry(BATCH_SUMMARY_MISSING, "low"), Map.entry(DB_OUTCOME_UNLOGGED, "medium"),
-            Map.entry(SETUP_SERVICE_IDENTITY, "medium"), Map.entry(LIFECYCLE_UNEVEN, "low"), Map.entry(ROW_BY_ROW_WRITE, "medium"), Map.entry(METRIC_OUTCOME_UNMEASURED, "low"), Map.entry(MESSAGE_SUGGESTED, "low"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
+            Map.entry(SETUP_SERVICE_IDENTITY, "medium"), Map.entry(LIFECYCLE_UNEVEN, "low"), Map.entry(ROW_BY_ROW_WRITE, "medium"), Map.entry(METRIC_OUTCOME_UNMEASURED, "low"), Map.entry(METRIC_CATALOG, "low"), Map.entry(MESSAGE_SUGGESTED, "low"), Map.entry(MDC_NESTED_KEY, "medium"), Map.entry(LOG_OBJECT_ARGUMENT, "high"),
             Map.entry(LOG_COLLECTION_ARGUMENT, "medium"), Map.entry(LOG_HELPER, "medium"), Map.entry(MESSAGE_VAGUE, "low"),
             Map.entry(LOG_KEY_VALUE_IN_MDC, "low"),
             Map.entry(AREA_MDC_MISSING, "medium"), Map.entry(LOG_LEVEL, "medium"), Map.entry(EXCEPTION_LOGGED_TWICE, "medium"),
@@ -416,6 +418,7 @@ public final class Rules {
         new AreaRules(ctx).run();
         new MetricRules(ctx).run();
         new EventMetricRules(ctx).run();
+        new CatalogRules(ctx).run();
         MetricRules.tagKeyMismatch(ctx);
         if (ctx.enabled(METRIC_OUTCOME_UNMEASURED)) {
             outcomeGaps(ctx);

@@ -1,6 +1,5 @@
 package com.example.e2e.order;
 
-import com.example.e2e.logging.Outcomes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -19,13 +18,13 @@ public class OrderService {
         log.info("Placing order");
         payments.charge(order);
         log.info("Order placed");
-        Outcomes.count("order", "placed");
+        OrderMetrics.orderPlaced();
     }
 
     /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
     public void ship(java.util.List<Order> orders, int batchNumber) {
         orders.forEach(payments::charge);
         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
-        Outcomes.count("orders", "shipped", "items", orders.size());
+        OrderMetrics.ordersShipped(orders.size());
     }
 }

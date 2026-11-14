@@ -1,7 +1,6 @@
 package com.example.e2e.coupon;
 
 import com.example.e2e.logging.AfterCommit;
-import com.example.e2e.logging.Outcomes;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,7 +30,7 @@ public class CouponRepository {
     public int countUse(String couponId) {
         int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, couponId);
         AfterCommit.log(() -> log.info("Coupon usage saved [uses={}]", uses)); // logast:wording
-        Outcomes.record("coupon.usage", "saved", "uses", uses);
+        CouponMetrics.couponUsageSaved(uses);
         return uses;
     }
 

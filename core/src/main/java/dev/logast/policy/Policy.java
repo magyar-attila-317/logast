@@ -62,9 +62,14 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param amounts what metrics.json offers for an outcome line that logs a number ([rows={}], [count={}]): "total"
      *                (default: a counter that grows by the number), "per-run" (each number one sample of a
      *                distribution summary) or "off" (only counts how often). An entry's "as" overrides the default.
+     * @param catalog where metric names live (METRIC_CATALOG): "per-package" (default: one XMetrics class per package
+     *                that counts, next to its code), "single" (all in {@code catalogClass}) or "off" (names stay at the
+     *                call sites)
+     * @param catalogClass the class for "single"; default {@code <app package>.metrics.BusinessMetrics}
      */
-    public record Metrics(Map<String, MetricTag> tags, Boolean events, String amounts) {
+    public record Metrics(Map<String, MetricTag> tags, Boolean events, String amounts, String catalog, String catalogClass) {
         public static final List<String> AMOUNTS = List.of("total", "per-run", "off");
+        public static final List<String> CATALOGS = List.of("per-package", "single", "off");
 
         public Metrics {
             tags = tags == null ? Map.of() : new LinkedHashMap<>(tags);
@@ -75,6 +80,12 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
             if (!AMOUNTS.contains(amounts)) {
                 throw new IllegalArgumentException("metrics.amounts must be one of " + AMOUNTS + " (got \"" + amounts + "\")");
             }
+            catalog = catalog == null || catalog.isBlank() ? "per-package" : catalog.strip().toLowerCase(Locale.ROOT);
+            catalog = catalog.equals("false") ? "off" : catalog;   // YAML reads an unquoted off as a boolean
+            if (!CATALOGS.contains(catalog)) {
+                throw new IllegalArgumentException("metrics.catalog must be one of " + CATALOGS + " (got \"" + catalog + "\")");
+            }
+            catalogClass = catalogClass == null || catalogClass.isBlank() ? null : catalogClass.strip();
         }
 
         /** Alias → canonical tag key. */
@@ -309,7 +320,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         support = support == null ? new Support(null, null, null, null) : support;
         rules = rules == null ? Map.of() : Map.copyOf(rules);
         verify = verify == null ? new Verify(null, null) : verify;
-        metrics = metrics == null ? new Metrics(null, null, null) : metrics;
+        metrics = metrics == null ? new Metrics(null, null, null, null, null) : metrics;
         resilience = resilience == null ? new Resilience(null, null) : resilience;
         audit = audit == null ? new Audit(null, null) : audit;
     }

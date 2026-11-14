@@ -1,7 +1,6 @@
 package com.example.e2e.coupon;
 
 import com.example.e2e.logging.MdcScope;
-import com.example.e2e.logging.Outcomes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,7 +22,7 @@ public class CouponService {
         sender.send(couponId);
         repository.close(couponId);
         log.info("Coupon published");
-        Outcomes.count("coupon", "published");
+        CouponMetrics.couponPublished();
     }
 
     public void redeem(RedeemRequest request) {
@@ -31,7 +30,7 @@ public class CouponService {
             log.info("Coupon redemption started");
             sender.send(request.code());
             log.info("Coupon redemption completed [tableId={}]", request.tableId());
-            Outcomes.count("coupon.redemption", "completed");
+            CouponMetrics.couponRedemptionCompleted();
         }
     }
 }

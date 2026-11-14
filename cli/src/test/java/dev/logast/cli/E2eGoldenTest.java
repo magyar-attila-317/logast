@@ -160,10 +160,15 @@ class E2eGoldenTest {
      * ids used to include the message text, so a reworded line lost its decision without a word). Every file must
      * equal e2e/expected-decided.
      */
-    @Test
-    void filledTextsAndMetricDecisionsAllLand() throws IOException {
+    @org.junit.jupiter.params.ParameterizedTest(name = "metrics.catalog: {0}")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"per-package", "single", "off"})
+    void filledTextsAndMetricDecisionsAllLand(String catalog) throws IOException {
         Path app = tmp.resolve("app");
         migrate(app, CLASSPATH, a -> {
+            if (!catalog.equals("per-package")) {   // per-package is the default
+                Path yml = a.resolve("logast.yml");
+                Files.writeString(yml, Files.readString(yml) + "metrics:\n  catalog: " + catalog + "\n");
+            }
         });
         Path fills = app.resolve(".logast/fills.json");
         String f = Files.readString(fills);
@@ -193,13 +198,29 @@ class E2eGoldenTest {
                 + "\n=== after writing every text and counting every outcome\n" + third);
         compile(app);
         Map<String, String> actual = files(app);
+        // every decision is a counting line: inline (catalog off) or one call into a catalog, whose member holds the name
         long counted = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)
                 .mapToLong(t -> t.lines().filter(l -> l.contains("Outcomes.count(\"") || l.contains("Outcomes.record(\"")).count()).sum();
-        assertThat(counted).as("every outcome decided in metrics.json is counted").isEqualTo(decided);
         long withAmount = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)
-                .mapToLong(t -> t.lines().filter(l -> l.matches(".*Outcomes\\.(count|record)\\(\"[^\"]+\", \"[^\"]+\", \"[^\"]+\", .+\\);.*")).count()).sum();
-        assertThat(withAmount).as("every amount named in metrics.json is counted").isEqualTo(amounts);
-        golden(EXPECTED.resolveSibling("expected-decided"), actual);
+                .mapToLong(t -> t.lines().filter(l -> l.matches(".*Outcomes\\.(count|record)\\(\"[^\"]+\", \"[^\"]+\", \"[^\"]+\", [^\"]+\\);.*")).count()).sum();
+        if (catalog.equals("off")) {
+            assertThat(counted).as("every outcome decided in metrics.json is counted").isEqualTo(decided);
+            assertThat(withAmount).as("every amount named in metrics.json is counted").isEqualTo(amounts);
+        } else {
+            List<String> catalogs = actual.entrySet().stream().filter(e -> e.getValue().contains("// logast:metrics-catalog"))
+                    .map(Map.Entry::getKey).toList();
+            assertThat(catalogs).as("catalog classes").isNotEmpty();
+            if (catalog.equals("single")) {
+                assertThat(catalogs).containsExactly("src/main/java/com/example/e2e/metrics/BusinessMetrics.java");
+            }
+            long outside = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/") && !catalogs.contains(e.getKey())
+                            && !e.getKey().contains("/logging/"))
+                    .mapToLong(e -> e.getValue().lines().filter(l -> l.matches(".*(Outcomes\\.(count|record)|ObservedContext\\.entrypoint)\\(\".*")).count())
+                    .sum();
+            assertThat(outside).as("no metric or observation name is left at a call site").isZero();
+            assertThat(counted).as("every outcome decided in metrics.json has a catalog member").isEqualTo(decided);
+        }
+        golden(EXPECTED.resolveSibling(catalog.equals("per-package") ? "expected-decided" : "expected-decided-" + catalog), actual);
     }
 
     /**

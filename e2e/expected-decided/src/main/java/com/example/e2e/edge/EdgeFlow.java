@@ -4,7 +4,6 @@ import com.example.e2e.income.CouponCheck;
 import com.example.e2e.income.CouponDetails;
 import com.example.e2e.income.SalesTotals;
 import com.example.e2e.logging.MdcScope;
-import com.example.e2e.logging.Outcomes;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,12 +43,12 @@ public class EdgeFlow implements Audited {
                 EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
                         log.info("Coupon archived [couponId={}]", salesData.couponId()));
-                Outcomes.count("coupon", "archived");
+                EdgeMetrics.couponArchived();
                 log.info("Coupon parsed"); // a transformed value
-                Outcomes.count("coupon", "parsed");
+                EdgeMetrics.couponParsed();
                 new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
                 log.info("Edge processing completed");
-                Outcomes.count("edge.processing", "completed");
+                EdgeMetrics.edgeProcessingCompleted();
             }
         }
     }

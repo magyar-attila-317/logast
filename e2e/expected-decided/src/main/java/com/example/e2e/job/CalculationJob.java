@@ -1,6 +1,5 @@
 package com.example.e2e.job;
 
-import com.example.e2e.logging.Outcomes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -15,6 +14,6 @@ public class CalculationJob extends SettlementJob {
     protected void doExecute() {
         log.info("Coupon sweep started");
         log.info("Calculation completed");
-        Outcomes.count("calculation", "completed");
+        JobMetrics.calculationCompleted();
     }
 }

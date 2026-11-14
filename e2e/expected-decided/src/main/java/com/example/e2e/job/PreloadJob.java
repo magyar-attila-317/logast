@@ -1,6 +1,5 @@
 package com.example.e2e.job;
 
-import com.example.e2e.logging.Outcomes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -15,6 +14,6 @@ public class PreloadJob extends SettlementJob {
     protected void doExecute() {
         log.info("Preload export started");
         log.info("Preload export completed");
-        Outcomes.count("preload.export", "completed");
+        JobMetrics.preloadExportCompleted();
     }
 }

@@ -177,6 +177,7 @@ public final class MetricsMap {
 
         List<Unmeasured> outcomes = new ArrayList<>();
         List<Gap> gaps = new ArrayList<>();
+        Set<String> catalogs = CatalogRules.catalogNames(a);   // OrderMetrics.ordersShipped() counts too
         for (MethodInfo m : a.index.methods()) {
             if (m.owner().fqn().startsWith(a.supportPackage + ".") || m.facts().logs.isEmpty() || hasMeter(m, metered)) {
                 continue;
@@ -199,7 +200,7 @@ public final class MetricsMap {
                     Matcher o = OUTCOME.matcher(text);
                     event = o.find() ? o.group(1).toLowerCase(Locale.ROOT) : null;
                 }
-                if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(m, lc)) {
+                if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(m, lc, catalogs)) {
                     continue;
                 }
                 // a plain "completed"/"failed" of an entrypoint the framework or a wrapper times is in its timer already
@@ -229,7 +230,7 @@ public final class MetricsMap {
     }
 
     /** An Outcomes.count/tag right after the log line, or an ignore comment for this rule on it or above it. */
-    private static boolean countedOrSkipped(MethodInfo m, LogCall lc) {
+    private static boolean countedOrSkipped(MethodInfo m, LogCall lc, Set<String> catalogs) {
         int line = Pos.line(lc.call());
         int last = m.file().text().substring(0, Math.min(m.file().text().length(), Pos.end(lc.call()))).split("\n", -1).length;
         for (int l = line - 1; l <= last + 2; l++) {
@@ -237,7 +238,9 @@ public final class MetricsMap {
             if (t == null) {
                 continue;
             }
-            if (l > line - 1 && (t.contains("Outcomes.count(") || t.contains("Outcomes.record(") || t.contains("Outcomes.tag("))) {
+            String code = t.strip();
+            if (l > line - 1 && (t.contains("Outcomes.count(") || t.contains("Outcomes.record(") || t.contains("Outcomes.tag(")
+                    || catalogs.stream().anyMatch(c -> code.startsWith(c + ".") && code.contains("(")))) {
                 return true;
             }
             int i = t.indexOf(RULE_IGNORE);
