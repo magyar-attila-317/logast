@@ -21,21 +21,14 @@ public final class ProjectParser {
 
     /**
      * Full parse in one compilation, so every cross-file type resolves from source. Class directories on the
-     * classpath are left out here (they double the parse time); {@link #reparse} uses them.
+     * classpath are left out: the sources are the truth, and classes that do not match them (stale or copied) must not
+     * change what is resolved.
      */
     public ParsedProject parse(Path root, List<Path> classpath) {
         Path absRoot = root.toAbsolutePath().normalize();
         List<Path> jars = classpath.stream().filter(p -> !Files.isDirectory(p)).toList();
         ParsedProject p = parseFiles(absRoot, findSources(absRoot), jars, List.of());
         return new ParsedProject(p.root(), p.files(), List.copyOf(classpath), p.parseErrors(), p.probe(), p.discovered());
-    }
-
-    /** Re-parses only {@code changed} (root-relative) files and keeps the rest; needs compiled classes on the classpath. */
-    public ParsedProject reparse(ParsedProject previous, Set<String> changed, Set<String> deleted) {
-        List<SourceFileInfo> kept = previous.files().stream()
-                .filter(f -> !changed.contains(f.relPath()) && !deleted.contains(f.relPath())).toList();
-        List<Path> toParse = changed.stream().map(previous.root()::resolve).filter(Files::exists).sorted().toList();
-        return parseFiles(previous.root(), toParse, previous.classpath(), kept);
     }
 
     /** A class directory with actual .class files (an empty dir left by a failed compile does not count). */
@@ -71,7 +64,7 @@ public final class ProjectParser {
             Path abs = absRoot.resolve(cu.getSourcePath());
             String text = read(abs);
             // UpdateSourcePositions' visitor is stateful: one instance per file
-            J.CompilationUnit positioned = (J.CompilationUnit) new UpdateSourcePositions().getVisitor().visit(cu, ctx);
+            J.CompilationUnit positioned = (J.CompilationUnit) new UpdateSourcePositions().getVisitor().visit(TypeRepair.repair(cu, ctx), ctx);
             boolean editable = positioned != null && text.equals(positioned.printAll());
             files.add(new SourceFileInfo(abs, cu.getSourcePath().toString().replace('\\', '/'), text,
                     positioned == null ? cu : positioned, Hashing.sha256(text), editable));
