@@ -1,0 +1,16 @@
+# Calls per day for each entrypoint, from production (e.g. Prometheus:
+#   sum by (method, uri) (increase(http_server_requests_seconds_count[1d])) ).
+# Leave a value empty when you don't know it: logast never estimates traffic.
+# Regenerate with `logast traffic <root>`: filled-in values are kept, new entrypoints are added.
+entrypoints:
+  # http
+  "GET /coupons":     # http, CouponController.open
+  "POST /coupons/redeem":     # http, CouponController.redeem
+  "POST /coupons/{couponId}/publish":     # http, CouponController.publish
+  "POST /coupons/{couponId}/use":     # http, CouponController.use
+  "POST /orders":     # http, CouponController.place
+  # scheduled
+  "@Scheduled CouponCleanupJob.cleanup":     # scheduled, CouponCleanupJob.cleanup
+  "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
+  # in-process event listeners: their rate follows whoever publishes the event (fill only if you know it)
+  "@EventListener TpiJobExecutor.onReady(ApplicationReadyEvent)":     # event, TpiJobExecutor.onReady

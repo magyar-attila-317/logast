@@ -45,8 +45,42 @@ public final class MetricsMap {
                       @com.fasterxml.jackson.annotation.JsonIgnore List<Gap> gaps) {
     }
 
-    /** An uncounted outcome with the code it sits in, for rules that write the counting line. */
-    record Gap(Unmeasured outcome, MethodInfo method, LogCall log, String name, boolean tagAvailable) {
+    /**
+     * An uncounted outcome with the code it sits in, for rules that write the counting line.
+     *
+     * @param amounts numbers the line logs, by suffix key ([rows={}] → rows → its argument)
+     */
+    record Gap(Unmeasured outcome, MethodInfo method, LogCall log, String name, boolean tagAvailable,
+               java.util.Map<String, org.openrewrite.java.tree.Expression> amounts) {
+    }
+
+    /** Numbers that name something rather than measure it: an id, a number, a code, a date part, a version. */
+    private static final Pattern IDENTIFYING = Pattern.compile(
+            "(?i).*(id|ids|number|no|nr|code|key|year|month|week|day|hour|version|port|status|type|index|idx)");
+
+    /** The [key={}] values of a log line that are numbers and quantities: what an outcome's amount can be. */
+    static java.util.Map<String, org.openrewrite.java.tree.Expression> amounts(LogCall lc, String raw) {
+        java.util.Map<String, org.openrewrite.java.tree.Expression> out = new LinkedHashMap<>();
+        List<String> keys = MessageTemplate.compliantKeys(raw);
+        List<org.openrewrite.java.tree.Expression> args = lc.args();
+        if (keys != null && args.size() == keys.size() + 1 && TypeUtils.isAssignableTo("java.lang.Throwable", args.getLast().getType())) {
+            args = args.subList(0, keys.size());   // the exception after the values
+        }
+        if (keys == null || keys.size() != args.size()) {
+            return out;
+        }
+        for (int i = 0; i < keys.size(); i++) {
+            org.openrewrite.java.tree.JavaType t = args.get(i).getType();
+            boolean number = t instanceof org.openrewrite.java.tree.JavaType.Primitive p
+                    ? p != org.openrewrite.java.tree.JavaType.Primitive.Boolean && p != org.openrewrite.java.tree.JavaType.Primitive.Char
+                    && p != org.openrewrite.java.tree.JavaType.Primitive.String && p != org.openrewrite.java.tree.JavaType.Primitive.Null
+                    && p != org.openrewrite.java.tree.JavaType.Primitive.Void && p != org.openrewrite.java.tree.JavaType.Primitive.None
+                    : TypeUtils.isAssignableTo("java.lang.Number", t);
+            if (number && !IDENTIFYING.matcher(keys.get(i)).matches()) {
+                out.putIfAbsent(keys.get(i), args.get(i));
+            }
+        }
+        return out;
     }
 
     static final String RULE_IGNORE = "logast:ignore";
@@ -186,7 +220,7 @@ public final class MetricsMap {
                 Unmeasured u = new Unmeasured(m.label(), m.file().relPath(), Pos.line(lc.call()), lc.level().name().toLowerCase(Locale.ROOT),
                         text, event, paths, frequency(a, eps), tag, counter);
                 outcomes.add(u);
-                gaps.add(new Gap(u, m, lc, metric, tag != null));
+                gaps.add(new Gap(u, m, lc, metric, tag != null, amounts(lc, raw)));
             }
         }
         outcomes.sort(Comparator.comparing(Unmeasured::file).thenComparingInt(Unmeasured::line));
@@ -203,7 +237,7 @@ public final class MetricsMap {
             if (t == null) {
                 continue;
             }
-            if (l > line - 1 && (t.contains("Outcomes.count(") || t.contains("Outcomes.tag("))) {
+            if (l > line - 1 && (t.contains("Outcomes.count(") || t.contains("Outcomes.record(") || t.contains("Outcomes.tag("))) {
                 return true;
             }
             int i = t.indexOf(RULE_IGNORE);

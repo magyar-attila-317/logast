@@ -1,0 +1,188 @@
+diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
+index 04300cc..254534a 100644
+--- a/src/main/java/com/example/e2e/order/OrderService.java
++++ b/src/main/java/com/example/e2e/order/OrderService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.order;
+ 
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -18,11 +19,13 @@
+         log.info("Placing order");
+         payments.charge(order);
+         log.info("Order placed");
++        Outcomes.count("order", "placed");
+     }
+ 
+     /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
+     public void ship(java.util.List<Order> orders, int batchNumber) {
+         orders.forEach(payments::charge);
+         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
++        Outcomes.count("orders", "shipped", "items", orders.size());
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponSender.java b/src/main/java/com/example/e2e/coupon/CouponSender.java
+index 0f5a523..838276a 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponSender.java
++++ b/src/main/java/com/example/e2e/coupon/CouponSender.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Component;
+@@ -11,5 +12,6 @@
+     public void send(String couponId) {
+         log.debug("Sending coupon to the channel");
+         log.info("Coupon sent");
++        Outcomes.count("coupon", "sent");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponRepository.java b/src/main/java/com/example/e2e/coupon/CouponRepository.java
+index 436af48..0487c5f 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponRepository.java
++++ b/src/main/java/com/example/e2e/coupon/CouponRepository.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.coupon;
+ 
+ import com.example.e2e.logging.AfterCommit;
++import com.example.e2e.logging.Outcomes;
+ import java.util.List;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -30,6 +31,7 @@
+     public int countUse(String couponId) {
+         int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, couponId);
+         AfterCommit.log(() -> log.info("Coupon usage saved [uses={}]", uses)); // logast:wording
++        Outcomes.record("coupon.usage", "saved", "uses", uses);
+         return uses;
+     }
+ 
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 0c14077..6af9e2c 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -4,6 +4,7 @@ 
+ import com.example.e2e.income.CouponDetails;
+ import com.example.e2e.income.SalesTotals;
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.logging.Outcomes;
+ import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+@@ -43,9 +44,12 @@
+                 EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
+                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+                         log.info("Coupon archived [couponId={}]", salesData.couponId()));
++                Outcomes.count("coupon", "archived");
+                 log.info("Coupon parsed"); // a transformed value
++                Outcomes.count("coupon", "parsed");
+                 new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
+                 log.info("Edge processing completed");
++                Outcomes.count("edge.processing", "completed");
+             }
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 4ba5455..baf8925 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.Outcomes;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.context.annotation.Profile;
+ import org.springframework.stereotype.Component;
+@@ -12,5 +13,6 @@
+     protected void doExecute() {
+         log.info("Coupon sweep started");
+         log.info("Coupon sweep completed");
++        Outcomes.count("export.job", "completed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
+index fcb1bd0..488b094 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponService.java
++++ b/src/main/java/com/example/e2e/coupon/CouponService.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.coupon;
+ 
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -22,6 +23,7 @@
+         sender.send(couponId);
+         repository.close(couponId);
+         log.info("Coupon published");
++        Outcomes.count("coupon", "published");
+     }
+ 
+     public void redeem(RedeemRequest request) {
+@@ -29,6 +31,7 @@
+             log.info("Coupon redemption started");
+             sender.send(request.code());
+             log.info("Coupon redemption completed [tableId={}]", request.tableId());
++            Outcomes.count("coupon.redemption", "completed");
+         }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
+index 561107f..ff8e8f7 100644
+--- a/src/main/java/com/example/e2e/edge/Audited.java
++++ b/src/main/java/com/example/e2e/edge/Audited.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.edge;
+ 
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+@@ -9,5 +10,6 @@
+ 
+     default void audit(String couponId) {
+         AUDIT_LOG.info("Coupon audited");
++        Outcomes.count("coupon", "audited");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
+index a656908..76af9e1 100644
+--- a/src/main/java/com/example/e2e/job/PreloadJob.java
++++ b/src/main/java/com/example/e2e/job/PreloadJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -14,5 +15,6 @@
+     protected void doExecute() {
+         log.info("Preload export started");
+         log.info("Preload export completed");
++        Outcomes.count("preload.export", "completed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
+index ff68e86..c439bae 100644
+--- a/src/main/java/com/example/e2e/job/CalculationJob.java
++++ b/src/main/java/com/example/e2e/job/CalculationJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -14,5 +15,6 @@
+     protected void doExecute() {
+         log.info("Coupon sweep started");
+         log.info("Calculation completed");
++        Outcomes.count("calculation", "completed");
+     }
+ }

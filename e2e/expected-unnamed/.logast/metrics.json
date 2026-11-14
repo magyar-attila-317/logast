@@ -1,0 +1,152 @@
+{
+  "_readme" : "One entry per outcome the logs report and no metric counts. Set \"count\" to \"counter\" (Outcomes.count(name, outcome): a counter name{outcome=...}), \"tag\" (Outcomes.tag(outcome) on the timer already running; only where _tag says available) or \"skip\" (a // logast:ignore comment). Edit \"name\" and \"outcome\" freely (lower case, dots). Where the line logs a number (_amounts), \"amount\" names one to count too: \"as\": \"total\" (a counter name.<amount> grows by it) or \"per-run\" (each value one sample of a distribution summary name.<amount>); empty \"as\" takes metrics.amounts from logast.yaml. Leave \"amount\" empty to count how often only. Then: logast apply . --auto. `logast metrics . --format json` has the context.",
+  "OUM-03f513" : {
+    "count" : "",
+    "name" : "coupon.usage",
+    "outcome" : "saved",
+    "amount" : "",
+    "as" : "",
+    "_amounts" : [ "uses" ],
+    "_event" : "saved",
+    "_message" : "INFO \"Coupon usage saved\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:32 CouponRepository.countUse",
+    "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/use\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/{couponId}/use" ],
+    "_tag" : "available"
+  },
+  "OUM-027987" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "sent",
+    "_event" : "sent",
+    "_message" : "INFO \"Coupon sent\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponSender.java:13 CouponSender.send",
+    "_frequency" : "unknown: no rate for \"POST /coupons/redeem\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/redeem", "http POST /coupons/{couponId}/publish" ],
+    "_tag" : "available"
+  },
+  "OUM-773d35" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "published",
+    "_event" : "published",
+    "_message" : "INFO \"Coupon published\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:24 CouponService.publish",
+    "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/publish\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/{couponId}/publish" ],
+    "_tag" : "available"
+  },
+  "OUM-4809f0" : {
+    "count" : "",
+    "name" : "coupon.redemption",
+    "outcome" : "completed",
+    "_event" : "completed",
+    "_message" : "INFO \"Coupon redemption completed\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:31 CouponService.redeem",
+    "_frequency" : "unknown: no rate for \"POST /coupons/redeem\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/redeem" ],
+    "_tag" : "available"
+  },
+  "OUM-49d3bd" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "audited",
+    "_event" : "audited",
+    "_message" : "INFO \"Coupon audited\"",
+    "_where" : "src/main/java/com/example/e2e/edge/Audited.java:11 Audited.audit",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-3c3200" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "archived",
+    "_event" : "archived",
+    "_message" : "INFO \"Coupon archived\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:45 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-be530b" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "parsed",
+    "_event" : "parsed",
+    "_message" : "INFO \"Coupon parsed\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:46 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-0d4ba2" : {
+    "count" : "",
+    "name" : "edge.processing",
+    "outcome" : "completed",
+    "_event" : "completed",
+    "_message" : "INFO \"Edge processing completed\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-9f157d" : {
+    "count" : "",
+    "name" : "calculation",
+    "outcome" : "completed",
+    "_event" : "completed",
+    "_message" : "INFO \"Calculation completed\"",
+    "_where" : "src/main/java/com/example/e2e/job/CalculationJob.java:16 CalculationJob.doExecute",
+    "_frequency" : "low",
+    "_paths" : [ "event @EventListener TpiJobExecutor.onReady(ApplicationReadyEvent)" ],
+    "_tag" : "available"
+  },
+  "OUM-392e74" : {
+    "count" : "",
+    "name" : "export.job",
+    "outcome" : "completed",
+    "_event" : "completed",
+    "_message" : "INFO \"Export job completed\"",
+    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:14 ExportJob.doExecute",
+    "_frequency" : "low",
+    "_paths" : [ "event @EventListener TpiJobExecutor.onReady(ApplicationReadyEvent)" ],
+    "_tag" : "available"
+  },
+  "OUM-553423" : {
+    "count" : "",
+    "name" : "preload.export",
+    "outcome" : "completed",
+    "_event" : "completed",
+    "_message" : "INFO \"Preload export completed\"",
+    "_where" : "src/main/java/com/example/e2e/job/PreloadJob.java:16 PreloadJob.doExecute",
+    "_frequency" : "low",
+    "_paths" : [ "event @EventListener TpiJobExecutor.onReady(ApplicationReadyEvent)" ],
+    "_tag" : "available"
+  },
+  "OUM-d691d7" : {
+    "count" : "",
+    "name" : "order",
+    "outcome" : "placed",
+    "_event" : "placed",
+    "_message" : "INFO \"Order placed\"",
+    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:20 OrderService.place",
+    "_frequency" : "unknown: no rate for \"POST /orders\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /orders" ],
+    "_tag" : "available"
+  },
+  "OUM-00f4c0" : {
+    "count" : "",
+    "name" : "orders",
+    "outcome" : "shipped",
+    "amount" : "",
+    "as" : "",
+    "_amounts" : [ "items" ],
+    "_event" : "shipped",
+    "_message" : "INFO \"Orders shipped\"",
+    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:26 OrderService.ship",
+    "_frequency" : "unknown: no entrypoint is known to reach it",
+    "_paths" : [ ],
+    "_tag" : "not available here (no observation known to run)"
+  }
+}

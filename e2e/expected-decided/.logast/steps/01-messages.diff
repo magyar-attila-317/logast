@@ -1,0 +1,65 @@
+diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
+index 25c31a9..f13982f 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeJob.java
++++ b/src/main/java/com/example/e2e/edge/EdgeJob.java
+@@ -18,12 +18,12 @@ 
+ 
+     @Scheduled(cron = "0 30 3 * * *")
+     public void run() {
+-        log.info("Edge started"); // logast:wording
++        log.info("Coupon sweep started");
+         var rows = pending();
+         for (SalesTotals row : rows) {
+             flow.process(row);
+         }
+-        log.info("Edge completed [salesTotalsCount={}]", rows.size()); // logast:wording
++        log.info("Coupon sweep completed [salesTotalsCount={}]", rows.size());
+     }
+ 
+     private List<SalesTotals> pending() {
+diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+index 046add5..31f08a9 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+@@ -20,12 +20,12 @@ 
+     @Scheduled(cron = "0 0 2 * * *")
+     @Transactional
+     public void cleanup() {
+-        log.info("Coupon cleanup started"); // logast:wording
++        log.info("Coupon sweep started");
+         var couponIds = repository.findOpen();
+         for (String couponId : couponIds) {
+             log.debug("Closing stale coupon [couponId={}]", couponId);
+             repository.close(couponId);
+         }
+-        AfterCommit.log(() -> log.info("Coupon cleanup completed [couponCount={}]", couponIds.size())); // logast:wording
++        AfterCommit.log(() -> log.info("Coupon sweep completed [couponCount={}]", couponIds.size()));
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 7bf2b77..4ba5455 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -10,7 +10,7 @@ 
+ public class ExportJob extends TpiJob {
+     @Override
+     protected void doExecute() {
+-        log.info("Export job started"); // logast:wording
+-        log.info("Export job completed"); // logast:wording
++        log.info("Coupon sweep started");
++        log.info("Coupon sweep completed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
+index 1e94776..ff68e86 100644
+--- a/src/main/java/com/example/e2e/job/CalculationJob.java
++++ b/src/main/java/com/example/e2e/job/CalculationJob.java
+@@ -12,7 +12,7 @@ 
+ 
+     @Override
+     protected void doExecute() {
+-        log.info("Calculation started"); // logast:wording
++        log.info("Coupon sweep started");
+         log.info("Calculation completed");
+     }
+ }

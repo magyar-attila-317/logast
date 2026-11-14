@@ -1,0 +1,24 @@
+{
+  "_readme" : "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.",
+  "_status" : "4 finding(s) below need a message text.",
+  "SUG-d99e11" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupons updated | suffix keys added by the tool: [rows]",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:27 CouponRepository.close"
+  },
+  "SUG-3b5d90" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupon usage saved | suffix keys added by the tool: [uses]",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:32 CouponRepository.countUse"
+  },
+  "SUG-56cdac" : {
+    "MSG" : "",
+    "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupons read | suffix keys added by the tool: [count]",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:38 CouponRepository.findOpen"
+  },
+  "FMT-93dcb8" : {
+    "MSG" : "",
+    "_MSG" : "Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: Charging order with {} cents | suffix keys added by the tool: [amountCents]",
+    "_where" : "src/main/java/com/example/e2e/order/PaymentClient.java:15 PaymentClient.charge"
+  }
+}

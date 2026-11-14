@@ -1,0 +1,234 @@
+diff --git a/src/main/java/com/example/e2e/web/CouponController.java b/src/main/java/com/example/e2e/web/CouponController.java
+index b5ef221..74b60cd 100644
+--- a/src/main/java/com/example/e2e/web/CouponController.java
++++ b/src/main/java/com/example/e2e/web/CouponController.java
+@@ -2,6 +2,7 @@ 
+ 
+ import com.example.e2e.coupon.CouponRepository;
+ import com.example.e2e.coupon.CouponService;
++import com.example.e2e.logging.MdcScope;
+ import com.example.e2e.order.Order;
+ import com.example.e2e.order.OrderService;
+ import java.util.List;
+@@ -26,12 +27,16 @@
+ 
+     @PostMapping("/coupons/{couponId}/publish")
+     public void publish(@PathVariable String couponId) {
+-        coupons.publish(couponId);
++        try (var mdc = MdcScope.of("couponId", couponId)) {
++            coupons.publish(couponId);
++        }
+     }
+ 
+     @PostMapping("/coupons/{couponId}/use")
+     public int use(@PathVariable String couponId) {
+-        return repository.countUse(couponId);
++        try (var mdc = MdcScope.of("couponId", couponId)) {
++            return repository.countUse(couponId);
++        }
+     }
+ 
+     @PostMapping("/coupons/redeem")
+@@ -41,6 +46,8 @@
+ 
+     @PostMapping("/orders")
+     public void place(@RequestBody Order order) {
+-        orders.place(order);
++        try (var mdc = MdcScope.of("orderId", order.id())) {
++            orders.place(order);
++        }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/income/IncomeCalculator.java b/src/main/java/com/example/e2e/income/IncomeCalculator.java
+index 04a4db7..a82b3b1 100644
+--- a/src/main/java/com/example/e2e/income/IncomeCalculator.java
++++ b/src/main/java/com/example/e2e/income/IncomeCalculator.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.income;
+ 
++import com.example.e2e.logging.MdcScope;
+ import java.math.BigDecimal;
+ import java.util.List;
+ import java.util.Optional;
+@@ -35,13 +36,15 @@
+     }
+ 
+     private static Optional<String> validateCoupon(SalesTotals salesData, CouponDetails coupon) {
+-        for (CouponCheck check : CouponChecks.all()) {
+-            Optional<String> result = check.validate(coupon, salesData);
+-            if (result.isPresent()) {
+-                return result;
++        try (var mdc = MdcScope.of("agreementId", coupon.agreementId())) {
++            for (CouponCheck check : CouponChecks.all()) {
++                Optional<String> result = check.validate(coupon, salesData);
++                if (result.isPresent()) {
++                    return result;
++                }
+             }
++            return Optional.empty();
+         }
+-        return Optional.empty();
+     }
+ 
+     private static IncomeOutcome calculateIncome(SalesTotals salesData, CouponDetails coupon) {
+diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
+index 445b9d1..4441104 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponService.java
++++ b/src/main/java/com/example/e2e/coupon/CouponService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -24,8 +25,10 @@
+     }
+ 
+     public void redeem(RedeemRequest request) {
+-        log.info("Coupon redemption started [couponId={}]", request.code());
+-        sender.send(request.code());
+-        log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
++        try (var mdc = MdcScope.of("couponId", request.code())) {
++            log.info("Coupon redemption started [couponId={}]", request.code());
++            sender.send(request.code());
++            log.info("Coupon redemption completed [couponId={}, tableId={}]", request.code(), request.tableId());
++        }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 953396f..671ba3a 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -3,6 +3,7 @@ 
+ import com.example.e2e.income.CouponCheck;
+ import com.example.e2e.income.CouponDetails;
+ import com.example.e2e.income.SalesTotals;
++import com.example.e2e.logging.MdcScope;
+ import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+@@ -15,34 +16,38 @@
+ @Service
+ public class EdgeFlow implements Audited {
+     public void process(SalesTotals salesData) {
+-        log.info("Edge processing started [couponId={}]", salesData.couponId());
+-        CouponRules.check(salesData.couponId());                                   // @UtilityClass, methods not declared static
+-        List.of(salesData).forEach(this::publishOne);                              // method reference
+-        for (Exclusion exclusion : Exclusion.values()) {                           // enum constants with bodies
+-            exclusion.test(salesData);
+-        }
+-        CouponDetails coupon = new CouponDetails(salesData.couponId(), null, null, null);
+-        CouponCheck inline = (c, s) -> {                                           // lambda implementing an interface
+-            log.debug("Inline check [couponId={}]", c.couponId());
+-            return Optional.empty();
+-        };
+-        inline.validate(coupon, salesData);
+-        new CouponCheck() {                                                        // anonymous implementation
+-            @Override
+-            public Optional<String> validate(CouponDetails c, SalesTotals s) {
+-                log.debug("Anonymous check [couponId={}]", c.couponId());
+-                return Optional.empty();
++        try (var mdc2 = MdcScope.of("couponId", salesData.couponId())) {
++            log.info("Edge processing started [couponId={}]", salesData.couponId());
++            CouponRules.check(salesData.couponId());                                   // @UtilityClass, methods not declared static
++            List.of(salesData).forEach(this::publishOne);                              // method reference
++            for (Exclusion exclusion : Exclusion.values()) {                           // enum constants with bodies
++                exclusion.test(salesData);
+             }
+-        }.validate(coupon, salesData);
+-        Check<CouponDetails> origin = new OriginCheck();                           // generic interface
+-        origin.test(coupon);
+-        audit(salesData.couponId());                                               // default method of an interface
+-        EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
+-        CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+-                log.info("Coupon archived [couponId={}]", salesData.couponId()));
+-        log.info("Coupon parsed [couponId={}]", UUID.nameUUIDFromBytes(salesData.couponId().getBytes())); // a transformed value
+-        new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
+-        log.info("Edge processing completed [couponId={}]", salesData.couponId());
++            CouponDetails coupon = new CouponDetails(salesData.couponId(), null, null, null);
++            try (var mdc = MdcScope.of("agreementId", coupon.agreementId())) {
++                CouponCheck inline = (c, s) -> {                                           // lambda implementing an interface
++                    log.debug("Inline check [couponId={}]", c.couponId());
++                    return Optional.empty();
++                };
++                inline.validate(coupon, salesData);
++                new CouponCheck() {                                                        // anonymous implementation
++                    @Override
++                    public Optional<String> validate(CouponDetails c, SalesTotals s) {
++                        log.debug("Anonymous check [couponId={}]", c.couponId());
++                        return Optional.empty();
++                    }
++                }.validate(coupon, salesData);
++                Check<CouponDetails> origin = new OriginCheck();                           // generic interface
++                origin.test(coupon);
++                audit(salesData.couponId());                                               // default method of an interface
++                EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
++                CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
++                        log.info("Coupon archived [couponId={}]", salesData.couponId()));
++                log.info("Coupon parsed [couponId={}]", UUID.nameUUIDFromBytes(salesData.couponId().getBytes())); // a transformed value
++                new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
++                log.info("Edge processing completed [couponId={}]", salesData.couponId());
++            }
++        }
+     }
+ 
+     private void publishOne(SalesTotals row) {
+diff --git a/src/main/java/com/example/e2e/income/CalculationService.java b/src/main/java/com/example/e2e/income/CalculationService.java
+index c12133d..49d439e 100644
+--- a/src/main/java/com/example/e2e/income/CalculationService.java
++++ b/src/main/java/com/example/e2e/income/CalculationService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.income;
+ 
++import com.example.e2e.logging.MdcScope;
+ import java.util.List;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -17,9 +18,11 @@
+     }
+ 
+     private IncomeOutcome processRow(SalesTotals salesData, List<CouponDetails> allCouponDetails) {
+-        log.trace("Processing coupon [couponId={}]", salesData.couponId());
+-        List<CouponDetails> matchingCoupons = filterMatchingCoupons(allCouponDetails, salesData.couponId());
+-        return IncomeCalculator.calculate(salesData, matchingCoupons);
++        try (var mdc = MdcScope.of("couponId", salesData.couponId())) {
++            log.trace("Processing coupon [couponId={}]", salesData.couponId());
++            List<CouponDetails> matchingCoupons = filterMatchingCoupons(allCouponDetails, salesData.couponId());
++            return IncomeCalculator.calculate(salesData, matchingCoupons);
++        }
+     }
+ 
+     private List<CouponDetails> filterMatchingCoupons(List<CouponDetails> allCoupons, String couponId) {
+diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
+index 49305f1..3c78462 100644
+--- a/src/main/java/com/example/e2e/order/PaymentClient.java
++++ b/src/main/java/com/example/e2e/order/PaymentClient.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.order;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Component;
+@@ -9,12 +10,14 @@
+     private static final Logger log = LoggerFactory.getLogger(PaymentClient.class);
+ 
+     public void charge(Order order) {
+-        try {
+-            log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
+-            gateway(order);
+-        } catch (IllegalStateException e) {
+-            log.error("Charge failed for order {}", order.id(), e);
+-            throw new PaymentException("charge failed", e);
++        try (var mdc = MdcScope.of("orderId", order.id())) {
++            try {
++                log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
++                gateway(order);
++            } catch (IllegalStateException e) {
++                log.error("Charge failed for order {}", order.id(), e);
++                throw new PaymentException("charge failed", e);
++            }
+         }
+     }
+ 

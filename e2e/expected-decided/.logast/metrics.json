@@ -1,0 +1,3 @@
+{
+  "_readme" : "One entry per outcome the logs report and no metric counts. Set \"count\" to \"counter\" (Outcomes.count(name, outcome): a counter name{outcome=...}), \"tag\" (Outcomes.tag(outcome) on the timer already running; only where _tag says available) or \"skip\" (a // logast:ignore comment). Edit \"name\" and \"outcome\" freely (lower case, dots). Where the line logs a number (_amounts), \"amount\" names one to count too: \"as\": \"total\" (a counter name.<amount> grows by it) or \"per-run\" (each value one sample of a distribution summary name.<amount>); empty \"as\" takes metrics.amounts from logast.yaml. Leave \"amount\" empty to count how often only. Then: logast apply . --auto. `logast metrics . --format json` has the context."
+}

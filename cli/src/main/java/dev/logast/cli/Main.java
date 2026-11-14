@@ -383,6 +383,7 @@ public final class Main {
 
     static String metricsLine(dev.logast.apply.FillsFile.Update mu) {
         return dev.logast.apply.MetricsFile.PATH + ": " + mu.entries() + " outcomes not counted, " + mu.filled() + " decided"
+                + (mu.problems() > 0 ? " (" + mu.problems() + " cannot be written: see \"_problem\" there)" : "")
                 + (mu.added() > 0 ? ", " + mu.added() + " new" : "") + (mu.removed() > 0 ? ", " + mu.removed() + " finished removed" : "")
                 + "; set \"count\": counter | tag | skip, then `logast apply . --auto`";
     }
