@@ -59,11 +59,22 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param tags   tag vocabulary: canonical key → aliases (renamed by METRIC_TAG_KEY) and allowed values
      * @param events business events (lifecycle log messages) without a metric get an Observation
      *               (BUSINESS_EVENT_UNMEASURED); default true
+     * @param amounts what metrics.json offers for an outcome line that logs a number ([rows={}], [count={}]): "total"
+     *                (default: a counter that grows by the number), "per-run" (each number one sample of a
+     *                distribution summary) or "off" (only counts how often). An entry's "as" overrides the default.
      */
-    public record Metrics(Map<String, MetricTag> tags, Boolean events) {
+    public record Metrics(Map<String, MetricTag> tags, Boolean events, String amounts) {
+        public static final List<String> AMOUNTS = List.of("total", "per-run", "off");
+
         public Metrics {
             tags = tags == null ? Map.of() : new LinkedHashMap<>(tags);
             events = events == null || events;
+            amounts = amounts == null || amounts.isBlank() ? "total" : amounts.strip().toLowerCase(Locale.ROOT);
+            // YAML reads an unquoted off/on as a boolean
+            amounts = amounts.equals("false") ? "off" : amounts.equals("true") ? "total" : amounts;
+            if (!AMOUNTS.contains(amounts)) {
+                throw new IllegalArgumentException("metrics.amounts must be one of " + AMOUNTS + " (got \"" + amounts + "\")");
+            }
         }
 
         /** Alias → canonical tag key. */
@@ -298,7 +309,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         support = support == null ? new Support(null, null, null, null) : support;
         rules = rules == null ? Map.of() : Map.copyOf(rules);
         verify = verify == null ? new Verify(null, null) : verify;
-        metrics = metrics == null ? new Metrics(null, null) : metrics;
+        metrics = metrics == null ? new Metrics(null, null, null) : metrics;
         resilience = resilience == null ? new Resilience(null, null) : resilience;
         audit = audit == null ? new Audit(null, null) : audit;
     }

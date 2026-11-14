@@ -45,7 +45,11 @@ public final class FillsFile {
     }
 
     /** What {@link #update} changed: entries now, entries with text, added, removed, whether the file was written. */
-    public record Update(int entries, int filled, int added, int removed, boolean written) {
+    /** @param problems filled entries that cannot be written (each says why in the file) */
+    public record Update(int entries, int filled, int added, int removed, boolean written, int problems) {
+        public Update(int entries, int filled, int added, int removed, boolean written) {
+            this(entries, filled, added, removed, written, 0);
+        }
     }
 
     /**

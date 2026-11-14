@@ -547,6 +547,25 @@ timer already running, offered only where one is known to run), or for `skip` a 
 METRIC_OUTCOME_UNMEASURED` comment, so the decision lives in the code. `Outcomes` is in logging-support (copied in
 vendor mode when Micrometer is present).
 
+Where the line also logs a number, the entry offers it (`_amounts`), and `"amount"` counts it too:
+```json
+"OUM-3f2a10": {
+  "count": "counter", "name": "orders", "outcome": "shipped",
+  "amount": "items",                // one of _amounts; empty = count how often only
+  "as": "",                         // total | per-run; empty = metrics.amounts from logast.yaml (default total)
+  "_amounts": [ "items" ], "_message": "INFO \"Orders shipped\"", …
+}
+```
+- `total`: `Outcomes.count("orders", "shipped", "items", orders.size())`: `orders{outcome}` by 1 and a counter
+  `orders.items{outcome}` that grows by the number (totals, throughput).
+- `per-run`: `Outcomes.record(…)`: `orders{outcome}` by 1 and the number as one sample of a distribution summary
+  `orders.items{outcome}` (average, maximum, percentiles where the registry has them).
+
+Only quantities are offered: numbers whose key names a count or size, not an id, number, code, date part or status
+(`batchNumber`, `supplierId` are left out). The logged expression is evaluated again in the counting line, so it must be
+free of side effects (a variable, a field, `size()`/`length()`/a getter or record accessor); otherwise the entry gets
+a `"_problem"` saying so, and `apply` reports it. `metrics.amounts: off` in logast.yaml stops offering amounts.
+
 Every log line and meter also says which service and version wrote it (SETUP_SERVICE_IDENTITY, AUTO): logast adds
 `spring.application.name`/`version` when missing (env vars still win at runtime; set `logging.serviceName` /
 `logging.serviceVersion` in logast.yaml to your platform's expressions, default `${APPLICATION_VERSION:unknown}`),

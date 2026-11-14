@@ -243,26 +243,47 @@ public final class Rules {
 
     /** METRIC_OUTCOME_UNMEASURED: outcomes the logs report and no metric counts; a person or LLM picks the ones to count. */
     private static void outcomeGaps(RuleContext ctx) {
-        var decisions = dev.logast.apply.MetricsFile.read(ctx.a.project.root());
         Map<String, Integer> seen = new HashMap<>();
-        for (MetricsMap.Gap g : MetricsMap.of(ctx.a).gaps()) {
+        List<OrderBuilder> builders = new ArrayList<>();
+        List<MetricsMap.Gap> gaps = MetricsMap.of(ctx.a).gaps();
+        List<dev.logast.apply.MetricsFile.Spot> spots = new ArrayList<>();
+        for (MetricsMap.Gap g : gaps) {
             MetricsMap.Unmeasured u = g.outcome();
-            String anchor = u.file() + "|" + u.method() + "|" + u.message() + "|" + u.event();
-            int n = seen.merge(anchor, 1, Integer::sum);   // the same message twice in one method: number the repeats
+            // not the message text: a reworded line (fills.json, a key moved to MDC) keeps its id and its decision
+            String anchor = u.file() + "|" + u.method() + "|" + u.event();
+            int n = seen.merge(anchor, 1, Integer::sum);   // the same event twice in one method: number the repeats
             OrderBuilder b = ctx.order(METRIC_OUTCOME_UNMEASURED, n == 1 ? anchor : anchor + "|" + n).at(u.file(), u.line())
                     .title("\"" + u.message() + "\" is logged but not counted (outcome=" + u.event() + ", frequency " + u.frequency() + ")")
-                    .data("name", g.name()).data("outcome", u.event()).data("message", u.level().toUpperCase(java.util.Locale.ROOT) + " \"" + u.message() + "\"")
+                    .data("name", g.name()).data("outcome", u.event()).data("event", u.event())
+                    .data("message", u.level().toUpperCase(java.util.Locale.ROOT) + " \"" + u.message() + "\"")
                     .data("frequency", u.frequency()).data("paths", u.paths()).data("tagAvailable", g.tagAvailable());
+            if (!ctx.policy.metrics().amounts().equals("off") && !g.amounts().isEmpty()) {
+                b.data("amounts", List.copyOf(g.amounts().keySet()));   // numbers the line logs: metrics.json offers them
+            }
+            b.method = u.method();
+            builders.add(b);
+            spots.add(new dev.logast.apply.MetricsFile.Spot(b.id(), u.file(), b.method == null ? "" : b.method, u.event()));
+        }
+        var decisions = dev.logast.apply.MetricsFile.match(dev.logast.apply.MetricsFile.read(ctx.a.project.root()), spots);
+        Map<String, String> amountMeters = new HashMap<>();   // name.amount → total | per-run: one meter type per name
+        for (int i = 0; i < gaps.size(); i++) {
+            MetricsMap.Gap g = gaps.get(i);
+            MetricsMap.Unmeasured u = g.outcome();
+            OrderBuilder b = builders.get(i);
             String advice = "Decide in " + dev.logast.apply.MetricsFile.PATH + ": \"count\": \"counter\" (Outcomes.count(\"" + g.name()
                     + "\", \"" + u.event() + "\"))" + (g.tagAvailable() ? ", \"tag\" (Outcomes.tag(\"" + u.event() + "\") on the running timer)" : "")
                     + " or \"skip\"; then logast apply . --auto. Count it only if a dashboard or alert needs it.";
-            String why = decide(ctx, b, g, decisions.get(b.id()));
+            String why = decide(ctx, b, g, decisions.get(b.id()), amountMeters);
+            if (why != null && decisions.get(b.id()) != null) {
+                b.data("problem", why);   // shown next to the decision in metrics.json
+            }
             b.suggestion(why != null ? why + " " + advice : advice);
         }
     }
 
     /** Turns a metrics.json decision into edits; returns a problem to report, or null. */
-    private static String decide(RuleContext ctx, OrderBuilder b, MetricsMap.Gap g, dev.logast.apply.MetricsFile.Decision d) {
+    private static String decide(RuleContext ctx, OrderBuilder b, MetricsMap.Gap g, dev.logast.apply.MetricsFile.Decision d,
+                                 Map<String, String> amountMeters) {
         if (d == null) {
             return null;
         }
@@ -293,6 +314,20 @@ public final class Rules {
                     return "Needs Micrometer and a logging-support version with Outcomes.";
                 }
                 String call = d.count().equals("tag") ? "Outcomes.tag(\"" + outcome + "\");" : "Outcomes.count(\"" + name + "\", \"" + outcome + "\");";
+                if (!d.amount().isBlank()) {
+                    String problem = amountProblem(ctx, g, d);
+                    if (problem != null) {
+                        return problem;
+                    }
+                    String as = d.as().isBlank() ? ctx.policy.metrics().amounts() : d.as();
+                    String meter = meterWord(d.amount());
+                    String other = amountMeters.putIfAbsent(name + "." + meter, as);
+                    if (other != null && !other.equals(as)) {
+                        return "metrics.json: " + name + "." + meter + " is a " + other + " elsewhere; one meter name takes one \"as\".";
+                    }
+                    call = "Outcomes." + (as.equals("per-run") ? "record" : "count") + "(\"" + name + "\", \"" + outcome + "\", \""
+                            + meter + "\", " + g.amounts().get(d.amount()).printTrimmed() + ");";
+                }
                 b.edit(dev.logast.orders.Edit.insert(f.relPath(), lines[1], indent + call + "\n"));
                 b.edits(JavaEdits.imports(f, ctx.support("Outcomes")));
                 ctx.dependOnStarter(b);
@@ -302,6 +337,54 @@ public final class Rules {
                 return "metrics.json: \"count\" must be counter, tag or skip (got \"" + d.count() + "\").";
             }
         }
+    }
+
+    /**
+     * Why a metrics.json "amount" cannot be written, or null. The logged value is evaluated a second time in the
+     * counting line, so it must be one without side effects: a variable, a field, or a size/length/getter/record
+     * accessor called on one.
+     */
+    private static String amountProblem(RuleContext ctx, MetricsMap.Gap g, dev.logast.apply.MetricsFile.Decision d) {
+        if (ctx.policy.metrics().amounts().equals("off")) {
+            return "metrics.json: \"amount\" is set, but metrics.amounts is off in logast.yaml.";
+        }
+        if (!d.count().equals("counter")) {
+            return "metrics.json: \"amount\" needs \"count\": \"counter\" (a tag carries no number).";
+        }
+        if (!d.as().isBlank() && !d.as().equals("total") && !d.as().equals("per-run")) {
+            return "metrics.json: \"as\" must be total or per-run (got \"" + d.as() + "\").";
+        }
+        org.openrewrite.java.tree.Expression e = g.amounts().get(d.amount());
+        if (e == null) {
+            return "metrics.json: the line logs no number named \"" + d.amount() + "\" (it logs: "
+                    + (g.amounts().isEmpty() ? "none" : String.join(", ", g.amounts().keySet())) + ").";
+        }
+        if (!sideEffectFree(e)) {
+            return "metrics.json: the logged value " + e.printTrimmed() + " would be evaluated twice; put it in a variable first.";
+        }
+        return null;
+    }
+
+    private static boolean sideEffectFree(org.openrewrite.java.tree.Expression e) {
+        if (e instanceof org.openrewrite.java.tree.J.Identifier) {
+            return true;
+        }
+        if (e instanceof org.openrewrite.java.tree.J.FieldAccess fa) {
+            return sideEffectFree(fa.getTarget());
+        }
+        if (e instanceof org.openrewrite.java.tree.J.MethodInvocation mi && mi.getArguments().stream()
+                .allMatch(a -> a instanceof org.openrewrite.java.tree.J.Empty) && mi.getSelect() != null && sideEffectFree(mi.getSelect())) {
+            String n = mi.getSimpleName();
+            org.openrewrite.java.tree.JavaType.Method mt = mi.getMethodType();
+            boolean accessor = mt != null && mt.getDeclaringType().getKind() == org.openrewrite.java.tree.JavaType.FullyQualified.Kind.Record;
+            return n.equals("size") || n.equals("length") || n.matches("get[A-Z]\\w*") || accessor;
+        }
+        return false;
+    }
+
+    /** The meter-name word for a logged key: rows → rows, totalRows → total.rows. */
+    static String meterWord(String key) {
+        return key.replaceAll("([a-z0-9])([A-Z])", "$1.$2").replace('_', '.').toLowerCase(java.util.Locale.ROOT);
     }
 
     /** The lifecycle plan of the latest scan (for `logast lifecycle`). */
