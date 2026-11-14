@@ -4,7 +4,6 @@ import com.example.e2e.stipend.PledgeCheck;
 import com.example.e2e.stipend.PledgeDetails;
 import com.example.e2e.stipend.KioskTotals;
 import com.example.e2e.logging.MdcScope;
-import com.example.e2e.logging.Outcomes;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,12 +43,12 @@ public class EdgeFlow implements Audited {
                 EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
                         log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
-                Outcomes.count("pledge", "archived");
+                EdgeMetrics.pledgeArchived();
                 log.info("Pledge parsed"); // a transformed value
-                Outcomes.count("pledge", "parsed");
+                EdgeMetrics.pledgeParsed();
                 new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
                 log.info("Edge processing completed");
-                Outcomes.count("edge.processing", "completed");
+                EdgeMetrics.edgeProcessingCompleted();
             }
         }
     }

@@ -100,7 +100,7 @@
     "_where" : "src/main/java/com/example/e2e/job/TallyJob.java:16 TallyJob.doExecute",
     "_frequency" : "low",
     "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
-    "_tag" : "available"
+    "_tag" : "not available here (no observation known to run)"
   },
   "OUM-392e74" : {
     "count" : "",
@@ -111,7 +111,7 @@
     "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:14 ExportJob.doExecute",
     "_frequency" : "low",
     "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
-    "_tag" : "available"
+    "_tag" : "not available here (no observation known to run)"
   },
   "OUM-553423" : {
     "count" : "",
@@ -122,7 +122,7 @@
     "_where" : "src/main/java/com/example/e2e/job/PreloadJob.java:16 PreloadJob.doExecute",
     "_frequency" : "low",
     "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
-    "_tag" : "available"
+    "_tag" : "not available here (no observation known to run)"
   },
   "OUM-d691d7" : {
     "count" : "",

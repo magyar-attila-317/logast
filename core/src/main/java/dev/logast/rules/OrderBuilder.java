@@ -31,7 +31,7 @@ public final class OrderBuilder {
             Map.entry(Rules.EXCEPTION_LOGGED_TWICE, "ELT"), Map.entry(Rules.HTTP_CLIENT_UNTRACED, "HTC"),
             Map.entry(Rules.TRACING_SAMPLING, "SMP"), Map.entry(Rules.METRIC_TAG_KEY, "MTK"), Map.entry(Rules.METRIC_TAG_VALUE, "MTV"),
             Map.entry(Rules.METRIC_REGISTERED_PER_CALL, "MRC"), Map.entry(Rules.METRIC_GAUGE_WEAK_REF, "MGW"),
-            Map.entry(Rules.BUSINESS_EVENT_UNMEASURED, "BEU"), Map.entry(Rules.METRIC_TAG_KEYS_MISMATCH, "MTM"),
+            Map.entry(Rules.BUSINESS_EVENT_UNMEASURED, "BEU"), Map.entry(Rules.METRIC_TAG_KEYS_MISMATCH, "MTM"), Map.entry(Rules.METRIC_CATALOG, "MCA"),
             Map.entry(Rules.HTTP_CLIENT_NO_TIMEOUT, "HTO"), Map.entry(Rules.KAFKA_NO_ERROR_HANDLER, "KEH"),
             Map.entry(Rules.UNBOUNDED_EXECUTOR, "UEX"), Map.entry(Rules.BLOCKING_WAIT_UNBOUNDED, "BWU"),
             Map.entry(Rules.ERROR_DETAILS_EXPOSED, "EDE"), Map.entry(Rules.UNMAPPED_EXCEPTION, "UMX"),

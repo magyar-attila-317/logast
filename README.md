@@ -566,6 +566,28 @@ Only quantities are offered: numbers whose key names a count or size, not an id,
 free of side effects (a variable, a field, `size()`/`length()`/a getter or record accessor); otherwise the entry gets
 a `"_problem"` saying so, and `apply` reports it. `metrics.amounts: off` in logast.yaml stops offering amounts.
 
+Metric names then move into one place (METRIC_CATALOG, AUTO): call sites call a member of a catalog class and never
+name a metric or an observation.
+```java
+log.info("Orders shipped [items={}]", orders.size());
+OrderMetrics.ordersShipped(orders.size());              // was Outcomes.count("orders", "shipped", "items", …)
+ObservedContext.entrypoint(JobMetrics.TALLY)      // was ObservedContext.entrypoint("tally")
+
+// logast:metrics-catalog
+public final class OrderMetrics {
+    /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */
+    public static void ordersShipped(Number items) {
+        Outcomes.count("orders", "shipped", "items", items);
+    }
+}
+```
+`metrics.catalog` in logast.yaml picks where they live: `per-package` (default; one `<Package>Metrics` class per
+package that counts, next to its code; a metric used in several packages stays in the package of its first use),
+`single` (all in `metrics.catalogClass`, default `<app package>.metrics.BusinessMetrics`) or `off` (names stay at the
+call sites). Rename or document members freely: logast recognises its catalogs by the `// logast:metrics-catalog`
+comment, keeps what is there, and adds new members at the end. Counting lines written by hand
+(`Outcomes.count("…", "…")`) move into the catalog too.
+
 Every log line and meter also says which service and version wrote it (SETUP_SERVICE_IDENTITY, AUTO): logast adds
 `spring.application.name`/`version` when missing (env vars still win at runtime; set `logging.serviceName` /
 `logging.serviceVersion` in logast.yaml to your platform's expressions, default `${APPLICATION_VERSION:unknown}`),

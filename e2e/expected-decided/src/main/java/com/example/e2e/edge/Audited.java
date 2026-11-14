@@ -1,6 +1,5 @@
 package com.example.e2e.edge;
 
-import com.example.e2e.logging.Outcomes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,6 +9,6 @@ public interface Audited {
 
     default void audit(String pledgeId) {
         AUDIT_LOG.info("Pledge audited");
-        Outcomes.count("pledge", "audited");
+        EdgeMetrics.pledgeAudited();
     }
 }

@@ -1,7 +1,6 @@
 package com.example.e2e.pledge;
 
 import com.example.e2e.logging.AfterCommit;
-import com.example.e2e.logging.Outcomes;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,7 +30,7 @@ public class PledgeRepository {
     public int countUse(String pledgeId) {
         int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
         AfterCommit.log(() -> log.info("Pledge usage saved [uses={}]", uses)); // logast:wording
-        Outcomes.record("pledge.usage", "saved", "uses", uses);
+        PledgeMetrics.pledgeUsageSaved(uses);
         return uses;
     }
 

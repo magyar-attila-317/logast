@@ -15,7 +15,7 @@ public class PublishRunJob extends BaseRunJob {
 
     @Override
     protected void doRun(String runCode, Week week) {
-        ObservedContext.entrypoint("publishing")
+        ObservedContext.entrypoint(JobMetrics.PUBLISHING)
                 .quiet()
                 .run(() -> {
                     log.info("Publishing started");

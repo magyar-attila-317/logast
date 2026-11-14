@@ -1,7 +1,6 @@
 package com.example.e2e.pledge;
 
 import com.example.e2e.logging.MdcScope;
-import com.example.e2e.logging.Outcomes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,7 +22,7 @@ public class PledgeService {
         sender.send(pledgeId);
         repository.close(pledgeId);
         log.info("Pledge published");
-        Outcomes.count("pledge", "published");
+        PledgeMetrics.pledgePublished();
     }
 
     public void allot(AllotRequest request) {
@@ -31,7 +30,7 @@ public class PledgeService {
             log.info("Pledge allotment started");
             sender.send(request.code());
             log.info("Pledge allotment completed [tableId={}]", request.tableId());
-            Outcomes.count("pledge.allotment", "completed");
+            PledgeMetrics.pledgeAllotmentCompleted();
         }
     }
 }

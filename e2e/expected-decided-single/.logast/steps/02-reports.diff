@@ -1,0 +1,270 @@
+diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
+index 04300cc..678c1d3 100644
+--- a/src/main/java/com/example/e2e/order/OrderService.java
++++ b/src/main/java/com/example/e2e/order/OrderService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.order;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -18,11 +19,13 @@
+         log.info("Placing order");
+         payments.charge(order);
+         log.info("Order placed");
++        BusinessMetrics.orderPlaced();
+     }
+ 
+     /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
+     public void ship(java.util.List<Order> orders, int batchNumber) {
+         orders.forEach(payments::charge);
+         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
++        BusinessMetrics.ordersShipped(orders.size());
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+index 0f5a523..e73aea2 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Component;
+@@ -11,5 +12,6 @@
+     public void send(String pledgeId) {
+         log.debug("Sending pledge to the channel");
+         log.info("Pledge sent");
++        BusinessMetrics.pledgeSent();
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+index 436af48..c3711d7 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.pledge;
+ 
+ import com.example.e2e.logging.AfterCommit;
++import com.example.e2e.metrics.BusinessMetrics;
+ import java.util.List;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -30,6 +31,7 @@
+     public int countUse(String pledgeId) {
+         int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
+         AfterCommit.log(() -> log.info("Pledge usage saved [uses={}]", uses)); // logast:wording
++        BusinessMetrics.pledgeUsageSaved(uses);
+         return uses;
+     }
+ 
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 0c14077..4eb21ba 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -4,6 +4,7 @@ 
+ import com.example.e2e.stipend.PledgeDetails;
+ import com.example.e2e.stipend.KioskTotals;
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.metrics.BusinessMetrics;
+ import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+@@ -43,9 +44,12 @@
+                 EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
+                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+                         log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
++                BusinessMetrics.pledgeArchived();
+                 log.info("Pledge parsed"); // a transformed value
++                BusinessMetrics.pledgeParsed();
+                 new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
+                 log.info("Edge processing completed");
++                BusinessMetrics.edgeProcessingCompleted();
+             }
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 4ba5455..9e30425 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.context.annotation.Profile;
+ import org.springframework.stereotype.Component;
+@@ -12,5 +13,6 @@
+     protected void doExecute() {
+         log.info("Pledge sweep started");
+         log.info("Pledge sweep completed");
++        BusinessMetrics.exportJobCompleted();
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeService.java b/src/main/java/com/example/e2e/pledge/PledgeService.java
+index fcb1bd0..feabe9e 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeService.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeService.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.pledge;
+ 
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -22,6 +23,7 @@
+         sender.send(pledgeId);
+         repository.close(pledgeId);
+         log.info("Pledge published");
++        BusinessMetrics.pledgePublished();
+     }
+ 
+     public void allot(AllotRequest request) {
+@@ -29,6 +31,7 @@
+             log.info("Pledge allotment started");
+             sender.send(request.code());
+             log.info("Pledge allotment completed [tableId={}]", request.tableId());
++            BusinessMetrics.pledgeAllotmentCompleted();
+         }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
+index 561107f..a9403ff 100644
+--- a/src/main/java/com/example/e2e/edge/Audited.java
++++ b/src/main/java/com/example/e2e/edge/Audited.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.edge;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+@@ -9,5 +10,6 @@
+ 
+     default void audit(String pledgeId) {
+         AUDIT_LOG.info("Pledge audited");
++        BusinessMetrics.pledgeAudited();
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
+index a656908..95be15a 100644
+--- a/src/main/java/com/example/e2e/job/PreloadJob.java
++++ b/src/main/java/com/example/e2e/job/PreloadJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -14,5 +15,6 @@
+     protected void doExecute() {
+         log.info("Preload export started");
+         log.info("Preload export completed");
++        BusinessMetrics.preloadExportCompleted();
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
+index ff68e86..6e7a5a9 100644
+--- a/src/main/java/com/example/e2e/job/TallyJob.java
++++ b/src/main/java/com/example/e2e/job/TallyJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -14,5 +15,6 @@
+     protected void doExecute() {
+         log.info("Pledge sweep started");
+         log.info("Tally completed");
++        BusinessMetrics.tallyCompleted();
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/metrics/BusinessMetrics.java b/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
+index 28f04e7..b63d6b6 100644
+--- a/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
++++ b/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
+@@ -1,5 +1,7 @@ 
+ package com.example.e2e.metrics;
+ 
++import com.example.e2e.logging.Outcomes;
++
+ /**
+  * Metric names, in one place: call sites call a member here and never name a metric.
+  * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
+@@ -15,4 +17,69 @@
+ 
+     /** Observation (timer and span) name. */
+     public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
++
++    /** pledge.usage{outcome="saved"} +1; uses is one sample of the distribution pledge.usage.uses{outcome="saved"}. */
++    public static void pledgeUsageSaved(Number uses) {
++        Outcomes.record("pledge.usage", "saved", "uses", uses);
++    }
++
++    /** pledge{outcome="sent"} +1. */
++    public static void pledgeSent() {
++        Outcomes.count("pledge", "sent");
++    }
++
++    /** pledge{outcome="published"} +1. */
++    public static void pledgePublished() {
++        Outcomes.count("pledge", "published");
++    }
++
++    /** pledge.allotment{outcome="completed"} +1. */
++    public static void pledgeAllotmentCompleted() {
++        Outcomes.count("pledge.allotment", "completed");
++    }
++
++    /** pledge{outcome="audited"} +1. */
++    public static void pledgeAudited() {
++        Outcomes.count("pledge", "audited");
++    }
++
++    /** pledge{outcome="archived"} +1. */
++    public static void pledgeArchived() {
++        Outcomes.count("pledge", "archived");
++    }
++
++    /** pledge{outcome="parsed"} +1. */
++    public static void pledgeParsed() {
++        Outcomes.count("pledge", "parsed");
++    }
++
++    /** edge.processing{outcome="completed"} +1. */
++    public static void edgeProcessingCompleted() {
++        Outcomes.count("edge.processing", "completed");
++    }
++
++    /** tally{outcome="completed"} +1. */
++    public static void tallyCompleted() {
++        Outcomes.count("tally", "completed");
++    }
++
++    /** export.job{outcome="completed"} +1. */
++    public static void exportJobCompleted() {
++        Outcomes.count("export.job", "completed");
++    }
++
++    /** preload.export{outcome="completed"} +1. */
++    public static void preloadExportCompleted() {
++        Outcomes.count("preload.export", "completed");
++    }
++
++    /** order{outcome="placed"} +1. */
++    public static void orderPlaced() {
++        Outcomes.count("order", "placed");
++    }
++
++    /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */
++    public static void ordersShipped(Number items) {
++        Outcomes.count("orders", "shipped", "items", items);
++    }
+ }

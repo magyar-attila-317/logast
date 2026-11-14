@@ -73,6 +73,9 @@ metrics:
   amounts: total                   # an outcome line that logs a number ([rows={}]) can count it too, if metrics.json
                                    # names it ("amount"): total = a counter grows by it, per-run = each one a sample of
                                    # a distribution summary, off = metrics.json does not offer it
+  catalog: per-package             # metric names in one place (METRIC_CATALOG): per-package = an XMetrics class per
+                                   # package that counts; single = all in catalogClass; off = names at the call sites
+  # catalogClass: com.example.metrics.BusinessMetrics   # for single (default: <app package>.metrics.BusinessMetrics)
   tags:                            # tag vocabulary: aliases are renamed to the key (METRIC_TAG_KEY)
     outcome:
       aliases: [result, success, succeeded]
