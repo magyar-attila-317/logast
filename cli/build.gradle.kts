@@ -83,5 +83,26 @@ tasks.test {
     maxHeapSize = "2g"
 }
 
+// The same golden e2e test on the oldest Java logast supports: javac's type attribution differs between versions
+// (JDK 21 drops the signature of a call that passes a value of an unresolved type), and the result must not.
+val e2eJdk21 by tasks.registering(Test::class) {
+    description = "E2eGoldenTest on Java 21: the same e2e/expected files"
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    useJUnitPlatform()
+    filter { includeTestsMatching("dev.logast.cli.E2eGoldenTest") }
+    dependsOn(":fixtures:sample-app:writeClasspath")
+    inputs.files(e2eLombok)
+    inputs.dir(rootProject.file("e2e"))
+    systemProperty("logast.e2e.lombok", e2eLombok.asPath)
+    systemProperty("logast.e2e.before", rootProject.file("e2e/before").absolutePath)
+    systemProperty("logast.e2e.expected", rootProject.file("e2e/expected").absolutePath)
+    systemProperty("logast.e2e.classpath", project(":fixtures:sample-app").layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
+    maxHeapSize = "2g"
+}
+tasks.check { dependsOn(e2eJdk21) }
+
 // test-capture is a JUnit listener for *services'* tests (it needs logback); keep it out of logast's own tests
 configurations.testRuntimeClasspath { exclude(group = rootProject.group.toString(), module = "test-capture") }

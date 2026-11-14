@@ -85,7 +85,7 @@ public final class Applier {
         try {
             return run(root, work, sel, write);
         } finally {
-            deleteTree(work);
+            deleteTree(work.getParent());
         }
     }
 
@@ -365,7 +365,11 @@ public final class Applier {
 
     private static Path copy(Path root) {
         try {
-            Path work = Files.createTempDirectory("logast-apply-");
+            // the copy keeps the project's folder name: what is derived from it (the service name when no
+            // settings.gradle names it) must come out the same as on the project itself
+            Path name = root.toAbsolutePath().normalize().getFileName();
+            Path work = Files.createTempDirectory("logast-apply-").resolve(name == null ? "project" : name.toString());
+            Files.createDirectories(work);
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {

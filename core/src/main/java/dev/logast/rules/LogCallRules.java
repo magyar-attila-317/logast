@@ -367,7 +367,7 @@ final class LogCallRules {
         for (Arg a : args) {
             // a vocabulary key, or a key outside the vocabulary that an existing scope sets, logged from the variable of the
             // same name (base class scopes "qaoCode" around the abstract step, the step logs [qaoCode={}] again)
-            if (inMdc.contains(a.key()) && (a.registry() || a.src().equals(a.key()))) {
+            if (inMdc.contains(a.key()) && (a.registry() || sameValue(a.src(), a.key()))) {
                 String wrap = ctx.plannedBy(m, a.key());
                 if (wrap != null) {
                     plannedDeps.add(wrap);
@@ -497,6 +497,15 @@ final class LogCallRules {
     }
 
     private static final java.util.regex.Pattern KEY_LEFTOVER = java.util.regex.Pattern.compile("\\b[A-Za-z][\\w.\\-]*=|[\\[(]\\s*[,;]");
+
+    /**
+     * The value logged is the key's own: the variable of that name, or an accessor named after it
+     * ({@code summary.runCode()}, {@code job.getRunCode()}).
+     */
+    static boolean sameValue(String src, String key) {
+        String cap = key.isEmpty() ? key : Character.toUpperCase(key.charAt(0)) + key.substring(1);
+        return src.equals(key) || src.endsWith("." + key + "()") || src.endsWith(".get" + cap + "()");
+    }
 
     /** Suffix name for an MDC/registry key (vocabulary logKey), or the key itself. */
     private String logKey(String key) {
