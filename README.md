@@ -690,7 +690,7 @@ Both give the same generated code. The starter also protects services that logas
 | `REJECTED … must read as '{subject} failed'` | the text has to follow the lifecycle form for that log, e.g. "Payment charge failed, will retry" |
 | `REJECTED … glossary 'purchase' → use 'order'` | use the vocabulary term; `logast policy .` shows aliases |
 | `depends on [SUP-…]` | apply that order in the same run (`--auto` does) |
-| scans are slow on large services | the first scan parses everything (about 30 s for 2,000 files); with compiled classes on the classpath, apply rounds re-parse only changed files |
+| scans are slow on large services | every scan parses the whole project from source (about 30 s for 2,000 files), each apply round too: slower, but the result never depends on compiled classes |
 
 ## Development
 

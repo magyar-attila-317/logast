@@ -134,21 +134,6 @@ index a82b3b1..5153ba7 100644
          return new IncomeOutcome(false, result);
      }
  }
-diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
-index 6a002c4..13f7dd1 100644
---- a/src/main/java/com/example/e2e/job/PublishRunJob.java
-+++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
-@@ -17,8 +17,8 @@ 
-         ObservedContext.entrypoint("publishing")
-                 .quiet()
-                 .run(() -> {
--                    log.info("Publishing started [runCode={}]", runCode);
--                    log.info("Publishing completed [runCode={}]", runCode);
-+                    log.info("Publishing started");
-+                    log.info("Publishing completed");
-                 });
-     }
- }
 diff --git a/src/main/java/com/example/e2e/edge/CouponTask.java b/src/main/java/com/example/e2e/edge/CouponTask.java
 index b5b44e5..c942299 100644
 --- a/src/main/java/com/example/e2e/edge/CouponTask.java
@@ -212,6 +197,29 @@ index 49d439e..1b7afce 100644
              List<CouponDetails> matchingCoupons = filterMatchingCoupons(allCouponDetails, salesData.couponId());
              return IncomeCalculator.calculate(salesData, matchingCoupons);
          }
+diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
+index 4a64de6..4a83b50 100644
+--- a/src/main/java/com/example/e2e/job/PublishRunJob.java
++++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
+@@ -18,15 +18,15 @@ 
+         ObservedContext.entrypoint("publishing")
+                 .quiet()
+                 .run(() -> {
+-                    log.info("Publishing started [runCode={}]", runCode);
++                    log.info("Publishing started");
+                     var summary = RunSummary.of(runCode, week);
+                     report(summary);   // overloaded: the var's type picks report(RunSummary)
+-                    log.info("Publishing completed [runCode={}]", runCode);
++                    log.info("Publishing completed");
+                 });
+     }
+ 
+     private void report(RunSummary summary) {
+-        log.debug("Run summary [runCode={}, items={}]", summary.runCode(), summary.items());
++        log.debug("Run summary [items={}]", summary.items());
+     }
+ 
+     private void report(String line) {
 diff --git a/src/main/java/com/example/e2e/edge/Exclusion.java b/src/main/java/com/example/e2e/edge/Exclusion.java
 index fa0d2df..92efeb4 100644
 --- a/src/main/java/com/example/e2e/edge/Exclusion.java

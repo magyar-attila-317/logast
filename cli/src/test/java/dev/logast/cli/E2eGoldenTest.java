@@ -29,6 +29,29 @@ class E2eGoldenTest {
     /** The fixture's classpath plus Lombok (real services use it): written once per run into a temp file. */
     private static final String CLASSPATH = e2eClasspath();
     private static final String LOMBOK = System.getProperty("logast.e2e.lombok", "");
+    /**
+     * e2e/platform compiled: a library the service compiles against but logast never sees (its types stay unresolved
+     * in the analysis, as with an internal jar missing from a copied classpath). Only javac gets it.
+     */
+    private static final Path PLATFORM = platformClasses();
+
+    private static Path platformClasses() {
+        try {
+            Path out = Files.createTempDirectory("logast-e2e-platform");
+            List<String> args = new ArrayList<>(List.of("-d", out.toString()));
+            try (Stream<Path> s = Files.walk(BEFORE.resolveSibling("platform"))) {
+                s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).forEach(args::add);
+            }
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int rc = ToolProvider.getSystemJavaCompiler().run(null, null, err, args.toArray(String[]::new));
+            if (rc != 0) {
+                throw new IllegalStateException("e2e/platform does not compile:\n" + err);
+            }
+            return out;
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
 
     private static String e2eClasspath() {
         try {
@@ -55,27 +78,22 @@ class E2eGoldenTest {
 
     @Test
     void migrationMatchesTheGoldenSnapshot() throws IOException {
-        Path app = tmp.resolve("app");
-        copy(BEFORE, app);
+        golden(EXPECTED, migrate(tmp.resolve("app"), CLASSPATH, app -> {
+        }));
+    }
 
-        String first = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
-        String second = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
-        Files.writeString(app.resolve("OUTPUT.txt"), "=== logast apply . --auto --write\n" + first
-                + "\n=== the same again (what one run left behind)\n" + second);
-
-        compile(app);
-
-        Map<String, String> actual = files(app);
+    /** Every file equals the snapshot in {@code expectedDir}; with -Pe2e.update the snapshot is rewritten instead. */
+    private static void golden(Path expectedDir, Map<String, String> actual) throws IOException {
         if (UPDATE) {
-            deleteTree(EXPECTED);
+            deleteTree(expectedDir);
             for (var e : actual.entrySet()) {
-                Path p = EXPECTED.resolve(e.getKey());
+                Path p = expectedDir.resolve(e.getKey());
                 Files.createDirectories(p.getParent());
                 Files.writeString(p, e.getValue());
             }
             return;
         }
-        Map<String, String> expected = files(EXPECTED);
+        Map<String, String> expected = files(expectedDir);
         List<String> problems = new ArrayList<>();
         new TreeSet<>(expected.keySet()).stream().filter(k -> !actual.containsKey(k)).forEach(k -> problems.add("missing: " + k));
         new TreeSet<>(actual.keySet()).stream().filter(k -> !expected.containsKey(k)).forEach(k -> problems.add("new file: " + k));
@@ -84,8 +102,84 @@ class E2eGoldenTest {
                 problems.add(diff(k, expected.get(k), actual.get(k)));
             }
         }
-        assertThat(problems).as("e2e/expected differs (run ./gradlew :cli:test -Pe2e.update if the change is intended, "
-                + "then review `git diff e2e/expected`)").isEmpty();
+        assertThat(problems).as(expectedDir.getFileName() + " differs (run ./gradlew :cli:test -Pe2e.update if the change is "
+                + "intended, then review `git diff e2e`)").isEmpty();
+    }
+
+    /**
+     * The result must not depend on what else sits on the classpath: class folders switched on an incremental re-parse
+     * once, which lost calls through interfaces and base classes in later rounds (scopes in every validator). The
+     * service's own compiled classes (a build ran before), and class folders that do not match the sources (a copied
+     * classpath), must give exactly the golden files.
+     */
+    @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"own compiled classes", "foreign class folder"})
+    void classFoldersOnTheClasspathChangeNothing(String variant) throws IOException {
+        Path classes = tmp.resolve("classes");
+        if (variant.startsWith("own")) {
+            Path pre = tmp.resolve("pre");
+            copy(BEFORE, pre);
+            compile(pre);
+            classes = pre.resolve("out");
+        } else {
+            Files.createDirectories(classes.resolve("other"));
+            Files.write(classes.resolve("other/Unrelated.class"), new byte[]{(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE});
+        }
+        List<String> cp = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)));
+        cp.add(classes.toString());
+        Path cpFile = tmp.resolve("classpath.txt");
+        Files.write(cpFile, cp);
+        Map<String, String> actual = migrate(tmp.resolve("app"), cpFile.toString(), app -> {
+        });
+        // what went wrong on a real service: the checks, reached only through CouponCheck.validate, lost their caller
+        // in later rounds and got scopes of their own although the calculator's scope already covers them
+        assertThat(actual.get("src/main/java/com/example/e2e/income/CouponChecks.java"))
+                .as("checks called through the interface are covered by the calculator's scope").doesNotContain("MdcScope");
+        assertSameFiles(files(EXPECTED), actual);
+    }
+
+    /**
+     * A service that names itself nowhere, with the "spring:" key left empty: it is named after its folder (the
+     * project's, not the scratch copy apply works in, which gave "logast-apply-1234…", a new name every run), and the
+     * empty key is filled instead of kept. Every file must equal e2e/expected-unnamed.
+     */
+    @Test
+    void anUnnamedServiceIsNamedAfterItsFolder() throws IOException {
+        golden(EXPECTED.resolveSibling("expected-unnamed"), migrate(tmp.resolve("billing-service"), CLASSPATH, app -> {
+            Path yml = app.resolve("src/main/resources/application.yml");
+            String text = Files.readString(yml);
+            String unnamed = text.replaceFirst("(?m)^ {2}application:\\n {4}name: e2e-shop\\n", "");
+            assertThat(unnamed).as("the scenario's name was removed").isNotEqualTo(text).startsWith("spring:\n");
+            Files.writeString(yml, unnamed);
+        }));
+    }
+
+    /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
+    private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
+        copy(BEFORE, app);
+        prepare.run(app);
+        String first = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
+        String second = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
+        Files.writeString(app.resolve("OUTPUT.txt"), "=== logast apply . --auto --write\n" + first
+                + "\n=== the same again (what one run left behind)\n" + second);
+        compile(app);
+        return files(app);
+    }
+
+    interface IoAction {
+        void run(Path app) throws IOException;
+    }
+
+    private static void assertSameFiles(Map<String, String> expected, Map<String, String> actual) {
+        List<String> problems = new ArrayList<>();
+        new TreeSet<>(expected.keySet()).stream().filter(k -> !actual.containsKey(k)).forEach(k -> problems.add("missing: " + k));
+        new TreeSet<>(actual.keySet()).stream().filter(k -> !expected.containsKey(k)).forEach(k -> problems.add("new file: " + k));
+        for (String k : new TreeSet<>(actual.keySet())) {
+            if (expected.containsKey(k) && !expected.get(k).equals(actual.get(k))) {
+                problems.add(diff(k, expected.get(k), actual.get(k)));
+            }
+        }
+        assertThat(problems).as("differs from e2e/expected").isEmpty();
     }
 
     /**
@@ -327,7 +421,8 @@ class E2eGoldenTest {
         try (Stream<Path> s = Files.walk(root.resolve("src/main/java"))) {
             sources = s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).toList();
         }
-        List<String> cp = Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList();
+        List<String> cp = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList());
+        cp.add(PLATFORM.toString());
         List<String> args = new ArrayList<>(List.of("-d", root.resolve("out").toString(), "-proc:full",
                 "-processorpath", LOMBOK, "-cp", String.join(java.io.File.pathSeparator, cp)));
         args.addAll(sources);

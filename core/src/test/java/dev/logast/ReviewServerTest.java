@@ -14,7 +14,7 @@ class ReviewServerTest {
     @Test
     void servesPageAndOrdersOnlyWithToken() throws Exception {
         ReviewServer server = new ReviewServer(Fixtures.root(),
-                () -> new IncrementalScanner(Fixtures.classpath(), r -> Fixtures.policy()), Fixtures.policy());
+                () -> new RoundScanner(Fixtures.classpath(), r -> Fixtures.policy()), Fixtures.policy());
         String url = server.start(0);
         try {
             HttpClient http = HttpClient.newHttpClient();

@@ -404,6 +404,7 @@ public final class SetupRules {
 
     /** @param overwrite true: the snippet's values replace existing ones (a fix that must change a value) */
     public static String mergeYaml(String existing, String snippet, boolean overwrite) {
+        existing = dropEmptyKeys(existing, keyPaths(snippet));
         Yaml.Documents docs = (Yaml.Documents) new YamlParser().parse(existing).findFirst().orElseThrow();
         Yaml.Document doc = docs.getDocuments().getFirst();
         Yaml incoming = ((Yaml.Documents) new YamlParser().parse(snippet).findFirst().orElseThrow())
@@ -414,6 +415,66 @@ public final class SetupRules {
         all.set(0, doc.withBlock((Yaml.Block) merged));
         String out = dropCopiedComments(existing, docs.withDocuments(all).printAll());
         return out.endsWith("\n") ? out : out + "\n";
+    }
+
+    /**
+     * A key with nothing under it ("spring:" left after its children were removed) is null to Spring, the same as no
+     * key. The merge keeps it as a value, though, and adds nothing below it: so an empty key the snippet fills is
+     * dropped first, and the snippet's block takes its place.
+     */
+    static String dropEmptyKeys(String yaml, Set<String> fill) {
+        List<String> lines = yaml.lines().toList();
+        List<String> out = new ArrayList<>();
+        Deque<Map.Entry<Integer, String>> path = new ArrayDeque<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String l = lines.get(i);
+            java.util.regex.Matcher m = YAML_KEY.matcher(l);
+            if (m.matches()) {
+                int indent = m.group(1).length();
+                while (!path.isEmpty() && path.peek().getKey() >= indent) {
+                    path.pop();
+                }
+                String key = (path.isEmpty() ? "" : path.peek().getValue() + ".") + m.group(2);
+                path.push(Map.entry(indent, key));
+                if (m.group(3).isBlank() && fill.contains(key) && !hasChildren(lines, i, indent)) {
+                    continue;
+                }
+            }
+            out.add(l);
+        }
+        return String.join("\n", out) + (yaml.endsWith("\n") ? "\n" : "");
+    }
+
+    private static final java.util.regex.Pattern YAML_KEY = java.util.regex.Pattern.compile("^( *)([\\w.\\-]+):( *(?:#.*)?|\\s.*)$");
+
+    private static boolean hasChildren(List<String> lines, int i, int indent) {
+        for (int j = i + 1; j < lines.size(); j++) {
+            String n = lines.get(j);
+            if (n.isBlank() || n.stripLeading().startsWith("#")) {
+                continue;
+            }
+            return n.length() - n.stripLeading().length() > indent || n.stripLeading().startsWith("- ");
+        }
+        return false;
+    }
+
+    /** Dotted paths of the keys a snippet sets ("spring", "spring.application", "spring.application.name"). */
+    static Set<String> keyPaths(String yaml) {
+        Set<String> out = new HashSet<>();
+        Deque<Map.Entry<Integer, String>> path = new ArrayDeque<>();
+        for (String l : yaml.lines().toList()) {
+            java.util.regex.Matcher m = YAML_KEY.matcher(l);
+            if (m.matches()) {
+                int indent = m.group(1).length();
+                while (!path.isEmpty() && path.peek().getKey() >= indent) {
+                    path.pop();
+                }
+                String key = (path.isEmpty() ? "" : path.peek().getValue() + ".") + m.group(2);
+                path.push(Map.entry(indent, key));
+                out.add(key);
+            }
+        }
+        return out;
     }
 
     /**

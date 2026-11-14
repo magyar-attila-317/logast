@@ -64,7 +64,7 @@ Lines added in 1b carry the values in scope as `[k=v]` (vocabulary ids among the
 
 - Every rule declares its step; `Rules.scan(analysis, step)` runs one step.
 - `Applier` runs the steps in order on the scratch copy: per step, apply rounds until no automatic order is left,
-  then rescan (incremental: only changed files) and continue. Filled texts (fills.json) and metric decisions
+  then rescan (a full parse from source each time: results never depend on compiled classes) and continue. Filled texts (fills.json) and metric decisions
   (metrics.json) apply in their step.
 - Order ids are anchored on content (method, kind, message), never on line numbers, so they survive earlier steps.
 - `logast scan`: unchanged single-pass diagnostic (decision 2).

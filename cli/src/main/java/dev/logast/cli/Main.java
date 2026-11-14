@@ -270,7 +270,7 @@ public final class Main {
             long t0 = System.nanoTime();
             Policy policy = policy();
             List<Path> cp = classpath();
-            dev.logast.IncrementalScanner scanner = new dev.logast.IncrementalScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
+            dev.logast.RoundScanner scanner = new dev.logast.RoundScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
                     : Logast.policy(root, null).withPacks(packs));
             Rules.Step untilStep = until == null ? null : Rules.Step.valueOf(until.toUpperCase(java.util.Locale.ROOT));
             Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep)
@@ -456,9 +456,7 @@ public final class Main {
                         + "Scans without a classpath leave most calls unresolved.");
                 return res.exitCode();
             }
-            Out.step(".logast/classpath-*.txt", res.entries() + " entries in " + Out.seconds(t0)
-                    + (res.compiledClasses() ? "; compiled classes found (apply re-parses only changed files)"
-                    : "; no compiled classes yet (build once so apply rounds can re-parse incrementally)"));
+            Out.step(".logast/classpath-*.txt", res.entries() + " entries in " + Out.seconds(t0));
             return 0;
         }
     }
