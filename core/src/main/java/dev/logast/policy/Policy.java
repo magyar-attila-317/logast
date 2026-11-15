@@ -42,11 +42,14 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param emitters calls that record an audit event: {@code com.x.AuditService} or {@code com.x.ActivityLogger#log};
      *                 empty: any call on a type named *Audit*, or with an *Audit* argument (an AuditAction enum)
      * @param actions  entrypoints that must record one
+     * @param logger   the logger name audit classes log through (AUDIT_LOG_MIXED), so the log pipeline can route audit
+     *                 lines apart (their own index, longer retention); default "audit"
      */
-    public record Audit(List<String> emitters, List<AuditAction> actions) {
+    public record Audit(List<String> emitters, List<AuditAction> actions, String logger) {
         public Audit {
             emitters = emitters == null ? List.of() : List.copyOf(emitters);
             actions = actions == null ? List.of() : List.copyOf(actions);
+            logger = logger == null || logger.isBlank() ? "audit" : logger.strip();
         }
     }
 
@@ -339,7 +342,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         verify = verify == null ? new Verify(null, null) : verify;
         metrics = metrics == null ? new Metrics(null, null, null, null, null, null) : metrics;
         resilience = resilience == null ? new Resilience(null, null, null, null) : resilience;
-        audit = audit == null ? new Audit(null, null) : audit;
+        audit = audit == null ? new Audit(null, null, null) : audit;
     }
 
     /** Built-in defaults only (no project file). */

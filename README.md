@@ -715,6 +715,7 @@ They use the same entrypoint and call-path analysis, so a finding says *which re
 | AUDIT_MISSING | an entrypoint matching `audit.actions` from which no audit emitter is reachable |
 | AUDIT_FAILURES_UNRECORDED | an auditable action that records its audit event only after its work succeeded (no audit call in a catch or finally): a rejected or failed attempt leaves no record | report (record the outcome either way, or the attempt before the work) |
 | AUDIT_RECORD_INCOMPLETE | an audit call that does not say who did it (an argument from the security context, or named like `userId`/`actor`/`principal`; or the audit method reads the security context itself) or to which record (a vocabulary id, or named like `…Id`) | report |
+| AUDIT_LOG_MIXED | an audit class (named `*Audit*`, or a configured emitter) logs through a logger named after the class: its lines mix with the application log | AUTO: logs through the logger `audit` (policy `audit.logger`): `LoggerFactory.getLogger("audit")` / `@Slf4j(topic = "audit")`, so the log pipeline can route audit lines apart (own index, longer retention) |
 | AUDIT_SECURITY_EVENTS | Spring Security in use, but failed/successful logins and denied access are not recorded |
 
 ```yaml

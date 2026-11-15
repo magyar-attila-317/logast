@@ -64,11 +64,11 @@ index 31e6c43..6f18f77 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
-index e6d521d..561107f 100644
+index 52e0cde..c6871f8 100644
 --- a/src/main/java/com/example/e2e/edge/Audited.java
 +++ b/src/main/java/com/example/e2e/edge/Audited.java
 @@ -8,6 +8,6 @@ 
-     Logger AUDIT_LOG = LoggerFactory.getLogger(Audited.class);
+     Logger AUDIT_LOG = LoggerFactory.getLogger("audit");
  
      default void audit(String pledgeId) {
 -        AUDIT_LOG.info("Pledge audited [pledgeId={}]", pledgeId);
