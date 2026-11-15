@@ -126,14 +126,15 @@ index d5cf243..c2e5489 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
-index c6154fe..25c31a9 100644
+index 19fd1cc..7334819 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeJob.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeJob.java
-@@ -2,10 +2,12 @@ 
+@@ -2,11 +2,13 @@ 
  
  import com.example.e2e.stipend.KioskTotals;
  import java.util.List;
 +import lombok.extern.slf4j.Slf4j;
+ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
  import org.springframework.scheduling.annotation.Scheduled;
  import org.springframework.stereotype.Component;
  
@@ -142,9 +143,9 @@ index c6154fe..25c31a9 100644
  @Component
  public class EdgeJob {
      private final EdgeFlow flow;
-@@ -16,9 +18,12 @@
- 
+@@ -18,9 +20,12 @@
      @Scheduled(cron = "0 30 3 * * *")
+     @SchedulerLock(name = "edge-job")   // runs on one instance at a time
      public void run() {
 -        for (KioskTotals row : pending()) {
 +        log.info("Edge started"); // logast:wording

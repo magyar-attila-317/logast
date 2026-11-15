@@ -29,12 +29,12 @@
   "SUG-2f8476" : {
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Edge started | must read as: {subject} started",
-    "_where" : "src/main/java/com/example/e2e/edge/EdgeJob.java:21 EdgeJob.run"
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeJob.java:23 EdgeJob.run"
   },
   "SUG-bd5779" : {
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Edge completed | must read as: {subject} completed | suffix keys added by the tool: [kioskTotalsCount]",
-    "_where" : "src/main/java/com/example/e2e/edge/EdgeJob.java:26 EdgeJob.run"
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeJob.java:28 EdgeJob.run"
   },
   "SUG-a2a43c" : {
     "MSG" : "",

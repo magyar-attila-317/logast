@@ -356,6 +356,8 @@ class E2eGoldenTest {
                 .doesNotContain("CHECK FAILED");
         Files.writeString(app.resolve("OUTPUT.txt"), "=== logast apply . --auto --write\n" + first
                 + "\n=== the same again (what one run left behind)\n" + second);
+        // every finding left, with its text, location and path: report-only rules only show here (OUTPUT counts them)
+        Files.writeString(app.resolve("FINDINGS.txt"), run(app, "scan", app.toString(), "--classpath-file", classpath));
         compile(app);
         return files(app);
     }

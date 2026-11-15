@@ -16,6 +16,8 @@ on real services; the background is in issue #7.
 ## Every change comes with a test that fails without it
 - A new rule or fix gets a case in an e2e scenario (`e2e/before`, snapshots in `e2e/expected*`) that compares **every
   file** of the result. Put the code shape that showed the problem into the scenario, with neutral names.
+  Report-only findings show up in `FINDINGS.txt` (a `scan` after the migration), so their text, location and path are
+  part of the snapshot too.
 - Switch the change off once and check that its test fails. A test that passes without the fix proves nothing.
 - Every scenario must keep its properties: one pass (pass 2 of the first apply applies nothing), a second apply changes
   nothing, no `CHECK FAILED`, and the result compiles. Do not weaken these assertions to make a change pass.
