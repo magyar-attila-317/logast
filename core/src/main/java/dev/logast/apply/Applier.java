@@ -106,6 +106,10 @@ public final class Applier {
 
         progress.accept("analysing the code");
         ScanResult scan = scanner.apply(work);
+        // written texts go to the lines they were written for, also when a line's id shifted since
+        if (!sel.fills().isEmpty()) {
+            sel = new Selection(sel.auto(), sel.only(), FillsFile.match(sel.fills(), scan.orders()), sel.lenientFills());
+        }
         ScanResult before = scan;
         int round = 0;
         boolean first = true;

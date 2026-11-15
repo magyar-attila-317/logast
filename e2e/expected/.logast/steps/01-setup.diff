@@ -1,12 +1,19 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index 6bd81fc..8c19909 100644
+index 6bd81fc..1b48a88 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -1,7 +1,25 @@ 
+@@ -1,7 +1,32 @@ 
  spring:
    application:
      name: e2e-shop
 +    version: ${APPLICATION_VERSION:unknown}
++  kafka:
++    listener:
++      observation-enabled: true
++  rabbitmq:
++    listener:
++      simple:
++        observation-enabled: true
  logging:
    structured:
      format:

@@ -42,11 +42,16 @@ final class EntrypointRules {
         String text = f.text();
         int line = m.line();
 
+        boolean batch = dev.logast.graph.EntrypointFinder.batch(m, null)
+                || m.decl().getLeadingAnnotations().stream().anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(m, a));
         boolean observed = ep.observedByFramework()
-                || ep.kind() == Entrypoint.Kind.KAFKA && ctx.kafkaListenerObservationPlanned;
-        boolean notObserved = !observed && ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED)
+                || ep.kind() == Entrypoint.Kind.KAFKA && ctx.kafkaListenerObservationPlanned && !batch
+                || ep.kind() == Entrypoint.Kind.RABBIT && ctx.rabbitListenerObservationPlanned && !batch;
+        // a Mono/Flux method only assembles the pipeline: a wrapper or scope around it would be gone when it runs
+        boolean reactive = ctx.reactive(m);
+        boolean notObserved = !observed && !reactive && ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED)
                 && !ctx.ignored(f, line, Rules.ENTRYPOINT_NOT_OBSERVED) && !alreadyObserved(m);
-        List<DomainValues.Value> missing = ctx.enabled(Rules.MISSING_DOMAIN_MDC)
+        List<DomainValues.Value> missing = ctx.enabled(Rules.MISSING_DOMAIN_MDC) && !reactive
                 && !ctx.ignored(f, line, Rules.MISSING_DOMAIN_MDC) && !ctx.legacyMdc(m)
                 ? ctx.domain.fromVars(params(m)).stream()
                 .filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).toList()
@@ -116,6 +121,7 @@ final class EntrypointRules {
                     indent, unit, taken, ctx.supportHasRun());
             extra.addAll(JavaEdits.imports(f, ctx.support("ObservedContext")));
             ctx.dependOnStarter(b);
+            ctx.observedWrapped.add(m.key());   // its runtime line is the outcome; a plain MdcScope logs none
         } else if (!missing.isEmpty()) {
             String var = unique("mdc", taken);
             replacement = indent + "try (var " + var + " = " + mdcScope(missing) + ") {\n"

@@ -1,3 +1,39 @@
+diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
+index fcbeedd..6e6c5af 100644
+--- a/src/main/java/com/example/e2e/job/PublishRunJob.java
++++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.orchardlib.Week;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -14,13 +15,17 @@
+ 
+     @Override
+     protected void doRun(String runCode, Week week) {
+-        log.info("Publishing started [runCode={}]", runCode);
+-        var summary = RunSummary.of(runCode, week);
+-        report(summary);   // overloaded: the var's type picks report(RunSummary)
+-        String current = runCode;                                       // the same value under another name
+-        log.debug("Publishing batch [runCode={}]", current);
+-        notifyDone(runCode);
+-        log.info("Publishing completed [runCode={}]", runCode);
++        ObservedContext.entrypoint("publishing")
++                .quiet()
++                .run(() -> {
++                    log.info("Publishing started [runCode={}]", runCode);
++                    var summary = RunSummary.of(runCode, week);
++                    report(summary);   // overloaded: the var's type picks report(RunSummary)
++                    String current = runCode;                                       // the same value under another name
++                    log.debug("Publishing batch [runCode={}]", current);
++                    notifyDone(runCode);
++                    log.info("Publishing completed [runCode={}]", runCode);
++                });
+     }
+ 
+     /** Every caller passes the run code: the parameter is the value MDC already carries. */
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 index 0d60ea5..436af48 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
@@ -72,6 +108,23 @@ index 9c7595e..7bf2b77 100644
 +        log.info("Export job completed"); // logast:wording
      }
  }
+diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+index d5cf243..c2e5489 100644
+--- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
++++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+@@ -26,10 +26,12 @@ 
+     @RabbitListener(queues = "pledge-returns")
+     public void onReturn(String pledgeId) {
+         log.info("Pledge return received [pledgeId={}]", pledgeId);
++        log.info("Pledge messages completed"); // logast:wording
+     }
+ 
+     @JmsListener(destination = "pledge-audits")
+     public void onAudit(String pledgeId) {
+         log.info("Pledge audit received [pledgeId={}]", pledgeId);
++        log.info("Pledge messages completed"); // logast:wording
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
 index c6154fe..25c31a9 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeJob.java
@@ -126,5 +179,29 @@ index 20a83cc..08f9ee6 100644
              repository.close(pledgeId);
          }
 +        AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 1ad9a72..3422916 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.order;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.event.EventListener;
+@@ -20,6 +21,11 @@
+     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
+     @TransactionalEventListener
+     public void onCommitted(OrderPlaced event) {
+-        log.info("Order audit recorded [orderId={}]", event.orderId());
++        ObservedContext.entrypoint("order.notifications")
++                .quiet()
++                .run(() -> {
++                    log.info("Order audit recorded [orderId={}]", event.orderId());
++                    log.info("Order notifications completed"); // logast:wording
++                });
      }
  }

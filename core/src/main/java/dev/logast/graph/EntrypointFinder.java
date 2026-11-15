@@ -33,13 +33,22 @@ public final class EntrypointFinder {
 
     private final Policy policy;
     private final boolean kafkaObserved;
+    private final boolean rabbitObserved;
 
     public EntrypointFinder(Policy policy) {
-        this(policy, policy.entrypoints().kafkaObservationEnabled());
+        this(policy, policy.entrypoints().kafkaObservationEnabled(), false);
     }
 
-    /** @param kafkaObserved listener observation is on (policy or spring.kafka.listener.observation-enabled) */
     public EntrypointFinder(Policy policy, boolean kafkaObserved) {
+        this(policy, kafkaObserved, false);
+    }
+
+    /**
+     * @param kafkaObserved  listener observation is on (policy or spring.kafka.listener.observation-enabled)
+     * @param rabbitObserved spring.rabbitmq.listener.{simple,direct}.observation-enabled is true
+     */
+    public EntrypointFinder(Policy policy, boolean kafkaObserved, boolean rabbitObserved) {
+        this.rabbitObserved = rabbitObserved;
         this.policy = policy;
         this.kafkaObserved = kafkaObserved;
     }
@@ -108,10 +117,24 @@ public final class EntrypointFinder {
             // Spring's own lifecycle events (ApplicationReadyEvent, ContextRefreshedEvent, ...) are published
             // outside any request: those listeners have no trace unless they open one.
             case EVENT -> !lifecycleEvent(m, a);
-            case KAFKA -> kafkaObserved;
+            // per-record observation does not cover batch listeners (Spring Kafka and Spring AMQP alike)
+            case KAFKA -> kafkaObserved && !batch(m, a);
+            // Spring Boot (3.2.1+) puts the ObservationRegistry on the @JmsListener container factory itself
+            case JMS -> true;
+            case RABBIT -> rabbitObserved && !batch(m, a);
             default -> false;
         };
         return new Entrypoint(m, kind, label, observed);
+    }
+
+    /** A listener that gets a batch of records: {@code batch = "true"}, or a List / ConsumerRecords parameter. */
+    public static boolean batch(MethodInfo m, J.Annotation a) {
+        if (a != null && Annotations.rawAttribute(a, "batch").map(v -> v.contains("true")).orElse(false)) {
+            return true;
+        }
+        return !m.type().getParameterTypes().isEmpty() && (org.openrewrite.java.tree.TypeUtils.isAssignableTo("java.util.List",
+                m.type().getParameterTypes().getFirst()) || org.openrewrite.java.tree.TypeUtils.isAssignableTo(
+                "org.apache.kafka.clients.consumer.ConsumerRecords", m.type().getParameterTypes().getFirst()));
     }
 
     /** WebSocketHandler methods Spring calls per connection event or message, outside any HTTP request. */

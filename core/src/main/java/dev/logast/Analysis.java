@@ -50,7 +50,9 @@ public final class Analysis {
         this.graph = CallGraph.build(index);
         // a listener for an event the code publishes itself runs inside the publisher's flow (its thread, MDC and
         // span): part of that flow, not an entrypoint of its own
-        this.entrypoints = new EntrypointFinder(policy, kafkaObserved).find(index).stream()
+        boolean rabbitObserved = "true".equals(springProperties.get("spring.rabbitmq.listener.simple.observation-enabled"))
+                || "true".equals(springProperties.get("spring.rabbitmq.listener.direct.observation-enabled"));
+        this.entrypoints = new EntrypointFinder(policy, kafkaObserved, rabbitObserved).find(index).stream()
                 .filter(ep -> ep.kind() != Entrypoint.Kind.EVENT || graph.in(ep.method()).stream()
                         .noneMatch(e -> e.site().type().getName().equals("publishEvent")))
                 .toList();

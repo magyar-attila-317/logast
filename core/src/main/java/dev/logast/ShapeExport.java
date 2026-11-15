@@ -484,24 +484,66 @@ public final class ShapeExport {
         return sb.toString();
     }
 
-    /** Public libraries on the classpath (group:artifact:version); the company's own ones are mapped like the code. */
+    /**
+     * Every library on the classpath, so the export can be analysed with the same one: group:artifact:version from
+     * Gradle's cache or a Maven repository (~/.m2), else the jar's file name, listed apart so they are checked before
+     * sending. The company's own ones are mapped like the code; class folders are counted, not named.
+     */
     private String libraries(List<Path> classpath) {
-        Set<String> out = new TreeSet<>();
+        Set<String> coords = new TreeSet<>();
+        Set<String> other = new TreeSet<>();
+        int folders = 0;
         for (Path p : classpath) {
             String s = p.toString().replace('\\', '/');
-            int at = s.indexOf("/files-2.1/");
-            if (at < 0) {
-                continue;
+            String coord = gradleCoordinate(s);
+            coord = coord != null ? coord : mavenCoordinate(s);
+            if (coord != null) {
+                boolean internal = internalPrefix != null && (coord.substring(0, coord.indexOf(':')) + ".").startsWith(internalPrefix);
+                coords.add(internal ? mapText(coord) : coord);
+            } else if (s.endsWith(".jar")) {
+                other.add(mapText(s.substring(s.lastIndexOf('/') + 1)));
+            } else {
+                folders++;
             }
-            String[] g = s.substring(at + 11).split("/");
-            if (g.length < 3) {
-                continue;
-            }
-            String coord = g[0] + ":" + g[1] + ":" + g[2];
-            boolean internal = internalPrefix != null && (g[0] + ".").startsWith(internalPrefix);
-            out.add(internal ? mapText(coord) : coord);
         }
-        return String.join("\n", out) + "\n";
+        StringBuilder sb = new StringBuilder(String.join("\n", coords)).append('\n');
+        if (!other.isEmpty()) {
+            sb.append("# jars outside Gradle's cache and Maven repositories, by file name (check them before sending):\n")
+                    .append(String.join("\n", other)).append('\n');
+        }
+        if (folders > 0) {
+            sb.append("# ").append(folders).append(" class folder(s) left out (compiled code of the project itself)\n");
+        }
+        return sb.toString();
+    }
+
+    /** ".../files-2.1/group/artifact/version/hash/x.jar" → group:artifact:version. */
+    static String gradleCoordinate(String s) {
+        int at = s.indexOf("/files-2.1/");
+        if (at < 0) {
+            return null;
+        }
+        String[] g = s.substring(at + 11).split("/");
+        return g.length < 3 ? null : g[0] + ":" + g[1] + ":" + g[2];
+    }
+
+    /** ".../repository/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar" → org.slf4j:slf4j-api:2.0.17. */
+    static String mavenCoordinate(String s) {
+        int at = s.indexOf("/repository/");
+        if (at < 0 || !s.endsWith(".jar")) {
+            return null;
+        }
+        String[] parts = s.substring(at + 12).split("/");
+        if (parts.length < 4) {
+            return null;
+        }
+        String version = parts[parts.length - 2];
+        String artifact = parts[parts.length - 3];
+        if (!parts[parts.length - 1].startsWith(artifact + "-" + version)) {
+            return null;
+        }
+        String group = String.join(".", Arrays.copyOfRange(parts, 0, parts.length - 3));
+        return group + ":" + artifact + ":" + version;
     }
 
     private static void deleteDir(Path dir) throws IOException {

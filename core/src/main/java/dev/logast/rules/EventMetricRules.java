@@ -24,7 +24,7 @@ final class EventMetricRules {
     private static final Set<String> EVENTS = Set.of("started", "completed", "failed");
     /** Already observed: by Spring (HTTP, @Scheduled, Kafka), or by the starter's BatchTraceListener (runners). */
     private static final Set<Entrypoint.Kind> TIMED_BY_FRAMEWORK = EnumSet.of(Entrypoint.Kind.HTTP, Entrypoint.Kind.SCHEDULED,
-            Entrypoint.Kind.KAFKA, Entrypoint.Kind.BATCH);
+            Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.BATCH);
     private static final Pattern MEASURED = Pattern.compile(
             "ObservedContext|Observation\\.|MeterRegistry|meterRegistry|\\bCounter\\.|\\bTimer\\.|\\.counter\\(|\\.timer\\(");
     private static final Pattern NAME = Pattern.compile("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,3}");
@@ -41,7 +41,12 @@ final class EventMetricRules {
         }
         Set<String> timed = new HashSet<>();
         for (Entrypoint ep : ctx.a.entrypoints) {
-            if ((ep.observedByFramework() || ep.kind() == Entrypoint.Kind.BATCH) && TIMED_BY_FRAMEWORK.contains(ep.kind())) {
+            // observed by Spring, or will be once this scan's property fix (Kafka, RabbitMQ listeners) is in; batch listeners never
+            boolean batch = ep.method().decl().getLeadingAnnotations().stream()
+                    .anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(ep.method(), a));
+            boolean planned = !batch && (ep.kind() == Entrypoint.Kind.KAFKA && ctx.kafkaListenerObservationPlanned
+                    || ep.kind() == Entrypoint.Kind.RABBIT && ctx.rabbitListenerObservationPlanned);
+            if ((ep.observedByFramework() || planned || ep.kind() == Entrypoint.Kind.BATCH) && TIMED_BY_FRAMEWORK.contains(ep.kind())) {
                 timed.add(ep.method().key());
             }
         }
@@ -49,7 +54,7 @@ final class EventMetricRules {
         Map<String, Event> candidates = new LinkedHashMap<>();
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() == null || m.decl().isConstructor() || timed.contains(m.key())
-                    || ctx.wrappedMethods.contains(m.key()) || measured(m) || ctx.legacyMdc(m)) {
+                    || ctx.wrappedMethods.contains(m.key()) || measured(m) || ctx.legacyMdc(m) || ctx.reactive(m)) {
                 continue;
             }
             Event e = detect(m);

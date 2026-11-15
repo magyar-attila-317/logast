@@ -39,6 +39,9 @@ final class TracingRules {
         if (ctx.enabled(Rules.KAFKA_OBSERVATION_DISABLED)) {
             kafka();
         }
+        if (ctx.enabled(Rules.RABBIT_OBSERVATION_DISABLED)) {
+            rabbit();
+        }
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() == null) {
                 continue;
@@ -460,5 +463,25 @@ final class TracingRules {
         if (missing.containsKey("listener")) {
             ctx.kafkaListenerObservationPlanned = true;
         }
+    }
+
+    /**
+     * RABBIT_OBSERVATION_DISABLED: @RabbitListener without listener observation (off by default): each message runs
+     * without the producer's trace. The listener container in use (simple by default, direct when
+     * spring.rabbitmq.listener.type says so) gets observation-enabled. Batch listeners are not observed either way.
+     */
+    private void rabbit() {
+        List<Entrypoint> listeners = ctx.a.entrypoints.stream().filter(ep -> ep.kind() == Entrypoint.Kind.RABBIT).toList();
+        Map<String, String> props = ctx.a.springProperties;
+        String type = "direct".equals(props.get("spring.rabbitmq.listener.type")) ? "direct" : "simple";
+        if (listeners.isEmpty() || "true".equals(props.get("spring.rabbitmq.listener." + type + ".observation-enabled"))) {
+            return;
+        }
+        String rel = applicationYml()[0];
+        OrderBuilder b = ctx.order(Rules.RABBIT_OBSERVATION_DISABLED, "rabbit|" + type).at(rel, 1)
+                .title("RabbitMQ listeners without observation: the trace stops at the queue");
+        b.edit(Edit.yamlMerge(rel, "spring:\n  rabbitmq:\n    listener:\n      " + type + ":\n        observation-enabled: true\n", false));
+        listeners.forEach(ep -> b.location(ep.method().file().relPath(), ep.method().line(), Rules.RABBIT_OBSERVATION_DISABLED));
+        ctx.rabbitListenerObservationPlanned = true;
     }
 }

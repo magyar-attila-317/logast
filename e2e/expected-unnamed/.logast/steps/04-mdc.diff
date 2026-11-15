@@ -39,6 +39,39 @@ index b5ef221..74b60cd 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+index c2e5489..e59f84e 100644
+--- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
++++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.messaging;
+ 
++import com.example.e2e.logging.MdcScope;
+ import com.example.e2e.logging.ObservedContext;
+ import java.util.List;
+ import org.slf4j.Logger;
+@@ -25,13 +26,17 @@
+ 
+     @RabbitListener(queues = "pledge-returns")
+     public void onReturn(String pledgeId) {
+-        log.info("Pledge return received [pledgeId={}]", pledgeId);
+-        log.info("Pledge messages completed"); // logast:wording
++        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++            log.info("Pledge return received [pledgeId={}]", pledgeId);
++            log.info("Pledge messages completed"); // logast:wording
++        }
+     }
+ 
+     @JmsListener(destination = "pledge-audits")
+     public void onAudit(String pledgeId) {
+-        log.info("Pledge audit received [pledgeId={}]", pledgeId);
+-        log.info("Pledge messages completed"); // logast:wording
++        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++            log.info("Pledge audit received [pledgeId={}]", pledgeId);
++            log.info("Pledge messages completed"); // logast:wording
++        }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/stipend/StipendCalculator.java b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
 index 04a4db7..a82b3b1 100644
 --- a/src/main/java/com/example/e2e/stipend/StipendCalculator.java

@@ -16,6 +16,8 @@ import java.util.Map;
 public final class Fill {
     private final Map<String, String> slots = new LinkedHashMap<>();
     private final List<String> args = new ArrayList<>();
+    /** Hints from fills.json ("_MSG", "_where"): what the entry was written for, to find its line again. */
+    private final Map<String, String> hints = new LinkedHashMap<>();
 
     @JsonCreator
     public Fill(@JsonProperty("args") List<String> args) {
@@ -34,6 +36,8 @@ public final class Fill {
     void slot(String name, Object value) {
         if (!name.startsWith("_") && value != null) { // "_MSG", "_where": hints from scan --format fills-template
             slots.put(name, String.valueOf(value));
+        } else if (value != null) {
+            hints.put(name, String.valueOf(value));
         }
     }
 
@@ -43,5 +47,36 @@ public final class Fill {
 
     public List<String> args() {
         return args;
+    }
+
+    /** "src/…/A.java:12 A.run" → "src/…/A.java", or null. */
+    public String file() {
+        String w = hints.get("_where");
+        if (w == null) {
+            return null;
+        }
+        String loc = w.contains(" ") ? w.substring(0, w.indexOf(' ')) : w;
+        return loc.contains(":") ? loc.substring(0, loc.lastIndexOf(':')) : loc;
+    }
+
+    /** "src/…/A.java:12 A.run" → "A.run", or null. */
+    public String method() {
+        String w = hints.get("_where");
+        return w == null || !w.contains(" ") ? null : w.substring(w.indexOf(' ') + 1).strip();
+    }
+
+    /** The wording the slot replaces ("… | was: Order placed | …"), or null when the hint does not say. */
+    public String original(String slot) {
+        String h = hints.get("_" + slot);
+        if (h == null) {
+            return null;
+        }
+        int at = h.indexOf(" | was: ");
+        if (at < 0) {
+            return null;
+        }
+        String rest = h.substring(at + " | was: ".length());
+        int end = rest.indexOf(" | ");
+        return end < 0 ? rest : rest.substring(0, end);
     }
 }

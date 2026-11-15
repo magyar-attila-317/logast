@@ -37,7 +37,7 @@ public final class OrderBuilder {
             Map.entry(Rules.ERROR_DETAILS_EXPOSED, "EDE"), Map.entry(Rules.UNMAPPED_EXCEPTION, "UMX"),
             Map.entry(Rules.CLIENT_ERROR_AS_SERVER_ERROR, "CES"), Map.entry(Rules.PROBLEM_DETAILS_DISABLED, "PDD"),
             Map.entry(Rules.AUDIT_MISSING, "AUM"), Map.entry(Rules.AUDIT_SECURITY_EVENTS, "AUS"), Map.entry(Rules.SCHEDULED_TASK_UNTRACED, "STU"),
-            Map.entry(Rules.KAFKA_OBSERVATION_DISABLED, "KFK"), Map.entry(Rules.JOB_LAUNCH_UNTRACED, "JOB"),
+            Map.entry(Rules.KAFKA_OBSERVATION_DISABLED, "KFK"), Map.entry(Rules.RABBIT_OBSERVATION_DISABLED, "RBT"), Map.entry(Rules.JOB_LAUNCH_UNTRACED, "JOB"),
             Map.entry(Rules.RUNTIME_TRACE_LOST, "RTL"), Map.entry(Rules.RUNTIME_MDC_LOST, "RML"), Map.entry(Rules.RUNTIME_NULL_VALUE, "RNV"),
             Map.entry(Rules.LOG_IN_LOOP, "LIL"), Map.entry(Rules.LOG_VOLUME, "VOL"),
             Map.entry(Rules.METRIC_NAMING, "MTN"), Map.entry(Rules.METRIC_HIGH_CARDINALITY_TAG, "MTC"),

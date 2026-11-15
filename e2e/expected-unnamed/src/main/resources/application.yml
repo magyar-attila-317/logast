@@ -8,6 +8,13 @@ logging:
           name: ${spring.application.name}
           version: ${spring.application.version}
 spring:
+  kafka:
+    listener:
+      observation-enabled: true
+  rabbitmq:
+    listener:
+      simple:
+        observation-enabled: true
   application:
     name: billing-service
     version: ${APPLICATION_VERSION:unknown}

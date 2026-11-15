@@ -157,7 +157,7 @@ public final class LifecyclePlan {
     /** An ObservedContext wrapper (existing, or planned in this scan) logs the outcome itself, unless it is quiet. */
     boolean wrapperLogsOutcome(MethodInfo m) {
         String body = m.decl().getBody() == null ? "" : m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
-        return ctx.wrappedMethods.contains(m.key()) || body.contains("ObservedContext.entrypoint(") && !body.contains(".quiet()");
+        return ctx.observedWrapped.contains(m.key()) || body.contains("ObservedContext.entrypoint(") && !body.contains(".quiet()");
     }
 
     /**

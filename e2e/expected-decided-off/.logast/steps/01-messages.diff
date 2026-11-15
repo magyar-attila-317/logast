@@ -1,3 +1,25 @@
+diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+index 3655c4c..059d4d5 100644
+--- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
++++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+@@ -28,7 +28,7 @@ 
+     public void onReturn(String pledgeId) {
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+             log.info("Pledge return received");
+-            log.info("Pledge messages completed"); // logast:wording
++            log.info("Pledge sweep completed");
+         }
+     }
+ 
+@@ -36,7 +36,7 @@
+     public void onAudit(String pledgeId) {
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+             log.info("Pledge audit received");
+-            log.info("Pledge messages completed"); // logast:wording
++            log.info("Pledge sweep completed");
+         }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
 index 25c31a9..f13982f 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeJob.java
@@ -48,6 +70,19 @@ index 7bf2b77..4ba5455 100644
 -        log.info("Export job completed"); // logast:wording
 +        log.info("Pledge sweep started");
 +        log.info("Pledge sweep completed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 765de3d..df014e6 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -25,7 +25,7 @@ 
+                 .quiet()
+                 .run(() -> {
+                     log.info("Order audit recorded [orderId={}]", event.orderId());
+-                    log.info("Order notifications completed"); // logast:wording
++                    log.info("Pledge sweep completed");
+                 });
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java

@@ -170,12 +170,7 @@ class E2eGoldenTest {
                 Files.writeString(yml, Files.readString(yml) + "metrics:\n  catalog: " + catalog + "\n");
             }
         });
-        Path fills = app.resolve(".logast/fills.json");
-        String f = Files.readString(fills);
-        String filledTexts = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*)\"_MSG\" : \"([^\"]*?must read as: \\{subject} (\\w+)[^\"]*)\"")
-                .matcher(f).replaceAll("\"MSG\" : \"Pledge sweep $3\",$1\"_MSG\" : \"$2\"");
-        assertThat(filledTexts).as("fills.json has texts to write").isNotEqualTo(f);
-        Files.writeString(fills, filledTexts);
+        writeTexts(app);
         Path metrics = app.resolve(".logast/metrics.json");
         String m = Files.readString(metrics);
         assertThat(m).as("metrics.json has outcomes to decide").contains("\"count\" : \"\"");
@@ -203,6 +198,10 @@ class E2eGoldenTest {
                 .mapToLong(t -> t.lines().filter(l -> l.contains("Outcomes.count(\"") || l.contains("Outcomes.record(\"")).count()).sum();
         long withAmount = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)
                 .mapToLong(t -> t.lines().filter(l -> l.matches(".*Outcomes\\.(count|record)\\(\"[^\"]+\", \"[^\"]+\", \"[^\"]+\", [^\"]+\\);.*")).count()).sum();
+        // decisions that cannot be written stay in metrics.json with a "_problem" (e.g. a log line inside a returned pipeline)
+        long problems = actual.get(".logast/metrics.json").lines().filter(l -> l.contains("\"_problem\"")).count();
+        assertThat(problems).as("only the reactive pipeline's line cannot be counted after its statement").isEqualTo(1);
+        decided -= problems;
         if (catalog.equals("off")) {
             assertThat(counted).as("every outcome decided in metrics.json is counted").isEqualTo(decided);
             assertThat(withAmount).as("every amount named in metrics.json is counted").isEqualTo(amounts);
@@ -218,7 +217,9 @@ class E2eGoldenTest {
                     .mapToLong(e -> e.getValue().lines().filter(l -> l.matches(".*(Outcomes\\.(count|record)|ObservedContext\\.entrypoint)\\(\".*")).count())
                     .sum();
             assertThat(outside).as("no metric or observation name is left at a call site").isZero();
-            assertThat(counted).as("every outcome decided in metrics.json has a catalog member").isEqualTo(decided);
+            long calls = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/") && !catalogs.contains(e.getKey()))
+                    .mapToLong(e -> e.getValue().lines().filter(l -> l.matches("\\s*\\w*Metrics\\.[a-z]\\w*\\(.*\\);.*")).count()).sum();
+            assertThat(calls).as("every outcome decided in metrics.json is counted through the catalog").isEqualTo(decided);
         }
         golden(EXPECTED.resolveSibling(catalog.equals("per-package") ? "expected-decided" : "expected-decided-" + catalog), actual);
     }
@@ -261,6 +262,58 @@ class E2eGoldenTest {
         withoutWarning.put("OUTPUT.txt", actual.get("OUTPUT.txt").lines().filter(l -> !l.contains("recognised by name only"))
                 .collect(java.util.stream.Collectors.joining("\n", "", "\n")));
         assertSameFiles(files(EXPECTED), withoutWarning);
+    }
+
+    /** Writes a text ("Pledge sweep <event>") into every fills.json entry that asks for one in a lifecycle form. */
+    private static void writeTexts(Path app) throws IOException {
+        Path fills = app.resolve(".logast/fills.json");
+        String f = Files.readString(fills);
+        String filledTexts = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*)\"_MSG\" : \"([^\"]*?must read as: \\{subject} (\\w+)[^\"]*)\"")
+                .matcher(f).replaceAll("\"MSG\" : \"Pledge sweep $3\",$1\"_MSG\" : \"$2\"");
+        assertThat(filledTexts).as("fills.json has texts to write").isNotEqualTo(f);
+        Files.writeString(fills, filledTexts);
+    }
+
+    /**
+     * Texts are written, then a log line is added above them in the same method (by hand, or a later logast run):
+     * the ids of the lines below shift. Each text must still land on the line it was written for, never on another
+     * one. Every file must equal e2e/expected-shifted.
+     */
+    @Test
+    void writtenTextsFollowTheirLineWhenItsIdShifts() throws IOException {
+        Path app = tmp.resolve("app");
+        migrate(app, CLASSPATH, a -> {
+        });
+        writeTexts(app);
+        // the reworded line in PaymentClient.charge is keyed by its place among the method's log calls
+        Path fills = app.resolve(".logast/fills.json");
+        String f = Files.readString(fills);
+        String reworded = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*\"_MSG\" : \"Reword this DEBUG message[^\"]*was: Charging order)")
+                .matcher(f).replaceFirst("\"MSG\" : \"Charging the card\",$1");
+        assertThat(reworded).as("fills.json asks to reword the charge line").isNotEqualTo(f);
+        Files.writeString(fills, reworded);
+        Path job = app.resolve("src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java");
+        String text = Files.readString(job);
+        String shifted = text.replace("    public void cleanup() {\n", "    public void cleanup() {\n        log.debug(\"Cleanup tick\");\n");
+        assertThat(shifted).as("the line is added").isNotEqualTo(text);
+        Files.writeString(job, shifted);
+        Path client = app.resolve("src/main/java/com/example/e2e/order/PaymentClient.java");
+        String c = Files.readString(client);
+        String cShifted = c.replace("            try {\n                log.debug(\"Charging order", "            try {\n                log.debug(\"Charge requested\");\n                log.debug(\"Charging order");
+        assertThat(cShifted).as("a line above the reworded one").isNotEqualTo(c);
+        Files.writeString(client, cShifted);
+
+        String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        Files.writeString(app.resolve("OUTPUT.txt"), Files.readString(app.resolve("OUTPUT.txt"))
+                + "\n=== after writing the texts and adding a line above them\n" + third);
+        compile(app);
+        Map<String, String> actual = files(app);
+        String result = actual.get("src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java");
+        assertThat(result).as("each text on its own line").contains("log.info(\"Pledge sweep started\")")
+                .contains("log.info(\"Pledge sweep completed [pledgeCount={}]\"").contains("log.debug(\"Cleanup tick\")");
+        assertThat(actual.get("src/main/java/com/example/e2e/order/PaymentClient.java")).as("the reworded line, not the one above it")
+                .contains("log.debug(\"Charge requested\");").contains("log.debug(\"Charging the card [amountCents={}]\"");
+        golden(EXPECTED.resolveSibling("expected-shifted"), actual);
     }
 
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
@@ -312,6 +365,10 @@ class E2eGoldenTest {
         run(app, "shape", app.toString(), "--classpath-file", CLASSPATH);
         Path shape = tmp.resolve("shape");
         copy(app.resolve(".logast/shape"), shape);
+        // the libraries the export needs, by coordinate, Lombok included; no local paths
+        String libraries = Files.readString(shape.resolve("libraries.txt"));
+        assertThat(libraries).contains("org.slf4j:slf4j-api:").contains("org.projectlombok:lombok:").doesNotContain("/home/")
+                .doesNotContain(System.getProperty("user.home"));
         try (var files = Files.walk(shape)) {
             for (Path f : files.filter(Files::isRegularFile).toList()) {
                 String text = Files.readString(f).toLowerCase(java.util.Locale.ROOT) + f;

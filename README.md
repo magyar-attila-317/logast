@@ -313,6 +313,19 @@ Spring calls it inside `publishEvent`, on the publisher's thread, so it is part 
 span; `@Async` listeners get them through the TaskDecorator). logast follows that call like any other, so the
 listener's lines drop keys the publisher's flow already has in MDC and it gets no outcome line of its own.
 
+A `@TransactionalEventListener` runs when the transaction commits (AFTER_COMMIT by default), after the publisher's
+scopes may have closed: it stays an entrypoint of its own (only `phase = BEFORE_COMMIT` joins the publisher's flow).
+
+Listeners Spring observes itself get no wrapper of their own (that would be a second span): `@JmsListener` (Spring Boot
+sets the ObservationRegistry on the container factory), `@KafkaListener` and `@RabbitListener` once
+`spring.kafka.listener.observation-enabled` / `spring.rabbitmq.listener.{simple,direct}.observation-enabled` is on
+(KAFKA_OBSERVATION_DISABLED and RABBIT_OBSERVATION_DISABLED add it). Batch listeners (`batch = "true"`, a `List` or
+`ConsumerRecords` parameter) are never observed per message, so they keep the ObservedContext wrapper.
+
+A method returning a `Mono`/`Flux` only assembles a pipeline that runs later, elsewhere: logast puts no MdcScope or
+ObservedContext around it (they would end before the work starts). Use Reactor's automatic context propagation
+(`Hooks.enableAutomaticContextPropagation()` with context-propagation on the classpath) for MDC in reactive code.
+
 Whether a logged value is the value an MDC key holds is followed back through the code, not guessed from its name:
 the variable or accessor of the key's name, a local initialised from one and never reassigned (`String code =
 runCode;`), or a parameter every caller passes one into (up to three calls up). Anything else keeps its key in the
@@ -707,7 +720,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | pack | rules |
 |---|---|
 | logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · DB_OUTCOME_UNLOGGED · MESSAGE_SUGGESTED · SETUP_SERVICE_IDENTITY · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
-| tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
+| tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · RABBIT_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |
 | errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED |

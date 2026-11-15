@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.logast.orders.OrderJson;
+import dev.logast.orders.Slot;
 import dev.logast.orders.WorkOrder;
 
 import java.io.IOException;
@@ -67,18 +68,48 @@ public final class FillsFile {
         out.put("_status", template.isEmpty()
                 ? "Nothing needs a message text right now: every finding is fixed automatically or only reported."
                 : template.size() + " finding(s) below need a message text.");
+        // written texts follow their line when its id shifted (a log line added above it in the same method)
+        Map<String, Fill> written = new LinkedHashMap<>();
+        previous.forEach((id, node) -> {
+            if (!id.startsWith("_") && node.isObject()) {
+                Fill f = OrderJson.MAPPER.convertValue(node, Fill.class);
+                if (!f.slots().isEmpty() && f.slots().values().stream().noneMatch(String::isBlank)) {
+                    written.put(id, f);
+                }
+            }
+        });
+        Map<String, Fill> placed = match(written, orders);
+        Map<String, String> movedTo = new HashMap<>();   // old id -> new id
+        placed.forEach((newId, f) -> written.forEach((oldId, g) -> {
+            if (g == f && !oldId.equals(newId)) {
+                movedTo.put(oldId, newId);
+            }
+        }));
         int filled = 0, removed = 0, added = 0;
         for (var e : previous.entrySet()) {
             if (e.getKey().startsWith("_")) {
                 continue;
             }
-            if (!template.containsKey(e.getKey())) {
+            String id = movedTo.getOrDefault(e.getKey(), e.getKey());
+            if (!template.containsKey(id) || out.has(id)) {
                 removed++;
                 continue;
             }
             ObjectNode node = e.getValue() instanceof ObjectNode o ? o.deepCopy() : OrderJson.MAPPER.createObjectNode();
             @SuppressWarnings("unchecked")
-            Map<String, Object> fresh = (Map<String, Object>) template.get(e.getKey());
+            Map<String, Object> fresh = (Map<String, Object>) template.get(id);
+            if (!id.equals(e.getKey())) {
+                fresh.forEach((k, v) -> {
+                    if (k.startsWith("_")) {
+                        node.set(k, OrderJson.MAPPER.valueToTree(v));   // where the line is now
+                    }
+                });
+            }
+            if (written.containsKey(e.getKey()) && !placed.containsKey(id)) {
+                node.put("_problem", "this line now reads differently than when the text was written: the text is not used");
+            } else {
+                node.remove("_problem");
+            }
             fresh.forEach((k, v) -> {
                 if (!node.has(k)) {
                     node.set(k, OrderJson.MAPPER.valueToTree(v));   // a slot or hint the order gained
@@ -92,10 +123,10 @@ public final class FillsFile {
                 }
             }
             filled += any ? 1 : 0;
-            out.set(e.getKey(), node);
+            out.set(id, node);
         }
         for (var e : template.entrySet()) {
-            if (!previous.containsKey(e.getKey())) {
+            if (!out.has(e.getKey())) {
                 out.set(e.getKey(), OrderJson.MAPPER.valueToTree(e.getValue()));
                 added++;
             }
@@ -111,6 +142,53 @@ public final class FillsFile {
             }
         }
         return new Update(template.size(), filled, added, removed, changed);
+    }
+
+    /**
+     * The fills for the orders found now. An entry is keyed by its order's id, which counts the method's log calls; a
+     * log line added above it shifts that count, so the id may now name another line. An entry stays with its id only
+     * if the line still reads as it did ("was: …" in its hint); otherwise it moves to the one order in the same method
+     * whose line reads that way, or is left out. A text never lands on a line it was not written for.
+     */
+    public static Map<String, Fill> match(Map<String, Fill> fills, List<WorkOrder> orders) {
+        Map<String, WorkOrder> byId = new LinkedHashMap<>();
+        orders.forEach(o -> byId.put(o.id(), o));
+        Map<String, Fill> out = new LinkedHashMap<>();
+        List<Fill> orphans = new ArrayList<>();
+        fills.forEach((id, f) -> {
+            WorkOrder o = byId.get(id);
+            if (o != null && fits(f, o)) {
+                out.put(id, f);
+            } else {
+                orphans.add(f);
+            }
+        });
+        for (Fill f : orphans) {
+            if (f.file() == null || f.slots().keySet().stream().allMatch(s -> f.original(s) == null)) {
+                continue;   // nothing to recognise its line by
+            }
+            List<WorkOrder> candidates = orders.stream().filter(o -> !out.containsKey(o.id()) && !fills.containsKey(o.id())
+                    && f.file().equals(o.file()) && (f.method() == null || f.method().equals(o.method())) && fits(f, o)).toList();
+            if (candidates.size() == 1) {
+                out.put(candidates.getFirst().id(), f);
+            }
+        }
+        return out;
+    }
+
+    /** The order has the entry's slots, and where both say what the line read before, they agree. */
+    static boolean fits(Fill f, WorkOrder o) {
+        for (String slot : f.slots().keySet()) {
+            Slot s = o.slots().get(slot);
+            if (s == null) {
+                return false;
+            }
+            String was = f.original(slot);
+            if (was != null && s.original() != null && !was.equals(s.original())) {
+                return false;
+            }
+        }
+        return !f.slots().isEmpty();
     }
 
     /** Entries with text in every slot (empty ones are skipped, hints ignored). */

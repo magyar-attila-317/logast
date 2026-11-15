@@ -18,6 +18,12 @@ public final class BusinessMetrics {
     /** Observation (timer and span) name. */
     public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
 
+    /** Observation (timer and span) name. */
+    public static final String PLEDGE_MESSAGES_ON_BATCH = "pledge-messages.on-batch";
+
+    /** Observation (timer and span) name. */
+    public static final String ORDER_NOTIFICATIONS = "order.notifications";
+
     /** pledge.usage{outcome="saved"} +1; uses is one sample of the distribution pledge.usage.uses{outcome="saved"}. */
     public static void pledgeUsageSaved(Number uses) {
         Outcomes.record("pledge.usage", "saved", "uses", uses);
@@ -71,6 +77,11 @@ public final class BusinessMetrics {
     /** preload.export{outcome="completed"} +1. */
     public static void preloadExportCompleted() {
         Outcomes.count("preload.export", "completed");
+    }
+
+    /** pledge.messages{outcome="completed"} +1. */
+    public static void pledgeMessagesCompleted() {
+        Outcomes.count("pledge.messages", "completed");
     }
 
     /** order.confirmation{outcome="sent"} +1. */

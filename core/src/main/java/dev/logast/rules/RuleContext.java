@@ -47,9 +47,12 @@ public final class RuleContext {
     public final List<RepeatedValueRules.Decision> mdcDecisions = new ArrayList<>();
     /** Methods whose body an entrypoint order already rewraps. */
     final Set<String> wrappedMethods = new HashSet<>();
+    /** Methods this scan wraps in ObservedContext (a subset of wrappedMethods: those also get an MdcScope only). */
+    final Set<String> observedWrapped = new HashSet<>();
     String supportOrderId;
     /** TracingRules will switch on Kafka listener observation, so listeners count as observed. */
     boolean kafkaListenerObservationPlanned;
+    boolean rabbitListenerObservationPlanned;
     private PathContext planned;
 
     RuleContext(Analysis a) {
@@ -223,6 +226,15 @@ public final class RuleContext {
     /** How to get a logger into {@code owner}: the existing one, Lombok's @Slf4j when Lombok is there, or a field. */
     JavaEdits.LoggerPlan logger(dev.logast.model.ClassInfo owner) {
         return JavaEdits.logger(owner, policy.logging().loggerName(), lombokLoggers());
+    }
+
+    /**
+     * Returns a Mono, Flux or other Reactive Streams publisher: the method assembles a pipeline that runs later, on
+     * other threads, so a scope or wrapper around its body ends before the work starts.
+     */
+    boolean reactive(MethodInfo m) {
+        return m.decl().getMethodType() != null
+                && org.openrewrite.java.tree.TypeUtils.isAssignableTo("org.reactivestreams.Publisher", m.decl().getMethodType().getReturnType());
     }
 
     private ValueTrace values;
