@@ -1,3 +1,16 @@
+diff --git a/src/main/java/com/example/e2e/web/QuoteController.java b/src/main/java/com/example/e2e/web/QuoteController.java
+index 17cde43..d41dc0c 100644
+--- a/src/main/java/com/example/e2e/web/QuoteController.java
++++ b/src/main/java/com/example/e2e/web/QuoteController.java
+@@ -27,7 +27,7 @@ 
+         CompletableFuture.runAsync(() -> System.out.println(result))
+                 .whenComplete((result2, error) -> {
+                     if (error != null) {
+-                        log.error("Quote controller async work failed", error); // logast:wording
++                        log.error("Coupon sweep failed", error);
+                     }
+                 });
+         return result;
 diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
 index 01e8d81..6ddaebe 100644
 --- a/src/main/java/com/example/e2e/messaging/CouponMessages.java

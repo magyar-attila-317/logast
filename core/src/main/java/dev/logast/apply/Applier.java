@@ -80,6 +80,15 @@ public final class Applier {
         return this;
     }
 
+    private CompileCheck compile;
+
+    /** Type-check every round's changed files against this classpath (#44); without it only the syntax is checked. */
+    public Applier compileWith(List<Path> classpath) {
+        CompileCheck c = new CompileCheck(classpath);
+        this.compile = c.available() ? c : null;
+        return this;
+    }
+
     public Applier(Function<Path, ScanResult> scanner, FillValidator validator) {
         this.scanner = scanner;
         this.validator = validator;
@@ -197,6 +206,7 @@ public final class Applier {
 
                 List<Edit> accepted = new ArrayList<>();
                 List<String> acceptedIds = new ArrayList<>();
+                Map<String, List<Edit>> editsOf = new HashMap<>();
                 for (WorkOrder o : batch) {
                     List<String> problems = validator.validate(o, sel.fills().get(o.id()));
                     if (!problems.isEmpty()) {
@@ -227,6 +237,7 @@ public final class Applier {
                     }
                     rendered.stream().filter(e -> !accepted.contains(e)).forEach(accepted::add);
                     acceptedIds.add(o.id());
+                    editsOf.put(o.id(), rendered);
                 }
                 if (acceptedIds.isEmpty()) {
                     break;
@@ -243,11 +254,16 @@ public final class Applier {
                 Map<String, String> signatures = new HashMap<>();
                 acceptedIds.forEach(id -> signatures.put(id, signature(byId.get(id))));
                 seq++;
-                List<String> broken = applyEdits(work, accepted);
+                Map<String, String> failed = applyRound(work, acceptedIds, editsOf);
+                failed.forEach((id, why) -> {
+                    WorkOrder o = byId.get(id);
+                    selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + id + ") " + why);
+                });
+                List<String> broken = failed.keySet().stream().flatMap(id -> editsOf.get(id).stream().map(Edit::file)).distinct().toList();
                 for (String id : acceptedIds) {
                     WorkOrder o = byId.get(id);
-                    if (o.edits().stream().anyMatch(e -> broken.contains(e.file()))) {
-                        rejected.put(id, "produced code that does not parse in " + broken + " (batch reverted)");
+                    if (failed.containsKey(id)) {
+                        rejected.put(id, failed.get(id));
                     } else {
                         appliedInPass.add(id);
                         appliedAt.put(id, seq);
@@ -407,28 +423,30 @@ public final class Applier {
         return out;
     }
 
-    /** Applies edits per file (descending offsets); returns files that no longer parse (and reverts them). */
-    private static List<String> applyEdits(Path work, List<Edit> edits) {
+    /**
+     * The new text of every file the edits touch (descending offsets), computed in memory: nothing is written. A file
+     * mapped to null is deleted. Java files that no longer parse go to {@code broken} instead.
+     */
+    private static Map<String, String> contents(Path work, List<Edit> edits, Map<String, String> broken) {
         Map<String, List<Edit>> byFile = new TreeMap<>();
         edits.forEach(e -> byFile.computeIfAbsent(e.file(), k -> new ArrayList<>()).add(e));
-        List<String> broken = new ArrayList<>();
+        Map<String, String> out = new TreeMap<>();
         for (var entry : byFile.entrySet()) {
             Path p = work.resolve(entry.getKey());
             try {
                 List<Edit> fileEdits = entry.getValue();
                 if (fileEdits.stream().anyMatch(e -> e.kind().equals("delete"))) {
-                    Files.deleteIfExists(p);
+                    out.put(entry.getKey(), null);
                     continue;
                 }
                 List<Edit> merges = fileEdits.stream().filter(e -> e.kind().equals("yaml-merge")).toList();
                 Optional<Edit> create = fileEdits.stream().filter(e -> e.kind().equals("create")).findFirst();
                 if (create.isPresent() || merges.size() == fileEdits.size() && !Files.exists(p)) {
-                    Files.createDirectories(p.getParent());
                     String text = create.map(Edit::text).orElse("");
                     for (Edit m : merges) {
                         text = text.isBlank() ? m.text() : dev.logast.rules.SetupRules.mergeYaml(text, m.text(), m.start() == 1);
                     }
-                    Files.writeString(p, text);
+                    out.put(entry.getKey(), text);
                     continue;
                 }
                 String before = Files.readString(p);
@@ -448,15 +466,75 @@ public final class Applier {
                     after = ImportFixer.fix(after, ImportFixer.learn(edits.stream().map(Edit::text).toList()));
                 }
                 if (p.toString().endsWith(".java") && !ProjectParser.parsesCleanly(work, work.relativize(p), after)) {
-                    broken.add(entry.getKey());
+                    broken.put(entry.getKey(), "does not parse");
                     continue;
                 }
-                Files.writeString(p, after);
+                out.put(entry.getKey(), after);
             } catch (IOException ex) {
                 throw new UncheckedIOException(ex);
             }
         }
-        return broken;
+        return out;
+    }
+
+    private static void write(Path work, Map<String, String> contents) {
+        try {
+            for (var e : contents.entrySet()) {
+                Path p = work.resolve(e.getKey());
+                if (e.getValue() == null) {
+                    Files.deleteIfExists(p);
+                } else {
+                    Files.createDirectories(p.getParent());
+                    Files.writeString(p, e.getValue());
+                }
+            }
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+    /**
+     * Applies the round's orders as a whole (#44, #54): computes every file in memory, and rejects each order that
+     * touches a file which no longer parses or has compile errors it did not have before; then recomputes without them,
+     * until what is left is clean. Only then are files written, so an order is applied in all its files or in none.
+     * Returns the rejected orders with the reason.
+     */
+    private Map<String, String> applyRound(Path work, List<String> ids, Map<String, List<Edit>> editsOf) {
+        Map<String, String> rejectedNow = new LinkedHashMap<>();
+        List<String> live = new ArrayList<>(ids);
+        while (true) {
+            List<Edit> edits = new ArrayList<>();
+            for (String id : live) {
+                editsOf.get(id).stream().filter(e -> !edits.contains(e)).forEach(edits::add);
+            }
+            Map<String, String> broken = new LinkedHashMap<>();
+            Map<String, String> out = contents(work, edits, broken);
+            if (broken.isEmpty() && compile != null) {
+                Map<String, String> java = new LinkedHashMap<>();
+                out.forEach((f, t) -> {
+                    if (t != null && f.endsWith(".java")) {
+                        java.put(f, t);
+                    }
+                });
+                compile.newErrors(work, java).forEach((f, err) -> broken.put(f, "does not compile: " + err));
+            }
+            if (broken.isEmpty()) {
+                write(work, out);
+                return rejectedNow;
+            }
+            for (Iterator<String> it = live.iterator(); it.hasNext(); ) {
+                String id = it.next();
+                List<String> files = editsOf.get(id).stream().map(Edit::file).filter(broken::containsKey).distinct().toList();
+                if (!files.isEmpty()) {
+                    rejectedNow.put(id, "produced code that " + files.stream().map(f -> f + " " + broken.get(f)).toList()
+                            + " (not applied in any of its files)");
+                    it.remove();
+                }
+            }
+            if (live.isEmpty()) {
+                return rejectedNow;
+            }
+        }
     }
 
     // ---- scratch copy -------------------------------------------------------------------------

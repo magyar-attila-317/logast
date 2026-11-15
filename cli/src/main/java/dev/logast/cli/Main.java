@@ -276,7 +276,7 @@ public final class Main {
             dev.logast.RoundScanner scanner = new dev.logast.RoundScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
                     : Logast.policy(root, null).withPacks(packs));
             Rules.Step untilStep = until == null ? null : Rules.Step.valueOf(until.toUpperCase(java.util.Locale.ROOT));
-            Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep)
+            Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).compileWith(cp)
                     .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files));
             Applier.Result r;
             try (Out.Progress p = new Out.Progress("~starting")) {
