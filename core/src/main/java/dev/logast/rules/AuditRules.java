@@ -55,6 +55,9 @@ final class AuditRules {
         if (ctx.enabled(Rules.AUDIT_LOG_MIXED)) {
             auditLoggers();
         }
+        if (ctx.enabled(Rules.DATA_CHANGES_UNAUDITED)) {
+            dataChanges();
+        }
     }
 
     // ---- auditable actions ----------------------------------------------------------------------
@@ -187,6 +190,69 @@ final class AuditRules {
 
     private static boolean logger(J.MethodInvocation mi) {
         return mi.getMethodType() != null && TypeUtils.isAssignableTo("org.slf4j.Logger", mi.getMethodType().getDeclaringType());
+    }
+
+    // ---- who last changed a record (Spring Data auditing) -----------------------------------------
+
+    private static final List<String> WRITING_REPOSITORIES = List.of("org.springframework.data.repository.CrudRepository",
+            "org.springframework.data.repository.ListCrudRepository", "org.springframework.data.repository.reactive.ReactiveCrudRepository");
+    private static final String LAST_MODIFIED_BY = "org.springframework.data.annotation.LastModifiedBy";
+    private static final String CREATED_BY = "org.springframework.data.annotation.CreatedBy";
+
+    /**
+     * DATA_CHANGES_UNAUDITED (report): an entity changed through a Spring Data repository with nothing recording who
+     * last changed it (no {@code @LastModifiedBy}); or entities with {@code @CreatedBy / @LastModifiedBy} but no
+     * {@code AuditorAware} bean to fill them, so they stay empty.
+     */
+    private void dataChanges() {
+        Map<String, ClassInfo> entities = new LinkedHashMap<>();
+        for (ClassInfo repo : ctx.a.index.classes()) {
+            if (!repo.isInterface()) {
+                continue;
+            }
+            for (JavaType.FullyQualified iface : repo.type().getInterfaces()) {
+                if (iface instanceof JavaType.Parameterized p && WRITING_REPOSITORIES.stream().anyMatch(w -> TypeUtils.isAssignableTo(w, p))
+                        && !p.getTypeParameters().isEmpty()) {
+                    ClassInfo entity = ctx.a.index.clazz(TypeUtils.asFullyQualified(p.getTypeParameters().getFirst()) == null ? ""
+                            : TypeUtils.asFullyQualified(p.getTypeParameters().getFirst()).getFullyQualifiedName());
+                    if (entity != null) {
+                        entities.putIfAbsent(entity.fqn(), entity);
+                    }
+                }
+            }
+        }
+        boolean anyAudited = false;
+        for (ClassInfo e : entities.values()) {
+            boolean lastModifiedBy = hasFieldAnnotation(e, LAST_MODIFIED_BY);
+            anyAudited |= lastModifiedBy || hasFieldAnnotation(e, CREATED_BY);
+            if (lastModifiedBy || ctx.ignored(e.file(), Pos.line(e.decl()), Rules.DATA_CHANGES_UNAUDITED)) {
+                continue;
+            }
+            ctx.order(Rules.DATA_CHANGES_UNAUDITED, "data-audit|" + e.fqn()).at(e.file().relPath(), Pos.line(e.decl()))
+                    .title(e.simpleName() + " is changed through a Spring Data repository, but nothing records who last changed it")
+                    .suggestion("Add @LastModifiedBy (and @CreatedBy, @LastModifiedDate) fields and enable auditing "
+                            + "(@EnableJpaAuditing / @EnableJdbcAuditing with an AuditorAware bean that reads the current user).");
+        }
+        boolean auditorAware = ctx.a.index.classes().stream().anyMatch(c -> TypeUtils.isAssignableTo("org.springframework.data.domain.AuditorAware", c.type()))
+                || ctx.a.index.methods().stream().anyMatch(m -> m.type() != null
+                && TypeUtils.isAssignableTo("org.springframework.data.domain.AuditorAware", m.type().getReturnType()));
+        if (anyAudited && !auditorAware) {
+            ClassInfo first = entities.values().stream().filter(e -> hasFieldAnnotation(e, LAST_MODIFIED_BY) || hasFieldAnnotation(e, CREATED_BY))
+                    .findFirst().orElseThrow();
+            ctx.order(Rules.DATA_CHANGES_UNAUDITED, "data-audit-auditor").at(first.file().relPath(), Pos.line(first.decl()))
+                    .title("Entities have @CreatedBy / @LastModifiedBy, but no AuditorAware bean fills them: they stay empty")
+                    .suggestion("Add an AuditorAware bean that returns the current user (from the security context), and enable "
+                            + "auditing (@EnableJpaAuditing / @EnableJdbcAuditing).");
+        }
+    }
+
+    private static boolean hasFieldAnnotation(ClassInfo c, String annotation) {
+        for (Statement s : c.decl().getBody().getStatements()) {
+            if (s instanceof J.VariableDeclarations vd && vd.getLeadingAnnotations().stream().anyMatch(a -> dev.logast.model.Annotations.is(a, annotation))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---- audit lines apart from the application log --------------------------------------------

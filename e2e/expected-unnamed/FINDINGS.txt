@@ -1,7 +1,7 @@
-logast · 63 files · 14 entrypoints · 72/190 methods reachable · 153 call edges
+logast · 65 files · 14 entrypoints · 72/192 methods reachable · 153 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 78.6% (jobs 7/7 · http 4/7)   (places that should log and do)
-50 orders: 0 AUTO, 18 NEEDS TEXT, 32 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+51 orders: 0 AUTO, 18 NEEDS TEXT, 33 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-442eb2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -229,6 +229,9 @@ SUG-85eb33  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/or
   + "{{MSG}}"
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Order notifications completed" | must read as '{subject} completed'
+DCU-db43f0  low  REPORT-ONLY  DATA_CHANGES_UNAUDITED  src/main/java/com/example/e2e/order/OrderRecord.java:6
+  OrderRecord is changed through a Spring Data repository, but nothing records who last changed it
+  note: Add @LastModifiedBy (and @CreatedBy, @LastModifiedDate) fields and enable auditing (@EnableJpaAuditing / @EnableJdbcAuditing with an AuditorAware bean that reads the current user).
 OUM-d691d7  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderService.java:37  OrderService.place
   "Order placed" is logged but not counted (outcome=placed, frequency unknown: no rate for "POST /orders" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("order", "placed")), "tag" (Outcomes.tag("placed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
@@ -253,4 +256,4 @@ Next steps
   2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   14 of 14 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      20 findings are decisions for a person (MESSAGE_VAGUE 6, AUDIT_RECORD_INCOMPLETE 2, ASYNC_CONTEXT_LOSS 1, …); each says what to decide
+  5. logast scan . --format summary                      21 findings are decisions for a person (MESSAGE_VAGUE 6, AUDIT_RECORD_INCOMPLETE 2, ASYNC_CONTEXT_LOSS 1, …); each says what to decide
