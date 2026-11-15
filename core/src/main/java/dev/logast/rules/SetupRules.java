@@ -273,6 +273,21 @@ public final class SetupRules {
         return "// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.\n" + src;
     }
 
+    /**
+     * One support class copied on its own (vendor mode), for a pack that needs only it without the logging set-up (the
+     * errors pack's ProblemTraceId): the edit, or null when the file is there already.
+     */
+    static Edit vendorOne(RuleContext ctx, String cls) {
+        Path root = ctx.a.project.root();
+        Path javaRoot = ctx.a.index.classes().stream().map(c -> sourceRoot(c.file().absPath())).filter(Objects::nonNull)
+                .findFirst().orElse(root.resolve("src/main/java"));
+        Path target = javaRoot.resolve(ctx.a.supportPackage.replace('.', '/')).resolve(cls + ".java");
+        if (Files.exists(target)) {
+            return null;
+        }
+        return Edit.create(root.relativize(target).toString().replace('\\', '/'), vendoredSource(cls, ctx.a.supportPackage));
+    }
+
     private static Path sourceRoot(Path javaFile) {
         for (Path dir = javaFile.getParent(); dir != null; dir = dir.getParent()) {
             if (dir.endsWith(Path.of("src", "main", "java"))) {

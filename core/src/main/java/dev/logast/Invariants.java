@@ -28,6 +28,9 @@ public final class Invariants {
 
     /** One line per violation: "file:line  what". */
     public static List<String> check(Analysis a, Collection<String> files) {
+        if (!a.policy.packSelected("logging")) {
+            return List.of();   // these are the logging pack's rules: other packs alone don't promise them
+        }
         Set<String> scope = new HashSet<>(files);
         Phrasing phrasing = new Phrasing(a.policy);
         List<String> out = new ArrayList<>();
