@@ -46,7 +46,9 @@ public class CouponController {
 
     @DeleteMapping("/coupons/{couponId}")
     public void delete(@PathVariable String couponId) {
-        coupons.delete(couponId);
+        try (var mdc = MdcScope.of("couponId", couponId)) {
+            coupons.delete(couponId);
+        }
     }
 
     @PostMapping("/admin/coupons/{couponId}/revoke")

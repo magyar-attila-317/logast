@@ -5,6 +5,7 @@
 entrypoints:
   # http
   "DELETE /coupons/{couponId}":     # http, CouponController.delete
+  "GET /audit/settings":     # http, AuditController.settings
   "GET /coupons":     # http, CouponController.open
   "GET /quotes/{productId}":     # http, QuoteController.quote
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh

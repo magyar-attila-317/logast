@@ -49,7 +49,6 @@ public class CouponController {
     @DeleteMapping("/coupons/{couponId}")
     public void delete(@PathVariable String couponId) {
         try (var mdc = MdcScope.of("couponId", couponId)) {
-            log.info("Coupon sweep started");
             coupons.delete(couponId);
         }
     }

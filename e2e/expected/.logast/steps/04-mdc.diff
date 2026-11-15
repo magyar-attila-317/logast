@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/web/CouponController.java b/src/main/java/com/example/e2e/web/CouponController.java
-index ac901ff..903ccf8 100644
+index ac901ff..644a8d2 100644
 --- a/src/main/java/com/example/e2e/web/CouponController.java
 +++ b/src/main/java/com/example/e2e/web/CouponController.java
 @@ -2,6 +2,7 @@ 
@@ -29,7 +29,18 @@ index ac901ff..903ccf8 100644
      }
  
      @PostMapping("/coupons/redeem")
-@@ -51,6 +56,8 @@
+@@ -41,7 +46,9 @@
+ 
+     @DeleteMapping("/coupons/{couponId}")
+     public void delete(@PathVariable String couponId) {
+-        coupons.delete(couponId);
++        try (var mdc = MdcScope.of("couponId", couponId)) {
++            coupons.delete(couponId);
++        }
+     }
+ 
+     @PostMapping("/admin/coupons/{couponId}/revoke")
+@@ -51,6 +58,8 @@
  
      @PostMapping("/orders")
      public void place(@RequestBody Order order) {
