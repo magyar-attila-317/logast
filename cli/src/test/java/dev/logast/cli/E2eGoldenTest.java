@@ -410,6 +410,33 @@ class E2eGoldenTest {
      * must settle (a further apply changes nothing) and still pass the migration invariants.
      */
     /** logast shape: no business word leaves, the export compiles and gives the same findings as the original. */
+    /**
+     * Order ids are anchored to code, not to line numbers (#43): a line added at the top of every file shifts every
+     * finding, and no id may change, so baselines, fills.json and --only keep matching.
+     */
+    @Test
+    void orderIdsSurviveShiftedLines() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        java.util.function.Supplier<List<String>> ids = () -> {
+            run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
+            try {
+                return java.util.regex.Pattern.compile("\"id\" ?: ?\"([A-Z]+-[0-9a-f]+)\"")
+                        .matcher(Files.readString(app.resolve(".logast/orders.json"))).results().map(r -> r.group(1)).sorted().toList();
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        };
+        List<String> before = ids.get();
+        assertThat(before).as("the scan finds orders").hasSizeGreaterThan(50);
+        try (var files = Files.walk(app.resolve("src"))) {
+            for (Path f : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                Files.writeString(f, Files.readString(f).replaceFirst("(?m)^(package [^;]+;)$", "$1\n"));
+            }
+        }
+        assertThat(ids.get()).as("ids after a line was added above every finding").isEqualTo(before);
+    }
+
     @Test
     void shapeExportHidesTheWordsAndKeepsTheFindings() throws IOException {
         Path app = tmp.resolve("app");

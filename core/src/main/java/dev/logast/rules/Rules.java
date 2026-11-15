@@ -610,12 +610,18 @@ public final class Rules {
         new AuditRules(ctx).run();
         new VolumeRules(ctx).run();
 
+        numberOrdinals(ctx.orders);
         Set<String> ids = new HashSet<>();
         List<WorkOrder> orders = new ArrayList<>();
         for (OrderBuilder b : ctx.orders) {
             WorkOrder o = b.build();
-            if (!ids.add(o.id())) {
-                throw new IllegalStateException("duplicate order id " + o.id() + " for anchor " + b.anchor);
+            String base = b.anchor;
+            for (int n = 2; !ids.add(o.id()); n++) {
+                // two findings with one anchor (a rule's oversight) or a hash collision: never lose or crash on one;
+                // the suffix follows the scan order, which is deterministic
+                System.err.println("logast: internal warning: duplicate order id " + o.id() + " (anchor " + base + ")");
+                b.anchor = base + "|dup" + n;
+                o = b.build();
             }
             orders.add(o);
         }
@@ -637,6 +643,24 @@ public final class Rules {
             return Files.exists(p) ? Hashing.sha256(Files.readString(p)) : "absent";
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Numbers orderNth orders within their group in source order: line, then the order they were found in. */
+    static void numberOrdinals(List<OrderBuilder> builders) {
+        Map<String, List<OrderBuilder>> groups = new LinkedHashMap<>();
+        for (OrderBuilder b : builders) {
+            if (b.ordinalGroup != null) {
+                groups.computeIfAbsent(b.ordinalGroup, k -> new ArrayList<>()).add(b);
+            }
+        }
+        for (List<OrderBuilder> g : groups.values()) {
+            List<OrderBuilder> sorted = new ArrayList<>(g);
+            sorted.sort(Comparator.comparingInt(b -> b.ordinalLine));   // stable: same line keeps the finding order
+            for (int i = 0; i < sorted.size(); i++) {
+                OrderBuilder b = sorted.get(i);
+                b.anchor = b.anchor.substring(0, b.anchor.length() - 1) + (i + 1);
+            }
         }
     }
 }

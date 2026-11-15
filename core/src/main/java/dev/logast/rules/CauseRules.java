@@ -51,7 +51,7 @@ final class CauseRules {
             return;
         }
         String type = nc.getClazz().printTrimmed();
-        OrderBuilder b = ctx.order(Rules.CAUSE_DROPPED, m, line, "cause|" + line)
+        OrderBuilder b = ctx.orderNth(Rules.CAUSE_DROPPED, m, line, "cause")
                 .title("catch (" + c.typeNames() + " " + c.param + ") throws a new " + type + " without " + c.param
                         + " as its cause: the original stack trace is lost");
         List<Expression> args = args(nc);

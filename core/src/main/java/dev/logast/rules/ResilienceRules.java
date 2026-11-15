@@ -38,6 +38,12 @@ final class ResilienceRules {
                     : ctx.order(rule, owner.fqn() + "|field|" + anchor).at(file.relPath(), line);
         }
 
+        /** The n-th finding of {@code kind} in this method (or among the class's field initialisers). */
+        OrderBuilder orderNth(RuleContext ctx, String rule, int line, String kind) {
+            return method != null ? ctx.orderNth(rule, method, line, kind)
+                    : ctx.orderNth(rule, owner.fqn() + "|field", file.relPath(), line, kind);
+        }
+
         void context(RuleContext ctx, OrderBuilder b, J tree, String code) {
             if (method != null) {
                 b.context(ctx.context(method, Pos.start(tree), Text.oneLine(code, 160), null));
@@ -190,7 +196,7 @@ final class ResilienceRules {
         if (ctx.ignored(site.file(), line, Rules.HTTP_CLIENT_NO_TIMEOUT)) {
             return;
         }
-        OrderBuilder b = site.order(ctx, Rules.HTTP_CLIENT_NO_TIMEOUT, line, "jdk" + line)
+        OrderBuilder b = site.orderNth(ctx, Rules.HTTP_CLIENT_NO_TIMEOUT, line, "jdk")
                 .title("java.net.http.HttpClient without connectTimeout: a dependency that never answers the TCP handshake "
                         + "blocks the caller until the OS gives up (minutes)")
                 .suggestion("HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), and HttpRequest...timeout(...) per "
@@ -432,7 +438,7 @@ final class ResilienceRules {
         if (ctx.ignored(site.file(), line, Rules.UNBOUNDED_EXECUTOR)) {
             return;
         }
-        OrderBuilder b = site.order(ctx, Rules.UNBOUNDED_EXECUTOR, line, "executor" + line)
+        OrderBuilder b = site.orderNth(ctx, Rules.UNBOUNDED_EXECUTOR, line, "executor")
                 .title(Text.oneLine(tree.printTrimmed(), 60) + " " + why)
                 .suggestion("Bound it: new ThreadPoolExecutor(core, max, 60s, new ArrayBlockingQueue<>(capacity), rejection policy), "
                         + "or ThreadPoolTaskExecutor with setQueueCapacity(..); decide what happens when it is full "
@@ -445,7 +451,7 @@ final class ResilienceRules {
         if (ctx.ignored(site.file(), line, Rules.BLOCKING_WAIT_UNBOUNDED)) {
             return;
         }
-        OrderBuilder b = site.order(ctx, Rules.BLOCKING_WAIT_UNBOUNDED, line, "wait" + line)
+        OrderBuilder b = site.orderNth(ctx, Rules.BLOCKING_WAIT_UNBOUNDED, line, "wait")
                 .title(what + " without a timeout on a request path: if the work never finishes, the request thread waits forever")
                 .suggestion("Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the "
                         + "TimeoutException (fail the request, or return a partial answer).");

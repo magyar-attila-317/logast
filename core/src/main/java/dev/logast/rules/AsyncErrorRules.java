@@ -82,7 +82,7 @@ final class AsyncErrorRules {
             return;
         }
         boolean completable = TypeUtils.isAssignableTo("java.util.concurrent.CompletionStage", mi.getType());
-        OrderBuilder b = ctx.order(Rules.ASYNC_ERROR_LOST, m, line, "async-error|" + line)
+        OrderBuilder b = ctx.orderNth(Rules.ASYNC_ERROR_LOST, m, line, "async-error")
                 .title("The result of " + mi.getSimpleName() + "(…) is thrown away: if the work fails, its exception stays in "
                         + "the future and is never logged");
         JavaEdits.LoggerPlan logger = ctx.logger(m.owner());

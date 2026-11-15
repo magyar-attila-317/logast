@@ -138,7 +138,7 @@ final class MdcRules {
             if (ctx.ignored(m.file(), line, Rules.MDC_CLEAR)) {
                 continue;
             }
-            ctx.order(Rules.MDC_CLEAR, m, line, "clear" + line)
+            ctx.orderNth(Rules.MDC_CLEAR, m, line, "clear")
                     .title("MDC.clear() removes every MDC key on this thread, including the caller's (trace ids, request "
                             + "context): later logs of the same flow lose their context")
                     .suggestion("Scope what this code sets with try (var mdc = MdcScope.of(..)) and drop the clear(); a thread "

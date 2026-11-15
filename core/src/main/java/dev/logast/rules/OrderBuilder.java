@@ -44,7 +44,10 @@ public final class OrderBuilder {
             Map.entry(Rules.METRIC_DIRECT_REGISTRY, "MTD"));
 
     final String rule;
-    final String anchor;
+    String anchor;
+    /** Set by {@link RuleContext#orderNth}: the anchor is this group plus the order's place in it, assigned at build time. */
+    String ordinalGroup;
+    int ordinalLine;
     final List<String> fixes = new ArrayList<>();
     String severity;
     String title;

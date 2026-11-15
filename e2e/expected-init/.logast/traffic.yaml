@@ -6,6 +6,7 @@ entrypoints:
   # http
   "DELETE /coupons/{couponId}":     # http, CouponController.delete
   "GET /coupons":     # http, CouponController.open
+  "GET /quotes/{productId}":     # http, QuoteController.quote
   "POST /admin/coupons/{couponId}/revoke":     # http, CouponController.revoke
   "POST /coupons/redeem":     # http, CouponController.redeem
   "POST /coupons/{couponId}/publish":     # http, CouponController.publish
