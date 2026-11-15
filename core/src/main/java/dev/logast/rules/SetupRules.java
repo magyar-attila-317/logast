@@ -124,6 +124,8 @@ public final class SetupRules {
     static final List<String> VENDORED_TX = List.of("AfterCommit");
     /** Only copied when Micrometer metrics are on the classpath. */
     static final List<String> VENDORED_METRICS = List.of("Outcomes");
+    /** Only copied for Spring MVC with Micrometer Tracing, when the errors pack's ERROR_RESPONSE_UNTRACED is on. */
+    static final List<String> VENDORED_ERRORS = List.of("ProblemTraceId");   // component scan finds it; no configuration
 
     private boolean hasMetrics() {
         return ctx.a.project.probe().hasClass("io.micrometer.core.instrument.Metrics");
@@ -136,6 +138,9 @@ public final class SetupRules {
         }
         if (hasMetrics()) {
             out.addAll(VENDORED_METRICS);
+        }
+        if (ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED) && ErrorRules.traceableErrors(ctx)) {
+            out.addAll(VENDORED_ERRORS);
         }
         return out;
     }
@@ -211,6 +216,7 @@ public final class SetupRules {
         classes.addAll(VENDORED_TRACING);
         classes.addAll(VENDORED_TX);
         classes.addAll(VENDORED_METRICS);
+        classes.addAll(VENDORED_ERRORS);
         OrderBuilder b = null;
         List<String> changed = new ArrayList<>();
         for (String cls : classes) {

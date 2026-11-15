@@ -84,6 +84,7 @@ public final class Rules {
     public static final String BLOCKING_WAIT_UNBOUNDED = "BLOCKING_WAIT_UNBOUNDED";
     // errors
     public static final String ERROR_DETAILS_EXPOSED = "ERROR_DETAILS_EXPOSED";
+    public static final String ERROR_RESPONSE_UNTRACED = "ERROR_RESPONSE_UNTRACED";
     public static final String UNMAPPED_EXCEPTION = "UNMAPPED_EXCEPTION";
     public static final String CLIENT_ERROR_AS_SERVER_ERROR = "CLIENT_ERROR_AS_SERVER_ERROR";
     public static final String PROBLEM_DETAILS_DISABLED = "PROBLEM_DETAILS_DISABLED";
@@ -117,7 +118,8 @@ public final class Rules {
         for (String r : List.of(HTTP_CLIENT_NO_TIMEOUT, KAFKA_NO_ERROR_HANDLER, UNBOUNDED_EXECUTOR, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE)) {
             PACKS.put(r, Set.of("resilience"));
         }
-        for (String r : List.of(ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED)) {
+        for (String r : List.of(ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED,
+                ERROR_RESPONSE_UNTRACED)) {
             PACKS.put(r, Set.of("errors"));
         }
         for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS)) {
@@ -140,7 +142,7 @@ public final class Rules {
 
     static {
         for (String r : List.of(SETUP_SUPPORT_STARTER, SETUP_OTEL_STARTER, SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING,
-                SETUP_SERVICE_IDENTITY, TRACING_SAMPLING, KAFKA_OBSERVATION_DISABLED, RABBIT_OBSERVATION_DISABLED, HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT,
+                SETUP_SERVICE_IDENTITY, TRACING_SAMPLING, KAFKA_OBSERVATION_DISABLED, RABBIT_OBSERVATION_DISABLED, ERROR_RESPONSE_UNTRACED, HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT,
                 JOB_LAUNCH_UNTRACED)) {
             STEPS.put(r, Step.SETUP);
         }
@@ -216,7 +218,7 @@ public final class Rules {
             Map.entry(METRIC_TAG_KEYS_MISMATCH, "high"),
             Map.entry(HTTP_CLIENT_NO_TIMEOUT, "high"), Map.entry(KAFKA_NO_ERROR_HANDLER, "medium"),
             Map.entry(UNBOUNDED_EXECUTOR, "medium"), Map.entry(BLOCKING_WAIT_UNBOUNDED, "medium"),
-            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
+            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
             Map.entry(CLIENT_ERROR_AS_SERVER_ERROR, "medium"), Map.entry(PROBLEM_DETAILS_DISABLED, "low"),
             Map.entry(AUDIT_MISSING, "medium"), Map.entry(AUDIT_SECURITY_EVENTS, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(RABBIT_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),

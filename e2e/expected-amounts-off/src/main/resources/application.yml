@@ -18,6 +18,9 @@ logging:
         service:
           name: ${spring.application.name}
           version: ${spring.application.version}
+logging-support:
+  problem-trace-id:
+    enabled: true
 management:
   metrics:
     tags:
