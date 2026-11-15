@@ -367,7 +367,7 @@ final class LogCallRules {
         for (Arg a : args) {
             // a vocabulary key, or a key outside the vocabulary that an existing scope sets, logged from the variable of the
             // same name (base class scopes "qaoCode" around the abstract step, the step logs [qaoCode={}] again)
-            if (inMdc.contains(a.key()) && (a.registry() || sameValue(a.src(), a.key()))) {
+            if (inMdc.contains(a.key()) && (a.registry() || ctx.values().isKey(a.expr(), a.key(), m))) {
                 String wrap = ctx.plannedBy(m, a.key());
                 if (wrap != null) {
                     plannedDeps.add(wrap);

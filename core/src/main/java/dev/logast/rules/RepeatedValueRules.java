@@ -468,11 +468,68 @@ public final class RepeatedValueRules {
         });
         SourceFileInfo f = m.file();
         String text = f.text();
-        // one wrap per method and round; overlapping regions come back after the rescan
+        // regions nested in each other (pledgeId for the whole body, sponsorshipId after its declaration) go in one
+        // order, inner scope first, so one round places them all
+        List<Region> regions = new ArrayList<>(byRegion.keySet());
+        regions.sort(Comparator.comparingInt(Region::start).thenComparing(Comparator.comparingInt(Region::end).reversed()));
+        boolean nested = regions.size() > 1;
+        for (int i = 1; i < regions.size() && nested; i++) {
+            nested = regions.get(i - 1).start() <= regions.get(i).start() && regions.get(i).end() <= regions.get(i - 1).end();
+        }
+        if (nested) {
+            orderNested(m, f, text, regions, byRegion, totals);
+            return;
+        }
+        // regions that cross each other: one wrap per method and round, the rest comes back after the rescan
         byRegion.entrySet().stream()
                 .max(Comparator.comparingInt((Map.Entry<Region, List<Candidate>> e) -> e.getValue().size())
                         .thenComparingInt(e -> -(e.getKey().end() - e.getKey().start())))
                 .ifPresent(e -> order(m, f, text, e.getKey(), e.getValue(), totals));
+    }
+
+    /** Nested regions, outermost first: one edit wraps the inner ones, then the outer ones around them. */
+    private void orderNested(MethodInfo m, SourceFileInfo f, String text, List<Region> regions,
+                             Map<Region, List<Candidate>> byRegion, Map<String, Integer> totals) {
+        List<Candidate> all = regions.stream().flatMap(r -> byRegion.get(r).stream()).toList();
+        int firstLine = all.stream().flatMap(c -> c.logs().stream()).mapToInt(lc -> Pos.line(lc.call())).min().orElse(m.line());
+        int own = (int) all.stream().flatMap(c -> c.logs().stream()).distinct().count();
+        int total = all.stream().mapToInt(c -> totals.getOrDefault(c.key(), 0)).max().orElse(own);
+        List<String> keys = all.stream().map(Candidate::key).toList();
+        OrderBuilder b = ctx.order(Rules.REPEATED_LOG_VALUE, m, firstLine, "repeat|" + String.join(",", keys))
+                .title(String.join(", ", keys) + " logged by " + total + " statements in " + m.label()
+                        + (total > own ? " and the methods it passes them to" : "")
+                        + ": put them into MDC once, here, instead of into every message");
+        String unit = Text.indentUnit(text);
+        Region outer = regions.getFirst();
+        Set<String> taken = new HashSet<>(ctx.taken(m, outer.start()));
+        Map<Region, String> vars = new HashMap<>();
+        for (Region r : regions) {   // outer first: mdc, then mdc2 inside it
+            String var = EntrypointRules.unique("mdc", taken);
+            taken.add(var);
+            vars.put(r, var);
+        }
+        // innermost first: wrap its region, then the next one out around the result
+        String inner = null;
+        Region innerRegion = null;
+        for (int i = regions.size() - 1; i >= 0; i--) {
+            Region r = regions.get(i);
+            String body = innerRegion == null ? text.substring(r.start(), r.end())
+                    : text.substring(r.start(), innerRegion.start()) + inner + text.substring(innerRegion.end(), r.end());
+            String scope = EntrypointRules.mdcScope(byRegion.get(r).stream().map(c -> new DomainValues.Value(c.key(), c.expr())).toList());
+            inner = r.indent() + "try (var " + vars.get(r) + " = " + scope + ") {\n" + Text.reindent(body, unit) + r.indent() + "}\n";
+            innerRegion = r;
+        }
+        b.edit(Edit.replace(f.relPath(), outer.start(), outer.end(), inner));
+        b.edits(JavaEdits.imports(f, ctx.support("MdcScope")));
+        ctx.dependOnStarter(b);
+        b.context(ctx.context(m, outer.start(), Text.oneLine(text.substring(outer.start(), outer.end()), 200), null));
+        String id = b.id();
+        for (Region r : regions) {
+            for (Candidate c : byRegion.get(r)) {
+                (r.wholeBody() ? ctx.plannedOwnKeys : ctx.plannedLocalKeys).computeIfAbsent(m.key(), x -> new TreeSet<>()).add(c.key());
+                ctx.plannedBy.put(m.key() + "|" + c.key(), id);
+            }
+        }
     }
 
     private void order(MethodInfo m, SourceFileInfo f, String text, Region r, List<Candidate> cs, Map<String, Integer> totals) {

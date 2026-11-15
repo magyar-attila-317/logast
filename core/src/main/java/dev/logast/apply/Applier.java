@@ -42,7 +42,13 @@ public final class Applier {
                          @com.fasterxml.jackson.annotation.JsonIgnore ScanResult before,
                          @com.fasterxml.jackson.annotation.JsonIgnore ScanResult after,
                          List<String> violations,
-                         @com.fasterxml.jackson.annotation.JsonIgnore Map<String, String> stepDiffs) {
+                         @com.fasterxml.jackson.annotation.JsonIgnore Map<String, String> stepDiffs,
+                         @com.fasterxml.jackson.annotation.JsonIgnore List<String> trace) {
+        public Result(List<String> applied, Map<String, String> rejected, List<String> resolvedIndirectly,
+                      List<String> changedFiles, String diff, int rounds, ScanResult before, ScanResult after,
+                      List<String> violations, Map<String, String> stepDiffs) {
+            this(applied, rejected, resolvedIndirectly, changedFiles, diff, rounds, before, after, violations, stepDiffs, List.of());
+        }
     }
 
     private final Function<Path, ScanResult> scanner;
@@ -109,14 +115,25 @@ public final class Applier {
         // the pipeline repeats until a pass applies nothing: a fix in a later step can open up one in an earlier step
         // (a scope moved up makes a lower one redundant, then its messages can drop the key). One run = the end state.
         Set<String> appliedInPass = new HashSet<>();
+        // guards: an order that is back unchanged right after its own edit did not see that edit (it would only add the
+        // same lines again: blocked and reported); a pass that ends where an earlier one ended undoes itself (stopped)
+        List<String> selfCheck = new ArrayList<>();
+        Set<String> stuck = new HashSet<>();
+        Set<String> passEnds = new HashSet<>(List.of(treeHash(work)));
+        // what apply did and what each round's rescan brought up: .logast/apply-trace.txt, to find where rounds come from
+        List<String> trace = new ArrayList<>();
+        // an id applied in an earlier pass runs again only if another order changed one of its files since
+        Map<String, Integer> appliedAt = new HashMap<>();
+        Map<String, Map<String, Integer>> touches = new HashMap<>();   // file -> id -> round it was last edited
+        int seq = 0;
+        trace.add("scan: " + scan.orders().size() + " orders");
         for (int pass = 1; pass <= MAX_PASSES; pass++) {
         // an order applied in an earlier pass may come back when a later fix changed its code again (a scope unwrapped,
         // then another one put there): within a pass an id is applied once, a new pass may apply it again
         appliedInPass.clear();
         everSelected.clear();
-        if (pass > 1) {
-            progress.accept("pass " + pass + ": earlier fixes opened up new ones");
-        }
+        boolean announced = pass == 1;
+        trace.add("== pass " + pass);
         for (Rules.Step step : Rules.Step.values()) {
             if (until != null && step.ordinal() > until.ordinal()) {
                 break;
@@ -124,9 +141,32 @@ public final class Applier {
             Map<String, String> beforeStep = new LinkedHashMap<>();   // content of each file before this step touched it
             Set<String> pending = new LinkedHashSet<>(carried);
             carried.clear();
-            select(scan, sel, pending, everSelected, rejected, new HashSet<>(appliedInPass), step, first);
+            Set<String> skip = new HashSet<>(appliedInPass);
+            skip.addAll(stuck);
+            if (pass > 1) {
+                for (WorkOrder o : scan.orders()) {
+                    Integer at = appliedAt.get(o.id());
+                    if (at == null || stuck.contains(o.id()) || Rules.stepOf(o.rule()) != step) {
+                        continue;
+                    }
+                    boolean touchedByOthers = o.edits().stream().map(Edit::file).distinct().anyMatch(f -> touches.getOrDefault(f, Map.of())
+                            .entrySet().stream().anyMatch(t -> !t.getKey().equals(o.id()) && t.getValue() > at));
+                    if (!touchedByOthers) {
+                        skip.add(o.id());
+                        if (stuck.add(o.id())) {
+                            selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + o.id() + ") is back although "
+                                    + "nothing else changed its code: it did not see its own fix (applied once, not repeated)");
+                        }
+                    }
+                }
+            }
+            select(scan, sel, pending, everSelected, rejected, skip, step, first);
             if (pending.isEmpty()) {
                 continue;
+            }
+            if (!announced) {
+                progress.accept("pass " + pass + ": earlier fixes opened up new ones");
+                announced = true;
             }
             String name = step.name().toLowerCase(Locale.ROOT);
             int stepRounds = 0;
@@ -195,6 +235,10 @@ public final class Applier {
                         beforeStep.put(e.file(), Files.exists(p) ? text(bytes(p)) : null);
                     }
                 }
+                trace.add(name + " round " + stepRounds + ": applying " + acceptedIds.stream().map(id -> describe(byId.get(id))).toList());
+                Map<String, String> signatures = new HashMap<>();
+                acceptedIds.forEach(id -> signatures.put(id, signature(byId.get(id))));
+                seq++;
                 List<String> broken = applyEdits(work, accepted);
                 for (String id : acceptedIds) {
                     WorkOrder o = byId.get(id);
@@ -202,6 +246,10 @@ public final class Applier {
                         rejected.put(id, "produced code that does not parse in " + broken + " (batch reverted)");
                     } else {
                         appliedInPass.add(id);
+                        appliedAt.put(id, seq);
+                        for (Edit e : o.edits()) {
+                            touches.computeIfAbsent(e.file(), k -> new HashMap<>()).put(id, seq);
+                        }
                         if (!applied.contains(id)) {
                             applied.add(id);
                         }
@@ -209,7 +257,21 @@ public final class Applier {
                     pending.remove(id);
                 }
                 progress.accept("~" + name + ", round " + stepRounds + ": checking the changed code (" + applied.size() + " done)");
+                Set<String> previous = new HashSet<>();
+                scan.orders().forEach(o -> previous.add(o.id()));
                 scan = scanner.apply(work);
+                for (WorkOrder o : scan.orders()) {
+                    if (signatures.containsKey(o.id()) && !broken.contains(o.file()) && signature(o).equals(signatures.get(o.id()))
+                            && stuck.add(o.id())) {
+                        selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + o.id() + ") did not see its own fix: "
+                                + "applied once, not repeated");
+                    }
+                }
+                List<String> appeared = scan.orders().stream().filter(o -> !previous.contains(o.id()) && o.mechanical())
+                        .map(Applier::describe).toList();
+                if (!appeared.isEmpty()) {
+                    trace.add("  rescan: new " + appeared);
+                }
                 if (sel.auto()) {
                     select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied), step, false);
                 }
@@ -224,6 +286,10 @@ public final class Applier {
         if (appliedInPass.isEmpty() || until != null) {
             break;
         }
+        if (!passEnds.add(treeHash(work))) {
+            selfCheck.add("pass " + pass + " ended where an earlier pass ended: its fixes undo each other " + new TreeSet<>(appliedInPass));
+            break;
+        }
         if (pass == MAX_PASSES) {
             progress.accept("still changing after " + MAX_PASSES + " passes: the rest is left for the next run");
         }
@@ -235,11 +301,39 @@ public final class Applier {
         StringBuilder diff = new StringBuilder();
         compare(root, work, changed, diff);
         progress.accept("~checking the result");
-        List<String> violations = changed.isEmpty() ? List.of() : invariants.apply(work, changed);
+        List<String> violations = new ArrayList<>(selfCheck);
+        if (!changed.isEmpty()) {
+            violations.addAll(invariants.apply(work, changed));
+        }
         if (write) {
             copyBack(root, work, changed);
         }
-        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs);
+        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs, trace);
+    }
+
+    /** "RULE id file:line" for the trace. */
+    private static String describe(WorkOrder o) {
+        return o.rule() + " " + o.id() + " " + o.file() + ":" + o.line();
+    }
+
+    /** What an order would write, independent of where it sits: unchanged means it would write the same again. */
+    private static String signature(WorkOrder o) {
+        return o.rule() + "|" + o.title() + "|" + o.edits().stream().map(e -> e.file() + "|" + e.kind() + "|" + e.text()).sorted().toList();
+    }
+
+    /** Content hash of the scratch copy's source and resource files. */
+    private static String treeHash(Path work) {
+        try (var s = Files.walk(work)) {
+            StringBuilder sb = new StringBuilder();
+            for (Path p : s.filter(Files::isRegularFile).filter(p -> !p.toString().contains("/.logast/")).sorted().toList()) {
+                sb.append(work.relativize(p)).append('\0')
+                        .append(dev.logast.parse.Hashing.sha256(new String(Files.readAllBytes(p), java.nio.charset.StandardCharsets.ISO_8859_1)))
+                        .append('\n');
+            }
+            return dev.logast.parse.Hashing.sha256(sb.toString());
+        } catch (IOException | java.io.UncheckedIOException e) {
+            return String.valueOf(System.nanoTime());   // unreadable (binary): no oscillation check
+        }
     }
 
     private static void select(ScanResult scan, Selection sel, Set<String> pending, Set<String> everSelected,
