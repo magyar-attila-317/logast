@@ -1,7 +1,7 @@
-logast · 57 files · 12 entrypoints · 58/170 methods reachable · 129 call edges
+logast · 57 files · 12 entrypoints · 58/171 methods reachable · 129 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 91.7% (jobs 7/7 · http 4/5)   (places that should log and do)
-52 orders: 0 AUTO, 15 NEEDS TEXT, 37 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+54 orders: 0 AUTO, 16 NEEDS TEXT, 38 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-442eb2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -26,6 +26,15 @@ LHL-77ee4d  medium  REPORT-ONLY  LOG_HELPER  src/main/java/com/example/e2e/edge/
 KEH-b1f2de  medium  REPORT-ONLY  KAFKA_NO_ERROR_HANDLER  src/main/java/com/example/e2e/messaging/PledgeMessages.java:19
   Kafka listeners on the default error handling: a failing record is retried 9 times without delay, then logged and skipped (lost)
   note: Declare a CommonErrorHandler bean (Spring Boot wires it into the listener containers): new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate), new ExponentialBackOff(1000, 2)) sends records that still fail to <topic>-dlt; or use @RetryableTopic per listener.
+SWA-91b292  medium  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/e2e/order/LoyaltyClient.java:20  LoyaltyClient.balance
+  Exception is caught and dropped without a log line in LoyaltyClient.balance (falls back silently)
+  + log.warn("{{MSG}}"{{ARGS}}, e);
+  (+2 more edits)
+  MSG: What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri("/balances/{customerId}", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as '{subject} failed'
+  mdc: []  vars: customerId:String, e:Exception
+CAD-3d4453  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:21  LoyaltyClient.balance
+  catch (Exception) returns 0L: the caller cannot tell a failure from an empty result
+  note: Let the exception through (or wrap it), catch only the exceptions that really mean "nothing there", or return a result type that carries the failure.
 RCT-2df7d7  medium  REPORT-ONLY  REMOTE_CALL_IN_TRANSACTION  src/main/java/com/example/e2e/order/OrderService.java:26  OrderService.placeAndReward
   OrderService.placeAndReward is @Transactional and calls a remote service inside the transaction: OrderService.placeAndReward → LoyaltyClient.award → RestClient.post. The database connection is held while the network call waits
   note: Move the call out of the transaction (before it, or after commit: TransactionSynchronization / @TransactionalEventListener / an outbox), or make the transaction only cover the database work.
@@ -235,8 +244,8 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             15 log lines need wording only a person knows
+  1. write "MSG" texts in .logast/fills.json             16 log lines need wording only a person knows
   2. set "count" in .logast/metrics.json                 21 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      16 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, CAUSE_DROPPED 1, …); each says what to decide
+  5. logast scan . --format summary                      17 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, CATCH_ALL_DEFAULT 1, …); each says what to decide
