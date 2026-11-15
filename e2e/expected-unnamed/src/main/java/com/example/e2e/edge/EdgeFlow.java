@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class EdgeFlow implements Audited {
     public void process(SalesTotals salesData) {
-        try (var mdc2 = MdcScope.of("couponId", salesData.couponId())) {
+        try (var mdc = MdcScope.of("couponId", salesData.couponId())) {
             log.info("Edge processing started");
             CouponRules.check(salesData.couponId());                                   // @UtilityClass, methods not declared static
             List.of(salesData).forEach(this::publishOne);                              // method reference
@@ -24,7 +24,7 @@ public class EdgeFlow implements Audited {
                 exclusion.test(salesData);
             }
             CouponDetails coupon = new CouponDetails(salesData.couponId(), null, null, null);
-            try (var mdc = MdcScope.of("agreementId", coupon.agreementId())) {
+            try (var mdc2 = MdcScope.of("agreementId", coupon.agreementId())) {
                 CouponCheck inline = (c, s) -> {                                           // lambda implementing an interface
                     log.debug("Inline check");
                     return Optional.empty();

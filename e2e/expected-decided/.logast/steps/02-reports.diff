@@ -1,10 +1,10 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 04300cc..2702e64 100644
+index 44a836d..15439f8 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
-@@ -18,11 +18,13 @@ 
-         log.info("Placing order");
+@@ -22,11 +22,13 @@ 
          payments.charge(order);
+         events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
          log.info("Order placed");
 +        OrderMetrics.orderPlaced();
      }
@@ -40,7 +40,7 @@ index 436af48..84a70ea 100644
      }
  
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 0c14077..4752e2d 100644
+index c05ebc5..3a95a14 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -43,9 +43,12 @@ 
@@ -56,6 +56,18 @@ index 0c14077..4752e2d 100644
              }
          }
      }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 0acad53..b0b04a5 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -13,6 +13,7 @@ 
+     @EventListener
+     public void onPlaced(OrderPlaced event) {
+         log.info("Order confirmation sent");
++        OrderMetrics.orderConfirmationSent();
+         log.debug("Confirmation amount [amountCents={}]", event.amountCents());
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
 index 4ba5455..2218442 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
@@ -234,10 +246,10 @@ index 0000000..9e2933a
 +}
 diff --git a/src/main/java/com/example/e2e/order/OrderMetrics.java b/src/main/java/com/example/e2e/order/OrderMetrics.java
 new file mode 100644
-index 0000000..71b835c
+index 0000000..1e39427
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/order/OrderMetrics.java
-@@ -0,0 +1,24 @@ 
+@@ -0,0 +1,29 @@ 
 +package com.example.e2e.order;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -250,6 +262,11 @@ index 0000000..71b835c
 +// logast:metrics-catalog
 +public final class OrderMetrics {
 +    private OrderMetrics() {
++    }
++
++    /** order.confirmation{outcome="sent"} +1. */
++    public static void orderConfirmationSent() {
++        Outcomes.count("order.confirmation", "sent");
 +    }
 +
 +    /** order{outcome="placed"} +1. */

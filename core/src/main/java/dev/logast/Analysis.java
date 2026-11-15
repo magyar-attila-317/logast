@@ -47,8 +47,13 @@ public final class Analysis {
         this.springProperties = SpringProperties.read(project.root());
         boolean kafkaObserved = policy.entrypoints().kafkaObservationEnabled()
                 || "true".equals(springProperties.get("spring.kafka.listener.observation-enabled"));
-        this.entrypoints = new EntrypointFinder(policy, kafkaObserved).find(index);
         this.graph = CallGraph.build(index);
+        // a listener for an event the code publishes itself runs inside the publisher's flow (its thread, MDC and
+        // span): part of that flow, not an entrypoint of its own
+        this.entrypoints = new EntrypointFinder(policy, kafkaObserved).find(index).stream()
+                .filter(ep -> ep.kind() != Entrypoint.Kind.EVENT || graph.in(ep.method()).stream()
+                        .noneMatch(e -> e.site().type().getName().equals("publishEvent")))
+                .toList();
         this.httpFilterKeys = filterKeys(index);
         this.appPackage = appPackage(index);
         this.supportPackage = policy.support().vendor()
@@ -163,15 +168,18 @@ public final class Analysis {
         return new Stats(project.files().size(), index.methods().size(), entrypoints.size(), (int) reachable,
                 graph.edgeCount(), graph.ambiguousSites(), unresolved.size(),
                 unresolved.stream().limit(10).toList(), project.parseErrors(), project.classpath().isEmpty(),
-                project.files().stream().filter(f -> !f.editable()).map(f -> f.relPath()).toList(), project.discovered());
+                project.files().stream().filter(f -> !f.editable()).map(f -> f.relPath()).toList(), project.discovered(),
+                index.methods().stream().mapToInt(m -> m.facts().loggersByName).sum());
     }
 
     /**
      * @param discoveredFiles source files found; {@code files} of them were analysed, the rest are in parseErrors
+     * @param logCallsByName  log calls recognised by name only, because the logger's type did not resolve
      */
     public record Stats(int files, int methods, int entrypoints, int reachableMethods, int edges,
                         int ambiguousCallSites, int unresolvedCalls, List<String> unresolvedSample,
-                        List<String> parseErrors, boolean noClasspath, List<String> nonEditableFiles, int discoveredFiles) {
+                        List<String> parseErrors, boolean noClasspath, List<String> nonEditableFiles, int discoveredFiles,
+                        int logCallsByName) {
         /** Every discovered file was analysed (LOG-COV-001): claims about "the whole service" hold. */
         public boolean coverageComplete() {
             return files >= discoveredFiles && parseErrors.isEmpty();

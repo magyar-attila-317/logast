@@ -242,12 +242,42 @@ class E2eGoldenTest {
         assertSameFiles(expected, actual);
     }
 
+    /**
+     * Lombok not on logast's classpath (missing from a copied classpath; the service still compiles with it): @Slf4j
+     * loggers do not resolve. Their log calls are recognised by name, so rules see the lines they add (they used to add
+     * them again on every pass), new loggers are still @Slf4j (the sources import it), apply converges in one run and
+     * warns. Every file must equal e2e/expected: the same result as with Lombok, plus the warning.
+     */
+    @Test
+    void withoutLombokOnTheClasspathItConvergesAndWarns() throws IOException {
+        List<String> cp = Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.contains("lombok")).toList();
+        assertThat(cp).as("the e2e classpath had Lombok").hasSizeLessThan(Files.readAllLines(Path.of(CLASSPATH)).size());
+        Path cpFile = tmp.resolve("classpath-nolombok.txt");
+        Files.write(cpFile, cp);
+        Map<String, String> actual = migrate(tmp.resolve("app"), cpFile.toString(), app -> {
+        });
+        assertThat(actual.get("OUTPUT.txt")).as("apply says the loggers did not resolve").contains("recognised by name only");
+        Map<String, String> withoutWarning = new TreeMap<>(actual);
+        withoutWarning.put("OUTPUT.txt", actual.get("OUTPUT.txt").lines().filter(l -> !l.contains("recognised by name only"))
+                .collect(java.util.stream.Collectors.joining("\n", "", "\n")));
+        assertSameFiles(files(EXPECTED), withoutWarning);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);
         prepare.run(app);
         String first = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
+        // the pipeline's steps settle in one pass: a second pass inside the same run applies nothing
+        String trace = Files.readString(app.resolve(".logast/apply-trace.txt"));
+        String afterPass1 = trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "";
+        assertThat(afterPass1).as("pass 2 of the first apply applies nothing (.logast/apply-trace.txt):\n" + trace)
+                .doesNotContain("applying");
         String second = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
+        // one run is the end state: a second one finds nothing, and neither run trips a self-check
+        assertThat(second).as("a second apply changes nothing").contains("applied (0):").contains("files (0):");
+        assertThat(first + second).as("no CHECK FAILED (a rule that did not see its own fix, or a broken invariant)")
+                .doesNotContain("CHECK FAILED");
         Files.writeString(app.resolve("OUTPUT.txt"), "=== logast apply . --auto --write\n" + first
                 + "\n=== the same again (what one run left behind)\n" + second);
         compile(app);

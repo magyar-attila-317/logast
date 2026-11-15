@@ -1,27 +1,28 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 32d760f..04300cc 100644
+index 34ef8c0..44a836d 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
-@@ -15,9 +15,9 @@ 
+@@ -18,10 +18,10 @@ 
      }
  
      public void place(Order order) {
 -        log.info("Placing order {}", order.id());
 +        log.info("Placing order");
          payments.charge(order);
+         events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
 -        log.info("Order {} placed", order.id());
 +        log.info("Order placed");
      }
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 671ba3a..0c14077 100644
+index 2daf0d8..c05ebc5 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -17,7 +17,7 @@ 
  public class EdgeFlow implements Audited {
      public void process(SalesTotals salesData) {
-         try (var mdc2 = MdcScope.of("couponId", salesData.couponId())) {
+         try (var mdc = MdcScope.of("couponId", salesData.couponId())) {
 -            log.info("Edge processing started [couponId={}]", salesData.couponId());
 +            log.info("Edge processing started");
              CouponRules.check(salesData.couponId());                                   // @UtilityClass, methods not declared static
@@ -29,7 +30,7 @@ index 671ba3a..0c14077 100644
              for (Exclusion exclusion : Exclusion.values()) {                           // enum constants with bodies
 @@ -26,14 +26,14 @@
              CouponDetails coupon = new CouponDetails(salesData.couponId(), null, null, null);
-             try (var mdc = MdcScope.of("agreementId", coupon.agreementId())) {
+             try (var mdc2 = MdcScope.of("agreementId", coupon.agreementId())) {
                  CouponCheck inline = (c, s) -> {                                           // lambda implementing an interface
 -                    log.debug("Inline check [couponId={}]", c.couponId());
 +                    log.debug("Inline check");
@@ -135,6 +136,20 @@ index a82b3b1..5153ba7 100644
          return new IncomeOutcome(false, result);
      }
  }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 6ddf0da..0acad53 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -12,7 +12,7 @@ 
+ 
+     @EventListener
+     public void onPlaced(OrderPlaced event) {
+-        log.info("Order confirmation sent [orderId={}]", event.orderId());
+-        log.debug("Confirmation amount [orderId={}, amountCents={}]", event.orderId(), event.amountCents());
++        log.info("Order confirmation sent");
++        log.debug("Confirmation amount [amountCents={}]", event.amountCents());
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/edge/CouponTask.java b/src/main/java/com/example/e2e/edge/CouponTask.java
 index b5b44e5..c942299 100644
 --- a/src/main/java/com/example/e2e/edge/CouponTask.java
@@ -199,10 +214,10 @@ index 49d439e..1b7afce 100644
              return IncomeCalculator.calculate(salesData, matchingCoupons);
          }
 diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
-index 4a64de6..4a83b50 100644
+index 6e6c5af..fd83167 100644
 --- a/src/main/java/com/example/e2e/job/PublishRunJob.java
 +++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
-@@ -18,15 +18,15 @@ 
+@@ -18,23 +18,23 @@ 
          ObservedContext.entrypoint("publishing")
                  .quiet()
                  .run(() -> {
@@ -210,9 +225,19 @@ index 4a64de6..4a83b50 100644
 +                    log.info("Publishing started");
                      var summary = RunSummary.of(runCode, week);
                      report(summary);   // overloaded: the var's type picks report(RunSummary)
+                     String current = runCode;                                       // the same value under another name
+-                    log.debug("Publishing batch [runCode={}]", current);
++                    log.debug("Publishing batch");
+                     notifyDone(runCode);
 -                    log.info("Publishing completed [runCode={}]", runCode);
 +                    log.info("Publishing completed");
                  });
+     }
+ 
+     /** Every caller passes the run code: the parameter is the value MDC already carries. */
+     private void notifyDone(String code) {
+-        log.debug("Publishing notified [runCode={}]", code);
++        log.debug("Publishing notified");
      }
  
      private void report(RunSummary summary) {

@@ -308,6 +308,16 @@ wording, `.quiet()` turns the lines off. In vendor mode, copied support classes 
 an AUTO order (the dry run shows the diff). Where a lambda can't compile (a
 parameter reassigned in the body, several checked exceptions), logast writes the same as try/catch/finally.
 
+A listener for an event the code publishes itself (`publisher.publishEvent(new OrderPlaced(…))`) is no entrypoint:
+Spring calls it inside `publishEvent`, on the publisher's thread, so it is part of the publisher's flow (its MDC and
+span; `@Async` listeners get them through the TaskDecorator). logast follows that call like any other, so the
+listener's lines drop keys the publisher's flow already has in MDC and it gets no outcome line of its own.
+
+Whether a logged value is the value an MDC key holds is followed back through the code, not guessed from its name:
+the variable or accessor of the key's name, a local initialised from one and never reassigned (`String code =
+runCode;`), or a parameter every caller passes one into (up to three calls up). Anything else keeps its key in the
+message.
+
 `MDC.put` / `finally { MDC.clear(); }` (which also wipes the caller's context) becomes:
 ```java
 try (var mdc = MdcScope.of("audit.action", action, "tenant.id", tenantId)) {   // alias tenantId → tenant.id
@@ -732,6 +742,10 @@ Both give the same generated code. The starter also protects services that logas
 | `REJECTED … glossary 'purchase' → use 'order'` | use the vocabulary term; `logast policy .` shows aliases |
 | `depends on [SUP-…]` | apply that order in the same run (`--auto` does) |
 | scans are slow on large services | every scan parses the whole project from source (about 30 s for 2,000 files), each apply round too: slower, but the result never depends on compiled classes |
+| why did apply take several rounds? | `.logast/apply-trace.txt`: what each round applied and which orders its rescan brought up. Steps run in order (setup, structure, lines, mdc, messages, exceptions, levels, reports), usually one round each; a second pass applies nothing in a healthy run |
+| `CHECK FAILED: … did not see its own fix` | a rule's order came back unchanged after its edit: apply applied it once and stopped there (instead of adding the same lines on every pass). A logast bug: please report the shape of the code |
+| `CHECK FAILED: … undo each other` | two fixes reverted each other; apply stopped. A logast bug: please report it with `.logast/apply-trace.txt` |
+| `N log call(s) recognised by name only` | the logger's type did not resolve (Lombok's `@Slf4j` without Lombok on the classpath): log lines are still recognised by name, but other types are probably missing too. Run `logast classpath .` |
 
 ## Development
 

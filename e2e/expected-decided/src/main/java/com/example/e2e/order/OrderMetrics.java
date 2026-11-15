@@ -12,6 +12,11 @@ public final class OrderMetrics {
     private OrderMetrics() {
     }
 
+    /** order.confirmation{outcome="sent"} +1. */
+    public static void orderConfirmationSent() {
+        Outcomes.count("order.confirmation", "sent");
+    }
+
     /** order{outcome="placed"} +1. */
     public static void orderPlaced() {
         Outcomes.count("order", "placed");

@@ -124,13 +124,24 @@
     "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
     "_tag" : "not available here (no observation known to run)"
   },
+  "OUM-0f37ab" : {
+    "count" : "",
+    "name" : "order.confirmation",
+    "outcome" : "sent",
+    "_event" : "sent",
+    "_message" : "INFO \"Order confirmation sent\"",
+    "_where" : "src/main/java/com/example/e2e/order/OrderNotifications.java:15 OrderNotifications.onPlaced",
+    "_frequency" : "unknown: no rate for \"POST /orders\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /orders" ],
+    "_tag" : "available"
+  },
   "OUM-d691d7" : {
     "count" : "",
     "name" : "order",
     "outcome" : "placed",
     "_event" : "placed",
     "_message" : "INFO \"Order placed\"",
-    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:20 OrderService.place",
+    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:24 OrderService.place",
     "_frequency" : "unknown: no rate for \"POST /orders\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /orders" ],
     "_tag" : "available"
@@ -144,7 +155,7 @@
     "_amounts" : [ "items" ],
     "_event" : "shipped",
     "_message" : "INFO \"Orders shipped\"",
-    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:26 OrderService.ship",
+    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:30 OrderService.ship",
     "_frequency" : "unknown: no entrypoint is known to reach it",
     "_paths" : [ ],
     "_tag" : "not available here (no observation known to run)"

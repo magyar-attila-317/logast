@@ -23,7 +23,7 @@ index 0000000..c7ce403
 +    public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
 +}
 diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
-index 4a83b50..558fb64 100644
+index fd83167..c5a3469 100644
 --- a/src/main/java/com/example/e2e/job/PublishRunJob.java
 +++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
 @@ -15,7 +15,7 @@ 

@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
-index baa751f..4a64de6 100644
+index fcbeedd..6e6c5af 100644
 --- a/src/main/java/com/example/e2e/job/PublishRunJob.java
 +++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
 @@ -1,5 +1,6 @@ 
@@ -9,13 +9,16 @@ index baa751f..4a64de6 100644
  import org.platformlib.Week;
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
-@@ -14,10 +15,14 @@
+@@ -14,13 +15,17 @@
  
      @Override
      protected void doRun(String runCode, Week week) {
 -        log.info("Publishing started [runCode={}]", runCode);
 -        var summary = RunSummary.of(runCode, week);
 -        report(summary);   // overloaded: the var's type picks report(RunSummary)
+-        String current = runCode;                                       // the same value under another name
+-        log.debug("Publishing batch [runCode={}]", current);
+-        notifyDone(runCode);
 -        log.info("Publishing completed [runCode={}]", runCode);
 +        ObservedContext.entrypoint("publishing")
 +                .quiet()
@@ -23,11 +26,14 @@ index baa751f..4a64de6 100644
 +                    log.info("Publishing started [runCode={}]", runCode);
 +                    var summary = RunSummary.of(runCode, week);
 +                    report(summary);   // overloaded: the var's type picks report(RunSummary)
++                    String current = runCode;                                       // the same value under another name
++                    log.debug("Publishing batch [runCode={}]", current);
++                    notifyDone(runCode);
 +                    log.info("Publishing completed [runCode={}]", runCode);
 +                });
      }
  
-     private void report(RunSummary summary) {
+     /** Every caller passes the run code: the parameter is the value MDC already carries. */
 diff --git a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
 index b2e38bd..0819a35 100644
 --- a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java

@@ -222,7 +222,31 @@ public final class RuleContext {
 
     /** How to get a logger into {@code owner}: the existing one, Lombok's @Slf4j when Lombok is there, or a field. */
     JavaEdits.LoggerPlan logger(dev.logast.model.ClassInfo owner) {
-        return JavaEdits.logger(owner, policy.logging().loggerName(), a.project.probe().hasClass("lombok.extern.slf4j.Slf4j"));
+        return JavaEdits.logger(owner, policy.logging().loggerName(), lombokLoggers());
+    }
+
+    private ValueTrace values;
+
+    /** Whether a logged value is an MDC key's value, followed back through locals and callers. */
+    ValueTrace values() {
+        if (values == null) {
+            values = new ValueTrace(this);
+        }
+        return values;
+    }
+
+    private Boolean lombokLoggers;
+
+    /**
+     * New loggers are Lombok's @Slf4j when the service uses it: on the classpath, or (a copied classpath that misses
+     * the jar) already imported by its own sources.
+     */
+    boolean lombokLoggers() {
+        if (lombokLoggers == null) {
+            lombokLoggers = a.project.probe().hasClass("lombok.extern.slf4j.Slf4j")
+                    || a.project.files().stream().anyMatch(f -> f.text().contains("import lombok.extern.slf4j.Slf4j;"));
+        }
+        return lombokLoggers;
     }
 
     /** A support class generated code may use: added or updated by this run, or already there. */

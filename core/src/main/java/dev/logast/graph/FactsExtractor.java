@@ -344,6 +344,16 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         if (supportMdc(mi, f)) {
             return mi;
         }
+        if ((mt == null || mt.getDeclaringType() instanceof JavaType.Unknown) && loggerByName(mi)) {
+            // the logger's type did not resolve (Lombok's @Slf4j without Lombok on the classpath): still a log line, or
+            // rules that add lines would not see them and add them again
+            List<Expression> args = args(mi);
+            f.loggersByName++;
+            addLog(f, new LogCall(mi, LEVELS.get(mi.getSimpleName()), false, args.isEmpty() ? null : args.getFirst(),
+                    args.isEmpty() ? List.of() : List.copyOf(args.subList(1, args.size())), catchStack.peek(),
+                    getCursor().getParentTreeCursor().getValue() instanceof J.Block, currentBound(), offThread()));
+            return mi;
+        }
         if (mt == null || mt.getDeclaringType() instanceof JavaType.Unknown) {
             f.unresolved.add(file + ":" + line + " " + mi.getSimpleName() + "(..)");
             return mi;
@@ -537,6 +547,34 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
             sel = s.getSelect();
         }
         return null;
+    }
+
+    private static final Set<String> LOGGER_ANNOTATIONS = Set.of("Slf4j", "XSlf4j", "CommonsLog", "Log4j2", "Log", "Flogger");
+
+    /**
+     * {@code log.info(…)} on a logger whose type did not resolve: the receiver is a plain name, the method a level, and
+     * the class declares it as a logger (a Lombok logger annotation, or a field of that name typed Logger).
+     */
+    private boolean loggerByName(J.MethodInvocation mi) {
+        if (!(mi.getSelect() instanceof J.Identifier id) || !LEVELS.containsKey(mi.getSimpleName()) || args(mi).isEmpty()) {
+            return false;
+        }
+        J.ClassDeclaration cd = owner;   // facts are extracted per method: the class comes with it
+        if (cd == null) {
+            return false;
+        }
+        boolean annotated = cd.getLeadingAnnotations().stream().anyMatch(a -> LOGGER_ANNOTATIONS.contains(a.getSimpleName()));
+        if (annotated && id.getSimpleName().equals("log")) {
+            return true;
+        }
+        for (Statement s : cd.getBody().getStatements()) {
+            if (s instanceof J.VariableDeclarations vd && vd.getTypeExpression() != null
+                    && vd.getTypeExpression().printTrimmed().endsWith("Logger")
+                    && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(id.getSimpleName()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static List<Expression> args(J.MethodInvocation mi) {

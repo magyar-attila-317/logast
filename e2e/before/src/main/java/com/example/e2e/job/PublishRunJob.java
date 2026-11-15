@@ -17,7 +17,15 @@ public class PublishRunJob extends BaseRunJob {
         log.info("Publishing started [runCode={}]", runCode);
         var summary = RunSummary.of(runCode, week);
         report(summary);   // overloaded: the var's type picks report(RunSummary)
+        String current = runCode;                                       // the same value under another name
+        log.debug("Publishing batch [runCode={}]", current);
+        notifyDone(runCode);
         log.info("Publishing completed [runCode={}]", runCode);
+    }
+
+    /** Every caller passes the run code: the parameter is the value MDC already carries. */
+    private void notifyDone(String code) {
+        log.debug("Publishing notified [runCode={}]", code);
     }
 
     private void report(RunSummary summary) {

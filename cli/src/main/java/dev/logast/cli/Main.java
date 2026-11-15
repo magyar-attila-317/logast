@@ -176,6 +176,9 @@ public final class Main {
                         Out.warn((r.stats().noClasspath() ? "no classpath; " : "") + r.stats().unresolvedCalls()
                                 + " unresolved calls: results are incomplete (run `logast classpath`)");
                     }
+                    if (r.stats().logCallsByName() > 0) {
+                        Out.warn(loggersByNameLine(r.stats().logCallsByName()));
+                    }
                     System.out.print(CompactFormat.summary(shown));
                     if (r.coverage() != null && r.coverage().total() > 0) {
                         System.out.println("log coverage " + r.coverage().line());
@@ -291,6 +294,11 @@ public final class Main {
                     Out.progress(metricsLine(mu));
                 }
             }
+            // what each round applied and what its rescan brought up: where extra rounds come from
+            if (!r.trace().isEmpty()) {
+                Files.createDirectories(root().resolve(".logast"));
+                Files.write(root().resolve(".logast/apply-trace.txt"), r.trace());
+            }
             // one diff per pipeline step, applicable in order: review or drop a whole kind of change at once
             Path stepsDir = root().resolve(".logast/steps");
             if (Files.exists(stepsDir) && !r.stepDiffs().isEmpty()) {   // a run that changes nothing keeps the last ones
@@ -333,6 +341,9 @@ public final class Main {
                 System.out.println(Ansi.dim("resolved by other changes: " + String.join(" ", r.resolvedIndirectly())));
             }
             r.rejected().forEach((id, why) -> System.out.println(Ansi.red("REJECTED " + id) + ": " + why));
+            if (r.before() != null && r.before().stats() != null && r.before().stats().logCallsByName() > 0) {
+                System.out.println(Ansi.warn(loggersByNameLine(r.before().stats().logCallsByName())));
+            }
             if (!r.violations().isEmpty()) {
                 System.out.println(Ansi.warn("CHECK FAILED (" + r.violations().size() + "): the result breaks a rule every migrated file must follow"));
                 r.violations().forEach(v -> System.out.println("  " + v));
@@ -379,6 +390,11 @@ public final class Main {
             }
             return r.rejected().isEmpty() ? 0 : 1;
         }
+    }
+
+    static String loggersByNameLine(int n) {
+        return n + " log call(s) recognised by name only: the logger's type did not resolve, so types around them are "
+                + "missing too. Lombok on the classpath? Run `logast classpath .` (or add the Lombok jar to .logast/classpath*.txt).";
     }
 
     static String metricsLine(dev.logast.apply.FillsFile.Update mu) {
