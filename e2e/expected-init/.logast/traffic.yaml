@@ -7,6 +7,7 @@ entrypoints:
   "DELETE /pledges/{pledgeId}":     # http, PledgeController.delete
   "GET /audit/settings":     # http, AuditController.settings
   "GET /pledges":     # http, PledgeController.open
+  "GET /pledges/{pledgeId}/details":     # http, PledgeDetailsController.details
   "GET /quotes/{productId}":     # http, QuoteController.quote
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
   "POST /admin/pledges/{pledgeId}/revoke":     # http, PledgeController.revoke
@@ -16,6 +17,7 @@ entrypoints:
   "POST /orders":     # http, PledgeController.place
   # scheduled
   "@Scheduled PledgeCleanupJob.cleanup":     # scheduled, PledgeCleanupJob.cleanup
+  "@Scheduled PledgeReloadJob.run":     # scheduled, PledgeReloadJob.run
   "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
   # kafka
   "@KafkaListener pledge-batches":     # kafka, PledgeMessages.onBatch

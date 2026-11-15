@@ -12,6 +12,11 @@ public final class PledgeMetrics {
     private PledgeMetrics() {
     }
 
+    /** pledge.lookup{outcome="failed"} +1. */
+    public static void pledgeLookupFailed() {
+        Outcomes.count("pledge.lookup", "failed");
+    }
+
     /** pledges{outcome="updated"} +1; rows is one sample of the distribution pledges.rows{outcome="updated"}. */
     public static void pledgesUpdated(Number rows) {
         Outcomes.record("pledges", "updated", "rows", rows);

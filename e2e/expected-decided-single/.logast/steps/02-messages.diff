@@ -124,3 +124,18 @@ index 1e94776..ff68e86 100644
          log.info("Tally completed");
      }
  }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
+index 7bba83c..a866402 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
+@@ -15,8 +15,8 @@ 
+ 
+     @Scheduled(fixedDelay = 600000)
+     public void run() {
+-        log.info("Pledge reload started"); // logast:wording
++        log.info("Pledge sweep started");
+         lookup.reload();
+-        log.info("Pledge reload completed"); // logast:wording
++        log.info("Pledge sweep completed");
+     }
+ }

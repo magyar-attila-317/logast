@@ -83,6 +83,28 @@ index c2e5489..e59f84e 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/web/PledgeDetailsController.java b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
+index 7d1bd00..10d41b9 100644
+--- a/src/main/java/com/example/e2e/web/PledgeDetailsController.java
++++ b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.web;
+ 
+ import com.example.e2e.pledge.PledgeLookup;
++import com.example.e2e.logging.MdcScope;
+ import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RestController;
+@@ -15,6 +16,8 @@
+ 
+     @GetMapping("/pledges/{pledgeId}/details")
+     public String details(@PathVariable String pledgeId) {
+-        return lookup.find(pledgeId);
++        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++            return lookup.find(pledgeId);
++        }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 index bb218a8..6178d15 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java

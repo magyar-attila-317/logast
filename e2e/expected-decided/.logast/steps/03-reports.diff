@@ -41,6 +41,18 @@ index c2e743a..c50982e 100644
                  return false;
              }
          }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+index e2c3a76..8798a37 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+@@ -20,6 +20,7 @@ 
+             return load(pledgeId);
+         } catch (IllegalStateException e) {
+             log.warn("Pledge lookup failed", e);
++            PledgeMetrics.pledgeLookupFailed();
+             throw new PledgeMissing(pledgeId, e);
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 index 436af48..c14ab60 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
@@ -263,10 +275,10 @@ index 81fb0d6..3a83e39 100644
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeMetrics.java b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 new file mode 100644
-index 0000000..bb34989
+index 0000000..d5ef6aa
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
-@@ -0,0 +1,44 @@ 
+@@ -0,0 +1,49 @@ 
 +package com.example.e2e.pledge;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -279,6 +291,11 @@ index 0000000..bb34989
 +// logast:metrics-catalog
 +public final class PledgeMetrics {
 +    private PledgeMetrics() {
++    }
++
++    /** pledge.lookup{outcome="failed"} +1. */
++    public static void pledgeLookupFailed() {
++        Outcomes.count("pledge.lookup", "failed");
 +    }
 +
 +    /** pledges{outcome="updated"} +1; rows is one sample of the distribution pledges.rows{outcome="updated"}. */

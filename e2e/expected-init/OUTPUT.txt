@@ -5,7 +5,7 @@ Sets up this service once. Re-running keeps what you already edited.
   ✓ .gitignore              ignores .logast/, but keeps baseline.json, traffic.yaml and README.md shared
   ✓ .logast/README.md       explains every file in .logast/ and which ones go into git
   · .logast/classpath-*.txt skipped (--no-classpath); run `logast classpath .` before scanning
-  ✓ .logast/traffic.yaml    18 entrypoints; optional: add calls/day so logast can judge log volume
+  ✓ .logast/traffic.yaml    20 entrypoints; optional: add calls/day so logast can judge log volume
   · .logast/baseline.json   not recorded (add --baseline, or later `logast scan . --update-baseline`)
 
 Next steps

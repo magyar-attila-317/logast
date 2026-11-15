@@ -12,6 +12,11 @@ public final class PledgeMetrics {
     private PledgeMetrics() {
     }
 
+    /** pledge.lookup{outcome="failed"} +1. */
+    public static void pledgeLookupFailed() {
+        Outcomes.count("pledge.lookup", "failed");
+    }
+
     /** pledges{outcome="updated"} +1; pledges.rows{outcome="updated"} grows by rows. */
     public static void pledgesUpdated(Number rows) {
         Outcomes.count("pledges", "updated", "rows", rows);

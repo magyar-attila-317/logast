@@ -57,6 +57,25 @@ index c2e743a..5259e5c 100644
                  return false;
              }
          }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+index e2c3a76..f6585ea 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.Outcomes;
+ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ import org.slf4j.Logger;
+@@ -20,6 +21,7 @@
+             return load(pledgeId);
+         } catch (IllegalStateException e) {
+             log.warn("Pledge lookup failed", e);
++            Outcomes.count("pledge.lookup", "failed");
+             throw new PledgeMissing(pledgeId, e);
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 index 436af48..35ee033 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
