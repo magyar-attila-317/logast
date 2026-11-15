@@ -1,285 +1,259 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 5f70c44..d8ccbc8 100644
+index 5f70c44..4c9fbeb 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
-@@ -35,15 +35,18 @@ 
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.order;
+ 
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.ApplicationEventPublisher;
+@@ -35,15 +36,18 @@
          payments.charge(order);
          events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
          log.info("Order placed");
-+        OrderMetrics.orderPlaced();
++        BusinessMetrics.orderPlaced();
      }
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
      public void ship(java.util.List<Order> orders, int batchNumber) {
          if (orders.isEmpty()) {
              log.info("Order shipment skipped");
-+            OrderMetrics.orderShipmentSkipped();
++            BusinessMetrics.orderShipmentSkipped();
              return;
          }
          orders.forEach(payments::charge);
          log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
-+        OrderMetrics.ordersShipped(orders.size());
++        BusinessMetrics.ordersShipped(orders.size());
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponSender.java b/src/main/java/com/example/e2e/coupon/CouponSender.java
-index c2e743a..c50982e 100644
+index c2e743a..2c92597 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponSender.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponSender.java
-@@ -12,6 +12,7 @@ 
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.coupon;
+ 
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Component;
+@@ -12,6 +13,7 @@
      public void send(String couponId) {
          log.debug("Sending coupon to the channel");
          log.info("Coupon sent");
-+        CouponMetrics.couponSent();
++        BusinessMetrics.couponSent();
      }
  
      /** A failure logged and handled here: an outcome worth counting by default. */
-@@ -22,6 +23,7 @@
+@@ -22,6 +24,7 @@
                  return true;
              } catch (IllegalStateException e) {
                  log.warn("Coupon resend failed", e);
-+                CouponMetrics.couponResendFailed();
++                BusinessMetrics.couponResendFailed();
                  return false;
              }
          }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponRepository.java b/src/main/java/com/example/e2e/coupon/CouponRepository.java
-index 436af48..c14ab60 100644
+index 436af48..fbc26af 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponRepository.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponRepository.java
-@@ -25,11 +25,13 @@ 
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.coupon;
+ 
+ import com.example.e2e.logging.AfterCommit;
++import com.example.e2e.metrics.BusinessMetrics;
+ import java.util.List;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -25,11 +26,13 @@
      public void close(String couponId) {
          int rows = jdbcTemplate.update(CLOSE, couponId);
          AfterCommit.log(() -> log.debug("Coupons updated [rows={}]", rows)); // logast:wording
-+        CouponMetrics.couponsUpdated(rows);
++        BusinessMetrics.couponsUpdated(rows);
      }
  
      public int countUse(String couponId) {
          int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, couponId);
          AfterCommit.log(() -> log.info("Coupon usage saved [uses={}]", uses)); // logast:wording
-+        CouponMetrics.couponUsageSaved(uses);
++        BusinessMetrics.couponUsageSaved(uses);
          return uses;
      }
  
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 9d7cd6b..1929a2f 100644
+index 9d7cd6b..0a0932b 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-@@ -49,8 +49,10 @@ 
+@@ -4,6 +4,7 @@ 
+ import com.example.e2e.income.CouponDetails;
+ import com.example.e2e.income.SalesTotals;
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.metrics.BusinessMetrics;
+ import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+@@ -49,8 +50,10 @@
                              }
                          });
                  log.info("Coupon parsed"); // a transformed value
-+                EdgeMetrics.couponParsed();
++                BusinessMetrics.couponParsed();
                  new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
                  log.info("Edge processing completed");
-+                EdgeMetrics.edgeProcessingCompleted();
++                BusinessMetrics.edgeProcessingCompleted();
              }
          }
      }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 2abd838..da87546 100644
+index 1ac7248..b7c76b2 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -15,6 +15,7 @@ 
+@@ -16,6 +16,7 @@ 
      @EventListener
      public void onPlaced(OrderPlaced event) {
          log.info("Order confirmation sent");
-+        OrderMetrics.orderConfirmationSent();
++        BusinessMetrics.orderConfirmationSent();
          log.debug("Confirmation amount [amountCents={}]", event.amountCents());
      }
  
 diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
-index 6ddaebe..f8073ca 100644
+index 22de9a8..9fd81d2 100644
 --- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
-@@ -29,6 +29,7 @@ 
+@@ -30,6 +30,7 @@ 
          try (var mdc = MdcScope.of("couponId", couponId)) {
              log.info("Coupon return received");
              log.info("Coupon sweep completed");
-+            MessagingMetrics.couponMessagesCompleted();
++            BusinessMetrics.couponMessagesCompleted();
          }
      }
  
-@@ -37,6 +38,7 @@
+@@ -38,6 +39,7 @@
          try (var mdc = MdcScope.of("couponId", couponId)) {
              log.info("Coupon audit received");
              log.info("Coupon sweep completed");
-+            MessagingMetrics.couponMessagesCompleted();
++            BusinessMetrics.couponMessagesCompleted();
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 4ba5455..2218442 100644
+index 4ba5455..9e30425 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
-@@ -12,5 +12,6 @@ 
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.context.annotation.Profile;
+ import org.springframework.stereotype.Component;
+@@ -12,5 +13,6 @@
      protected void doExecute() {
          log.info("Coupon sweep started");
          log.info("Coupon sweep completed");
-+        JobMetrics.exportJobCompleted();
++        BusinessMetrics.exportJobCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
-index fcb1bd0..d83d48b 100644
+index 64a7ee6..0f5cad4 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponService.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponService.java
-@@ -22,6 +22,7 @@ 
+@@ -2,6 +2,7 @@ 
+ 
+ import com.example.e2e.audit.AuditLog;
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+@@ -42,6 +43,7 @@
          sender.send(couponId);
          repository.close(couponId);
          log.info("Coupon published");
-+        CouponMetrics.couponPublished();
++        BusinessMetrics.couponPublished();
      }
  
      public void redeem(RedeemRequest request) {
-@@ -29,6 +30,7 @@
+@@ -49,6 +51,7 @@
              log.info("Coupon redemption started");
              sender.send(request.code());
              log.info("Coupon redemption completed [tableId={}]", request.tableId());
-+            CouponMetrics.couponRedemptionCompleted();
++            BusinessMetrics.couponRedemptionCompleted();
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
-index 561107f..656fe0a 100644
+index 561107f..a9403ff 100644
 --- a/src/main/java/com/example/e2e/edge/Audited.java
 +++ b/src/main/java/com/example/e2e/edge/Audited.java
-@@ -9,5 +9,6 @@ 
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.edge;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+@@ -9,5 +10,6 @@
  
      default void audit(String couponId) {
          AUDIT_LOG.info("Coupon audited");
-+        EdgeMetrics.couponAudited();
++        BusinessMetrics.couponAudited();
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
-index a656908..a566aa3 100644
+index a656908..95be15a 100644
 --- a/src/main/java/com/example/e2e/job/PreloadJob.java
 +++ b/src/main/java/com/example/e2e/job/PreloadJob.java
-@@ -14,5 +14,6 @@ 
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -14,5 +15,6 @@
      protected void doExecute() {
          log.info("Preload export started");
          log.info("Preload export completed");
-+        JobMetrics.preloadExportCompleted();
++        BusinessMetrics.preloadExportCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
-index ff68e86..eeec1b4 100644
+index ff68e86..6e7a5a9 100644
 --- a/src/main/java/com/example/e2e/job/CalculationJob.java
 +++ b/src/main/java/com/example/e2e/job/CalculationJob.java
-@@ -14,5 +14,6 @@ 
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.metrics.BusinessMetrics;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -14,5 +15,6 @@
      protected void doExecute() {
          log.info("Coupon sweep started");
          log.info("Calculation completed");
-+        JobMetrics.calculationCompleted();
++        BusinessMetrics.calculationCompleted();
      }
  }
-diff --git a/src/main/java/com/example/e2e/job/JobMetrics.java b/src/main/java/com/example/e2e/job/JobMetrics.java
-index c7ce403..0ccb055 100644
---- a/src/main/java/com/example/e2e/job/JobMetrics.java
-+++ b/src/main/java/com/example/e2e/job/JobMetrics.java
+diff --git a/src/main/java/com/example/e2e/metrics/BusinessMetrics.java b/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
+index f8e8a56..4ae9240 100644
+--- a/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
++++ b/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
 @@ -1,5 +1,7 @@ 
- package com.example.e2e.job;
+ package com.example.e2e.metrics;
  
 +import com.example.e2e.logging.Outcomes;
 +
  /**
-  * Metric names of com.example.e2e.job, in one place: call sites call a member here and never name a metric.
+  * Metric names, in one place: call sites call a member here and never name a metric.
   * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
-@@ -15,4 +17,19 @@
- 
-     /** Observation (timer and span) name. */
-     public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
-+
-+    /** calculation{outcome="completed"} +1. */
-+    public static void calculationCompleted() {
-+        Outcomes.count("calculation", "completed");
-+    }
-+
-+    /** export.job{outcome="completed"} +1. */
-+    public static void exportJobCompleted() {
-+        Outcomes.count("export.job", "completed");
-+    }
-+
-+    /** preload.export{outcome="completed"} +1. */
-+    public static void preloadExportCompleted() {
-+        Outcomes.count("preload.export", "completed");
-+    }
- }
-diff --git a/src/main/java/com/example/e2e/messaging/MessagingMetrics.java b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
-index b4460ec..d9d4958 100644
---- a/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
-+++ b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
-@@ -1,5 +1,7 @@ 
- package com.example.e2e.messaging;
- 
-+import com.example.e2e.logging.Outcomes;
-+
- /**
-  * Metric names of com.example.e2e.messaging, in one place: call sites call a member here and never name a metric.
-  * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
-@@ -12,4 +14,9 @@
- 
-     /** Observation (timer and span) name. */
-     public static final String COUPON_MESSAGES_ON_BATCH = "coupon-messages.on-batch";
-+
-+    /** coupon.messages{outcome="completed"} +1. */
-+    public static void couponMessagesCompleted() {
-+        Outcomes.count("coupon.messages", "completed");
-+    }
- }
-diff --git a/src/main/java/com/example/e2e/order/OrderMetrics.java b/src/main/java/com/example/e2e/order/OrderMetrics.java
-index 81fb0d6..3a83e39 100644
---- a/src/main/java/com/example/e2e/order/OrderMetrics.java
-+++ b/src/main/java/com/example/e2e/order/OrderMetrics.java
-@@ -1,5 +1,7 @@ 
- package com.example.e2e.order;
- 
-+import com.example.e2e.logging.Outcomes;
-+
- /**
-  * Metric names of com.example.e2e.order, in one place: call sites call a member here and never name a metric.
-  * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
-@@ -12,4 +14,24 @@
+@@ -21,4 +23,89 @@
  
      /** Observation (timer and span) name. */
      public static final String ORDER_NOTIFICATIONS = "order.notifications";
-+
-+    /** order.confirmation{outcome="sent"} +1. */
-+    public static void orderConfirmationSent() {
-+        Outcomes.count("order.confirmation", "sent");
-+    }
-+
-+    /** order{outcome="placed"} +1. */
-+    public static void orderPlaced() {
-+        Outcomes.count("order", "placed");
-+    }
-+
-+    /** order.shipment{outcome="skipped"} +1. */
-+    public static void orderShipmentSkipped() {
-+        Outcomes.count("order.shipment", "skipped");
-+    }
-+
-+    /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */
-+    public static void ordersShipped(Number items) {
-+        Outcomes.count("orders", "shipped", "items", items);
-+    }
- }
-diff --git a/src/main/java/com/example/e2e/coupon/CouponMetrics.java b/src/main/java/com/example/e2e/coupon/CouponMetrics.java
-new file mode 100644
-index 0000000..bb34989
---- /dev/null
-+++ b/src/main/java/com/example/e2e/coupon/CouponMetrics.java
-@@ -0,0 +1,44 @@ 
-+package com.example.e2e.coupon;
-+
-+import com.example.e2e.logging.Outcomes;
-+
-+/**
-+ * Metric names of com.example.e2e.coupon, in one place: call sites call a member here and never name a metric.
-+ * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
-+ * ones at the end.
-+ */
-+// logast:metrics-catalog
-+public final class CouponMetrics {
-+    private CouponMetrics() {
-+    }
 +
 +    /** coupons{outcome="updated"} +1; rows is one sample of the distribution coupons.rows{outcome="updated"}. */
 +    public static void couponsUpdated(Number rows) {
@@ -310,26 +284,6 @@ index 0000000..bb34989
 +    public static void couponRedemptionCompleted() {
 +        Outcomes.count("coupon.redemption", "completed");
 +    }
-+}
-diff --git a/src/main/java/com/example/e2e/edge/EdgeMetrics.java b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
-new file mode 100644
-index 0000000..fb33bcd
---- /dev/null
-+++ b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
-@@ -0,0 +1,29 @@ 
-+package com.example.e2e.edge;
-+
-+import com.example.e2e.logging.Outcomes;
-+
-+/**
-+ * Metric names of com.example.e2e.edge, in one place: call sites call a member here and never name a metric.
-+ * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
-+ * ones at the end.
-+ */
-+// logast:metrics-catalog
-+public final class EdgeMetrics {
-+    private EdgeMetrics() {
-+    }
 +
 +    /** coupon{outcome="audited"} +1. */
 +    public static void couponAudited() {
@@ -345,4 +299,44 @@ index 0000000..fb33bcd
 +    public static void edgeProcessingCompleted() {
 +        Outcomes.count("edge.processing", "completed");
 +    }
-+}
++
++    /** calculation{outcome="completed"} +1. */
++    public static void calculationCompleted() {
++        Outcomes.count("calculation", "completed");
++    }
++
++    /** export.job{outcome="completed"} +1. */
++    public static void exportJobCompleted() {
++        Outcomes.count("export.job", "completed");
++    }
++
++    /** preload.export{outcome="completed"} +1. */
++    public static void preloadExportCompleted() {
++        Outcomes.count("preload.export", "completed");
++    }
++
++    /** coupon.messages{outcome="completed"} +1. */
++    public static void couponMessagesCompleted() {
++        Outcomes.count("coupon.messages", "completed");
++    }
++
++    /** order.confirmation{outcome="sent"} +1. */
++    public static void orderConfirmationSent() {
++        Outcomes.count("order.confirmation", "sent");
++    }
++
++    /** order{outcome="placed"} +1. */
++    public static void orderPlaced() {
++        Outcomes.count("order", "placed");
++    }
++
++    /** order.shipment{outcome="skipped"} +1. */
++    public static void orderShipmentSkipped() {
++        Outcomes.count("order.shipment", "skipped");
++    }
++
++    /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */
++    public static void ordersShipped(Number items) {
++        Outcomes.count("orders", "shipped", "items", items);
++    }
+ }

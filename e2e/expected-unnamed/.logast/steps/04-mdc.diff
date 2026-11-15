@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/web/CouponController.java b/src/main/java/com/example/e2e/web/CouponController.java
-index b5ef221..74b60cd 100644
+index 0d0f1d5..562229e 100644
 --- a/src/main/java/com/example/e2e/web/CouponController.java
 +++ b/src/main/java/com/example/e2e/web/CouponController.java
 @@ -2,6 +2,7 @@ 
@@ -29,7 +29,7 @@ index b5ef221..74b60cd 100644
      }
  
      @PostMapping("/coupons/redeem")
-@@ -41,6 +46,8 @@
+@@ -51,6 +56,8 @@
  
      @PostMapping("/orders")
      public void place(@RequestBody Order order) {
@@ -224,17 +224,18 @@ index 2e68061..31e6c43 100644
  
      private void publishOne(SalesTotals row) {
 diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
-index 445b9d1..4441104 100644
+index d77bb4f..c73d4f0 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponService.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponService.java
-@@ -1,5 +1,6 @@ 
+@@ -1,6 +1,7 @@ 
  package com.example.e2e.coupon;
  
+ import com.example.e2e.audit.AuditLog;
 +import com.example.e2e.logging.MdcScope;
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
  import org.springframework.stereotype.Service;
-@@ -24,8 +25,10 @@
+@@ -44,8 +45,10 @@
      }
  
      public void redeem(RedeemRequest request) {

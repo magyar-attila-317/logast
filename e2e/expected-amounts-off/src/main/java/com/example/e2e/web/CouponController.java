@@ -44,6 +44,16 @@ public class CouponController {
         coupons.redeem(request);
     }
 
+    @DeleteMapping("/coupons/{couponId}")
+    public void delete(@PathVariable String couponId) {
+        coupons.delete(couponId);
+    }
+
+    @PostMapping("/admin/coupons/{couponId}/revoke")
+    public void revoke(@PathVariable String couponId) {
+        coupons.revoke(couponId);
+    }
+
     @PostMapping("/orders")
     public void place(@RequestBody Order order) {
         try (var mdc = MdcScope.of("orderId", order.id())) {

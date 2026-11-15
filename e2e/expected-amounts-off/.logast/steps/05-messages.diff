@@ -76,10 +76,10 @@ index e6d521d..561107f 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
-index 4441104..fcb1bd0 100644
+index c73d4f0..64a7ee6 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponService.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponService.java
-@@ -18,17 +18,17 @@ 
+@@ -38,17 +38,17 @@ 
      }
  
      public void publish(String couponId) {

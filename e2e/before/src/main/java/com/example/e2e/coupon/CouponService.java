@@ -1,5 +1,6 @@
 package com.example.e2e.coupon;
 
+import com.example.e2e.audit.AuditLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -10,10 +11,29 @@ public class CouponService {
     private static final Logger log = LoggerFactory.getLogger(CouponService.class);
     private final CouponSender sender;
     private final CouponRepository repository;
+    private final AuditLog audit;
 
-    public CouponService(CouponSender sender, CouponRepository repository) {
+    public CouponService(CouponSender sender, CouponRepository repository, AuditLog audit) {
         this.sender = sender;
         this.repository = repository;
+        this.audit = audit;
+    }
+
+    /** Audited only when the delete went through: a failed or rejected attempt leaves no record. */
+    public void delete(String couponId) {
+        repository.close(couponId);
+        audit.record("coupon.delete", couponId, "done");
+    }
+
+    /** Audited either way: the failed attempt is recorded too. */
+    public void revoke(String couponId) {
+        try {
+            repository.close(couponId);
+            audit.record("coupon.revoke", couponId, "done");
+        } catch (RuntimeException e) {
+            audit.record("coupon.revoke", couponId, "failed");
+            throw e;
+        }
     }
 
     public void publish(String couponId) {

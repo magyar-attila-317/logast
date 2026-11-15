@@ -4,7 +4,9 @@
 # Regenerate with `logast traffic <root>`: filled-in values are kept, new entrypoints are added.
 entrypoints:
   # http
+  "DELETE /coupons/{couponId}":     # http, CouponController.delete
   "GET /coupons":     # http, CouponController.open
+  "POST /admin/coupons/{couponId}/revoke":     # http, CouponController.revoke
   "POST /coupons/redeem":     # http, CouponController.redeem
   "POST /coupons/{couponId}/publish":     # http, CouponController.publish
   "POST /coupons/{couponId}/use":     # http, CouponController.use

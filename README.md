@@ -713,6 +713,7 @@ They use the same entrypoint and call-path analysis, so a finding says *which re
 | rule | finds |
 |---|---|
 | AUDIT_MISSING | an entrypoint matching `audit.actions` from which no audit emitter is reachable |
+| AUDIT_FAILURES_UNRECORDED | an auditable action that records its audit event only after its work succeeded (no audit call in a catch or finally): a rejected or failed attempt leaves no record | report (record the outcome either way, or the attempt before the work) |
 | AUDIT_SECURITY_EVENTS | Spring Security in use, but failed/successful logins and denied access are not recorded |
 
 ```yaml

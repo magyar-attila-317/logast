@@ -28,7 +28,7 @@
     "outcome" : "published",
     "_event" : "published",
     "_message" : "INFO \"Coupon published\"",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:24 CouponService.publish",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:44 CouponService.publish",
     "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/publish\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /coupons/{couponId}/publish" ],
     "_tag" : "available"
@@ -39,7 +39,7 @@
     "outcome" : "completed",
     "_event" : "completed",
     "_message" : "INFO \"Coupon redemption completed\"",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:31 CouponService.redeem",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:51 CouponService.redeem",
     "_frequency" : "unknown: no rate for \"POST /coupons/redeem\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /coupons/redeem" ],
     "_tag" : "available"

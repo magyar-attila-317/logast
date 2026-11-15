@@ -6,8 +6,10 @@ import com.example.e2e.logging.MdcScope;
 import com.example.e2e.order.Order;
 import com.example.e2e.order.OrderService;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
 public class CouponController {
     private final CouponService coupons;
@@ -42,6 +44,22 @@ public class CouponController {
     @PostMapping("/coupons/redeem")
     public void redeem(@RequestBody com.example.e2e.coupon.RedeemRequest request) {
         coupons.redeem(request);
+    }
+
+    @DeleteMapping("/coupons/{couponId}")
+    public void delete(@PathVariable String couponId) {
+        try (var mdc = MdcScope.of("couponId", couponId)) {
+            log.info("Coupon sweep started");
+            coupons.delete(couponId);
+        }
+    }
+
+    @PostMapping("/admin/coupons/{couponId}/revoke")
+    public void revoke(@PathVariable String couponId) {
+        try (var mdc = MdcScope.of("couponId", couponId)) {
+            log.info("Coupon sweep started");
+            coupons.revoke(couponId);
+        }
     }
 
     @PostMapping("/orders")

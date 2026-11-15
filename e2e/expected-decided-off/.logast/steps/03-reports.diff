@@ -173,18 +173,18 @@ index 4ba5455..baf8925 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
-index fcb1bd0..488b094 100644
+index 64a7ee6..aeb4474 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponService.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponService.java
-@@ -1,6 +1,7 @@ 
- package com.example.e2e.coupon;
+@@ -2,6 +2,7 @@ 
  
+ import com.example.e2e.audit.AuditLog;
  import com.example.e2e.logging.MdcScope;
 +import com.example.e2e.logging.Outcomes;
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
  import org.springframework.stereotype.Service;
-@@ -22,6 +23,7 @@
+@@ -42,6 +43,7 @@
          sender.send(couponId);
          repository.close(couponId);
          log.info("Coupon published");
@@ -192,7 +192,7 @@ index fcb1bd0..488b094 100644
      }
  
      public void redeem(RedeemRequest request) {
-@@ -29,6 +31,7 @@
+@@ -49,6 +51,7 @@
              log.info("Coupon redemption started");
              sender.send(request.code());
              log.info("Coupon redemption completed [tableId={}]", request.tableId());
