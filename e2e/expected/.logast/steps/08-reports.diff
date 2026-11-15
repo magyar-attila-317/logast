@@ -164,10 +164,10 @@ index 765de3d..5c0b6d0 100644
                  .run(() -> {
                      log.info("Order audit recorded [orderId={}]", event.orderId());
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index c05ebc5..e7f4395 100644
+index 6f18f77..c9408d9 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-@@ -46,6 +46,7 @@ 
+@@ -51,6 +51,7 @@ 
                  log.info("Pledge parsed"); // a transformed value
                  new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
                  log.info("Edge processing completed");

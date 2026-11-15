@@ -42,8 +42,12 @@ public class EdgeFlow implements Audited {
                 audit(kioskData.pledgeId());                                               // default method of an interface
                 EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
-                        log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
-                EdgeMetrics.pledgeArchived();
+                        log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
+                        .whenComplete((result, error) -> {
+                            if (error != null) {
+                                log.error("Pledge sweep failed", error);
+                            }
+                        });
                 log.info("Pledge parsed"); // a transformed value
                 EdgeMetrics.pledgeParsed();
                 new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field

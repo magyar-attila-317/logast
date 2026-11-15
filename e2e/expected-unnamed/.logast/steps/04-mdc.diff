@@ -137,7 +137,7 @@ index 04a4db7..a82b3b1 100644
  
      private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 953396f..2daf0d8 100644
+index 2e68061..31e6c43 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -3,6 +3,7 @@ 
@@ -148,7 +148,7 @@ index 953396f..2daf0d8 100644
  import java.util.List;
  import java.util.Optional;
  import java.util.UUID;
-@@ -15,34 +16,38 @@
+@@ -15,39 +16,43 @@
  @Service
  public class EdgeFlow implements Audited {
      public void process(KioskTotals kioskData) {
@@ -182,10 +182,10 @@ index 953396f..2daf0d8 100644
 -        audit(kioskData.pledgeId());                                               // default method of an interface
 -        EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
 -        CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
--                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
--        log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
--        new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
--        log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());
+-                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
+-                .whenComplete((result, error) -> {
+-                    if (error != null) {
+-                        log.error("Edge flow async work failed", error); // logast:wording
 +            PledgeDetails pledge = new PledgeDetails(kioskData.pledgeId(), null, null, null);
 +            try (var mdc2 = MdcScope.of("sponsorshipId", pledge.sponsorshipId())) {
 +                PledgeCheck inline = (c, s) -> {                                           // lambda implementing an interface
@@ -198,14 +198,23 @@ index 953396f..2daf0d8 100644
 +                    public Optional<String> validate(PledgeDetails c, KioskTotals s) {
 +                        log.debug("Anonymous check [pledgeId={}]", c.pledgeId());
 +                        return Optional.empty();
-+                    }
+                     }
+-                });
+-        log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
+-        new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
+-        log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());
 +                }.validate(pledge, kioskData);
 +                Check<PledgeDetails> origin = new OriginCheck();                           // generic interface
 +                origin.test(pledge);
 +                audit(kioskData.pledgeId());                                               // default method of an interface
 +                EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
 +                CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
-+                        log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
++                        log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
++                        .whenComplete((result, error) -> {
++                            if (error != null) {
++                                log.error("Edge flow async work failed", error); // logast:wording
++                            }
++                        });
 +                log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
 +                new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
 +                log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());

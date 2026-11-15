@@ -88,6 +88,7 @@ public final class Rules {
     public static final String DB_NO_TIMEOUT = "DB_NO_TIMEOUT";
     public static final String REMOTE_CALL_IN_TRANSACTION = "REMOTE_CALL_IN_TRANSACTION";
     public static final String SCHEDULED_WITHOUT_LOCK = "SCHEDULED_WITHOUT_LOCK";
+    public static final String ASYNC_ERROR_LOST = "ASYNC_ERROR_LOST";
     public static final String UNMAPPED_EXCEPTION = "UNMAPPED_EXCEPTION";
     public static final String CLIENT_ERROR_AS_SERVER_ERROR = "CLIENT_ERROR_AS_SERVER_ERROR";
     public static final String PROBLEM_DETAILS_DISABLED = "PROBLEM_DETAILS_DISABLED";
@@ -123,7 +124,7 @@ public final class Rules {
             PACKS.put(r, Set.of("resilience"));
         }
         for (String r : List.of(ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED,
-                ERROR_RESPONSE_UNTRACED)) {
+                ERROR_RESPONSE_UNTRACED, ASYNC_ERROR_LOST)) {
             PACKS.put(r, Set.of("errors"));
         }
         for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS)) {
@@ -157,7 +158,8 @@ public final class Rules {
         // BUSINESS_EVENT_UNMEASURED reads the lifecycle lines: it goes with the step that adds them (a job outcome
         // line can be what makes a method a business event), not before it
         for (String r : List.of(ENTRYPOINT_SILENT, JOB_OUTCOME_MISSING, BATCH_SUMMARY_MISSING, SKIP_UNLOGGED, STATE_CHANGE_UNLOGGED,
-                DB_OUTCOME_UNLOGGED, LIFECYCLE_UNEVEN, SWALLOWED_EXCEPTION, LOST_THROWABLE, BUSINESS_EVENT_UNMEASURED)) {
+                DB_OUTCOME_UNLOGGED, LIFECYCLE_UNEVEN, SWALLOWED_EXCEPTION, LOST_THROWABLE, BUSINESS_EVENT_UNMEASURED,
+                ASYNC_ERROR_LOST)) {
             STEPS.put(r, Step.LINES);
         }
         for (String r : List.of(MISSING_DOMAIN_MDC, REPEATED_LOG_VALUE, MDC_KEY_ALIAS, MDC_NESTED_KEY, AREA_MDC_MISSING)) {
@@ -222,7 +224,7 @@ public final class Rules {
             Map.entry(METRIC_TAG_KEYS_MISMATCH, "high"),
             Map.entry(HTTP_CLIENT_NO_TIMEOUT, "high"), Map.entry(KAFKA_NO_ERROR_HANDLER, "medium"),
             Map.entry(UNBOUNDED_EXECUTOR, "medium"), Map.entry(BLOCKING_WAIT_UNBOUNDED, "medium"),
-            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(DB_NO_TIMEOUT, "high"), Map.entry(REMOTE_CALL_IN_TRANSACTION, "medium"), Map.entry(SCHEDULED_WITHOUT_LOCK, "medium"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
+            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(DB_NO_TIMEOUT, "high"), Map.entry(REMOTE_CALL_IN_TRANSACTION, "medium"), Map.entry(SCHEDULED_WITHOUT_LOCK, "medium"), Map.entry(ASYNC_ERROR_LOST, "high"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
             Map.entry(CLIENT_ERROR_AS_SERVER_ERROR, "medium"), Map.entry(PROBLEM_DETAILS_DISABLED, "low"),
             Map.entry(AUDIT_MISSING, "medium"), Map.entry(AUDIT_SECURITY_EVENTS, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(RABBIT_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
@@ -307,6 +309,77 @@ public final class Rules {
     }
 
     /** Turns a metrics.json decision into edits; returns a problem to report, or null. */
+    /** The log call sits in a lambda inside {@code stmt}, under an if / switch / ternary / catch within that lambda. */
+    static boolean conditionalInLambda(org.openrewrite.java.tree.J stmt, org.openrewrite.java.tree.J.MethodInvocation call) {
+        boolean[] found = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            int lambdas;
+            int conditions;
+
+            @Override
+            public org.openrewrite.java.tree.J.Lambda visitLambda(org.openrewrite.java.tree.J.Lambda l, Integer p) {
+                lambdas++;
+                int outer = conditions;
+                conditions = 0;
+                try {
+                    return super.visitLambda(l, p);
+                } finally {
+                    conditions = outer;
+                    lambdas--;
+                }
+            }
+
+            @Override
+            public org.openrewrite.java.tree.J.If visitIf(org.openrewrite.java.tree.J.If i, Integer p) {
+                conditions++;
+                try {
+                    return super.visitIf(i, p);
+                } finally {
+                    conditions--;
+                }
+            }
+
+            @Override
+            public org.openrewrite.java.tree.J.Ternary visitTernary(org.openrewrite.java.tree.J.Ternary t, Integer p) {
+                conditions++;
+                try {
+                    return super.visitTernary(t, p);
+                } finally {
+                    conditions--;
+                }
+            }
+
+            @Override
+            public org.openrewrite.java.tree.J.Case visitCase(org.openrewrite.java.tree.J.Case c, Integer p) {
+                conditions++;
+                try {
+                    return super.visitCase(c, p);
+                } finally {
+                    conditions--;
+                }
+            }
+
+            @Override
+            public org.openrewrite.java.tree.J.Try.Catch visitCatch(org.openrewrite.java.tree.J.Try.Catch c, Integer p) {
+                conditions++;
+                try {
+                    return super.visitCatch(c, p);
+                } finally {
+                    conditions--;
+                }
+            }
+
+            @Override
+            public org.openrewrite.java.tree.J.MethodInvocation visitMethodInvocation(org.openrewrite.java.tree.J.MethodInvocation mi, Integer p) {
+                if (mi == call || mi.getId().equals(call.getId())) {
+                    found[0] = lambdas > 0 && conditions > 0;
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(stmt, 0);
+        return found[0];
+    }
+
     /** The metrics.defaults category a logged outcome falls into, or null. */
     private static String defaultCategory(RuleContext ctx, MetricsMap.Gap g) {
         List<String> on = ctx.policy.metrics().defaults();
@@ -378,6 +451,16 @@ public final class Rules {
         org.openrewrite.java.tree.J stmt = CoverageRules.enclosingStatement(g.method(), g.log().call());
         if (stmt == null) {
             return "Cannot place a line next to this log call automatically (not a plain statement).";
+        }
+        if (g.log().offThread()) {
+            // the lambda runs later, on another thread: a line after the statement counts the hand-off, not the outcome
+            return "The log line runs in a lambda on another thread, later: a counting line after the statement would count "
+                    + "when the work is handed off, not when it happens; count it inside the lambda, or mark it skip.";
+        }
+        if (conditionalInLambda(stmt, g.log().call())) {
+            // a line after the statement would count every run, not the failures the lambda logs (whenComplete, doOnError)
+            return "The log line runs inside a lambda, only under a condition: a counting line after the statement would "
+                    + "count every run; count it inside the lambda, next to the log line, or mark it skip.";
         }
         if (stmt instanceof org.openrewrite.java.tree.J.Return || stmt instanceof org.openrewrite.java.tree.J.Throw) {
             // a line after it would never run (the log call sits in a lambda of the returned pipeline, e.g. doOnError)
@@ -515,6 +598,7 @@ public final class Rules {
         }
         new ResilienceRules(ctx).run();
         new ErrorRules(ctx).run();
+        new AsyncErrorRules(ctx).run();
         new AuditRules(ctx).run();
         new VolumeRules(ctx).run();
 

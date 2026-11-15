@@ -86,6 +86,19 @@ index 86da61d..c209433 100644
          JobMetrics.exportJobCompleted(); // logast:metric review, confidence: low
      }
  }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index c9408d9..d42fcaa 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -45,7 +45,7 @@ 
+                         log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
+                         .whenComplete((result, error) -> {
+                             if (error != null) {
+-                                log.error("Edge flow async work failed", error); // logast:wording
++                                log.error("Pledge sweep failed", error);
+                             }
+                         });
+                 log.info("Pledge parsed"); // a transformed value
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
 index 5c0b6d0..2abd838 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java

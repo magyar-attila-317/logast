@@ -21,7 +21,7 @@ public class RecipeClient {
     private final ScheduledExecutorService sweeper = Executors.newSingleThreadScheduledExecutor();
 
     public RecipeClient() {
-        sweeper.scheduleAtFixedRate(this::sweep, 1, 1, TimeUnit.MINUTES); // expect: SCHEDULED_TASK_UNTRACED
+        sweeper.scheduleAtFixedRate(this::sweep, 1, 1, TimeUnit.MINUTES); // expect: SCHEDULED_TASK_UNTRACED, ASYNC_ERROR_LOST
     }
 
     public String fetch(String recipeId) throws IOException, InterruptedException {

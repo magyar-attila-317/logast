@@ -60,14 +60,12 @@ index 436af48..c14ab60 100644
      }
  
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index c05ebc5..3a95a14 100644
+index 9d7cd6b..1929a2f 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-@@ -43,9 +43,12 @@ 
-                 EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
-                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
-                         log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
-+                EdgeMetrics.pledgeArchived();
+@@ -49,8 +49,10 @@ 
+                             }
+                         });
                  log.info("Pledge parsed"); // a transformed value
 +                EdgeMetrics.pledgeParsed();
                  new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
@@ -315,10 +313,10 @@ index 0000000..bb34989
 +}
 diff --git a/src/main/java/com/example/e2e/edge/EdgeMetrics.java b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
 new file mode 100644
-index 0000000..9e2933a
+index 0000000..fb33bcd
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
-@@ -0,0 +1,34 @@ 
+@@ -0,0 +1,29 @@ 
 +package com.example.e2e.edge;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -336,11 +334,6 @@ index 0000000..9e2933a
 +    /** pledge{outcome="audited"} +1. */
 +    public static void pledgeAudited() {
 +        Outcomes.count("pledge", "audited");
-+    }
-+
-+    /** pledge{outcome="archived"} +1. */
-+    public static void pledgeArchived() {
-+        Outcomes.count("pledge", "archived");
 +    }
 +
 +    /** pledge{outcome="parsed"} +1. */

@@ -59,11 +59,6 @@ public final class BusinessMetrics {
         Outcomes.count("pledge", "audited");
     }
 
-    /** pledge{outcome="archived"} +1. */
-    public static void pledgeArchived() {
-        Outcomes.count("pledge", "archived");
-    }
-
     /** pledge{outcome="parsed"} +1. */
     public static void pledgeParsed() {
         Outcomes.count("pledge", "parsed");

@@ -234,8 +234,12 @@ public final class MetricsMap {
     /** An Outcomes.count/tag right after the log line, or an ignore comment for this rule on it or above it. */
     private static boolean countedOrSkipped(MethodInfo m, LogCall lc, Set<String> catalogs) {
         int line = Pos.line(lc.call());
-        int last = m.file().text().substring(0, Math.min(m.file().text().length(), Pos.end(lc.call()))).split("\n", -1).length;
-        for (int l = line - 1; l <= last + 2; l++) {
+        // the counting line goes after the whole statement (a chained call can run on for lines): look up to its end
+        org.openrewrite.java.tree.J stmt = CoverageRules.enclosingStatement(m, lc.call());
+        int end = stmt == null ? Pos.end(lc.call()) : Math.max(Pos.end(lc.call()), Pos.end(stmt));
+        int last = m.file().text().substring(0, Math.min(m.file().text().length(), end)).split("\n", -1).length;
+        // the counting line sits right after the statement; further down it belongs to the next statement
+        for (int l = line - 1; l <= last + 1; l++) {
             String t = l < 1 ? "" : m.file().lineText(l);
             if (t == null) {
                 continue;

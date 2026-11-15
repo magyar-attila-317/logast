@@ -69,13 +69,24 @@
     "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
     "_tag" : "available"
   },
+  "OUM-bb1ac8" : {
+    "count" : "",
+    "name" : "edge.flow.async.work",
+    "outcome" : "failed",
+    "_event" : "failed",
+    "_message" : "ERROR \"Edge flow async work failed\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
   "OUM-be530b" : {
     "count" : "",
     "name" : "pledge",
     "outcome" : "parsed",
     "_event" : "parsed",
     "_message" : "INFO \"Pledge parsed\"",
-    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:46 EdgeFlow.process",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:51 EdgeFlow.process",
     "_frequency" : "low",
     "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
     "_tag" : "available"
