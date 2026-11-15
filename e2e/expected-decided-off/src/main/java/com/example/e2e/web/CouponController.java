@@ -55,10 +55,10 @@ public class CouponController {
     }
 
     @PostMapping("/admin/coupons/{couponId}/revoke")
-    public void revoke(@PathVariable String couponId) {
+    public void revoke(@PathVariable String couponId, @RequestHeader("X-User") String userId) {
         try (var mdc = MdcScope.of("couponId", couponId)) {
             log.info("Coupon sweep started");
-            coupons.revoke(couponId);
+            coupons.revoke(couponId, userId);
         }
     }
 

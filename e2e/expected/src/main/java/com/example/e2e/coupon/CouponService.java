@@ -26,13 +26,13 @@ public class CouponService {
         audit.record("coupon.delete", couponId, "done");
     }
 
-    /** Audited either way: the failed attempt is recorded too. */
-    public void revoke(String couponId) {
+    /** Audited either way, with who did it: the failed attempt is recorded too. */
+    public void revoke(String couponId, String userId) {
         try {
             repository.close(couponId);
-            audit.record("coupon.revoke", couponId, "done");
+            audit.record("coupon.revoke", couponId, "done", userId);
         } catch (RuntimeException e) {
-            audit.record("coupon.revoke", couponId, "failed");
+            audit.record("coupon.revoke", couponId, "failed", userId);
             throw e;
         }
     }

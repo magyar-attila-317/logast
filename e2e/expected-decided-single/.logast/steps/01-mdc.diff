@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/web/CouponController.java b/src/main/java/com/example/e2e/web/CouponController.java
-index 562229e..fdf79a2 100644
+index 903ccf8..1e49a52 100644
 --- a/src/main/java/com/example/e2e/web/CouponController.java
 +++ b/src/main/java/com/example/e2e/web/CouponController.java
 @@ -6,8 +6,10 @@ 
@@ -25,11 +25,11 @@ index 562229e..fdf79a2 100644
      }
  
      @PostMapping("/admin/coupons/{couponId}/revoke")
-     public void revoke(@PathVariable String couponId) {
--        coupons.revoke(couponId);
+     public void revoke(@PathVariable String couponId, @RequestHeader("X-User") String userId) {
+-        coupons.revoke(couponId, userId);
 +        try (var mdc = MdcScope.of("couponId", couponId)) {
 +            log.info("Coupon sweep started");
-+            coupons.revoke(couponId);
++            coupons.revoke(couponId, userId);
 +        }
      }
  

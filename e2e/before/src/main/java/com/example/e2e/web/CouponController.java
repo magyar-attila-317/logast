@@ -45,8 +45,8 @@ public class CouponController {
     }
 
     @PostMapping("/admin/coupons/{couponId}/revoke")
-    public void revoke(@PathVariable String couponId) {
-        coupons.revoke(couponId);
+    public void revoke(@PathVariable String couponId, @RequestHeader("X-User") String userId) {
+        coupons.revoke(couponId, userId);
     }
 
     @PostMapping("/orders")

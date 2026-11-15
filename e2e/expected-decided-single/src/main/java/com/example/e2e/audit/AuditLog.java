@@ -10,4 +10,8 @@ public class AuditLog {
     public void record(String action, String target, String outcome) {
         entries.add(action + " " + target + " " + outcome);
     }
+
+    public void record(String action, String target, String outcome, String actor) {
+        entries.add(actor + " " + action + " " + target + " " + outcome);
+    }
 }

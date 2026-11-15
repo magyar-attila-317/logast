@@ -1,7 +1,7 @@
-logast · 58 files · 14 entrypoints · 63/176 methods reachable · 136 call edges
+logast · 58 files · 14 entrypoints · 64/177 methods reachable · 136 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 78.6% (jobs 7/7 · http 4/7)   (places that should log and do)
-57 orders: 0 AUTO, 18 NEEDS TEXT, 39 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+59 orders: 0 AUTO, 18 NEEDS TEXT, 41 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: coupon, order, agreement
 
 ASY-442eb2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -18,6 +18,14 @@ RBR-0d82bf  medium  REPORT-ONLY  ROW_BY_ROW_WRITE  src/main/java/com/example/e2e
   Loop over 'repository.findOpen()' writes one row per item (CouponRepository.close): the whole result is held in memory and N items mean N statements
   path: @Scheduled CouponCleanupJob.cleanup → CouponCleanupJob.cleanup
   note: One bulk statement (UPDATE … WHERE …) or paging with batch updates scales with the data. Report only: logast does not change data access.
+ARI-d928f8  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/coupon/CouponService.java:26  CouponService.delete
+  The audit record record(…) in CouponService.delete does not say who did it
+  path: DELETE /coupons/{couponId} → CouponController.delete → CouponService.delete
+  note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
+ARI-e0907c  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/edge/EdgeFlow.java:42  EdgeFlow.process
+  The audit record audit(…) in EdgeFlow.process does not say who did it
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
+  note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
 LHL-77ee4d  medium  REPORT-ONLY  LOG_HELPER  src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13  EdgeLogHelper.info
   Log helper EdgeLogHelper.info writes log lines for 1 call site(s): the message, level and logger are invisible where the event happens
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeLogHelper.info
@@ -59,13 +67,13 @@ DOM-d23dcd  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/j
   + … (4 lines)
   (+2 more edits)
   MSG: Entry log for DELETE /coupons/{couponId} (CouponController.delete): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
-DOM-01014d  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/CouponController.java:53  CouponController.revoke
+DOM-a2969a  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/CouponController.java:53  CouponController.revoke
   POST /admin/coupons/{couponId}/revoke: MDC lacks couponId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
   path: POST /admin/coupons/{couponId}/revoke → CouponController.revoke
-  - coupons.revoke(couponId);
+  - coupons.revoke(couponId, userId);
   + try (var mdc = MdcScope.of("couponId", couponId)) {
   + log.info("{{MSG}}");
-  + coupons.revoke(couponId);
+  + coupons.revoke(couponId, userId);
   + … (4 lines)
   (+2 more edits)
   MSG: Entry log for POST /admin/coupons/{couponId}/revoke (CouponController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
@@ -272,4 +280,4 @@ Next steps
   2. set "count" in .logast/metrics.json                 21 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   14 of 14 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      18 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, AUDIT_FAILURES_UNRECORDED 1, …); each says what to decide
+  5. logast scan . --format summary                      20 findings are decisions for a person (MESSAGE_VAGUE 6, AUDIT_RECORD_INCOMPLETE 2, ASYNC_CONTEXT_LOSS 1, …); each says what to decide
