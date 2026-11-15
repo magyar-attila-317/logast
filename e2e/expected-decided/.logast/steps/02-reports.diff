@@ -1,8 +1,8 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index c8b6e69..f927e17 100644
+index 5f70c44..d8ccbc8 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
-@@ -22,15 +22,18 @@ 
+@@ -35,15 +35,18 @@ 
          payments.charge(order);
          events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
          log.info("Order placed");

@@ -34,7 +34,7 @@ public final class OrderBuilder {
             Map.entry(Rules.BUSINESS_EVENT_UNMEASURED, "BEU"), Map.entry(Rules.METRIC_TAG_KEYS_MISMATCH, "MTM"), Map.entry(Rules.METRIC_CATALOG, "MCA"),
             Map.entry(Rules.HTTP_CLIENT_NO_TIMEOUT, "HTO"), Map.entry(Rules.KAFKA_NO_ERROR_HANDLER, "KEH"),
             Map.entry(Rules.UNBOUNDED_EXECUTOR, "UEX"), Map.entry(Rules.BLOCKING_WAIT_UNBOUNDED, "BWU"),
-            Map.entry(Rules.ERROR_DETAILS_EXPOSED, "EDE"), Map.entry(Rules.ERROR_RESPONSE_UNTRACED, "ERT"), Map.entry(Rules.DB_NO_TIMEOUT, "DBT"), Map.entry(Rules.UNMAPPED_EXCEPTION, "UMX"),
+            Map.entry(Rules.ERROR_DETAILS_EXPOSED, "EDE"), Map.entry(Rules.ERROR_RESPONSE_UNTRACED, "ERT"), Map.entry(Rules.DB_NO_TIMEOUT, "DBT"), Map.entry(Rules.REMOTE_CALL_IN_TRANSACTION, "RCT"), Map.entry(Rules.UNMAPPED_EXCEPTION, "UMX"),
             Map.entry(Rules.CLIENT_ERROR_AS_SERVER_ERROR, "CES"), Map.entry(Rules.PROBLEM_DETAILS_DISABLED, "PDD"),
             Map.entry(Rules.AUDIT_MISSING, "AUM"), Map.entry(Rules.AUDIT_SECURITY_EVENTS, "AUS"), Map.entry(Rules.SCHEDULED_TASK_UNTRACED, "STU"),
             Map.entry(Rules.KAFKA_OBSERVATION_DISABLED, "KFK"), Map.entry(Rules.RABBIT_OBSERVATION_DISABLED, "RBT"), Map.entry(Rules.JOB_LAUNCH_UNTRACED, "JOB"),

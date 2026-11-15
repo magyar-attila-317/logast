@@ -1,15 +1,16 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index c8b6e69..2a75879 100644
+index 5f70c44..11df3aa 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
-@@ -1,5 +1,6 @@ 
+@@ -1,6 +1,7 @@ 
  package com.example.e2e.order;
  
+ import com.example.e2e.logging.MdcScope;
 +import com.example.e2e.logging.Outcomes;
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
  import org.springframework.context.ApplicationEventPublisher;
-@@ -22,15 +23,18 @@
+@@ -35,15 +36,18 @@
          payments.charge(order);
          events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
          log.info("Order placed");

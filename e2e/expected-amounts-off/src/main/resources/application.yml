@@ -5,6 +5,10 @@ spring:
   jdbc:
     template:
       query-timeout: 5m
+  http:
+    clients:
+      connect-timeout: 5s
+      read-timeout: 30s
   kafka:
     listener:
       observation-enabled: true

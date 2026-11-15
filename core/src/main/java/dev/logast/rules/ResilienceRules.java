@@ -63,6 +63,9 @@ final class ResilienceRules {
         if (ctx.enabled(Rules.DB_NO_TIMEOUT)) {
             dbTimeouts();
         }
+        if (ctx.enabled(Rules.REMOTE_CALL_IN_TRANSACTION)) {
+            remoteInTransaction();
+        }
         if (!clients && !executors && !waits && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
             return;
         }
@@ -279,6 +282,88 @@ final class ResilienceRules {
                             + "or set timeout = … on the @Transactional methods that need one. Not applied automatically: it "
                             + "applies to every @Transactional, batch jobs included.");
         }
+    }
+
+    // ---- remote calls inside a transaction -------------------------------------------------------
+
+    private static final List<String> TRANSACTIONAL = List.of("org.springframework.transaction.annotation.Transactional",
+            "jakarta.transaction.Transactional");
+    /** Owners of blocking HTTP calls (RestClient's nested specs included), and HTTP interfaces by annotation. */
+    private static final List<String> HTTP_OWNERS = List.of("org.springframework.web.client.RestOperations",
+            "org.springframework.web.client.RestClient", "java.net.http.HttpClient");
+    private static final List<String> HTTP_INTERFACES = List.of("org.springframework.cloud.openfeign.FeignClient",
+            "org.springframework.web.service.annotation.HttpExchange");
+
+    /**
+     * REMOTE_CALL_IN_TRANSACTION (report): an HTTP call reached, on the same thread, from inside a @Transactional
+     * method. The transaction holds its database connection for as long as the remote side takes; under load the pool
+     * runs dry. Reported once per outermost transaction, with the path to the call.
+     */
+    private void remoteInTransaction() {
+        Set<String> transactional = new HashSet<>();
+        for (MethodInfo m : ctx.methods()) {
+            if (m.decl().getBody() != null && TRANSACTIONAL.stream().anyMatch(m::hasAnnotation)) {
+                transactional.add(m.key());
+            }
+        }
+        for (MethodInfo m : ctx.methods()) {
+            if (!transactional.contains(m.key()) || ctx.a.graph.in(m).stream().anyMatch(e -> transactional.contains(e.from().key())
+                    && e.async() == dev.logast.graph.CallGraph.Async.NONE)) {
+                continue;   // inside an outer transaction: reported there
+            }
+            List<String> path = remotePath(m);
+            if (path == null || ctx.ignored(m.file(), m.line(), Rules.REMOTE_CALL_IN_TRANSACTION)) {
+                continue;
+            }
+            ctx.order(Rules.REMOTE_CALL_IN_TRANSACTION, m, m.line(), "remote-in-tx")
+                    .title(m.label() + " is @Transactional and calls a remote service inside the transaction: "
+                            + String.join(" → ", path) + ". The database connection is held while the network call waits")
+                    .suggestion("Move the call out of the transaction (before it, or after commit: TransactionSynchronization / "
+                            + "@TransactionalEventListener / an outbox), or make the transaction only cover the database work.");
+        }
+    }
+
+    /** The first blocking HTTP call reachable on the same thread (4 calls deep), as a path of method labels; else null. */
+    private List<String> remotePath(MethodInfo root) {
+        Deque<List<MethodInfo>> todo = new ArrayDeque<>(List.of(List.of(root)));
+        Set<String> seen = new HashSet<>();
+        while (!todo.isEmpty()) {
+            List<MethodInfo> path = todo.poll();
+            MethodInfo m = path.getLast();
+            if (!seen.add(m.key())) {
+                continue;
+            }
+            for (var site : m.facts().calls) {
+                if (site.async()) {
+                    continue;
+                }
+                JavaType.FullyQualified owner = site.type().getDeclaringType();
+                String fqn = owner.getFullyQualifiedName();
+                boolean http = HTTP_OWNERS.stream().anyMatch(h -> fqn.equals(h) || fqn.startsWith(h + "$") || fqn.startsWith(h + ".")
+                        || TypeUtils.isAssignableTo(h, owner))
+                        && !fqn.endsWith("$Builder") && !fqn.endsWith(".Builder")   // building a client calls nothing
+                        && !site.type().getName().startsWith("mutate") && !site.type().getName().equals("builder")
+                        && (fqn.startsWith("java.net.http") ? site.type().getName().equals("send") : true);
+                ClassInfo iface = ctx.a.index.clazz(fqn);
+                boolean httpInterface = iface != null && iface.decl().getLeadingAnnotations().stream()
+                        .anyMatch(a -> HTTP_INTERFACES.stream().anyMatch(h -> dev.logast.model.Annotations.is(a, h)));
+                if (http || httpInterface) {
+                    List<String> labels = new ArrayList<>(path.stream().map(MethodInfo::label).toList());
+                    labels.add(owner.getClassName() + "." + site.type().getName());
+                    return labels;
+                }
+            }
+            if (path.size() <= 4) {
+                for (var e : ctx.a.graph.out(m)) {
+                    if (e.async() == dev.logast.graph.CallGraph.Async.NONE) {
+                        List<MethodInfo> next = new ArrayList<>(path);
+                        next.add(e.to());
+                        todo.add(next);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     // ---- Kafka ----------------------------------------------------------------------------------
