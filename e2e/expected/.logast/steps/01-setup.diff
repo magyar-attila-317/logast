@@ -1,12 +1,15 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index 6bd81fc..e1ff210 100644
+index 6bd81fc..c3b45e1 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -1,7 +1,35 @@ 
+@@ -1,7 +1,38 @@ 
  spring:
    application:
      name: e2e-shop
 +    version: ${APPLICATION_VERSION:unknown}
++  jdbc:
++    template:
++      query-timeout: 5m
 +  kafka:
 +    listener:
 +      observation-enabled: true

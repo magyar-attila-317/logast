@@ -22,10 +22,15 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
                      Audit audit) {
 
     /** {@code resilience} pack: timeouts written by HTTP_CLIENT_NO_TIMEOUT (Spring duration syntax). */
-    public record Resilience(String httpConnectTimeout, String httpReadTimeout) {
+    /**
+     * @param dbQueryTimeout written to spring.jdbc.template.query-timeout by DB_NO_TIMEOUT: generous by default (it is
+     *                       there to stop "forever", not to cut off long batch queries); lower it per service
+     */
+    public record Resilience(String httpConnectTimeout, String httpReadTimeout, String dbQueryTimeout) {
         public Resilience {
             httpConnectTimeout = httpConnectTimeout == null ? "5s" : httpConnectTimeout;
             httpReadTimeout = httpReadTimeout == null ? "30s" : httpReadTimeout;
+            dbQueryTimeout = dbQueryTimeout == null ? "5m" : dbQueryTimeout;
         }
     }
 
@@ -331,7 +336,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         rules = rules == null ? Map.of() : Map.copyOf(rules);
         verify = verify == null ? new Verify(null, null) : verify;
         metrics = metrics == null ? new Metrics(null, null, null, null, null, null) : metrics;
-        resilience = resilience == null ? new Resilience(null, null) : resilience;
+        resilience = resilience == null ? new Resilience(null, null, null) : resilience;
         audit = audit == null ? new Audit(null, null) : audit;
     }
 

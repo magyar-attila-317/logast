@@ -684,6 +684,7 @@ They use the same entrypoint and call-path analysis, so a finding says *which re
 | rule | finds | fix |
 |---|---|---|
 | HTTP_CLIENT_NO_TIMEOUT | Spring HTTP clients with no connect/read timeout (Boot sets none); JDK `HttpClient` without `connectTimeout` | AUTO: `spring.http.clients.connect-timeout` / `read-timeout` (policy `resilience.*`, default 5s / 30s) |
+| DB_NO_TIMEOUT | JdbcTemplate / NamedParameterJdbcTemplate / JdbcClient without a query timeout (Spring Boot sets none; the driver's default is usually none); `@Transactional` without a transaction timeout | AUTO: `spring.jdbc.template.query-timeout` (policy `resilience.dbQueryTimeout`, default 5m: stops "forever" without cutting off batch queries); report for `spring.transaction.default-timeout` (it applies to every transaction) |
 | KAFKA_NO_ERROR_HANDLER | listeners on the default handling: 9 immediate retries, then the record is skipped | report: `DefaultErrorHandler` + `DeadLetterPublishingRecoverer` + backoff |
 | UNBOUNDED_EXECUTOR | `newCachedThreadPool`, `newFixedThreadPool` (unbounded queue), `ThreadPoolTaskExecutor` without queue capacity | report |
 | BLOCKING_WAIT_UNBOUNDED | `future.get()`, `join()`, `latch.await()` without timeout on a request/message path | report |
@@ -752,7 +753,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · DB_OUTCOME_UNLOGGED · MESSAGE_SUGGESTED · SETUP_SERVICE_IDENTITY · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · RABBIT_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
-| resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |
+| resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · DB_NO_TIMEOUT · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |
 | errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED |
 | audit (opt-in) | AUDIT_MISSING · AUDIT_SECURITY_EVENTS |
 | metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |

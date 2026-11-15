@@ -60,6 +60,9 @@ final class ResilienceRules {
     }
 
     void run() {
+        if (ctx.enabled(Rules.DB_NO_TIMEOUT)) {
+            dbTimeouts();
+        }
         if (!clients && !executors && !waits && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
             return;
         }
@@ -228,6 +231,54 @@ final class ResilienceRules {
         }
         ServiceYaml.merge(ctx, b, snippet.toString());
         untimedClients.stream().skip(1).forEach(c -> b.location(c[0], Integer.parseInt(c[1]), Rules.HTTP_CLIENT_NO_TIMEOUT));
+    }
+
+    // ---- database --------------------------------------------------------------------------------
+
+    private static final List<String> JDBC_TYPES = List.of("org.springframework.jdbc.core.JdbcOperations",
+            "org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations", "org.springframework.jdbc.core.simple.JdbcClient");
+
+    /**
+     * DB_NO_TIMEOUT: JdbcTemplate (and NamedParameterJdbcTemplate / JdbcClient, which Boot builds on it) without a query
+     * timeout: spring.jdbc.template.query-timeout has no default, the driver's usually means none, so a hanging query
+     * holds its connection and thread forever. AUTO, with a generous policy value. A transaction timeout
+     * (spring.transaction.default-timeout, also no default) applies to every @Transactional: reported only.
+     */
+    private void dbTimeouts() {
+        Map<String, String> props = ctx.a.springProperties;
+        List<String[]> users = new ArrayList<>();
+        for (ClassInfo c : ctx.methodsOwners()) {
+            for (Statement s : c.decl().getBody().getStatements()) {
+                if (s instanceof J.VariableDeclarations vd && JDBC_TYPES.stream().anyMatch(t -> TypeUtils.isAssignableTo(t, vd.getType()))) {
+                    users.add(new String[]{c.file().relPath(), String.valueOf(Pos.line(vd))});
+                }
+            }
+        }
+        if (users.isEmpty()) {
+            return;
+        }
+        String[] first = users.getFirst();
+        if (!props.containsKey("spring.jdbc.template.query-timeout")) {
+            String timeout = ctx.policy.resilience().dbQueryTimeout();
+            OrderBuilder b = ctx.order(Rules.DB_NO_TIMEOUT, "jdbc-query-timeout").at(first[0], Integer.parseInt(first[1]))
+                    .title("JdbcTemplate without a query timeout: Spring Boot sets none and the driver's default is usually none, "
+                            + "so a hanging query holds its connection and thread forever")
+                    .suggestion("Sets spring.jdbc.template.query-timeout=" + timeout + " (policy resilience.dbQueryTimeout): "
+                            + "generous on purpose, to stop \"forever\" without cutting off long batch queries; lower it where "
+                            + "queries are known to be short.");
+            ServiceYaml.merge(ctx, b, "spring:\n  jdbc:\n    template:\n      query-timeout: " + timeout + "\n");
+            users.stream().skip(1).forEach(u -> b.location(u[0], Integer.parseInt(u[1]), Rules.DB_NO_TIMEOUT));
+        }
+        boolean transactional = ctx.methods().stream().anyMatch(m -> m.hasAnnotation("org.springframework.transaction.annotation.Transactional")
+                || m.hasAnnotation("jakarta.transaction.Transactional"));
+        if (transactional && !props.containsKey("spring.transaction.default-timeout")) {
+            ctx.order(Rules.DB_NO_TIMEOUT, "transaction-timeout").at(ServiceYaml.path(ctx), 1)
+                    .title("Transactions without a timeout: spring.transaction.default-timeout has no default, so a transaction "
+                            + "waiting on a lock or a slow statement holds its connection indefinitely")
+                    .suggestion("Decide a default (spring.transaction.default-timeout) above the longest legitimate transaction, "
+                            + "or set timeout = … on the @Transactional methods that need one. Not applied automatically: it "
+                            + "applies to every @Transactional, batch jobs included.");
+        }
     }
 
     // ---- Kafka ----------------------------------------------------------------------------------
