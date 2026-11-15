@@ -3,6 +3,7 @@ package dev.logast.rules;
 import dev.logast.model.ClassInfo;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.MethodInfo;
+import dev.logast.parse.Pos;
 import dev.logast.policy.Policy;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.Expression;
@@ -47,6 +48,9 @@ final class AuditRules {
         }
         if (ctx.enabled(Rules.AUDIT_SECURITY_EVENTS)) {
             securityEvents();
+        }
+        if (ctx.enabled(Rules.AUDIT_RECORD_INCOMPLETE)) {
+            incompleteRecords();
         }
     }
 
@@ -180,6 +184,82 @@ final class AuditRules {
 
     private static boolean logger(J.MethodInvocation mi) {
         return mi.getMethodType() != null && TypeUtils.isAssignableTo("org.slf4j.Logger", mi.getMethodType().getDeclaringType());
+    }
+
+    // ---- who and what in every record ------------------------------------------------------------
+
+    private static final java.util.regex.Pattern ACTOR = java.util.regex.Pattern.compile(
+            "(?i).*(principal|actor|user(name|id)?|currentuser|authentication|operator|initiator|performedby)$");
+    private static final List<String> ACTOR_TYPES = List.of("java.security.Principal",
+            "org.springframework.security.core.Authentication", "org.springframework.security.core.userdetails.UserDetails");
+
+    /**
+     * AUDIT_RECORD_INCOMPLETE (report): an audit call without the acting user or without the id of the record acted on.
+     * A record that does not say who did it, or to what, proves nothing. The actor counts as present when an argument
+     * comes from the security context (or is named like one: userId, actor, principal), or when the audit method reads
+     * the security context itself; the target when an argument is a vocabulary id or named like one (…Id).
+     */
+    private void incompleteRecords() {
+        Set<String> selfActor = new HashSet<>();   // audit methods (in the code) that read the security context themselves
+        for (MethodInfo m : ctx.a.index.methods()) {
+            if (m.decl().getBody() != null && readsSecurityContext(m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody())))) {
+                selfActor.add(m.key());
+            }
+        }
+        for (MethodInfo m : ctx.methods()) {
+            if (m.decl().getBody() == null) {
+                continue;
+            }
+            new JavaIsoVisitor<Integer>() {
+                @Override
+                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                    if (emitter(mi) && mi.getMethodType() != null) {
+                        check(m, mi, selfActor);
+                    }
+                    return super.visitMethodInvocation(mi, p);
+                }
+            }.visit(m.decl().getBody(), 0);
+        }
+    }
+
+    private void check(MethodInfo m, J.MethodInvocation mi, Set<String> selfActor) {
+        List<Expression> args = mi.getArguments().stream().filter(a -> !(a instanceof J.Empty)).toList();
+        boolean actor = args.stream().anyMatch(a -> actorValue(a))
+                || ctx.a.index.resolve(mi.getMethodType()).stream().anyMatch(t -> selfActor.contains(t.key()));
+        boolean target = args.stream().anyMatch(a -> ctx.domain.keyOf(a).isPresent() || named(a, "(?i).*(id|ids|key|code|number)$"));
+        if (actor && target) {
+            return;
+        }
+        int line = Pos.line(mi);
+        if (ctx.ignored(m.file(), line, Rules.AUDIT_RECORD_INCOMPLETE)) {
+            return;
+        }
+        String missing = !actor && !target ? "who did it and to which record" : !actor ? "who did it" : "to which record";
+        ctx.order(Rules.AUDIT_RECORD_INCOMPLETE, m, line, "audit-record|" + line)
+                .title("The audit record " + mi.getSimpleName() + "(…) in " + m.label() + " does not say " + missing)
+                .suggestion((!actor ? "Pass the acting user (from the security context: SecurityContextHolder / the "
+                        + "authenticated principal), or let the audit method read it itself. " : "")
+                        + (!target ? "Pass the id of the record acted on. " : "")
+                        + "A record without them proves nothing.");
+    }
+
+    private boolean actorValue(Expression a) {
+        if (ACTOR_TYPES.stream().anyMatch(t -> TypeUtils.isAssignableTo(t, a.getType()))) {
+            return true;
+        }
+        return readsSecurityContext(a.printTrimmed()) || named(a, ACTOR.pattern());
+    }
+
+    private static boolean readsSecurityContext(String code) {
+        return code.contains("SecurityContextHolder") || code.contains("getUserPrincipal(") || code.contains("getRemoteUser(");
+    }
+
+    /** The argument's own name (a variable, a field, or the accessor called last) matches. */
+    private static boolean named(Expression a, String regex) {
+        String name = a instanceof J.Identifier id ? id.getSimpleName()
+                : a instanceof J.FieldAccess fa ? fa.getSimpleName()
+                : a instanceof J.MethodInvocation call ? call.getSimpleName().replaceFirst("^get", "") : null;
+        return name != null && name.matches(regex);
     }
 
     /** Reads are not audited by default; every other entrypoint kind changes something. */

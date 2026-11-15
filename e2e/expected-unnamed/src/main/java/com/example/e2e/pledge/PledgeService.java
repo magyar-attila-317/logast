@@ -26,13 +26,13 @@ public class PledgeService {
         audit.record("pledge.delete", pledgeId, "done");
     }
 
-    /** Audited either way: the failed attempt is recorded too. */
-    public void revoke(String pledgeId) {
+    /** Audited either way, with who did it: the failed attempt is recorded too. */
+    public void revoke(String pledgeId, String userId) {
         try {
             repository.close(pledgeId);
-            audit.record("pledge.revoke", pledgeId, "done");
+            audit.record("pledge.revoke", pledgeId, "done", userId);
         } catch (RuntimeException e) {
-            audit.record("pledge.revoke", pledgeId, "failed");
+            audit.record("pledge.revoke", pledgeId, "failed", userId);
             throw e;
         }
     }

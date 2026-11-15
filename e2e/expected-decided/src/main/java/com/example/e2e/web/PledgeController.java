@@ -55,10 +55,10 @@ public class PledgeController {
     }
 
     @PostMapping("/admin/pledges/{pledgeId}/revoke")
-    public void revoke(@PathVariable String pledgeId) {
+    public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") String userId) {
         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
             log.info("Pledge sweep started");
-            pledges.revoke(pledgeId);
+            pledges.revoke(pledgeId, userId);
         }
     }
 

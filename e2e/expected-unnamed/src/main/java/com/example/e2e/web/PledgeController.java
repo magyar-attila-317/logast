@@ -50,8 +50,8 @@ public class PledgeController {
     }
 
     @PostMapping("/admin/pledges/{pledgeId}/revoke")
-    public void revoke(@PathVariable String pledgeId) {
-        pledges.revoke(pledgeId);
+    public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") String userId) {
+        pledges.revoke(pledgeId, userId);
     }
 
     @PostMapping("/orders")

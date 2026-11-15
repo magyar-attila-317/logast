@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/web/PledgeController.java b/src/main/java/com/example/e2e/web/PledgeController.java
-index 562229e..fdf79a2 100644
+index 903ccf8..1e49a52 100644
 --- a/src/main/java/com/example/e2e/web/PledgeController.java
 +++ b/src/main/java/com/example/e2e/web/PledgeController.java
 @@ -6,8 +6,10 @@ 
@@ -25,11 +25,11 @@ index 562229e..fdf79a2 100644
      }
  
      @PostMapping("/admin/pledges/{pledgeId}/revoke")
-     public void revoke(@PathVariable String pledgeId) {
--        pledges.revoke(pledgeId);
+     public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") String userId) {
+-        pledges.revoke(pledgeId, userId);
 +        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
 +            log.info("Pledge sweep started");
-+            pledges.revoke(pledgeId);
++            pledges.revoke(pledgeId, userId);
 +        }
      }
  

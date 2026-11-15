@@ -11,7 +11,7 @@
     "_MSG" : "Entry log for DELETE /pledges/{pledgeId} (PledgeController.delete): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started",
     "_where" : "src/main/java/com/example/e2e/web/PledgeController.java:48 PledgeController.delete"
   },
-  "DOM-01014d" : {
+  "DOM-a2969a" : {
     "MSG" : "",
     "_MSG" : "Entry log for POST /admin/pledges/{pledgeId}/revoke (PledgeController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started",
     "_where" : "src/main/java/com/example/e2e/web/PledgeController.java:53 PledgeController.revoke"
