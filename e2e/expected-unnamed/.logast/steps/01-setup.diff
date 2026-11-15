@@ -1,8 +1,8 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index a914af8..2bd5e33 100644
+index a914af8..976191a 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -1,5 +1,38 @@ 
+@@ -1,5 +1,42 @@ 
 -spring:
  logging:
    structured:
@@ -18,6 +18,10 @@ index a914af8..2bd5e33 100644
 +  jdbc:
 +    template:
 +      query-timeout: 5m
++  http:
++    clients:
++      connect-timeout: 5s
++      read-timeout: 30s
 +  kafka:
 +    listener:
 +      observation-enabled: true

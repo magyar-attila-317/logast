@@ -48,7 +48,7 @@ logging:
 # The entries below were found in your code. Rename terms, merge duplicates, and delete what is not
 # a business concept. Then run `logast vocabulary .` again: it lists only what is still missing.
 # ---------------------------------------------------------------------------------------------
-# Harvested from 39 source files: MDC keys, [k=v] keys in log messages and id-like variables.
+# Harvested from 40 source files: MDC keys, [k=v] keys in log messages and id-like variables.
 # Counts: mdc / log / declared, files. Rename terms, merge duplicates (move a spelling into `mdc.aliases`),
 # drop what is not a business concept, and add banned words to `aliases`.
 vocabulary:
@@ -56,7 +56,7 @@ vocabulary:
     mdc: { key: couponId, sources: { params: [couponId] } }
   "run.code": # 1 / 5 / 0, 2 files
     mdc: { key: runCode }
-  order:      # 0 / 3 / 1, 2 files
+  order:      # 0 / 3 / 2, 3 files
     mdc: { key: orderId, sources: { params: [orderId] } }
   agreement:  # 0 / 2 / 1, 2 files
     mdc: { key: agreementId, sources: { params: [agreementId] } }
