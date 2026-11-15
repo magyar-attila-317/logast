@@ -21,6 +21,24 @@ public class PaymentClient {
         }
     }
 
+    /** Rethrows without the cause: the constructor that takes it exists, so the cause can be passed on. */
+    public void refund(Order order) {
+        try {
+            gateway(order);
+        } catch (IllegalStateException e) {
+            throw new PaymentException("refund failed: " + e.getMessage(), e);
+        }
+    }
+
+    /** Rethrows without the cause, and OrderRejected has no constructor for one: reported. */
+    public void verify(Order order) {
+        try {
+            gateway(order);
+        } catch (IllegalStateException e) {
+            throw new OrderRejected(e.getMessage());
+        }
+    }
+
     private void gateway(Order order) {
         if (order.amountCents() <= 0) {
             throw new IllegalStateException("nothing to charge");
