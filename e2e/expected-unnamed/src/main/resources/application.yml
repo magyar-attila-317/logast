@@ -7,10 +7,10 @@ logging:
         service:
           name: ${spring.application.name}
           version: ${spring.application.version}
-logging-support:
-  problem-trace-id:
-    enabled: true
 spring:
+  jdbc:
+    template:
+      query-timeout: 5m
   kafka:
     listener:
       observation-enabled: true
@@ -21,6 +21,9 @@ spring:
   application:
     name: billing-service
     version: ${APPLICATION_VERSION:unknown}
+logging-support:
+  problem-trace-id:
+    enabled: true
 management:
   metrics:
     tags:

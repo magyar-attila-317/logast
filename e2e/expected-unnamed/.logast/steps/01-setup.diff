@@ -1,8 +1,8 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index a914af8..f87c12f 100644
+index a914af8..2bd5e33 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -1,5 +1,35 @@ 
+@@ -1,5 +1,38 @@ 
 -spring:
  logging:
    structured:
@@ -14,10 +14,10 @@ index a914af8..f87c12f 100644
 +        service:
 +          name: ${spring.application.name}
 +          version: ${spring.application.version}
-+logging-support:
-+  problem-trace-id:
-+    enabled: true
 +spring:
++  jdbc:
++    template:
++      query-timeout: 5m
 +  kafka:
 +    listener:
 +      observation-enabled: true
@@ -28,6 +28,9 @@ index a914af8..f87c12f 100644
 +  application:
 +    name: billing-service
 +    version: ${APPLICATION_VERSION:unknown}
++logging-support:
++  problem-trace-id:
++    enabled: true
 +management:
 +  metrics:
 +    tags:
