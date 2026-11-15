@@ -1,0 +1,20 @@
+package com.example.e2e.web;
+
+import java.util.concurrent.CompletableFuture;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+
+/** Two parallel lookups joined on one line (#43: two findings of one rule on one line once crashed the scan). */
+@RestController
+public class QuoteController {
+    record Quote(String price, String stock) {
+    }
+
+    @GetMapping("/quotes/{productId}")
+    public Quote quote(@PathVariable String productId) {
+        CompletableFuture<String> price = CompletableFuture.supplyAsync(() -> "price " + productId);
+        CompletableFuture<String> stock = CompletableFuture.supplyAsync(() -> "stock " + productId);
+        return new Quote(price.join(), stock.join());
+    }
+}

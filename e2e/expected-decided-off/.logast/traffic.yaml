@@ -6,6 +6,7 @@ entrypoints:
   # http
   "DELETE /pledges/{pledgeId}":     # http, PledgeController.delete
   "GET /pledges":     # http, PledgeController.open
+  "GET /quotes/{productId}":     # http, QuoteController.quote
   "POST /admin/pledges/{pledgeId}/revoke":     # http, PledgeController.revoke
   "POST /pledges/allot":     # http, PledgeController.allot
   "POST /pledges/{pledgeId}/publish":     # http, PledgeController.publish

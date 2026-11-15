@@ -157,7 +157,7 @@ public final class RuntimeVerifier {
         int line = Pos.line(site.call().call());
         String k = rule + "|" + site.method().file().relPath() + ":" + line + "|" + detail;
         counts.merge(k, 1, Integer::sum);
-        orders.computeIfAbsent(k, x -> ctx.order(rule, site.method(), line, "runtime|" + detail + "|" + line)
+        orders.computeIfAbsent(k, x -> ctx.orderNth(rule, site.method(), line, "runtime|" + detail)
                 .title(title)
                 .suggestion("Seen in test " + shortTest(e.test()) + ": \"" + Text.oneLine(e.message(), 120) + "\"")
                 .context(ctx.context(site.method(), Pos.start(site.call().call()), Text.oneLine(site.call().call().printTrimmed(), 160), null)));

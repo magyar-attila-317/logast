@@ -293,7 +293,7 @@ final class AuditRules {
     }
 
     private OrderBuilder order(ClassInfo c, int line) {
-        return ctx.order(Rules.AUDIT_LOG_MIXED, "audit-logger|" + c.fqn() + "|" + line).at(c.file().relPath(), line)
+        return ctx.orderNth(Rules.AUDIT_LOG_MIXED, c.fqn(), c.file().relPath(), line, "audit-logger")
                 .title(c.simpleName() + " records audit events but logs through a logger named after the class: its lines mix "
                         + "with the application log")
                 .suggestion("Logs through the logger \"" + cfg.logger() + "\" (policy audit.logger) instead, so the log "
@@ -357,7 +357,7 @@ final class AuditRules {
             return;
         }
         String missing = !actor && !target ? "who did it and to which record" : !actor ? "who did it" : "to which record";
-        ctx.order(Rules.AUDIT_RECORD_INCOMPLETE, m, line, "audit-record|" + line)
+        ctx.orderNth(Rules.AUDIT_RECORD_INCOMPLETE, m, line, "audit-record")
                 .title("The audit record " + mi.getSimpleName() + "(…) in " + m.label() + " does not say " + missing)
                 .suggestion((!actor ? "Pass the acting user (from the security context: SecurityContextHolder / the "
                         + "authenticated principal), or let the audit method read it itself. " : "")

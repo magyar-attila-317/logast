@@ -1,12 +1,20 @@
-logast · 65 files · 14 entrypoints · 72/192 methods reachable · 153 call edges
+logast · 66 files · 15 entrypoints · 73/193 methods reachable · 153 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 78.6% (jobs 7/7 · http 4/7)   (places that should log and do)
-51 orders: 0 AUTO, 18 NEEDS TEXT, 33 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 73.3% (jobs 7/7 · http 4/8)   (places that should log and do)
+55 orders: 0 AUTO, 18 NEEDS TEXT, 37 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
-ASY-442eb2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
+ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
   CompletableFuture.runAsync runs on another thread without MDC/trace context
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+ASY-e82926  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:16  QuoteController.quote
+  CompletableFuture.supplyAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+ASY-0537b2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:17  QuoteController.quote
+  CompletableFuture.supplyAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId} → QuoteController.quote
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
 DBT-225aab  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/resources/application.yml:1
   Transactions without a timeout: spring.transaction.default-timeout has no default, so a transaction waiting on a lock or a slow statement holds its connection indefinitely
@@ -14,15 +22,15 @@ DBT-225aab  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/resources/application.yml
 SWL-aa8bfe  medium  REPORT-ONLY  SCHEDULED_WITHOUT_LOCK  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
   1 @Scheduled job(s) without a lock: with more than one instance each runs on every instance at the same time (PledgeCleanupJob.cleanup)
   note: Add a lock that keeps a run to one instance (ShedLock: @SchedulerLock(name = …) with a LockProvider), or set resilience.singleInstance: true in logast.yaml if the service never runs more than once.
-RBR-0d82bf  medium  REPORT-ONLY  ROW_BY_ROW_WRITE  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:25  PledgeCleanupJob.cleanup
+RBR-21df7c  medium  REPORT-ONLY  ROW_BY_ROW_WRITE  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:25  PledgeCleanupJob.cleanup
   Loop over 'repository.findOpen()' writes one row per item (PledgeRepository.close): the whole result is held in memory and N items mean N statements
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup
   note: One bulk statement (UPDATE … WHERE …) or paging with batch updates scales with the data. Report only: logast does not change data access.
-ARI-d928f8  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:26  PledgeService.delete
+ARI-dacf62  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:26  PledgeService.delete
   The audit record record(…) in PledgeService.delete does not say who did it
   path: DELETE /pledges/{pledgeId} → PledgeController.delete → PledgeService.delete
   note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
-ARI-e0907c  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/edge/EdgeFlow.java:42  EdgeFlow.process
+ARI-f6864c  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/edge/EdgeFlow.java:42  EdgeFlow.process
   The audit record audit(…) in EdgeFlow.process does not say who did it
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
   note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
@@ -40,13 +48,13 @@ SWA-91b292  medium  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/e
   (+2 more edits)
   MSG: What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri("/balances/{customerId}", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as '{subject} failed'
   mdc: []  vars: customerId:String, e:Exception
-CAD-3d4453  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:21  LoyaltyClient.balance
+CAD-265862  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:21  LoyaltyClient.balance
   catch (Exception) returns 0L: the caller cannot tell a failure from an empty result
   note: Let the exception through (or wrap it), catch only the exceptions that really mean "nothing there", or return a result type that carries the failure.
 RCT-2df7d7  medium  REPORT-ONLY  REMOTE_CALL_IN_TRANSACTION  src/main/java/com/example/e2e/order/OrderService.java:26  OrderService.placeAndReward
   OrderService.placeAndReward is @Transactional and calls a remote service inside the transaction: OrderService.placeAndReward → LoyaltyClient.award → RestClient.post. The database connection is held while the network call waits
   note: Move the call out of the transaction (before it, or after commit: TransactionSynchronization / @TransactionalEventListener / an outbox), or make the transaction only cover the database work.
-CDR-0a0ab3  medium  REPORT-ONLY  CAUSE_DROPPED  src/main/java/com/example/e2e/order/PaymentClient.java:37  PaymentClient.verify
+CDR-2c546b  medium  REPORT-ONLY  CAUSE_DROPPED  src/main/java/com/example/e2e/order/PaymentClient.java:37  PaymentClient.verify
   catch (IllegalStateException e) throws a new OrderRejected without e as its cause: the original stack trace is lost
   note: Pass e as the cause: add a constructor (…, Throwable cause) to OrderRejected, or call initCause(e) before throwing.
 UMX-665400  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e2e/order/PaymentException.java:3
@@ -77,6 +85,14 @@ DOM-a2969a  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/j
   + … (4 lines)
   (+2 more edits)
   MSG: Entry log for POST /admin/pledges/{pledgeId}/revoke (PledgeController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
+BWU-5fc605  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:18  QuoteController.quote
+  CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
+BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:18  QuoteController.quote
+  CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
 SUG-bc8896  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23  PledgeCleanupJob.cleanup
   Generated wording "Pledge cleanup started": say it in domain terms
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup
@@ -255,5 +271,5 @@ Next steps
   1. write "MSG" texts in .logast/fills.json             18 log lines need wording only a person knows
   2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  4. fill calls/day in .logast/traffic.yaml (optional)   14 of 14 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      21 findings are decisions for a person (MESSAGE_VAGUE 6, AUDIT_RECORD_INCOMPLETE 2, ASYNC_CONTEXT_LOSS 1, …); each says what to decide
+  4. fill calls/day in .logast/traffic.yaml (optional)   15 of 15 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  5. logast scan . --format summary                      25 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 3, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide

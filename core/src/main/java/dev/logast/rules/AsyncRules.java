@@ -55,7 +55,7 @@ final class AsyncRules {
                     continue;
                 }
                 if (hop.call() instanceof J.MethodInvocation mi && isParallelStream(mi)) {
-                    ctx.order(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "parallel" + hop.line())
+                    ctx.orderNth(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "parallel")
                             .title("Parallel stream lambdas run in the ForkJoin common pool without MDC/trace context")
                             .suggestion("Use a sequential stream, or open an MdcScope inside the lambda for the keys its logs need.")
                             .context(ctx.context(m, Pos.start(hop.call()), Text.oneLine(hop.call().printTrimmed(), 160), null));
@@ -63,7 +63,7 @@ final class AsyncRules {
                 }
                 J.VariableDeclarations.NamedVariable field = executorField(m, hop);
                 if (field == null || field.getInitializer() == null) {
-                    ctx.order(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "hop" + hop.line())
+                    ctx.orderNth(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "hop")
                             .title(hop.api() + " runs on another thread without MDC/trace context")
                             .suggestion(hop.api().startsWith("CompletableFuture")
                                     ? "Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean."
@@ -105,7 +105,7 @@ final class AsyncRules {
                 .filter(a -> a instanceof J.Lambda || a instanceof J.MemberReference
                         || TypeUtils.isAssignableTo("java.lang.Runnable", a.getType()))
                 .findFirst().orElse(null);
-        OrderBuilder b = ctx.order(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "thread" + hop.line())
+        OrderBuilder b = ctx.orderNth(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "thread")
                 .title(hop.api() + " starts a thread without the caller's MDC/trace context");
         b.context(ctx.context(m, Pos.start(hop.call()), Text.oneLine(hop.call().printTrimmed(), 160), null));
         if (runnable == null) {
@@ -144,7 +144,7 @@ final class AsyncRules {
         String name = Text.kebab(m.owner().simpleName()) + "." + Text.kebab(taskName);
         int line = Pos.line(call.getName());
         String src = m.file().slice(Pos.start(task), Pos.end(task));
-        OrderBuilder b = ctx.order(Rules.SCHEDULED_TASK_UNTRACED, m, line, "periodic" + line)
+        OrderBuilder b = ctx.orderNth(Rules.SCHEDULED_TASK_UNTRACED, m, line, "periodic")
                 .title(call.getSimpleName() + " runs '" + Text.oneLine(src, 60) + "' periodically outside any trace: "
                         + "its logs have no trace id")
                 .context(ctx.context(m, Pos.start(call), Text.oneLine(call.printTrimmed(), 160), null));
@@ -163,7 +163,7 @@ final class AsyncRules {
         }
         String wrapper = call.getSimpleName().equals("onError") ? "wrapConsumer" : "wrapRunnable";
         String src = m.file().slice(Pos.start(cb), Pos.end(cb));
-        OrderBuilder b = ctx.order(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "emitter" + hop.line())
+        OrderBuilder b = ctx.orderNth(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "emitter")
                 .title("SseEmitter." + call.getSimpleName() + " callback runs later on a container thread without MDC/trace context")
                 .context(ctx.context(m, Pos.start(call), Text.oneLine(call.printTrimmed(), 160), null));
         b.edit(Edit.replace(m.file().relPath(), Pos.start(cb), Pos.end(cb), "ContextPropagation." + wrapper + "(" + src + ")"));

@@ -45,7 +45,7 @@ final class RowLoopRules {
                         String write = firstWrite(loop.getBody());
                         int line = Pos.line(loop);
                         if (write != null && !ctx.ignored(m.file(), line, Rules.ROW_BY_ROW_WRITE)) {
-                            ctx.order(Rules.ROW_BY_ROW_WRITE, m, line, "rows" + Pos.start(loop))
+                            ctx.orderNth(Rules.ROW_BY_ROW_WRITE, m, line, "rows")
                                     .title("Loop over '" + Text.oneLine(source.printTrimmed(), 50) + "' writes one row per item (" + write
                                             + "): the whole result is held in memory and N items mean N statements")
                                     .suggestion("One bulk statement (UPDATE … WHERE …) or paging with batch updates scales with the data. "

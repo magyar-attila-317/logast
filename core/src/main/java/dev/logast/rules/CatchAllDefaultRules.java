@@ -40,7 +40,7 @@ final class CatchAllDefaultRules {
                 if (r == null || ctx.ignored(m.file(), Pos.line(r), Rules.CATCH_ALL_DEFAULT)) {
                     continue;
                 }
-                ctx.order(Rules.CATCH_ALL_DEFAULT, m, Pos.line(r), "catch-all-default|" + Pos.line(c.clause))
+                ctx.orderNth(Rules.CATCH_ALL_DEFAULT, m, Pos.line(r), "catch-all-default")
                         .title("catch (" + c.typeNames() + ") returns " + r.getExpression().printTrimmed() + ": the caller cannot "
                                 + "tell a failure from an empty result")
                         .suggestion("Let the exception through (or wrap it), catch only the exceptions that really mean "

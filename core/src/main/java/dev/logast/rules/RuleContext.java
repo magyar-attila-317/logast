@@ -170,6 +170,26 @@ public final class RuleContext {
         return b;
     }
 
+    /**
+     * The n-th finding of {@code kind} in the method, numbered in source order (line, then the order the rule found
+     * them). Unlike a line number in the anchor, the id stays the same when lines are added or removed around it, and
+     * two findings on one line get different ids.
+     */
+    public OrderBuilder orderNth(String rule, MethodInfo m, int line, String kind) {
+        OrderBuilder b = order(rule, m, line, kind + "#?");
+        b.ordinalGroup = rule + "|" + m.key() + "|" + kind;
+        b.ordinalLine = line;
+        return b;
+    }
+
+    /** {@link #orderNth(String, MethodInfo, int, String)} outside a method: {@code owner} is the class (or file) it belongs to. */
+    public OrderBuilder orderNth(String rule, String owner, String file, int line, String kind) {
+        OrderBuilder b = order(rule, owner + "|" + kind + "#?").at(file, line);
+        b.ordinalGroup = rule + "|" + owner + "|" + kind;
+        b.ordinalLine = line;
+        return b;
+    }
+
     public void drop(OrderBuilder b) {
         orders.remove(b);
     }
