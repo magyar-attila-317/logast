@@ -339,6 +339,31 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-init"), written);
     }
 
+    /**
+     * Every pack works on its own: with only that pack selected, the run still converges in one pass, a second apply
+     * changes nothing, no CHECK FAILED, and the result compiles (all checked by migrate). A pack that needs a support
+     * class brings it along (errors: ProblemTraceId, without the logging set-up).
+     */
+    @org.junit.jupiter.params.ParameterizedTest(name = "packs: [{0}]")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"logging", "tracing", "metrics", "resilience", "errors", "audit"})
+    void eachPackWorksOnItsOwn(String pack) throws IOException {
+        Path app = tmp.resolve("app");
+        Map<String, String> actual = migrate(app, CLASSPATH, a -> {
+            Path yml = a.resolve("logast.yml");
+            String text = Files.readString(yml);
+            String only = text.replaceFirst("(?m)^packs: .*$", "packs: [" + pack + "]");
+            assertThat(only).as("the scenario selects its packs").isNotEqualTo(text);
+            Files.writeString(yml, only);
+        });
+        if (pack.equals("errors")) {
+            assertThat(actual.get("src/main/resources/application.yml")).contains("problem-trace-id:");
+            assertThat(app.resolve("src/main/java/com/example/e2e/logging/ProblemTraceId.java"))
+                    .as("the property comes with the class that reads it").exists();
+            assertThat(app.resolve("src/main/java/com/example/e2e/logging/MdcScope.java"))
+                    .as("but not with the logging set-up the pack did not ask for").doesNotExist();
+        }
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);

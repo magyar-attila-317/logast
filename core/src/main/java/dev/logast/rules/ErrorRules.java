@@ -5,6 +5,7 @@ import dev.logast.model.ClassInfo;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.LogCall;
 import dev.logast.model.MethodInfo;
+import dev.logast.orders.Edit;
 import dev.logast.parse.Pos;
 import org.openrewrite.Cursor;
 import org.openrewrite.java.JavaIsoVisitor;
@@ -95,6 +96,19 @@ final class ErrorRules {
                 .title("Error responses do not carry the trace id: a client reporting an error has nothing that leads to its logs")
                 .suggestion("logging-support adds \"traceId\" to every ProblemDetail response and to Spring Boot's error map "
                         + "(logging-support.problem-trace-id.enabled: true); a traceId a handler already set is kept.");
+        // the errors pack on its own: no logging set-up brings the support classes, so this rule brings the one it needs
+        boolean supportComing = ctx.a.supportStarterPresent || ctx.supportOrderId != null || ctx.supportUpdateOrderId != null;
+        if (!supportComing && !ctx.policy.support().vendor()) {
+            b.suggestion(b.suggestion + " Needs the logging-support starter (" + ctx.policy.support().coordinates()
+                    + ") as a dependency; not applied without it.");
+            return;
+        }
+        if (!supportComing) {
+            Edit copy = SetupRules.vendorOne(ctx, "ProblemTraceId");
+            if (copy != null) {
+                b.edit(copy);
+            }
+        }
         ServiceYaml.merge(ctx, b, "logging-support:\n  problem-trace-id:\n    enabled: true\n");
         ctx.dependOnStarter(b);
     }
