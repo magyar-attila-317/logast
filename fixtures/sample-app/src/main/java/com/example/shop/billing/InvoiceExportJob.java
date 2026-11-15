@@ -17,7 +17,7 @@ public class InvoiceExportJob {
     }
 
     @Scheduled(cron = "0 0 2 * * *")
-    public void export() { // expect: ENTRYPOINT_SILENT, JOB_OUTCOME_MISSING
+    public void export() { // expect: ENTRYPOINT_SILENT, JOB_OUTCOME_MISSING, SCHEDULED_WITHOUT_LOCK
         List<Invoice> open = invoices.findBySentFalse();
         if (open.isEmpty()) { // expect: SKIP_UNLOGGED
             return;

@@ -2,6 +2,7 @@ package com.example.e2e.edge;
 
 import com.example.e2e.income.SalesTotals;
 import java.util.List;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,7 @@ public class EdgeJob {
     }
 
     @Scheduled(cron = "0 30 3 * * *")
+    @SchedulerLock(name = "edge-job")   // runs on one instance at a time
     public void run() {
         for (SalesTotals row : pending()) {
             flow.process(row);

@@ -66,6 +66,9 @@ final class ResilienceRules {
         if (ctx.enabled(Rules.REMOTE_CALL_IN_TRANSACTION)) {
             remoteInTransaction();
         }
+        if (ctx.enabled(Rules.SCHEDULED_WITHOUT_LOCK) && !ctx.policy.resilience().singleInstance()) {
+            scheduledWithoutLock();
+        }
         if (!clients && !executors && !waits && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
             return;
         }
@@ -282,6 +285,35 @@ final class ResilienceRules {
                             + "or set timeout = … on the @Transactional methods that need one. Not applied automatically: it "
                             + "applies to every @Transactional, batch jobs included.");
         }
+    }
+
+    // ---- scheduled jobs on several instances ----------------------------------------------------
+
+    /** Locks that keep a scheduled run to one instance (ShedLock; others by name). */
+    private static final List<String> SCHEDULER_LOCKS = List.of("net.javacrumbs.shedlock.spring.annotation.SchedulerLock",
+            "net.javacrumbs.shedlock.core.SchedulerLock");
+
+    /**
+     * SCHEDULED_WITHOUT_LOCK (report): @Scheduled methods without a lock run on every instance at the same time once the
+     * service is scaled out (double processing, duplicate sends). One finding for all of them; policy
+     * resilience.singleInstance: true says the service never runs more than once.
+     */
+    private void scheduledWithoutLock() {
+        List<MethodInfo> unlocked = ctx.a.entrypoints.stream().filter(ep -> ep.kind() == Entrypoint.Kind.SCHEDULED)
+                .map(Entrypoint::method)
+                .filter(m -> SCHEDULER_LOCKS.stream().noneMatch(m::hasAnnotation))
+                .filter(m -> !ctx.ignored(m.file(), m.line(), Rules.SCHEDULED_WITHOUT_LOCK))
+                .sorted(Comparator.comparing((MethodInfo m) -> m.file().relPath()).thenComparingInt(MethodInfo::line)).toList();
+        if (unlocked.isEmpty()) {
+            return;
+        }
+        MethodInfo first = unlocked.getFirst();
+        OrderBuilder b = ctx.order(Rules.SCHEDULED_WITHOUT_LOCK, "scheduled-lock").at(first.file().relPath(), first.line())
+                .title(unlocked.size() + " @Scheduled job(s) without a lock: with more than one instance each runs on every "
+                        + "instance at the same time (" + String.join(", ", unlocked.stream().map(MethodInfo::label).toList()) + ")")
+                .suggestion("Add a lock that keeps a run to one instance (ShedLock: @SchedulerLock(name = …) with a LockProvider), "
+                        + "or set resilience.singleInstance: true in logast.yaml if the service never runs more than once.");
+        unlocked.stream().skip(1).forEach(m -> b.location(m.file().relPath(), m.line(), Rules.SCHEDULED_WITHOUT_LOCK));
     }
 
     // ---- remote calls inside a transaction -------------------------------------------------------
