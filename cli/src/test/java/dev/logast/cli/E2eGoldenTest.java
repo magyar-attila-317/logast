@@ -313,6 +313,32 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-shifted"), actual);
     }
 
+    /**
+     * init on a service without logast.yaml: everything it writes, and its output, which spells out the whole flow
+     * (apply, fill in the files apply creates, apply again on the migrated code, review). The source files stay as they
+     * are. Every file init writes must equal e2e/expected-init.
+     */
+    @Test
+    void initWritesItsFilesAndSpellsOutTheFlow() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Files.delete(app.resolve("logast.yml"));
+        Map<String, String> before = files(app);
+        String output = run(app, "init", app.toString(), "--no-classpath");
+        Files.writeString(app.resolve("OUTPUT.txt"), output);
+        assertThat(output).as("the flow, in order").containsSubsequence("logast apply . --auto --write",
+                "fill in .logast/fills.json and .logast/metrics.json", "logast apply . --auto --write", "git diff");
+        Map<String, String> written = new TreeMap<>();
+        files(app).forEach((k, v) -> {
+            if (!v.equals(before.get(k))) {
+                written.put(k, v);
+            }
+        });
+        assertThat(written.keySet()).as("init changes no source file").noneMatch(k -> k.startsWith("src/"));
+        assertThat(written).as("init does not create the files to fill in").doesNotContainKeys(".logast/fills.json", ".logast/metrics.json");
+        golden(EXPECTED.resolveSibling("expected-init"), written);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);

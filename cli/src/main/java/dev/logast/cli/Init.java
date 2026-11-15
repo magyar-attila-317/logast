@@ -136,9 +136,14 @@ final class Init implements Callable<Integer> {
         if (!haveClasspath) {
             next.add(new String[]{"logast classpath .", "lets logast understand types (needs a working Gradle build)"});
         }
+        // the whole flow, in order: the files to fill in only exist after the first apply (their entries belong to the
+        // code apply writes), and the second apply runs on top of the migrated code
         next.add(new String[]{"open logast.yaml", "rename/merge the business terms; the comments explain every setting"});
-        next.add(new String[]{"logast scan . --format summary", "what logast would change, per rule"});
-        next.add(new String[]{"logast apply . --auto", "preview the automatic fixes (add --write to change files)"});
+        next.add(new String[]{"logast apply . --auto --write", "changes the code and creates .logast/fills.json and .logast/metrics.json "
+                + "(without --write: a preview)"});
+        next.add(new String[]{"fill in .logast/fills.json and .logast/metrics.json", "the texts and metric decisions only a person knows"});
+        next.add(new String[]{"logast apply . --auto --write", "again, on the migrated code (don't revert it): writes what you filled in"});
+        next.add(new String[]{"git diff", "review the result"});
         Out.next(next);
         return 0;
     }

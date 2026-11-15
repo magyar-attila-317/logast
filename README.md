@@ -200,22 +200,32 @@ for a complete one (terms, aliases, MDC keys and their sources, areas where word
 
 ### 3. Apply
 
-The whole migration is two commands; everything else is filling in what only a person knows:
+The whole flow, in order:
 ```bash
-logast init . --pack logging,tracing,metrics,resilience,errors,audit
-logast apply . --auto --write
+logast init . --pack logging,tracing,metrics,resilience,errors,audit   # 1. once: logast.yaml, classpath, traffic.yaml
+                                                                        # 2. review logast.yaml (business terms)
+logast apply . --auto --write                                           # 3. changes the code, creates the files to fill in
+#                                                                         4. fill in .logast/fills.json and .logast/metrics.json
+logast apply . --auto --write                                           # 5. again, on the migrated code: writes what you filled in
+git diff                                                                # 6. review
 ```
+- `init` does not create `fills.json` / `metrics.json`: their entries belong to the code the first `apply` writes
+  (generated lines, database and job outcome lines) and to the wording it leaves, so they only make sense after it.
+- Don't revert the code before step 5: the entries point at the migrated code. One `apply` does everything automatic;
+  a second one is only for what you filled in. (`apply` without `--write` previews.)
+
 `apply` fixes everything it can (best effort, across all selected packs), refreshes the classpath when it changed
 a build file, creates the files to fill (`.logast/fills.json`, `.logast/metrics.json`, `.logast/traffic.yaml`), and ends
 with one line per thing left to do:
 ```
 Next steps
   1. git diff                                            review the changes
-  2. write "MSG" texts in .logast/fills.json             18 log lines need wording only a person knows; then apply again
-  3. set "count" in .logast/metrics.json                 14 logged outcomes are not counted: counter, tag or skip each; then apply again
-  4. fill calls/day in .logast/traffic.yaml (optional)   18 of 18 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      24 findings are decisions for a person (AUDIT_MISSING 2, …); each says what to decide
-  6. logast verify .                                     build and run the tests with log capture
+  2. write "MSG" texts in .logast/fills.json             18 log lines need wording only a person knows
+  3. set "count" in .logast/metrics.json                 14 logged outcomes are not counted: counter, tag or skip each
+  4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
+  5. fill calls/day in .logast/traffic.yaml (optional)   18 of 18 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  6. logast scan . --format summary                      24 findings are decisions for a person (AUDIT_MISSING 2, …); each says what to decide
+  7. logast verify .                                     build and run the tests with log capture
 ```
 `apply` runs in steps (setup, structure, lines, MDC, messages, exceptions, levels, reports), each on the result of
 the previous one, and saves one diff per step in `.logast/steps/` (`01-setup.diff`, `02-structure.diff`, ...). They
@@ -224,7 +234,7 @@ on earlier ones, so drop from the end, or rerun with `--until lines` (stop after
 result before writing (no key both in MDC and in a message, no nested scope, one started/completed per method) and
 prints `CHECK FAILED file:line` if something breaks that.
 
-Fill the files, run `logast apply . --auto --write` again, repeat until the list is empty. `logast scan .` shows the
+Fill the files, run `logast apply . --auto --write` again (on the migrated code), repeat until the list is empty. `logast scan .` shows the
 same list without changing anything; `logast apply . --auto` (no `--write`) previews the diff.
 
 Findings come in three kinds: **AUTO** (logast fixes it), **NEEDS TEXT** (someone writes one message: put it into
