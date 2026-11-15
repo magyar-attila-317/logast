@@ -44,6 +44,16 @@ public class PledgeController {
         pledges.allot(request);
     }
 
+    @DeleteMapping("/pledges/{pledgeId}")
+    public void delete(@PathVariable String pledgeId) {
+        pledges.delete(pledgeId);
+    }
+
+    @PostMapping("/admin/pledges/{pledgeId}/revoke")
+    public void revoke(@PathVariable String pledgeId) {
+        pledges.revoke(pledgeId);
+    }
+
     @PostMapping("/orders")
     public void place(@RequestBody Order order) {
         try (var mdc = MdcScope.of("orderId", order.id())) {

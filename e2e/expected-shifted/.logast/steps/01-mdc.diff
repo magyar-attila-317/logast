@@ -1,0 +1,36 @@
+diff --git a/src/main/java/com/example/e2e/web/PledgeController.java b/src/main/java/com/example/e2e/web/PledgeController.java
+index 562229e..fdf79a2 100644
+--- a/src/main/java/com/example/e2e/web/PledgeController.java
++++ b/src/main/java/com/example/e2e/web/PledgeController.java
+@@ -6,8 +6,10 @@ 
+ import com.example.e2e.order.Order;
+ import com.example.e2e.order.OrderService;
+ import java.util.List;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.web.bind.annotation.*;
+ 
++@Slf4j
+ @RestController
+ public class PledgeController {
+     private final PledgeService pledges;
+@@ -46,12 +48,18 @@
+ 
+     @DeleteMapping("/pledges/{pledgeId}")
+     public void delete(@PathVariable String pledgeId) {
+-        pledges.delete(pledgeId);
++        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++            log.info("Pledge sweep started");
++            pledges.delete(pledgeId);
++        }
+     }
+ 
+     @PostMapping("/admin/pledges/{pledgeId}/revoke")
+     public void revoke(@PathVariable String pledgeId) {
+-        pledges.revoke(pledgeId);
++        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++            log.info("Pledge sweep started");
++            pledges.revoke(pledgeId);
++        }
+     }
+ 
+     @PostMapping("/orders")

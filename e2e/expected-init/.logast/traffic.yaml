@@ -4,7 +4,9 @@
 # Regenerate with `logast traffic <root>`: filled-in values are kept, new entrypoints are added.
 entrypoints:
   # http
+  "DELETE /pledges/{pledgeId}":     # http, PledgeController.delete
   "GET /pledges":     # http, PledgeController.open
+  "POST /admin/pledges/{pledgeId}/revoke":     # http, PledgeController.revoke
   "POST /pledges/allot":     # http, PledgeController.allot
   "POST /pledges/{pledgeId}/publish":     # http, PledgeController.publish
   "POST /pledges/{pledgeId}/use":     # http, PledgeController.use

@@ -6,8 +6,10 @@ import com.example.e2e.logging.MdcScope;
 import com.example.e2e.order.Order;
 import com.example.e2e.order.OrderService;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
 public class PledgeController {
     private final PledgeService pledges;
@@ -42,6 +44,22 @@ public class PledgeController {
     @PostMapping("/pledges/allot")
     public void allot(@RequestBody com.example.e2e.pledge.AllotRequest request) {
         pledges.allot(request);
+    }
+
+    @DeleteMapping("/pledges/{pledgeId}")
+    public void delete(@PathVariable String pledgeId) {
+        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+            log.info("Pledge sweep started");
+            pledges.delete(pledgeId);
+        }
+    }
+
+    @PostMapping("/admin/pledges/{pledgeId}/revoke")
+    public void revoke(@PathVariable String pledgeId) {
+        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+            log.info("Pledge sweep started");
+            pledges.revoke(pledgeId);
+        }
     }
 
     @PostMapping("/orders")

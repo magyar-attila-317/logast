@@ -28,7 +28,7 @@
     "outcome" : "published",
     "_event" : "published",
     "_message" : "INFO \"Pledge published\"",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeService.java:24 PledgeService.publish",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeService.java:44 PledgeService.publish",
     "_frequency" : "unknown: no rate for \"POST /pledges/{pledgeId}/publish\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /pledges/{pledgeId}/publish" ],
     "_tag" : "available"
@@ -39,7 +39,7 @@
     "outcome" : "completed",
     "_event" : "completed",
     "_message" : "INFO \"Pledge allotment completed\"",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeService.java:31 PledgeService.allot",
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeService.java:51 PledgeService.allot",
     "_frequency" : "unknown: no rate for \"POST /pledges/allot\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /pledges/allot" ],
     "_tag" : "available"

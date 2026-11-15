@@ -1,7 +1,7 @@
-logast · 60 files · 12 entrypoints · 58/174 methods reachable · 129 call edges
+logast · 61 files · 14 entrypoints · 63/179 methods reachable · 136 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 91.7% (jobs 7/7 · http 4/5)   (places that should log and do)
-54 orders: 0 AUTO, 16 NEEDS TEXT, 38 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 78.6% (jobs 7/7 · http 4/7)   (places that should log and do)
+57 orders: 0 AUTO, 18 NEEDS TEXT, 39 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-442eb2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -45,6 +45,30 @@ UMX-665400  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e
   PaymentException is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it: the client gets a 500
   also fixes: UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentClient.java:18
   note: Decide its status: @ResponseStatus(HttpStatus.CONFLICT) on the class, or an @ExceptionHandler returning a ProblemDetail (with a stable error code) in the controller advice.
+AFU-a566e5  medium  REPORT-ONLY  AUDIT_FAILURES_UNRECORDED  src/main/java/com/example/e2e/web/PledgeController.java:48  PledgeController.delete
+  DELETE /pledges/{pledgeId} records an audit event only when it succeeds: a rejected or failed attempt leaves no record (DELETE **)
+  path: DELETE /pledges/{pledgeId} → PledgeController.delete
+  note: Record the attempt's outcome either way: an audit call in a catch (with the failure) or in a finally (with the outcome), or record the attempt before the work starts.
+DOM-d23dcd  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/PledgeController.java:48  PledgeController.delete
+  DELETE /pledges/{pledgeId}: MDC lacks pledgeId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
+  path: DELETE /pledges/{pledgeId} → PledgeController.delete
+  - pledges.delete(pledgeId);
+  + try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+  + log.info("{{MSG}}");
+  + pledges.delete(pledgeId);
+  + … (4 lines)
+  (+2 more edits)
+  MSG: Entry log for DELETE /pledges/{pledgeId} (PledgeController.delete): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
+DOM-01014d  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/PledgeController.java:53  PledgeController.revoke
+  POST /admin/pledges/{pledgeId}/revoke: MDC lacks pledgeId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
+  path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke
+  - pledges.revoke(pledgeId);
+  + try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+  + log.info("{{MSG}}");
+  + pledges.revoke(pledgeId);
+  + … (4 lines)
+  (+2 more edits)
+  MSG: Entry log for POST /admin/pledges/{pledgeId}/revoke (PledgeController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
 SUG-bc8896  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23  PledgeCleanupJob.cleanup
   Generated wording "Pledge cleanup started": say it in domain terms
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup
@@ -60,11 +84,11 @@ SUG-44443e  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pl
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Pledge cleanup completed" | suffix keys: [pledgeCount] | must read as '{subject} completed'
 OUM-8a8603  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:27  PledgeRepository.close
-  "Pledges updated" is logged but not counted (outcome=updated, frequency unknown: no rate for "POST /pledges/{pledgeId}/publish" in .logast/traffic.yaml)
+  "Pledges updated" is logged but not counted (outcome=updated, frequency unknown: no rate for "DELETE /pledges/{pledgeId}" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledges", "updated")), "tag" (Outcomes.tag("updated") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
 SUG-d99e11  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:27  PledgeRepository.close
   Generated wording "Pledges updated [rows={}]": say it in domain terms
-  path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup → PledgeRepository.close  (+1 more)
+  path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup → PledgeRepository.close  (+2 more)
   - "Pledges updated [rows={}]"
   + "{{MSG}}"
   (+1 more edits)
@@ -92,14 +116,14 @@ OUM-027987  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
 OUM-e22a2d  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeSender.java:24  PledgeSender.resend
   "Pledge resend failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge.resend", "failed")) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-MVG-53c6bf  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/pledge/PledgeService.java:21  PledgeService.publish
+MVG-53c6bf  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/pledge/PledgeService.java:41  PledgeService.publish
   Vague message "Publishing pledge": it does not say what started, completed or failed
   path: POST /pledges/{pledgeId}/publish → PledgeController.publish → PledgeService.publish
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
-OUM-773d35  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeService.java:24  PledgeService.publish
+OUM-773d35  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeService.java:44  PledgeService.publish
   "Pledge published" is logged but not counted (outcome=published, frequency unknown: no rate for "POST /pledges/{pledgeId}/publish" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge", "published")), "tag" (Outcomes.tag("published") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-OUM-4809f0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeService.java:31  PledgeService.allot
+OUM-4809f0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeService.java:51  PledgeService.allot
   "Pledge allotment completed" is logged but not counted (outcome=completed, frequency unknown: no rate for "POST /pledges/allot" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge.allotment", "completed")), "tag" (Outcomes.tag("completed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
 OUM-49d3bd  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/Audited.java:11  Audited.audit
@@ -244,8 +268,8 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             16 log lines need wording only a person knows
+  1. write "MSG" texts in .logast/fills.json             18 log lines need wording only a person knows
   2. set "count" in .logast/metrics.json                 21 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  4. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      17 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, CATCH_ALL_DEFAULT 1, …); each says what to decide
+  4. fill calls/day in .logast/traffic.yaml (optional)   14 of 14 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  5. logast scan . --format summary                      18 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, AUDIT_FAILURES_UNRECORDED 1, …); each says what to decide

@@ -42,7 +42,7 @@ final class AuditRules {
     }
 
     void run() {
-        if (ctx.enabled(Rules.AUDIT_MISSING)) {
+        if (ctx.enabled(Rules.AUDIT_MISSING) || ctx.enabled(Rules.AUDIT_FAILURES_UNRECORDED)) {
             missing();
         }
         if (ctx.enabled(Rules.AUDIT_SECURITY_EVENTS)) {
@@ -69,11 +69,17 @@ final class AuditRules {
                 continue;
             }
             Policy.AuditAction action = cfg.actions().stream().filter(a -> matches(a, ep, terms)).findFirst().orElse(null);
-            if (action == null || ctx.a.paths.reachableFrom(ep).stream().anyMatch(emitting::contains)) {
+            if (action == null) {
+                continue;
+            }
+            if (ctx.a.paths.reachableFrom(ep).stream().anyMatch(emitting::contains)) {
+                if (ctx.enabled(Rules.AUDIT_FAILURES_UNRECORDED) && !failuresAudited(ep, emitting)) {
+                    failuresUnrecorded(ep, action);
+                }
                 continue;
             }
             MethodInfo m = ep.method();
-            if (ctx.ignored(m.file(), m.line(), Rules.AUDIT_MISSING)) {
+            if (!ctx.enabled(Rules.AUDIT_MISSING) || ctx.ignored(m.file(), m.line(), Rules.AUDIT_MISSING)) {
                 continue;
             }
             ctx.order(Rules.AUDIT_MISSING, m, m.line(), "audit")
@@ -84,6 +90,96 @@ final class AuditRules {
                             + "; or mark it // logast:ignore AUDIT_MISSING if it is not auditable.")
                     .context(ctx.context(m, dev.logast.parse.Pos.start(m.decl()), Text.oneLine(ep.label(), 160), null));
         }
+    }
+
+    /**
+     * AUDIT_FAILURES_UNRECORDED (report): the action records an audit event, but only on its success path. A rejected
+     * or failed attempt (denied, invalid, an error halfway) leaves no record, and those are what an audit is for.
+     */
+    private void failuresUnrecorded(Entrypoint ep, Policy.AuditAction action) {
+        MethodInfo m = ep.method();
+        if (ctx.ignored(m.file(), m.line(), Rules.AUDIT_FAILURES_UNRECORDED)) {
+            return;
+        }
+        ctx.order(Rules.AUDIT_FAILURES_UNRECORDED, m, m.line(), "audit-failures")
+                .title(ep.label() + " records an audit event only when it succeeds: a rejected or failed attempt leaves no "
+                        + "record (" + describe(action) + ")")
+                .suggestion("Record the attempt's outcome either way: an audit call in a catch (with the failure) or in a "
+                        + "finally (with the outcome), or record the attempt before the work starts.");
+    }
+
+    /**
+     * Failed attempts are recorded, or there is no failure to miss: some audit call reachable from the action sits in a
+     * catch or finally block, or no audit call comes after other work (the audit call is the action, or comes first).
+     */
+    private boolean failuresAudited(Entrypoint ep, Set<String> emitting) {
+        boolean afterWork = false;
+        for (String key : ctx.a.paths.reachableFrom(ep)) {
+            MethodInfo m = ctx.a.index.method(key);
+            if (m == null || !emitting.contains(key) || m.decl().getBody() == null) {
+                continue;
+            }
+            boolean[] found = {false};
+            boolean[] work = {false};
+            boolean[] auditAfterWork = {false};
+            new JavaIsoVisitor<Integer>() {
+                @Override
+                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                    J.MethodInvocation r = super.visitMethodInvocation(mi, p);   // arguments first: they run before the call
+                    if (emitter(mi)) {
+                        if (inCatchOrFinally()) {
+                            found[0] = true;
+                        } else if (work[0]) {
+                            auditAfterWork[0] = true;
+                        }
+                    } else if (!logger(mi) && !support(mi)) {
+                        work[0] = true;
+                    }
+                    return r;
+                }
+
+                private boolean inCatchOrFinally() {
+                    for (org.openrewrite.Cursor c = getCursor(); c != null; c = c.getParent()) {
+                        if (c.getValue() instanceof J.Try.Catch) {
+                            return true;
+                        }
+                        if (c.getValue() instanceof J.Block b && c.getParent() != null
+                                && c.getParent().getValue() instanceof J.Try t && t.getFinally() == b) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            }.visit(m.decl().getBody(), 0, new org.openrewrite.Cursor(new org.openrewrite.Cursor(null, org.openrewrite.Cursor.ROOT_VALUE), m.decl()));
+            if (found[0]) {
+                return true;
+            }
+            afterWork |= auditAfterWork[0];
+        }
+        return !afterWork;
+    }
+
+    /** logast's own support code (MdcScope, ObservedContext, Outcomes) and metrics catalogs: not the action's work. */
+    private static final Set<String> SUPPORT_NAMES = Set.of("MdcScope", "ObservedContext", "Outcomes", "ContextExecutors", "AfterCommit");
+
+    private boolean support(J.MethodInvocation mi) {
+        if (mi.getMethodType() == null) {
+            // the starter not on logast's classpath (dependency mode): its calls are recognised by name
+            for (org.openrewrite.java.tree.Expression e = mi; e instanceof J.MethodInvocation call; e = call.getSelect()) {
+                if (call.getSelect() instanceof J.Identifier id && SUPPORT_NAMES.contains(id.getSimpleName())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        String owner = mi.getMethodType().getDeclaringType().getFullyQualifiedName();
+        dev.logast.model.ClassInfo c = ctx.a.index.clazz(owner);
+        return owner.startsWith(ctx.a.supportPackage + ".") || owner.startsWith(ctx.policy.support().packageName() + ".")
+                || c != null && c.file().text().contains(CatalogRules.MARKER);
+    }
+
+    private static boolean logger(J.MethodInvocation mi) {
+        return mi.getMethodType() != null && TypeUtils.isAssignableTo("org.slf4j.Logger", mi.getMethodType().getDeclaringType());
     }
 
     /** Reads are not audited by default; every other entrypoint kind changes something. */
