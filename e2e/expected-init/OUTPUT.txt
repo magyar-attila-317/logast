@@ -1,0 +1,17 @@
+logast init  <app>
+Sets up this service once. Re-running keeps what you already edited.
+
+  ✓ logast.yaml             your settings: which checks run, key style camel (what the code uses most), log format ecs (what the service already uses), and 6 business terms found in the code (review them)
+  ✓ .gitignore              ignores .logast/, but keeps baseline.json, traffic.yaml and README.md shared
+  ✓ .logast/README.md       explains every file in .logast/ and which ones go into git
+  · .logast/classpath-*.txt skipped (--no-classpath); run `logast classpath .` before scanning
+  ✓ .logast/traffic.yaml    13 entrypoints; optional: add calls/day so logast can judge log volume
+  · .logast/baseline.json   not recorded (add --baseline, or later `logast scan . --update-baseline`)
+
+Next steps
+  1. logast classpath .                                    lets logast understand types (needs a working Gradle build)
+  2. open logast.yaml                                      rename/merge the business terms; the comments explain every setting
+  3. logast apply . --auto --write                         changes the code and creates .logast/fills.json and .logast/metrics.json (without --write: a preview)
+  4. fill in .logast/fills.json and .logast/metrics.json   the texts and metric decisions only a person knows
+  5. logast apply . --auto --write                         again, on the migrated code (don't revert it): writes what you filled in
+  6. git diff                                              review the result

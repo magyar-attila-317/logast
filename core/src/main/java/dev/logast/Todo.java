@@ -43,17 +43,20 @@ public final class Todo {
         Set<String> textIds = new HashSet<>();
         orders.stream().filter(o -> !o.slots().isEmpty()).forEach(o -> textIds.add(o.id()));
         long auto = orders.stream().filter(WorkOrder::mechanical).filter(o -> o.dependsOn().stream().noneMatch(textIds::contains)).count();
-        if (auto > 0) {
-            out.add(new Item("logast apply . --auto --write", plural(auto, "fix") + " need nothing from you"));
-        }
         long text = orders.stream().filter(o -> !o.slots().isEmpty()).count();
         if (text > 0) {
             out.add(new Item("write \"MSG\" texts in " + FillsFile.PATH, plural(text, "log line").replace("lines", "lines need").replace("line ", "line needs ").replaceAll("line$", "line needs")
-                    + " wording only a person knows; then apply again"));
+                    + " wording only a person knows"));
         }
         long outcomes = orders.stream().filter(o -> o.rule().equals(MetricsFile.RULE) && o.reportOnly()).count();
         if (outcomes > 0) {
-            out.add(new Item("set \"count\" in " + MetricsFile.PATH, plural(outcomes, "logged outcome") + (outcomes == 1 ? " is" : " are") + " not counted: counter, tag or skip each; then apply again"));
+            out.add(new Item("set \"count\" in " + MetricsFile.PATH, plural(outcomes, "logged outcome") + (outcomes == 1 ? " is" : " are") + " not counted: counter, tag or skip each"));
+        }
+        // how to go on, spelled out: the files are filled in on this code, and the next apply runs on top of it
+        if (auto > 0 || text > 0 || outcomes > 0) {
+            String what = auto > 0 && (text > 0 || outcomes > 0) ? plural(auto, "fix") + " that need nothing from you, and what you filled in"
+                    : auto > 0 ? plural(auto, "fix") + " that need nothing from you" : "after filling them in: writes your texts and decisions";
+            out.add(new Item("logast apply . --auto --write", what + " (on this code: don't revert it)"));
         }
         if (a != null && !a.entrypoints.isEmpty()) {
             Path file = root.resolve(".logast/traffic.yaml");

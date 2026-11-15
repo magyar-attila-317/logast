@@ -4,11 +4,12 @@ files (41): src/main/java/com/example/e2e/coupon/CouponCleanupJob.java, src/main
 
 Next steps
   1. git diff                                            review the changes
-  2. write "MSG" texts in .logast/fills.json             14 log lines need wording only a person knows; then apply again
-  3. set "count" in .logast/metrics.json                 20 logged outcomes are not counted: counter, tag or skip each; then apply again
-  4. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      12 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, KAFKA_NO_ERROR_HANDLER 1, …); each says what to decide
-  6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  2. write "MSG" texts in .logast/fills.json             14 log lines need wording only a person knows
+  3. set "count" in .logast/metrics.json                 20 logged outcomes are not counted: counter, tag or skip each
+  4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
+  5. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  6. logast scan . --format summary                      12 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, KAFKA_NO_ERROR_HANDLER 1, …); each says what to decide
+  7. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)
 applied (0):
@@ -16,11 +17,12 @@ files (0):   ·  0 rounds, <t>
 nothing to apply without text: the remaining orders need message text (`logast scan .` lists them; fill them via --fills or `logast review .`)
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             14 log lines need wording only a person knows; then apply again
-  2. set "count" in .logast/metrics.json                 20 logged outcomes are not counted: counter, tag or skip each; then apply again
-  3. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  4. logast scan . --format summary                      12 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, KAFKA_NO_ERROR_HANDLER 1, …); each says what to decide
-  5. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  1. write "MSG" texts in .logast/fills.json             14 log lines need wording only a person knows
+  2. set "count" in .logast/metrics.json                 20 logged outcomes are not counted: counter, tag or skip each
+  3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
+  4. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  5. logast scan . --format summary                      12 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, KAFKA_NO_ERROR_HANDLER 1, …); each says what to decide
+  6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 
 === after writing every text and counting every outcome
 applied (30): SUG-15854c SUG-1fede7 SUG-2f8476 SUG-44443e SUG-4dc17a SUG-7055a3 SUG-85eb33 SUG-a2a43c SUG-bc8896 SUG-bd5779 OUM-00f4c0 OUM-027987 OUM-03f513 OUM-0d4ba2 OUM-0f37ab OUM-164f3d OUM-21d0c8 OUM-392e74 OUM-3c3200 OUM-4809f0 OUM-49d3bd OUM-553423 OUM-620a15 OUM-773d35 OUM-8a8603 OUM-9f157d OUM-be530b OUM-d691d7 OUM-e22a2d MCA-09c1ad
@@ -28,8 +30,9 @@ files (14): src/main/java/com/example/e2e/coupon/CouponCleanupJob.java, src/main
 
 Next steps
   1. git diff                                            review the changes
-  2. write "MSG" texts in .logast/fills.json             4 log lines need wording only a person knows; then apply again
-  3. set "count" in .logast/metrics.json                 1 logged outcome is not counted: counter, tag or skip each; then apply again
-  4. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      12 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, KAFKA_NO_ERROR_HANDLER 1, …); each says what to decide
-  6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  2. write "MSG" texts in .logast/fills.json             4 log lines need wording only a person knows
+  3. set "count" in .logast/metrics.json                 1 logged outcome is not counted: counter, tag or skip each
+  4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
+  5. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  6. logast scan . --format summary                      12 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, KAFKA_NO_ERROR_HANDLER 1, …); each says what to decide
+  7. logast verify .                                     build and run the tests with log capture: does the result really log what it should?

@@ -1,0 +1,6 @@
+
+# logast: machine-specific classpath and scan output; baseline and traffic are shared
+.logast/*
+!.logast/baseline.json
+!.logast/traffic.yaml
+!.logast/README.md

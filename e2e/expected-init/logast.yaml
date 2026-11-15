@@ -1,0 +1,100 @@
+# =============================================================================================
+# logast.yaml: how this service should log, trace and measure
+#
+# logast reads this file on every run. Anything you leave out uses the built-in default.
+# Lines starting with "#" are switched-off examples: remove the "#" to use one.
+#
+# Handy commands
+#   logast policy .                 the final settings (this file + extends + defaults)
+#   logast vocabulary .             business ids in the code that are not listed below yet
+#   logast scan . --format summary  what logast would change
+#
+# Every option, explained: https://github.com/magyar-attila-317/logast/blob/main/docs/configuration.md
+# =============================================================================================
+
+# Shared settings for all your services (a URL or a file). Lists add up; this file wins on conflicts.
+# extends: [https://git.example.com/platform/observability/raw/main/company.yaml]
+
+# Which checks run. Default: logging, tracing. Add any of: metrics, resilience, errors, audit.
+packs: [logging, tracing]
+
+logging:
+  # How MDC keys and [key=value] keys are spelled: camel (orderId), dotted (order.id), pascal (OrderId),
+  # snake (order_id). Applies to the vocabulary below too.
+  keyStyle: camel
+  # true: logast may reword existing messages. false: keep their words, fix only the structure.
+  rewriteExistingMessages: true
+  # JSON log format (logging.structured.format.console): ecs, logstash or gelf, whichever your log
+  # backend reads. none: logast leaves the log format alone.
+  structuredFormat: ecs   # what this service already uses
+  # Messages that alerts or dashboards search for (regex): logast never changes them, it only reports.
+  # protectedMessages: ["^ALERT:"]
+
+# Where generated code gets MdcScope / ObservedContext from:
+#   dependency  adds the logging-support library (it must be in a repository your build uses)
+#   vendor      copies the classes into this service, no library needed
+# support:
+#   mode: vendor
+
+# ---------------------------------------------------------------------------------------------
+# Business vocabulary: one entry per business concept
+#
+# logast puts each id into MDC where a flow starts (endpoint, listener, job) and removes it from
+# the messages below that point, because every log line already carries it.
+#   aliases       other words for the same thing; rewritten to the term in messages
+#   mdc.key       the MDC key for the id; mdc.aliases are old key names, renamed to mdc.key
+#   mdc.sources   where the id comes from: parameter names, or "com.x.Type: accessor()"
+#
+# The entries below were found in your code. Rename terms, merge duplicates, and delete what is not
+# a business concept. Then run `logast vocabulary .` again: it lists only what is still missing.
+# ---------------------------------------------------------------------------------------------
+# Harvested from 39 source files: MDC keys, [k=v] keys in log messages and id-like variables.
+# Counts: mdc / log / declared, files. Rename terms, merge duplicates (move a spelling into `mdc.aliases`),
+# drop what is not a business concept, and add banned words to `aliases`.
+vocabulary:
+  coupon:     # 0 / 31 / 18, 18 files
+    mdc: { key: couponId, sources: { params: [couponId] } }
+  "run.code": # 1 / 5 / 0, 2 files
+    mdc: { key: runCode }
+  order:      # 0 / 3 / 1, 2 files
+    mdc: { key: orderId, sources: { params: [orderId] } }
+  agreement:  # 0 / 2 / 1, 2 files
+    mdc: { key: agreementId, sources: { params: [agreementId] } }
+  table:      # 0 / 1 / 1, 2 files
+    mdc: { key: tableId, sources: { params: [tableId] } }
+  batch:      # 0 / 1 / 0, 1 file
+    mdc: { key: batchNumber }
+
+# ---------------------------------------------------------------------------------------------
+# More options (remove the "#" to use one)
+# ---------------------------------------------------------------------------------------------
+
+# Areas: packages where a word means something else, or where extra MDC keys are required.
+# areas:
+#   billing:
+#     packages: [com.example.billing]
+#     requiredMdc: [tenantId]
+
+# Personal data: values with these names never reach a log line or a metric tag (adds to the built-ins).
+# pii: [guestName, guestPhone]
+
+# Exceptions caused by the caller (logged at WARN at most, never ERROR). Adds to the built-in list.
+# levels:
+#   clientErrors: [com.example.BusinessRuleViolationException]
+#   infoInLoops: size            # INFO per loop item: fine when small, DEBUG over database rows/streams,
+#                                # reported when unknown (`// logast:loop-size 10` above a loop settles it)
+
+# Your own annotations that start work, like @KafkaListener does.
+# entrypoints:
+#   extraAnnotations: [com.example.InboxHandler]
+
+# Gradle tasks that run the tests, for `logast verify` (default: test).
+# verify:
+#   tasks: [test, intTest]
+
+# Turn single rules off or change how serious they are (`logast rules` lists all of them).
+# rules:
+#   ENTRYPOINT_SILENT: { severity: low }
+#   LOG_IN_LOOP: { enabled: false }
+
+# The metrics, resilience and audit packs have their own settings: see the guide linked at the top.
