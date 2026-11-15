@@ -17,6 +17,7 @@ dependencies {
     implementation("io.micrometer:context-propagation")
     compileOnly("org.springframework.boot:spring-boot-autoconfigure")
     compileOnly("org.springframework:spring-web")
+    compileOnly("org.springframework:spring-webmvc")   // ProblemTraceId: only used in Spring MVC applications
     compileOnly("io.micrometer:micrometer-tracing")
     compileOnly("jakarta.servlet:jakarta.servlet-api")
     compileOnly("org.springframework:spring-tx")   // AfterCommit: only used where transactions exist
@@ -25,6 +26,8 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-opentelemetry")
     testImplementation("org.springframework:spring-web")
+    testImplementation("org.springframework:spring-webmvc")      // ProblemTraceIdTest: MockMvc only, no web application
+    testImplementation("tools.jackson.core:jackson-databind")
     testImplementation("jakarta.servlet:jakarta.servlet-api")
     testImplementation("org.springframework:spring-tx")
     testImplementation("io.micrometer:micrometer-core")

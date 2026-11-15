@@ -48,7 +48,8 @@ final class ErrorRules {
 
     void run() {
         boolean any = ctx.enabled(Rules.ERROR_DETAILS_EXPOSED) || ctx.enabled(Rules.UNMAPPED_EXCEPTION)
-                || ctx.enabled(Rules.CLIENT_ERROR_AS_SERVER_ERROR) || ctx.enabled(Rules.PROBLEM_DETAILS_DISABLED);
+                || ctx.enabled(Rules.CLIENT_ERROR_AS_SERVER_ERROR) || ctx.enabled(Rules.PROBLEM_DETAILS_DISABLED)
+                || ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED);
         if (!any || ctx.a.entrypoints.stream().noneMatch(ep -> ep.kind() == Entrypoint.Kind.HTTP)) {
             return;
         }
@@ -70,6 +71,32 @@ final class ErrorRules {
         if (ctx.enabled(Rules.PROBLEM_DETAILS_DISABLED)) {
             problemDetails();
         }
+        if (ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED)) {
+            untraced();
+        }
+    }
+
+    /** Spring MVC and Micrometer Tracing are there: an error response can carry the trace id. */
+    static boolean traceableErrors(RuleContext ctx) {
+        return ctx.a.project.probe().hasClass("io.micrometer.tracing.Tracer")
+                && ctx.a.project.probe().hasClass("org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice")
+                && ctx.a.entrypoints.stream().anyMatch(ep -> ep.kind() == Entrypoint.Kind.HTTP);
+    }
+
+    /**
+     * ERROR_RESPONSE_UNTRACED: error responses without the trace id. A client that reports an error has nothing that
+     * leads to its log lines; with {@code traceId} in every ProblemDetail (and Spring Boot's error map) it does.
+     */
+    private void untraced() {
+        if (!traceableErrors(ctx) || "true".equalsIgnoreCase(ctx.a.springProperties.getOrDefault("logging-support.problem-trace-id.enabled", ""))) {
+            return;
+        }
+        OrderBuilder b = ctx.order(Rules.ERROR_RESPONSE_UNTRACED, "problem-trace-id").at(ServiceYaml.path(ctx), 1)
+                .title("Error responses do not carry the trace id: a client reporting an error has nothing that leads to its logs")
+                .suggestion("logging-support adds \"traceId\" to every ProblemDetail response and to Spring Boot's error map "
+                        + "(logging-support.problem-trace-id.enabled: true); a traceId a handler already set is kept.");
+        ServiceYaml.merge(ctx, b, "logging-support:\n  problem-trace-id:\n    enabled: true\n");
+        ctx.dependOnStarter(b);
     }
 
     /** {@code @ExceptionHandler({A.class, B.class})}, else the Throwable parameters. */
