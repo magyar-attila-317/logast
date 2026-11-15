@@ -34,6 +34,24 @@ index fcbeedd..6e6c5af 100644
      }
  
      /** Every caller passes the run code: the parameter is the value MDC already carries. */
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 953396f..2e68061 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -39,7 +39,12 @@ 
+         audit(salesData.couponId());                                               // default method of an interface
+         EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
+         CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+-                log.info("Coupon archived [couponId={}]", salesData.couponId()));
++                log.info("Coupon archived [couponId={}]", salesData.couponId()))
++                .whenComplete((result, error) -> {
++                    if (error != null) {
++                        log.error("Edge flow async work failed", error); // logast:wording
++                    }
++                });
+         log.info("Coupon parsed [couponId={}]", UUID.nameUUIDFromBytes(salesData.couponId().getBytes())); // a transformed value
+         new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
+         log.info("Edge processing completed [couponId={}]", salesData.couponId());
 diff --git a/src/main/java/com/example/e2e/coupon/CouponRepository.java b/src/main/java/com/example/e2e/coupon/CouponRepository.java
 index 0d60ea5..436af48 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponRepository.java

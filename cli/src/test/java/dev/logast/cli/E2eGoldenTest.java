@@ -200,7 +200,9 @@ class E2eGoldenTest {
                 .mapToLong(t -> t.lines().filter(l -> l.matches(".*Outcomes\\.(count|record)\\(\"[^\"]+\", \"[^\"]+\", \"[^\"]+\", [^\"]+\\);.*")).count()).sum();
         // decisions that cannot be written stay in metrics.json with a "_problem" (e.g. a log line inside a returned pipeline)
         long problems = actual.get(".logast/metrics.json").lines().filter(l -> l.contains("\"_problem\"")).count();
-        assertThat(problems).as("only the reactive pipeline's line cannot be counted after its statement").isEqualTo(1);
+        // the reactive pipeline's line (inside a return), the async failure line (inside whenComplete's if) and the line in
+        // runAsync's lambda (another thread, later) cannot be counted after their statement
+        assertThat(problems).as("lines that cannot be counted after their statement").isEqualTo(3);
         decided -= problems;
         if (catalog.equals("off")) {
             assertThat(counted).as("every outcome decided in metrics.json is counted").isEqualTo(decided);

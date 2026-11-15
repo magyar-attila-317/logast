@@ -1,6 +1,6 @@
 {
   "_readme" : "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.",
-  "_status" : "14 finding(s) below need a message text.",
+  "_status" : "15 finding(s) below need a message text.",
   "SUG-bc8896" : {
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Coupon cleanup started | must read as: {subject} started",
@@ -25,6 +25,11 @@
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupons read | suffix keys added by the tool: [count]",
     "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:39 CouponRepository.findOpen"
+  },
+  "SUG-6b173f" : {
+    "MSG" : "",
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: Edge flow async work failed | must read as: {subject} failed",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process"
   },
   "SUG-2f8476" : {
     "MSG" : "",

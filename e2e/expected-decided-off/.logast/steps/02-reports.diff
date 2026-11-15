@@ -84,7 +84,7 @@ index 436af48..35ee033 100644
      }
  
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index c05ebc5..02c1d1a 100644
+index 9d7cd6b..50c80d4 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -4,6 +4,7 @@ 
@@ -95,11 +95,9 @@ index c05ebc5..02c1d1a 100644
  import java.util.List;
  import java.util.Optional;
  import java.util.UUID;
-@@ -43,9 +44,12 @@
-                 EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
-                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
-                         log.info("Coupon archived [couponId={}]", salesData.couponId()));
-+                Outcomes.count("coupon", "archived");
+@@ -49,8 +50,10 @@
+                             }
+                         });
                  log.info("Coupon parsed"); // a transformed value
 +                Outcomes.count("coupon", "parsed");
                  new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field

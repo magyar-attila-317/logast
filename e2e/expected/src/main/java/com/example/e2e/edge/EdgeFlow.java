@@ -42,7 +42,12 @@ public class EdgeFlow implements Audited {
                 audit(salesData.couponId());                                               // default method of an interface
                 EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
-                        log.info("Coupon archived [couponId={}]", salesData.couponId()));
+                        log.info("Coupon archived [couponId={}]", salesData.couponId()))
+                        .whenComplete((result, error) -> {
+                            if (error != null) {
+                                log.error("Edge flow async work failed", error); // logast:wording
+                            }
+                        });
                 log.info("Coupon parsed"); // a transformed value
                 new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
                 log.info("Edge processing completed");

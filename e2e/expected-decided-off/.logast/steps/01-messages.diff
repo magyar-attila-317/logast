@@ -72,6 +72,19 @@ index 7bf2b77..4ba5455 100644
 +        log.info("Coupon sweep completed");
      }
  }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 6f18f77..9d7cd6b 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -45,7 +45,7 @@ 
+                         log.info("Coupon archived [couponId={}]", salesData.couponId()))
+                         .whenComplete((result, error) -> {
+                             if (error != null) {
+-                                log.error("Edge flow async work failed", error); // logast:wording
++                                log.error("Coupon sweep failed", error);
+                             }
+                         });
+                 log.info("Coupon parsed"); // a transformed value
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
 index 765de3d..df014e6 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java

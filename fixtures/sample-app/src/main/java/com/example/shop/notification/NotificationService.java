@@ -23,7 +23,7 @@ public class NotificationService {
     @Async
     public void sendConfirmation(Order order) { // expect: ASYNC_CONTEXT_LOSS
         log.info("Sending confirmation for order {}", order.id()); // expect: LOG_FORMAT
-        executor.submit(() -> mailer.send(order.email(), "Thanks for your order")); // expect: ASYNC_CONTEXT_LOSS
+        executor.submit(() -> mailer.send(order.email(), "Thanks for your order")); // expect: ASYNC_CONTEXT_LOSS, ASYNC_ERROR_LOST
     }
 
     void pause() {

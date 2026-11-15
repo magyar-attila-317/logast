@@ -1,7 +1,7 @@
 logast · 61 files · 12 entrypoints · 66/179 methods reachable · 144 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 91.7% (jobs 7/7 · http 4/5)   (places that should log and do)
-40 orders: 0 AUTO, 14 NEEDS TEXT, 26 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+42 orders: 0 AUTO, 15 NEEDS TEXT, 27 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: coupon, order, agreement
 
 ASY-442eb2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -90,10 +90,20 @@ OUM-49d3bd  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
 OUM-3c3200  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:45  EdgeFlow.process
   "Coupon archived" is logged but not counted (outcome=archived, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon", "archived")), "tag" (Outcomes.tag("archived") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-OUM-be530b  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:46  EdgeFlow.process
+OUM-bb1ac8  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:48  EdgeFlow.process
+  "Edge flow async work failed" is logged but not counted (outcome=failed, frequency low)
+  note: The log line runs inside a lambda, only under a condition: a counting line after the statement would count every run; count it inside the lambda, next to the log line, or mark it skip. Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("edge.flow.async.work", "failed")), "tag" (Outcomes.tag("failed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+SUG-6b173f  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/edge/EdgeFlow.java:48  EdgeFlow.process
+  Generated wording "Edge flow async work failed": say it in domain terms
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
+  - "Edge flow async work failed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: "Edge flow async work failed" | must read as '{subject} failed'
+OUM-be530b  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:51  EdgeFlow.process
   "Coupon parsed" is logged but not counted (outcome=parsed, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon", "parsed")), "tag" (Outcomes.tag("parsed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-MVG-9330c1  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/edge/EdgeFlow.java:55  EdgeFlow.publishOne
+MVG-9330c1  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/edge/EdgeFlow.java:60  EdgeFlow.publishOne
   Vague message "Publishing coupon": it does not say what started, completed or failed
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeFlow.publishOne
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Coupon income invoice publication completed [count={}]".
@@ -195,8 +205,8 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             14 log lines need wording only a person knows
-  2. set "count" in .logast/metrics.json                 11 logged outcomes are not counted: counter, tag or skip each
+  1. write "MSG" texts in .logast/fills.json             15 log lines need wording only a person knows
+  2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
   5. logast scan . --format summary                      15 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, DB_NO_TIMEOUT 1, …); each says what to decide

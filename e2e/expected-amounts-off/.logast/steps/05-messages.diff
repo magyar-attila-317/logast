@@ -16,7 +16,7 @@ index ee77169..5f70c44 100644
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 2daf0d8..c05ebc5 100644
+index 31e6c43..6f18f77 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -17,7 +17,7 @@ 
@@ -45,10 +45,10 @@ index 2daf0d8..c05ebc5 100644
                          return Optional.empty();
                      }
                  }.validate(coupon, salesData);
-@@ -43,14 +43,14 @@
-                 EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
-                 CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
-                         log.info("Coupon archived [couponId={}]", salesData.couponId()));
+@@ -48,14 +48,14 @@
+                                 log.error("Edge flow async work failed", error); // logast:wording
+                             }
+                         });
 -                log.info("Coupon parsed [couponId={}]", UUID.nameUUIDFromBytes(salesData.couponId().getBytes())); // a transformed value
 +                log.info("Coupon parsed"); // a transformed value
                  new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field

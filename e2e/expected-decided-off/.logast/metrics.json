@@ -1,5 +1,29 @@
 {
   "_readme" : "One entry per outcome the logs report and no metric counts. Set \"count\" to \"counter\" (Outcomes.count(name, outcome): a counter name{outcome=...}), \"tag\" (Outcomes.tag(outcome) on the timer already running; only where _tag says available) or \"skip\" (a // logast:ignore comment). Edit \"name\" and \"outcome\" freely (lower case, dots). Where the line logs a number (_amounts), \"amount\" names one to count too: \"as\": \"total\" (a counter name.<amount> grows by it) or \"per-run\" (each value one sample of a distribution summary name.<amount>); empty \"as\" takes metrics.amounts from logast.yaml. Leave \"amount\" empty to count how often only. Then: logast apply . --auto. `logast metrics . --format json` has the context.",
+  "OUM-3c3200" : {
+    "count" : "counter",
+    "name" : "coupon",
+    "outcome" : "archived",
+    "_event" : "archived",
+    "_message" : "INFO \"Coupon archived\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:45 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available",
+    "_problem" : "The log line runs in a lambda on another thread, later: a counting line after the statement would count when the work is handed off, not when it happens; count it inside the lambda, or mark it skip."
+  },
+  "OUM-bb1ac8" : {
+    "count" : "counter",
+    "name" : "edge.flow.async.work",
+    "outcome" : "failed",
+    "_event" : "failed",
+    "_message" : "ERROR \"Edge flow async work failed\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available",
+    "_problem" : "The log line runs inside a lambda, only under a condition: a counting line after the statement would count every run; count it inside the lambda, next to the log line, or mark it skip."
+  },
   "OUM-4284aa" : {
     "count" : "counter",
     "name" : "coupon.lookup",

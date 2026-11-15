@@ -59,11 +59,6 @@ public final class BusinessMetrics {
         Outcomes.count("coupon", "audited");
     }
 
-    /** coupon{outcome="archived"} +1. */
-    public static void couponArchived() {
-        Outcomes.count("coupon", "archived");
-    }
-
     /** coupon{outcome="parsed"} +1. */
     public static void couponParsed() {
         Outcomes.count("coupon", "parsed");
