@@ -4,11 +4,11 @@ files (47): src/main/java/com/example/e2e/coupon/CouponCleanupJob.java, src/main
 
 Next steps
   1. git diff                                            review the changes
-  2. write "MSG" texts in .logast/fills.json             15 log lines need wording only a person knows
+  2. write "MSG" texts in .logast/fills.json             16 log lines need wording only a person knows
   3. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   5. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  6. logast scan . --format summary                      16 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, CAUSE_DROPPED 1, …); each says what to decide
+  6. logast scan . --format summary                      17 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, CATCH_ALL_DEFAULT 1, …); each says what to decide
   7. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)
@@ -17,9 +17,9 @@ files (0):   ·  0 rounds, <t>
 nothing to apply without text: the remaining orders need message text (`logast scan .` lists them; fill them via --fills or `logast review .`)
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             15 log lines need wording only a person knows
+  1. write "MSG" texts in .logast/fills.json             16 log lines need wording only a person knows
   2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   12 of 12 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      16 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, CAUSE_DROPPED 1, …); each says what to decide
+  5. logast scan . --format summary                      17 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 1, CATCH_ALL_DEFAULT 1, …); each says what to decide
   6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
