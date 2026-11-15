@@ -89,6 +89,7 @@ public final class Rules {
     public static final String REMOTE_CALL_IN_TRANSACTION = "REMOTE_CALL_IN_TRANSACTION";
     public static final String SCHEDULED_WITHOUT_LOCK = "SCHEDULED_WITHOUT_LOCK";
     public static final String ASYNC_ERROR_LOST = "ASYNC_ERROR_LOST";
+    public static final String CAUSE_DROPPED = "CAUSE_DROPPED";
     public static final String UNMAPPED_EXCEPTION = "UNMAPPED_EXCEPTION";
     public static final String CLIENT_ERROR_AS_SERVER_ERROR = "CLIENT_ERROR_AS_SERVER_ERROR";
     public static final String PROBLEM_DETAILS_DISABLED = "PROBLEM_DETAILS_DISABLED";
@@ -124,7 +125,7 @@ public final class Rules {
             PACKS.put(r, Set.of("resilience"));
         }
         for (String r : List.of(ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED,
-                ERROR_RESPONSE_UNTRACED, ASYNC_ERROR_LOST)) {
+                ERROR_RESPONSE_UNTRACED, ASYNC_ERROR_LOST, CAUSE_DROPPED)) {
             PACKS.put(r, Set.of("errors"));
         }
         for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS)) {
@@ -169,7 +170,7 @@ public final class Rules {
                 LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_KEY_VALUE_IN_MDC, MESSAGE_SUGGESTED, MESSAGE_VAGUE, LOG_HELPER)) {
             STEPS.put(r, Step.MESSAGES);
         }
-        for (String r : List.of(LOG_AND_RETHROW, EXCEPTION_LOGGED_TWICE)) {
+        for (String r : List.of(LOG_AND_RETHROW, EXCEPTION_LOGGED_TWICE, CAUSE_DROPPED)) {
             STEPS.put(r, Step.EXCEPTIONS);
         }
         for (String r : List.of(LOG_LEVEL, LOG_IN_LOOP, LOG_VOLUME)) {
@@ -224,7 +225,7 @@ public final class Rules {
             Map.entry(METRIC_TAG_KEYS_MISMATCH, "high"),
             Map.entry(HTTP_CLIENT_NO_TIMEOUT, "high"), Map.entry(KAFKA_NO_ERROR_HANDLER, "medium"),
             Map.entry(UNBOUNDED_EXECUTOR, "medium"), Map.entry(BLOCKING_WAIT_UNBOUNDED, "medium"),
-            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(DB_NO_TIMEOUT, "high"), Map.entry(REMOTE_CALL_IN_TRANSACTION, "medium"), Map.entry(SCHEDULED_WITHOUT_LOCK, "medium"), Map.entry(ASYNC_ERROR_LOST, "high"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
+            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(DB_NO_TIMEOUT, "high"), Map.entry(REMOTE_CALL_IN_TRANSACTION, "medium"), Map.entry(SCHEDULED_WITHOUT_LOCK, "medium"), Map.entry(ASYNC_ERROR_LOST, "high"), Map.entry(CAUSE_DROPPED, "medium"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
             Map.entry(CLIENT_ERROR_AS_SERVER_ERROR, "medium"), Map.entry(PROBLEM_DETAILS_DISABLED, "low"),
             Map.entry(AUDIT_MISSING, "medium"), Map.entry(AUDIT_SECURITY_EVENTS, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(RABBIT_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
@@ -599,6 +600,7 @@ public final class Rules {
         new ResilienceRules(ctx).run();
         new ErrorRules(ctx).run();
         new AsyncErrorRules(ctx).run();
+        new CauseRules(ctx).run();
         new AuditRules(ctx).run();
         new VolumeRules(ctx).run();
 

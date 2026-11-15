@@ -705,6 +705,7 @@ They use the same entrypoint and call-path analysis, so a finding says *which re
 | PROBLEM_DETAILS_DISABLED | Spring MVC errors are not RFC 9457 `ProblemDetail` responses | report (changes the API's error body) |
 | ERROR_RESPONSE_UNTRACED | error responses without the trace id (Spring MVC with Micrometer Tracing) | AUTO: `logging-support.problem-trace-id.enabled: true`; logging-support then adds `"traceId"` to every `ProblemDetail` and to Spring Boot's error map, so a reported error leads straight to its log lines and trace (a traceId a handler set is kept) |
 | ASYNC_ERROR_LOST | a Future whose result is thrown away: its exception stays in the future and is never logged (`@Async void` is fine: Spring logs those) | AUTO for a `CompletableFuture` statement: a `whenComplete` that logs the failure (wording marked `// logast:wording`); report for other Futures (`executor.submit(…)`) |
+| CAUSE_DROPPED | `catch (X e) { throw new Y(e.getMessage()); }`: the new exception does not carry `e`, so the original stack trace is lost | AUTO when `Y` has a constructor taking the same arguments plus the cause (`e` is appended); report otherwise (add such a constructor, or `initCause(e)`) |
 
 **audit**: actions that must leave an audit record, not just a log line.
 
@@ -761,7 +762,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · RABBIT_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · DB_NO_TIMEOUT · REMOTE_CALL_IN_TRANSACTION · SCHEDULED_WITHOUT_LOCK · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |
-| errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED · ASYNC_ERROR_LOST |
+| errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED · ASYNC_ERROR_LOST · CAUSE_DROPPED |
 | audit (opt-in) | AUDIT_MISSING · AUDIT_SECURITY_EVENTS |
 | metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
 | runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
