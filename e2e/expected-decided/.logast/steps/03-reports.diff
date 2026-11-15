@@ -41,6 +41,18 @@ index c2e743a..c50982e 100644
                  return false;
              }
          }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponLookup.java b/src/main/java/com/example/e2e/coupon/CouponLookup.java
+index e2c3a76..8798a37 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponLookup.java
++++ b/src/main/java/com/example/e2e/coupon/CouponLookup.java
+@@ -20,6 +20,7 @@ 
+             return load(couponId);
+         } catch (IllegalStateException e) {
+             log.warn("Coupon lookup failed", e);
++            CouponMetrics.couponLookupFailed();
+             throw new CouponMissing(couponId, e);
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponRepository.java b/src/main/java/com/example/e2e/coupon/CouponRepository.java
 index 436af48..c14ab60 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponRepository.java
@@ -263,10 +275,10 @@ index 81fb0d6..3a83e39 100644
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponMetrics.java b/src/main/java/com/example/e2e/coupon/CouponMetrics.java
 new file mode 100644
-index 0000000..bb34989
+index 0000000..d5ef6aa
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/coupon/CouponMetrics.java
-@@ -0,0 +1,44 @@ 
+@@ -0,0 +1,49 @@ 
 +package com.example.e2e.coupon;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -279,6 +291,11 @@ index 0000000..bb34989
 +// logast:metrics-catalog
 +public final class CouponMetrics {
 +    private CouponMetrics() {
++    }
++
++    /** coupon.lookup{outcome="failed"} +1. */
++    public static void couponLookupFailed() {
++        Outcomes.count("coupon.lookup", "failed");
 +    }
 +
 +    /** coupons{outcome="updated"} +1; rows is one sample of the distribution coupons.rows{outcome="updated"}. */

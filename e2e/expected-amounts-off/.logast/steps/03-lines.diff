@@ -158,6 +158,30 @@ index 9c7595e..7bf2b77 100644
 +        log.info("Export job completed"); // logast:wording
      }
  }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
+index 535e1fe..7bba83c 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
+@@ -1,8 +1,10 @@ 
+ package com.example.e2e.coupon;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ public class CouponReloadJob {
+     private final CouponLookup lookup;
+@@ -13,6 +15,8 @@
+ 
+     @Scheduled(fixedDelay = 600000)
+     public void run() {
++        log.info("Coupon reload started"); // logast:wording
+         lookup.reload();
++        log.info("Coupon reload completed"); // logast:wording
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
 index d5cf243..c2e5489 100644
 --- a/src/main/java/com/example/e2e/messaging/CouponMessages.java

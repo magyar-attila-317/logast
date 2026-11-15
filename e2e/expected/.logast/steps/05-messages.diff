@@ -307,6 +307,19 @@ index 08f9ee6..7704c24 100644
              repository.close(couponId);
          }
          AfterCommit.log(() -> log.info("Coupon cleanup completed [couponCount={}]", couponIds.size())); // logast:wording
+diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
+index ffe162d..f6790d6 100644
+--- a/src/main/java/com/example/e2e/order/PaymentClient.java
++++ b/src/main/java/com/example/e2e/order/PaymentClient.java
+@@ -15,7 +15,7 @@ 
+                 log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
+                 gateway(order);
+             } catch (IllegalStateException e) {
+-                log.error("Charge failed for order {}", order.id(), e);
++                log.error("Charge failed for order", e);
+                 throw new PaymentException("charge failed", e);
+             }
+         }
 diff --git a/src/main/java/com/example/e2e/edge/OriginCheck.java b/src/main/java/com/example/e2e/edge/OriginCheck.java
 index 75a07b2..dbee97b 100644
 --- a/src/main/java/com/example/e2e/edge/OriginCheck.java

@@ -1,6 +1,6 @@
 {
   "_readme" : "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.",
-  "_status" : "18 finding(s) below need a message text.",
+  "_status" : "20 finding(s) below need a message text.",
   "SWA-91b292" : {
     "MSG" : "",
     "_MSG" : "What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri(\"/balances/{customerId}\", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as: {subject} failed",
@@ -20,6 +20,16 @@
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Coupon cleanup completed | must read as: {subject} completed | suffix keys added by the tool: [couponCount]",
     "_where" : "src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:29 CouponCleanupJob.cleanup"
+  },
+  "SUG-a4b461" : {
+    "MSG" : "",
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Coupon reload started | must read as: {subject} started",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponReloadJob.java:18 CouponReloadJob.run"
+  },
+  "SUG-dd88b2" : {
+    "MSG" : "",
+    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Coupon reload completed | must read as: {subject} completed",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponReloadJob.java:20 CouponReloadJob.run"
   },
   "SUG-d99e11" : {
     "MSG" : "",

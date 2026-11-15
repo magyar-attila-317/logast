@@ -24,6 +24,11 @@ public final class BusinessMetrics {
     /** Observation (timer and span) name. */
     public static final String ORDER_NOTIFICATIONS = "order.notifications";
 
+    /** coupon.lookup{outcome="failed"} +1. */
+    public static void couponLookupFailed() {
+        Outcomes.count("coupon.lookup", "failed");
+    }
+
     /** coupons{outcome="updated"} +1; rows is one sample of the distribution coupons.rows{outcome="updated"}. */
     public static void couponsUpdated(Number rows) {
         Outcomes.record("coupons", "updated", "rows", rows);

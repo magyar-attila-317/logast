@@ -124,3 +124,18 @@ index 1e94776..ff68e86 100644
          log.info("Calculation completed");
      }
  }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
+index 7bba83c..a866402 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
+@@ -15,8 +15,8 @@ 
+ 
+     @Scheduled(fixedDelay = 600000)
+     public void run() {
+-        log.info("Coupon reload started"); // logast:wording
++        log.info("Coupon sweep started");
+         lookup.reload();
+-        log.info("Coupon reload completed"); // logast:wording
++        log.info("Coupon sweep completed");
+     }
+ }

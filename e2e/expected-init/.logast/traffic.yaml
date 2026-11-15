@@ -7,6 +7,7 @@ entrypoints:
   "DELETE /coupons/{couponId}":     # http, CouponController.delete
   "GET /audit/settings":     # http, AuditController.settings
   "GET /coupons":     # http, CouponController.open
+  "GET /coupons/{couponId}/details":     # http, CouponDetailsController.details
   "GET /quotes/{productId}":     # http, QuoteController.quote
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
   "POST /admin/coupons/{couponId}/revoke":     # http, CouponController.revoke
@@ -16,6 +17,7 @@ entrypoints:
   "POST /orders":     # http, CouponController.place
   # scheduled
   "@Scheduled CouponCleanupJob.cleanup":     # scheduled, CouponCleanupJob.cleanup
+  "@Scheduled CouponReloadJob.run":     # scheduled, CouponReloadJob.run
   "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
   # kafka
   "@KafkaListener coupon-batches":     # kafka, CouponMessages.onBatch

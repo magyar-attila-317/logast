@@ -1,16 +1,20 @@
+diff --git a/src/main/java/com/example/e2e/coupon/CouponLookup.java b/src/main/java/com/example/e2e/coupon/CouponLookup.java
+index a15b6b1..e2c3a76 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponLookup.java
++++ b/src/main/java/com/example/e2e/coupon/CouponLookup.java
+@@ -29,7 +29,6 @@ 
+             cache.clear();
+             load("all");
+         } catch (IllegalStateException e) {
+-            log.error("Coupon reload failed", e);
+             throw e;
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
-index ffe162d..7b216ee 100644
+index f6790d6..853c59a 100644
 --- a/src/main/java/com/example/e2e/order/PaymentClient.java
 +++ b/src/main/java/com/example/e2e/order/PaymentClient.java
-@@ -15,7 +15,6 @@ 
-                 log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
-                 gateway(order);
-             } catch (IllegalStateException e) {
--                log.error("Charge failed for order {}", order.id(), e);
-                 throw new PaymentException("charge failed", e);
-             }
-         }
-@@ -26,7 +25,7 @@
+@@ -26,7 +26,7 @@ 
          try {
              gateway(order);
          } catch (IllegalStateException e) {

@@ -85,6 +85,14 @@ final class LogCallRules {
                     + "upstream (MdcScope) or attach it to the rethrown exception, then delete this log.");
             return false;
         }
+        // deleting it is only safe when something else logs the exception on every way it can travel (#46)
+        String silent = silentEnd(m, thrownTypes(lc.inCatch()));
+        if (silent != null) {
+            b.title("Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it")
+                    .suggestion("Not removed: nothing else is known to log it on the path through " + silent + ", so this line may be "
+                    + "its only record. Log it there (or in an @ExceptionHandler), then delete this one.");
+            return false;
+        }
         b.edit(JavaEdits.deleteStatement(m.file(), lc.call()));
         for (Expression arg : lc.args()) {   // the context it carried must be in MDC first
             ctx.domain.keyOf(arg).map(k -> ctx.plannedBy(m, k)).ifPresent(b::dependsOn);
@@ -145,6 +153,64 @@ final class LogCallRules {
             }
         }
         return List.copyOf(found);
+    }
+
+    /**
+     * Where the rethrown exception can end up without being logged, or null when every way up ends at a log: a catch
+     * that logs it, an @ExceptionHandler that logs, or an entrypoint whose framework logs uncaught exceptions (the
+     * servlet container, @Scheduled, the listener containers, Spring Batch, startup). Not proven, and so reported: a
+     * catch that swallows it, an @ExceptionHandler that maps it without logging, a call handed to another thread (the
+     * failure goes to a Future), a method nobody in the code calls, or a search too large to finish.
+     */
+    private String silentEnd(MethodInfo m, List<JavaType> thrown) {
+        java.util.Map<String, dev.logast.model.Entrypoint> entrypoints = new HashMap<>();
+        ctx.a.entrypoints.forEach(ep -> entrypoints.putIfAbsent(ep.method().key(), ep));
+        Deque<MethodInfo> queue = new ArrayDeque<>(List.of(m));
+        Set<String> seen = new HashSet<>(List.of(m.key()));
+        while (!queue.isEmpty()) {
+            if (seen.size() > 300) {
+                return m.label() + "'s callers (too many to check)";
+            }
+            MethodInfo cur = queue.poll();
+            dev.logast.model.Entrypoint ep = entrypoints.get(cur.key());
+            if (ep != null) {
+                switch (ep.kind()) {
+                    case HTTP -> {
+                        MethodInfo handler = mostSpecificHandler(thrown);
+                        if (handler != null && handler.facts().logs.isEmpty()) {
+                            return "@ExceptionHandler " + handler.label() + " (maps it without logging)";
+                        }
+                    }
+                    case SCHEDULED, KAFKA, JMS, RABBIT, BATCH, MAIN -> {
+                    }
+                    default -> {
+                        return ep.label() + " (" + ep.kind().name().toLowerCase(java.util.Locale.ROOT) + ": not known to log it)";
+                    }
+                }
+                continue;
+            }
+            List<CallGraph.Edge> callers = ctx.a.graph.in(cur);
+            if (callers.isEmpty()) {
+                return cur.label() + " (no caller in the code)";
+            }
+            for (CallGraph.Edge e : callers) {
+                MethodInfo caller = e.from();
+                if (e.site().async()) {
+                    return caller.label() + " (runs it on another thread: the failure goes to a Future)";
+                }
+                CatchInfo handler = e.site().enclosingCatches().stream().filter(g -> compatible(g.types, thrown)).findFirst().orElse(null);
+                if (handler != null && !handler.logs.isEmpty()) {
+                    continue;
+                }
+                if (handler != null && !handler.rethrowsCause) {
+                    return caller.label() + " (catches it without logging)";
+                }
+                if (seen.add(caller.key())) {
+                    queue.add(caller);
+                }
+            }
+        }
+        return null;
     }
 
     /** The @ExceptionHandler Spring would pick: the one whose handled type is closest to the thrown type. */

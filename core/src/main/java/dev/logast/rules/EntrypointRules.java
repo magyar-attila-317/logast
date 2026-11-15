@@ -57,7 +57,11 @@ final class EntrypointRules {
                 .filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).toList()
                 : List.of();
         boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
-        boolean silent = !readEndpoint && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(f, line, Rules.ENTRYPOINT_SILENT)
+        // a run's started and outcome lines belong to JOB_OUTCOME_MISSING: split between two rules, the outcome line it adds
+        // ended the silence, the started line lost its owner, and the order came back after its own fix
+        boolean run = ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.MAIN;
+        boolean silent = !readEndpoint && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
+                && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(f, line, Rules.ENTRYPOINT_SILENT)
                 && !LifecyclePlan.ownFlowLogs(ctx, m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
         if (!notObserved && missing.isEmpty() && !silent) {
             return;

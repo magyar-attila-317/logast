@@ -57,6 +57,25 @@ index c2e743a..5259e5c 100644
                  return false;
              }
          }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponLookup.java b/src/main/java/com/example/e2e/coupon/CouponLookup.java
+index e2c3a76..f6585ea 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponLookup.java
++++ b/src/main/java/com/example/e2e/coupon/CouponLookup.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.Outcomes;
+ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ import org.slf4j.Logger;
+@@ -20,6 +21,7 @@
+             return load(couponId);
+         } catch (IllegalStateException e) {
+             log.warn("Coupon lookup failed", e);
++            Outcomes.count("coupon.lookup", "failed");
+             throw new CouponMissing(couponId, e);
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponRepository.java b/src/main/java/com/example/e2e/coupon/CouponRepository.java
 index 436af48..35ee033 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponRepository.java

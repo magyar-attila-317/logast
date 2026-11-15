@@ -15,6 +15,7 @@ public class PaymentClient {
                 log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
                 gateway(order);
             } catch (IllegalStateException e) {
+                log.error("Charge failed for order", e);
                 throw new PaymentException("charge failed", e);
             }
         }

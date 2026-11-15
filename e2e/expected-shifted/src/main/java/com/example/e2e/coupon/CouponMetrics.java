@@ -12,6 +12,11 @@ public final class CouponMetrics {
     private CouponMetrics() {
     }
 
+    /** coupon.lookup{outcome="failed"} +1. */
+    public static void couponLookupFailed() {
+        Outcomes.count("coupon.lookup", "failed");
+    }
+
     /** coupons{outcome="updated"} +1; coupons.rows{outcome="updated"} grows by rows. */
     public static void couponsUpdated(Number rows) {
         Outcomes.count("coupons", "updated", "rows", rows);

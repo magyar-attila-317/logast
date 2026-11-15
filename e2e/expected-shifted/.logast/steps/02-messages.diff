@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
-index 09dfd52..2138865 100644
+index c4465f7..530f5ab 100644
 --- a/src/main/java/com/example/e2e/order/PaymentClient.java
 +++ b/src/main/java/com/example/e2e/order/PaymentClient.java
 @@ -13,7 +13,7 @@ 
@@ -10,7 +10,7 @@ index 09dfd52..2138865 100644
 +                log.debug("Charging the card [amountCents={}]", order.amountCents());
                  gateway(order);
              } catch (IllegalStateException e) {
-                 throw new PaymentException("charge failed", e);
+                 log.error("Charge failed for order", e);
 diff --git a/src/main/java/com/example/e2e/web/QuoteController.java b/src/main/java/com/example/e2e/web/QuoteController.java
 index 17cde43..d41dc0c 100644
 --- a/src/main/java/com/example/e2e/web/QuoteController.java
@@ -138,3 +138,18 @@ index 97bc73b..3970db8 100644
          log.info("Calculation completed");
          JobMetrics.calculationCompleted(); // logast:metric review, confidence: medium
      }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
+index 7bba83c..a866402 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
+@@ -15,8 +15,8 @@ 
+ 
+     @Scheduled(fixedDelay = 600000)
+     public void run() {
+-        log.info("Coupon reload started"); // logast:wording
++        log.info("Coupon sweep started");
+         lookup.reload();
+-        log.info("Coupon reload completed"); // logast:wording
++        log.info("Coupon sweep completed");
+     }
+ }
