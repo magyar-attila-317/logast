@@ -1,7 +1,7 @@
-logast · 62 files · 16 entrypoints · 66/182 methods reachable · 136 call edges
+logast · 63 files · 17 entrypoints · 67/184 methods reachable · 136 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 75.0% (jobs 7/7 · http 5/9)   (places that should log and do)
-66 orders: 0 AUTO, 19 NEEDS TEXT, 47 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 76.5% (jobs 7/7 · http 6/10)   (places that should log and do)
+66 orders: 0 AUTO, 18 NEEDS TEXT, 48 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -69,17 +69,7 @@ AFU-a566e5  medium  REPORT-ONLY  AUDIT_FAILURES_UNRECORDED  src/main/java/com/ex
   DELETE /pledges/{pledgeId} records an audit event only when it succeeds: a rejected or failed attempt leaves no record (DELETE **)
   path: DELETE /pledges/{pledgeId} → PledgeController.delete
   note: Record the attempt's outcome either way: an audit call in a catch (with the failure) or in a finally (with the outcome), or record the attempt before the work starts.
-DOM-d23dcd  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/PledgeController.java:48  PledgeController.delete
-  DELETE /pledges/{pledgeId}: MDC lacks pledgeId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
-  path: DELETE /pledges/{pledgeId} → PledgeController.delete
-  - pledges.delete(pledgeId);
-  + try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-  + log.info("{{MSG}}");
-  + pledges.delete(pledgeId);
-  + … (4 lines)
-  (+2 more edits)
-  MSG: Entry log for DELETE /pledges/{pledgeId} (PledgeController.delete): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
-DOM-a2969a  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/PledgeController.java:53  PledgeController.revoke
+DOM-a2969a  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/PledgeController.java:55  PledgeController.revoke
   POST /admin/pledges/{pledgeId}/revoke: MDC lacks pledgeId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
   path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke
   - pledges.revoke(pledgeId, userId);
@@ -97,6 +87,9 @@ BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/exam
   CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
+ALM-f2e935  low  REPORT-ONLY  AUDIT_LOG_MIXED  src/main/java/com/example/e2e/audit/AuditLog.java:8
+  AuditLog writes audit records and diagnostics through one logger: routed apart, the diagnostics would leave the application log; mixed, the records do
+  note: Give the records their own logger (private static final Logger AUDIT = LoggerFactory.getLogger("audit")) and keep the class logger for the diagnostics: checkCapacity (WARN).
 SUG-bc8896  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23  PledgeCleanupJob.cleanup
   Generated wording "Pledge cleanup started": say it in domain terms
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup
@@ -306,8 +299,8 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             19 log lines need wording only a person knows
+  1. write "MSG" texts in .logast/fills.json             18 log lines need wording only a person knows
   2. set "count" in .logast/metrics.json                 21 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  4. fill calls/day in .logast/traffic.yaml (optional)   16 of 16 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      26 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
+  4. fill calls/day in .logast/traffic.yaml (optional)   17 of 17 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  5. logast scan . --format summary                      27 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide

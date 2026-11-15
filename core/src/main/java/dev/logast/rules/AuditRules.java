@@ -265,8 +265,39 @@ final class AuditRules {
      */
     private void auditLoggers() {
         String name = cfg.logger();
+        Set<String> recordMethods = recordMethods();
         for (ClassInfo c : ctx.methodsOwners()) {
             if (!auditClass(c)) {
+                continue;
+            }
+            // only a class that records audit events (its methods are called as audit calls), and only its records (#45)
+            List<MethodInfo> records = ctx.a.index.methodsOf(c.fqn()).stream().filter(m -> recordMethods.contains(m.key())).toList();
+            if (records.isEmpty()) {
+                continue;   // AuditController, AuditConfig, an AuditCleanupJob: named like audit, records nothing
+            }
+            List<String> diagnostics = new ArrayList<>();
+            int recordLines = 0;
+            for (MethodInfo m : ctx.a.index.methodsOf(c.fqn())) {
+                for (dev.logast.model.LogCall lc : m.facts().logs) {
+                    if (!records.contains(m) || lc.level().compareTo(dev.logast.model.Level.WARN) >= 0) {
+                        diagnostics.add(m.name() + " (" + lc.level().name() + ")");
+                    } else {
+                        recordLines++;
+                    }
+                }
+            }
+            if (recordLines == 0) {
+                continue;   // its records are not log lines (written to a store): the class logger carries diagnostics only
+            }
+            if (!diagnostics.isEmpty()) {
+                if (!ctx.ignored(c.file(), Pos.line(c.decl()), Rules.AUDIT_LOG_MIXED)) {
+                    ctx.orderNth(Rules.AUDIT_LOG_MIXED, c.fqn(), c.file().relPath(), Pos.line(c.decl()), "audit-logger-split")
+                            .title(c.simpleName() + " writes audit records and diagnostics through one logger: routed apart, the "
+                                    + "diagnostics would leave the application log; mixed, the records do")
+                            .suggestion("Give the records their own logger (private static final Logger AUDIT = "
+                                    + "LoggerFactory.getLogger(\"" + name + "\")) and keep the class logger for the diagnostics: "
+                                    + String.join(", ", diagnostics.stream().distinct().limit(5).toList()) + ".");
+                }
                 continue;
             }
             dev.logast.parse.SourceFileInfo f = c.file();
@@ -298,6 +329,26 @@ final class AuditRules {
                         + "with the application log")
                 .suggestion("Logs through the logger \"" + cfg.logger() + "\" (policy audit.logger) instead, so the log "
                         + "pipeline can route audit lines apart (their own index, longer retention).");
+    }
+
+    /** Methods (keys) that some call in the code uses as an audit call. */
+    private Set<String> recordMethods() {
+        Set<String> out = new HashSet<>();
+        for (MethodInfo m : ctx.a.index.methods()) {
+            if (m.decl().getBody() == null) {
+                continue;
+            }
+            new JavaIsoVisitor<Integer>() {
+                @Override
+                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                    if (mi.getMethodType() != null && emitter(mi)) {
+                        ctx.a.index.resolve(mi.getMethodType()).forEach(t -> out.add(t.key()));
+                    }
+                    return super.visitMethodInvocation(mi, p);
+                }
+            }.visit(m.decl().getBody(), 0);
+        }
+        return out;
     }
 
     /** A class named *Audit* (with no audit.emitters configured), or the class of a configured emitter. */

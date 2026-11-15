@@ -49,7 +49,6 @@ public class PledgeController {
     @DeleteMapping("/pledges/{pledgeId}")
     public void delete(@PathVariable String pledgeId) {
         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-            log.info("Pledge sweep started");
             pledges.delete(pledgeId);
         }
     }

@@ -46,7 +46,9 @@ public class PledgeController {
 
     @DeleteMapping("/pledges/{pledgeId}")
     public void delete(@PathVariable String pledgeId) {
-        pledges.delete(pledgeId);
+        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+            pledges.delete(pledgeId);
+        }
     }
 
     @PostMapping("/admin/pledges/{pledgeId}/revoke")

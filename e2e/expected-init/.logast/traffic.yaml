@@ -5,6 +5,7 @@
 entrypoints:
   # http
   "DELETE /pledges/{pledgeId}":     # http, PledgeController.delete
+  "GET /audit/settings":     # http, AuditController.settings
   "GET /pledges":     # http, PledgeController.open
   "GET /quotes/{productId}":     # http, QuoteController.quote
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
