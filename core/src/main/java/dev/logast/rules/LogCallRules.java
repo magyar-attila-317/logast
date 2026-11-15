@@ -271,7 +271,7 @@ final class LogCallRules {
         }
         String throwableSrc = throwable == null ? null : src(f, throwable);
         CatchInfo c = lc.inCatch();
-        if (throwable == null && c != null && lc.level().compareTo(Level.WARN) >= 0
+        if (throwable == null && c != null && !c.param.equals("_") && lc.level().compareTo(Level.WARN) >= 0
                 && rawArgs.stream().noneMatch(a -> a instanceof J.Identifier id && id.getSimpleName().equals(c.param))) {
             throwableSrc = c.param;
             issues.add(Rules.LOST_THROWABLE);

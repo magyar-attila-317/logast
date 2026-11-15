@@ -1,20 +1,24 @@
-logast · 61 files · 15 entrypoints · 65/180 methods reachable · 136 call edges
+logast · 61 files · 16 entrypoints · 66/181 methods reachable · 136 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 73.3% (jobs 7/7 · http 4/8)   (places that should log and do)
-64 orders: 0 AUTO, 18 NEEDS TEXT, 46 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 75.0% (jobs 7/7 · http 5/9)   (places that should log and do)
+66 orders: 0 AUTO, 19 NEEDS TEXT, 47 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
   CompletableFuture.runAsync runs on another thread without MDC/trace context
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
-ASY-e82926  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:16  QuoteController.quote
+ASY-e82926  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:18  QuoteController.quote
   CompletableFuture.supplyAsync runs on another thread without MDC/trace context
   path: GET /quotes/{productId} → QuoteController.quote
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
-ASY-0537b2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:17  QuoteController.quote
+ASY-0537b2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:19  QuoteController.quote
   CompletableFuture.supplyAsync runs on another thread without MDC/trace context
   path: GET /quotes/{productId} → QuoteController.quote
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+ASY-535b95  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:27  QuoteController.refresh
+  CompletableFuture.runAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId}/refresh → QuoteController.refresh
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
 DBT-225aab  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/resources/application.yml:1
   Transactions without a timeout: spring.transaction.default-timeout has no default, so a transaction waiting on a lock or a slow statement holds its connection indefinitely
@@ -85,11 +89,11 @@ DOM-a2969a  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/j
   + … (4 lines)
   (+2 more edits)
   MSG: Entry log for POST /admin/pledges/{pledgeId}/revoke (PledgeController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
-BWU-5fc605  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:18  QuoteController.quote
+BWU-5fc605  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:20  QuoteController.quote
   CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
-BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:18  QuoteController.quote
+BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:20  QuoteController.quote
   CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
@@ -288,6 +292,13 @@ FMT-93dcb8  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/order/Pay
   + "{{MSG}}", order.amountCents(){{ARGS}}
   MSG: Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: "Charging order with {} cents" | suffix keys: [amountCents]
   mdc: [orderId]  vars: order:Order, mdc:MdcScope
+SUG-08dd18  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/web/QuoteController.java:30  QuoteController.refresh
+  Generated wording "Quote controller async work failed": say it in domain terms
+  path: GET /quotes/{productId}/refresh → QuoteController.refresh
+  - "Quote controller async work failed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: "Quote controller async work failed" | must read as '{subject} failed'
 PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/application.yml:1
   Spring MVC errors (400 bad input, 405, 415, ...) are not RFC 9457 ProblemDetail responses: every service answers them in its own shape
   note: Set spring.mvc.problemdetails.enabled: true (or extend ResponseEntityExceptionHandler in the controller advice). Not applied automatically: it changes the error body API clients see.
@@ -295,8 +306,8 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             18 log lines need wording only a person knows
+  1. write "MSG" texts in .logast/fills.json             19 log lines need wording only a person knows
   2. set "count" in .logast/metrics.json                 21 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  4. fill calls/day in .logast/traffic.yaml (optional)   15 of 15 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      25 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 3, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
+  4. fill calls/day in .logast/traffic.yaml (optional)   16 of 16 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  5. logast scan . --format summary                      26 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide

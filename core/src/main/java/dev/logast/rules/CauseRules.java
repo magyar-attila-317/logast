@@ -55,6 +55,11 @@ final class CauseRules {
                 .title("catch (" + c.typeNames() + " " + c.param + ") throws a new " + type + " without " + c.param
                         + " as its cause: the original stack trace is lost");
         List<Expression> args = args(nc);
+        if (c.param.equals("_")) {
+            // an unnamed catch parameter (Java 22+) cannot be passed on: it has to get a name first
+            b.suggestion("Name the caught exception (catch (" + c.typeNames() + " e)) and pass it as the cause.");
+            return;
+        }
         if (!hasCauseConstructor(nc, args, c)) {
             b.suggestion("Pass " + c.param + " as the cause: add a constructor (…, Throwable cause) to " + type
                     + ", or call initCause(" + c.param + ") before throwing.");

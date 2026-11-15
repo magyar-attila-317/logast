@@ -17,4 +17,12 @@ public class QuoteController {
         CompletableFuture<String> stock = CompletableFuture.supplyAsync(() -> "stock " + productId);
         return new Quote(price.join(), stock.join());
     }
+
+    /** A local named like the parameters of a generated whenComplete (#44: the fix once stopped compiling). */
+    @GetMapping("/quotes/{productId}/refresh")
+    public String refresh(@PathVariable String productId) {
+        String result = productId.strip();
+        CompletableFuture.runAsync(() -> System.out.println(result));
+        return result;
+    }
 }

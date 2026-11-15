@@ -411,6 +411,49 @@ class E2eGoldenTest {
      */
     /** logast shape: no business word leaves, the export compiles and gives the same findings as the original. */
     /**
+     * Java 22+ unnamed catch parameters (#44): {@code catch (X _)} cannot be passed on as a cause or logged, so neither
+     * fix may write {@code _} into the code. Needs JDK 22+ to compile.
+     */
+    @Test
+    void unnamedCatchParametersAreNotPassedOn() throws IOException {
+        org.junit.jupiter.api.Assumptions.assumeTrue(Runtime.version().feature() >= 22, "unnamed variables need JDK 22+");
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path f = app.resolve("src/main/java/com/example/e2e/web/UnnamedCatch.java");
+        Files.writeString(f, """
+                package com.example.e2e.web;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public class UnnamedCatch {
+                    private static final Logger log = LoggerFactory.getLogger(UnnamedCatch.class);
+
+                    public int parse(String value) {
+                        try {
+                            return Integer.parseInt(value);
+                        } catch (NumberFormatException _) {
+                            throw new IllegalArgumentException("not a number: " + value);
+                        }
+                    }
+
+                    public int parseOrZero(String value) {
+                        try {
+                            return Integer.parseInt(value);
+                        } catch (NumberFormatException _) {
+                            log.warn("Value parsing failed [value={}]", value);
+                            return 0;
+                        }
+                    }
+                }
+                """);
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(out).doesNotContain("CHECK FAILED");
+        assertThat(Files.readString(f)).doesNotContain(", _)").doesNotContain("(_)");
+        compile(app);
+    }
+
+    /**
      * Order ids are anchored to code, not to line numbers (#43): a line added at the top of every file shifts every
      * finding, and no id may change, so baselines, fills.json and --only keep matching.
      */

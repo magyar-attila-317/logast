@@ -95,9 +95,14 @@ final class AsyncErrorRules {
         String indent = Text.indentAt(text, Pos.start(mi));
         String unit = Text.indentUnit(text);
         String message = FamilyRules.classWords(m.owner().simpleName()) + " async work failed";
-        String handler = "\n" + indent + unit + unit + ".whenComplete((result, error) -> {\n"
-                + indent + unit + unit + unit + "if (error != null) {\n"
-                + indent + unit + unit + unit + unit + logger.name() + ".error(" + Text.javaString(message) + ", error); "
+        // lambda parameters must not reuse a name of a variable in scope (JLS 15.27.2): `result` is a common local
+        java.util.Set<String> taken = new java.util.HashSet<>(ctx.taken(m, Pos.start(mi)));
+        String result = EntrypointRules.unique("result", taken);
+        taken.add(result);
+        String error = EntrypointRules.unique("error", taken);
+        String handler = "\n" + indent + unit + unit + ".whenComplete((" + result + ", " + error + ") -> {\n"
+                + indent + unit + unit + unit + "if (" + error + " != null) {\n"
+                + indent + unit + unit + unit + unit + logger.name() + ".error(" + Text.javaString(message) + ", " + error + "); "
                 + DbRules.WORDING_MARKER + "\n"
                 + indent + unit + unit + unit + "}\n"
                 + indent + unit + unit + "})";
