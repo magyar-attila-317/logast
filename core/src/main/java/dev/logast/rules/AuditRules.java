@@ -52,6 +52,9 @@ final class AuditRules {
         if (ctx.enabled(Rules.AUDIT_RECORD_INCOMPLETE)) {
             incompleteRecords();
         }
+        if (ctx.enabled(Rules.AUDIT_LOG_MIXED)) {
+            auditLoggers();
+        }
     }
 
     // ---- auditable actions ----------------------------------------------------------------------
@@ -184,6 +187,59 @@ final class AuditRules {
 
     private static boolean logger(J.MethodInvocation mi) {
         return mi.getMethodType() != null && TypeUtils.isAssignableTo("org.slf4j.Logger", mi.getMethodType().getDeclaringType());
+    }
+
+    // ---- audit lines apart from the application log --------------------------------------------
+
+    /**
+     * AUDIT_LOG_MIXED (AUTO): an audit class (named *Audit*, or an emitter in audit.emitters) logs through a logger
+     * named after the class, so its lines mix with the application log. Renamed to the policy's audit logger
+     * ({@code LoggerFactory.getLogger("audit")}, Lombok {@code @Slf4j(topic = "audit")}), the log pipeline can route them
+     * apart: their own index, their own retention.
+     */
+    private void auditLoggers() {
+        String name = cfg.logger();
+        for (ClassInfo c : ctx.methodsOwners()) {
+            if (!auditClass(c)) {
+                continue;
+            }
+            dev.logast.parse.SourceFileInfo f = c.file();
+            for (Statement s : c.decl().getBody().getStatements()) {
+                if (s instanceof J.VariableDeclarations vd && TypeUtils.isAssignableTo("org.slf4j.Logger", vd.getType())) {
+                    for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
+                        if (v.getInitializer() instanceof J.MethodInvocation init && init.getSimpleName().equals("getLogger")
+                                && !init.getArguments().isEmpty() && !(init.getArguments().getFirst() instanceof J.Literal)) {
+                            Expression arg = init.getArguments().getFirst();
+                            order(c, Pos.line(vd)).edit(dev.logast.orders.Edit.replace(f.relPath(), Pos.start(arg), Pos.end(arg),
+                                    Text.javaString(name)));
+                        }
+                    }
+                }
+            }
+            for (J.Annotation a : c.decl().getLeadingAnnotations()) {
+                if (a.getSimpleName().equals("Slf4j") && (a.getArguments() == null || a.getArguments().isEmpty()
+                        || a.getArguments().getFirst() instanceof J.Empty)) {
+                    order(c, Pos.line(a)).edit(dev.logast.orders.Edit.replace(f.relPath(), Pos.start(a), Pos.end(a),
+                            "@Slf4j(topic = " + Text.javaString(name) + ")"));
+                }
+            }
+        }
+    }
+
+    private OrderBuilder order(ClassInfo c, int line) {
+        return ctx.order(Rules.AUDIT_LOG_MIXED, "audit-logger|" + c.fqn() + "|" + line).at(c.file().relPath(), line)
+                .title(c.simpleName() + " records audit events but logs through a logger named after the class: its lines mix "
+                        + "with the application log")
+                .suggestion("Logs through the logger \"" + cfg.logger() + "\" (policy audit.logger) instead, so the log "
+                        + "pipeline can route audit lines apart (their own index, longer retention).");
+    }
+
+    /** A class named *Audit* (with no audit.emitters configured), or the class of a configured emitter. */
+    private boolean auditClass(ClassInfo c) {
+        if (!cfg.emitters().isEmpty()) {
+            return cfg.emitters().stream().anyMatch(e -> (e.contains("#") ? e.substring(0, e.indexOf('#')) : e).equals(c.fqn()));
+        }
+        return c.simpleName().contains("Audit") && !c.simpleName().contains("Logger");
     }
 
     // ---- who and what in every record ------------------------------------------------------------

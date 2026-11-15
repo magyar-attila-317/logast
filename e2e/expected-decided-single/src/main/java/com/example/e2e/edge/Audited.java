@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory;
 
 /** A default method that logs: the template sits in the interface. */
 public interface Audited {
-    Logger AUDIT_LOG = LoggerFactory.getLogger(Audited.class);
+    Logger AUDIT_LOG = LoggerFactory.getLogger("audit");
 
     default void audit(String couponId) {
         AUDIT_LOG.info("Coupon audited");

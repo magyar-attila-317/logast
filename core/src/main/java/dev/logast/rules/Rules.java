@@ -93,6 +93,7 @@ public final class Rules {
     public static final String CATCH_ALL_DEFAULT = "CATCH_ALL_DEFAULT";
     public static final String AUDIT_FAILURES_UNRECORDED = "AUDIT_FAILURES_UNRECORDED";
     public static final String AUDIT_RECORD_INCOMPLETE = "AUDIT_RECORD_INCOMPLETE";
+    public static final String AUDIT_LOG_MIXED = "AUDIT_LOG_MIXED";
     public static final String UNMAPPED_EXCEPTION = "UNMAPPED_EXCEPTION";
     public static final String CLIENT_ERROR_AS_SERVER_ERROR = "CLIENT_ERROR_AS_SERVER_ERROR";
     public static final String PROBLEM_DETAILS_DISABLED = "PROBLEM_DETAILS_DISABLED";
@@ -131,7 +132,7 @@ public final class Rules {
                 ERROR_RESPONSE_UNTRACED, ASYNC_ERROR_LOST, CAUSE_DROPPED, CATCH_ALL_DEFAULT)) {
             PACKS.put(r, Set.of("errors"));
         }
-        for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS, AUDIT_FAILURES_UNRECORDED, AUDIT_RECORD_INCOMPLETE)) {
+        for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS, AUDIT_FAILURES_UNRECORDED, AUDIT_RECORD_INCOMPLETE, AUDIT_LOG_MIXED)) {
             PACKS.put(r, Set.of("audit"));
         }
         PACKS.put(SETUP_SUPPORT_STARTER, Set.of("logging", "tracing", "metrics"));
@@ -156,7 +157,7 @@ public final class Rules {
             STEPS.put(r, Step.SETUP);
         }
         for (String r : List.of(MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NOT_OWNER, ENTRYPOINT_NOT_OBSERVED, SCHEDULED_TASK_UNTRACED,
-                ASYNC_CONTEXT_LOSS)) {
+                ASYNC_CONTEXT_LOSS, AUDIT_LOG_MIXED)) {
             STEPS.put(r, Step.STRUCTURE);
         }
         // BUSINESS_EVENT_UNMEASURED reads the lifecycle lines: it goes with the step that adds them (a job outcome
@@ -228,7 +229,7 @@ public final class Rules {
             Map.entry(METRIC_TAG_KEYS_MISMATCH, "high"),
             Map.entry(HTTP_CLIENT_NO_TIMEOUT, "high"), Map.entry(KAFKA_NO_ERROR_HANDLER, "medium"),
             Map.entry(UNBOUNDED_EXECUTOR, "medium"), Map.entry(BLOCKING_WAIT_UNBOUNDED, "medium"),
-            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(DB_NO_TIMEOUT, "high"), Map.entry(REMOTE_CALL_IN_TRANSACTION, "medium"), Map.entry(SCHEDULED_WITHOUT_LOCK, "medium"), Map.entry(ASYNC_ERROR_LOST, "high"), Map.entry(CAUSE_DROPPED, "medium"), Map.entry(CATCH_ALL_DEFAULT, "medium"), Map.entry(AUDIT_FAILURES_UNRECORDED, "medium"), Map.entry(AUDIT_RECORD_INCOMPLETE, "medium"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
+            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(DB_NO_TIMEOUT, "high"), Map.entry(REMOTE_CALL_IN_TRANSACTION, "medium"), Map.entry(SCHEDULED_WITHOUT_LOCK, "medium"), Map.entry(ASYNC_ERROR_LOST, "high"), Map.entry(CAUSE_DROPPED, "medium"), Map.entry(CATCH_ALL_DEFAULT, "medium"), Map.entry(AUDIT_FAILURES_UNRECORDED, "medium"), Map.entry(AUDIT_RECORD_INCOMPLETE, "medium"), Map.entry(AUDIT_LOG_MIXED, "low"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
             Map.entry(CLIENT_ERROR_AS_SERVER_ERROR, "medium"), Map.entry(PROBLEM_DETAILS_DISABLED, "low"),
             Map.entry(AUDIT_MISSING, "medium"), Map.entry(AUDIT_SECURITY_EVENTS, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(RABBIT_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),

@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 /** Legacy pattern: puts in try, MDC.clear() in finally (wipes the caller's context too). */
 @Component
 public class AuditTrail {
-    private static final Logger log = LoggerFactory.getLogger(AuditTrail.class);
+    private static final Logger log = LoggerFactory.getLogger(AuditTrail.class); // expect: AUDIT_LOG_MIXED
 
     public void record(String action, String tenantId) {
         try {
