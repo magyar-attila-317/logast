@@ -54,7 +54,7 @@ final class EntrypointRules {
         List<DomainValues.Value> missing = ctx.enabled(Rules.MISSING_DOMAIN_MDC) && !reactive
                 && !ctx.ignored(f, line, Rules.MISSING_DOMAIN_MDC) && !ctx.legacyMdc(m)
                 ? ctx.domain.fromVars(params(m)).stream()
-                .filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).toList()
+                .filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).map(v -> nullSafe(m, v)).toList()
                 : List.of();
         boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
         // a run's started and outcome lines belong to JOB_OUTCOME_MISSING: split between two rules, the outcome line it adds
@@ -238,6 +238,65 @@ final class EntrypointRules {
             parts.add("its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)");
         }
         return ep.label() + ": " + String.join("; ", parts);
+    }
+
+    /**
+     * The scope opens before the method's own code runs, so its null checks have not happened yet (#49): an accessor
+     * on a parameter that may be null ({@code @Nullable}, {@code required = false}, or null-checked in the method, like a
+     * Kafka tombstone) is guarded; MdcScope leaves null values out.
+     */
+    static DomainValues.Value nullSafe(MethodInfo m, DomainValues.Value v) {
+        int dot = v.expr().indexOf('.');
+        if (dot < 0) {
+            return v;
+        }
+        String root = v.expr().substring(0, dot);
+        return mayBeNull(m, root) ? new DomainValues.Value(v.key(), root + " == null ? null : " + v.expr()) : v;
+    }
+
+    private static boolean mayBeNull(MethodInfo m, String name) {
+        for (Statement s : m.decl().getParameters()) {
+            if (s instanceof J.VariableDeclarations vd && vd.getVariables().stream().anyMatch(x -> x.getSimpleName().equals(name))) {
+                for (J.Annotation a : vd.getLeadingAnnotations()) {
+                    String text = a.printTrimmed().replaceAll("\\s+", "");
+                    if (a.getSimpleName().equals("Nullable") || text.contains("required=false")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if (m.decl().getBody() == null) {
+            return false;
+        }
+        boolean[] checked = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Binary visitBinary(J.Binary b, Integer p) {
+                if ((b.getOperator() == J.Binary.Type.Equal || b.getOperator() == J.Binary.Type.NotEqual)
+                        && (isName(b.getLeft(), name) && isNull(b.getRight()) || isName(b.getRight(), name) && isNull(b.getLeft()))) {
+                    checked[0] = true;
+                }
+                return super.visitBinary(b, p);
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                if (Set.of("isNull", "nonNull", "ofNullable").contains(mi.getSimpleName())
+                        && mi.getArguments().stream().anyMatch(x -> isName(x, name))) {
+                    checked[0] = true;
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return checked[0];
+    }
+
+    private static boolean isName(org.openrewrite.java.tree.Expression e, String name) {
+        return e instanceof J.Identifier id && id.getSimpleName().equals(name);
+    }
+
+    private static boolean isNull(org.openrewrite.java.tree.Expression e) {
+        return e instanceof J.Literal l && l.getValue() == null && "null".equals(l.getValueSource());
     }
 
     private static Map<String, JavaType> params(MethodInfo m) {

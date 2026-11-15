@@ -1,3 +1,32 @@
+diff --git a/src/main/java/com/example/e2e/web/PledgeDetailsController.java b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
+index 74714ec..b05acc6 100644
+--- a/src/main/java/com/example/e2e/web/PledgeDetailsController.java
++++ b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
+@@ -3,11 +3,13 @@ 
+ import com.example.e2e.pledge.PledgeId;
+ import com.example.e2e.pledge.PledgeLookup;
+ import com.example.e2e.logging.MdcScope;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.PostMapping;
+ import org.springframework.web.bind.annotation.RestController;
+ 
++@Slf4j
+ @RestController
+ public class PledgeDetailsController {
+     private final PledgeLookup lookup;
+@@ -25,6 +27,9 @@
+ 
+     @PostMapping("/pledges/{pledgeId}/hold")
+     public void hold(@PathVariable PledgeId pledgeId) {
+-        lookup.find(pledgeId.value());
++        try (var mdc = MdcScope.of("pledgeId", pledgeId.value())) {
++            log.info("Pledge sweep started");
++            lookup.find(pledgeId.value());
++        }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/web/PledgeController.java b/src/main/java/com/example/e2e/web/PledgeController.java
 index 644a8d2..523c830 100644
 --- a/src/main/java/com/example/e2e/web/PledgeController.java

@@ -12,6 +12,7 @@ entrypoints:
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
   "POST /admin/pledges/{pledgeId}/revoke":     # http, PledgeController.revoke
   "POST /pledges/allot":     # http, PledgeController.allot
+  "POST /pledges/{pledgeId}/hold":     # http, PledgeDetailsController.hold
   "POST /pledges/{pledgeId}/publish":     # http, PledgeController.publish
   "POST /pledges/{pledgeId}/use":     # http, PledgeController.use
   "POST /orders":     # http, PledgeController.place
@@ -21,6 +22,7 @@ entrypoints:
   "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
   # kafka
   "@KafkaListener pledge-batches":     # kafka, PledgeMessages.onBatch
+  "@KafkaListener orders":     # kafka, OrderEvents.onOrder
   # jms
   "@JmsListener pledge-audits":     # jms, PledgeMessages.onAudit
   # rabbit
