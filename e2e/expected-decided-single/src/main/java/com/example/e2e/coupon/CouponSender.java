@@ -1,5 +1,6 @@
 package com.example.e2e.coupon;
 
+import com.example.e2e.logging.MdcScope;
 import com.example.e2e.metrics.BusinessMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,5 +14,19 @@ public class CouponSender {
         log.debug("Sending coupon to the channel");
         log.info("Coupon sent");
         BusinessMetrics.couponSent();
+    }
+
+    /** A failure logged and handled here: an outcome worth counting by default. */
+    public boolean resend(String couponId) {
+        try (var mdc = MdcScope.of("couponId", couponId)) {
+            try {
+                send(couponId);
+                return true;
+            } catch (IllegalStateException e) {
+                log.warn("Coupon resend failed", e);
+                BusinessMetrics.couponResendFailed();
+                return false;
+            }
+        }
     }
 }

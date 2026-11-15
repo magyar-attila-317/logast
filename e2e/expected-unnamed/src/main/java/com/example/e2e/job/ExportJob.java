@@ -12,5 +12,6 @@ public class ExportJob extends SettlementJob {
     protected void doExecute() {
         log.info("Export job started"); // logast:wording
         log.info("Export job completed"); // logast:wording
+        JobMetrics.exportJobCompleted(); // logast:metric review, confidence: low
     }
 }

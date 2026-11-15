@@ -46,6 +46,7 @@ public class EdgeFlow implements Audited {
                 log.info("Coupon parsed"); // a transformed value
                 new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
                 log.info("Edge processing completed");
+                EdgeMetrics.edgeProcessingCompleted(); // logast:metric review, confidence: medium
             }
         }
     }

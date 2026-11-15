@@ -23,3 +23,5 @@ vocabulary:
       key: agreementId
       sources:
         params: [agreementId]
+metrics:
+  defaults: []

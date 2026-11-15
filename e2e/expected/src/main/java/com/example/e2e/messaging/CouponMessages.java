@@ -29,6 +29,7 @@ public class CouponMessages {
         try (var mdc = MdcScope.of("couponId", couponId)) {
             log.info("Coupon return received");
             log.info("Coupon messages completed"); // logast:wording
+            MessagingMetrics.couponMessagesCompleted(); // logast:metric review, confidence: low
         }
     }
 
@@ -37,6 +38,7 @@ public class CouponMessages {
         try (var mdc = MdcScope.of("couponId", couponId)) {
             log.info("Coupon audit received");
             log.info("Coupon messages completed"); // logast:wording
+            MessagingMetrics.couponMessagesCompleted(); // logast:metric review, confidence: low
         }
     }
 }

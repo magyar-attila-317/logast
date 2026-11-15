@@ -9,7 +9,7 @@
     "_amounts" : [ "uses" ],
     "_event" : "saved",
     "_message" : "INFO \"Coupon usage saved\"",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:32 CouponRepository.countUse",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:33 CouponRepository.countUse",
     "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/use\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /coupons/{couponId}/use" ],
     "_tag" : "available"
@@ -20,7 +20,7 @@
     "outcome" : "sent",
     "_event" : "sent",
     "_message" : "INFO \"Coupon sent\"",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponSender.java:13 CouponSender.send",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponSender.java:14 CouponSender.send",
     "_frequency" : "unknown: no rate for \"POST /coupons/redeem\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /coupons/redeem", "http POST /coupons/{couponId}/publish" ],
     "_tag" : "available"
@@ -80,72 +80,6 @@
     "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
     "_tag" : "available"
   },
-  "OUM-0d4ba2" : {
-    "count" : "",
-    "name" : "edge.processing",
-    "outcome" : "completed",
-    "_event" : "completed",
-    "_message" : "INFO \"Edge processing completed\"",
-    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process",
-    "_frequency" : "low",
-    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
-    "_tag" : "available"
-  },
-  "OUM-9f157d" : {
-    "count" : "",
-    "name" : "calculation",
-    "outcome" : "completed",
-    "_event" : "completed",
-    "_message" : "INFO \"Calculation completed\"",
-    "_where" : "src/main/java/com/example/e2e/job/CalculationJob.java:16 CalculationJob.doExecute",
-    "_frequency" : "low",
-    "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
-    "_tag" : "not available here (no observation known to run)"
-  },
-  "OUM-392e74" : {
-    "count" : "",
-    "name" : "export.job",
-    "outcome" : "completed",
-    "_event" : "completed",
-    "_message" : "INFO \"Export job completed\"",
-    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:14 ExportJob.doExecute",
-    "_frequency" : "low",
-    "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
-    "_tag" : "not available here (no observation known to run)"
-  },
-  "OUM-553423" : {
-    "count" : "",
-    "name" : "preload.export",
-    "outcome" : "completed",
-    "_event" : "completed",
-    "_message" : "INFO \"Preload export completed\"",
-    "_where" : "src/main/java/com/example/e2e/job/PreloadJob.java:16 PreloadJob.doExecute",
-    "_frequency" : "low",
-    "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
-    "_tag" : "not available here (no observation known to run)"
-  },
-  "OUM-21d0c8" : {
-    "count" : "",
-    "name" : "coupon.messages",
-    "outcome" : "completed",
-    "_event" : "completed",
-    "_message" : "INFO \"Coupon messages completed\"",
-    "_where" : "src/main/java/com/example/e2e/messaging/CouponMessages.java:31 CouponMessages.onReturn",
-    "_frequency" : "unknown: no rate for \"@RabbitListener coupon-returns\" in .logast/traffic.yaml",
-    "_paths" : [ "rabbit @RabbitListener coupon-returns" ],
-    "_tag" : "available"
-  },
-  "OUM-620a15" : {
-    "count" : "",
-    "name" : "coupon.messages",
-    "outcome" : "completed",
-    "_event" : "completed",
-    "_message" : "INFO \"Coupon messages completed\"",
-    "_where" : "src/main/java/com/example/e2e/messaging/CouponMessages.java:39 CouponMessages.onAudit",
-    "_frequency" : "unknown: no rate for \"@JmsListener coupon-audits\" in .logast/traffic.yaml",
-    "_paths" : [ "jms @JmsListener coupon-audits" ],
-    "_tag" : "available"
-  },
   "OUM-4284aa" : {
     "count" : "",
     "name" : "coupon.lookup",
@@ -188,7 +122,7 @@
     "_amounts" : [ "items" ],
     "_event" : "shipped",
     "_message" : "INFO \"Orders shipped\"",
-    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:30 OrderService.ship",
+    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:35 OrderService.ship",
     "_frequency" : "unknown: no entrypoint is known to reach it",
     "_paths" : [ ],
     "_tag" : "not available here (no observation known to run)"

@@ -9,11 +9,11 @@
   "SUG-3b5d90" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupon usage saved | suffix keys added by the tool: [uses]",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:32 CouponRepository.countUse"
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:33 CouponRepository.countUse"
   },
   "SUG-56cdac" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Coupons read | suffix keys added by the tool: [count]",
-    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:38 CouponRepository.findOpen"
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:39 CouponRepository.findOpen"
   }
 }

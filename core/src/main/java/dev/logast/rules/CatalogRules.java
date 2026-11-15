@@ -111,7 +111,11 @@ final class CatalogRules {
         }
 
         Use first = uses.getFirst();
-        OrderBuilder b = ctx.order(Rules.METRIC_CATALOG, "catalog").at(first.file().relPath(), Pos.line(first.tree()))
+        // the id names what is moved: new call sites (counting lines another rule just wrote) make a new order, which
+        // the same step can apply again
+        String moved = uses.stream().map(u -> u.file().relPath() + "|" + u.key()).sorted().reduce("", (a, c) -> a + c + ";");
+        OrderBuilder b = ctx.order(Rules.METRIC_CATALOG, "catalog|" + dev.logast.parse.Hashing.sha256(moved).substring(0, 12))
+                .at(first.file().relPath(), Pos.line(first.tree()))
                 .title(uses.size() + " metric name(s) are spelled out at the call sites: they move into "
                         + (ctx.policy.metrics().catalog().equals("single") ? "one catalog class" : "a catalog class per package"));
         for (Catalog c : catalogs.values()) {

@@ -154,7 +154,7 @@ public final class Applier {
                         continue;
                     }
                     boolean touchedByOthers = o.edits().stream().map(Edit::file).distinct().anyMatch(f -> touches.getOrDefault(f, Map.of())
-                            .entrySet().stream().anyMatch(t -> !t.getKey().equals(o.id()) && t.getValue() > at));
+                            .entrySet().stream().anyMatch(t -> !t.getKey().equals(o.id()) && t.getValue() >= at));
                     if (!touchedByOthers) {
                         skip.add(o.id());
                         if (stuck.add(o.id())) {

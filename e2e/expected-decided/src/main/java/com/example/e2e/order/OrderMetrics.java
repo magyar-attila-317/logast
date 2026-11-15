@@ -25,6 +25,11 @@ public final class OrderMetrics {
         Outcomes.count("order", "placed");
     }
 
+    /** order.shipment{outcome="skipped"} +1. */
+    public static void orderShipmentSkipped() {
+        Outcomes.count("order.shipment", "skipped");
+    }
+
     /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */
     public static void ordersShipped(Number items) {
         Outcomes.count("orders", "shipped", "items", items);

@@ -165,10 +165,10 @@ class E2eGoldenTest {
     void filledTextsAndMetricDecisionsAllLand(String catalog) throws IOException {
         Path app = tmp.resolve("app");
         migrate(app, CLASSPATH, a -> {
-            if (!catalog.equals("per-package")) {   // per-package is the default
-                Path yml = a.resolve("logast.yml");
-                Files.writeString(yml, Files.readString(yml) + "metrics:\n  catalog: " + catalog + "\n");
-            }
+            // the manual flow: nothing counted by default, every outcome decided in metrics.json
+            Path yml = a.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml) + "metrics:\n  defaults: []\n"
+                    + (catalog.equals("per-package") ? "" : "  catalog: " + catalog + "\n"));   // per-package is the default
         });
         writeTexts(app);
         Path metrics = app.resolve(".logast/metrics.json");
@@ -225,8 +225,8 @@ class E2eGoldenTest {
     }
 
     /**
-     * metrics.amounts: off in logast.yaml: metrics.json offers no amounts, and nothing else changes. Every file equals
-     * e2e/expected, metrics.json without its amount fields.
+     * metrics.amounts: off in logast.yaml: metrics.json offers no amounts, and the default database counts carry no row
+     * amount. Every file must equal e2e/expected-amounts-off.
      */
     @Test
     void amountsOffOffersNoAmountsAndChangesNothingElse() throws IOException {
@@ -234,13 +234,10 @@ class E2eGoldenTest {
             Path yml = app.resolve("logast.yml");
             Files.writeString(yml, Files.readString(yml) + "metrics:\n  amounts: off\n");
         });
-        Map<String, String> expected = new TreeMap<>(files(EXPECTED));
-        expected.put("logast.yml", expected.get("logast.yml") + "metrics:\n  amounts: off\n");
-        String metrics = expected.get(".logast/metrics.json");
-        assertThat(metrics).as("the golden metrics.json offers amounts").contains("\"_amounts\"");
-        expected.put(".logast/metrics.json", metrics.replaceAll("(?m)^ *\"(amount|as)\" : \"\",\\n", "")
-                .replaceAll("(?m)^ *\"_amounts\" : \\[[^\\]]*\\],\\n", ""));
-        assertSameFiles(expected, actual);
+        assertThat(actual.get(".logast/metrics.json")).as("no amounts offered").doesNotContain("\"_amounts\"");
+        assertThat(actual.values().stream().filter(t -> t.contains("Outcomes.count(\"") && t.contains("// logast:metrics-catalog")).toList())
+                .as("the default database count has no row amount").noneMatch(t -> t.contains("\"rows\""));
+        golden(EXPECTED.resolveSibling("expected-amounts-off"), actual);
     }
 
     /**

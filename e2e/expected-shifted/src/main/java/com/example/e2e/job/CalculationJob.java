@@ -14,5 +14,6 @@ public class CalculationJob extends SettlementJob {
     protected void doExecute() {
         log.info("Coupon sweep started");
         log.info("Calculation completed");
+        JobMetrics.calculationCompleted(); // logast:metric review, confidence: medium
     }
 }

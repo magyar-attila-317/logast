@@ -12,5 +12,6 @@ public class ExportJob extends SettlementJob {
     protected void doExecute() {
         log.info("Coupon sweep started");
         log.info("Coupon sweep completed");
+        JobMetrics.exportJobCompleted(); // logast:metric review, confidence: low
     }
 }

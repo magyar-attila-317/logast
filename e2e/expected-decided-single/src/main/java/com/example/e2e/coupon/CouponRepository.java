@@ -26,6 +26,7 @@ public class CouponRepository {
     public void close(String couponId) {
         int rows = jdbcTemplate.update(CLOSE, couponId);
         AfterCommit.log(() -> log.debug("Coupons updated [rows={}]", rows)); // logast:wording
+        BusinessMetrics.couponsUpdated(rows);
     }
 
     public int countUse(String couponId) {

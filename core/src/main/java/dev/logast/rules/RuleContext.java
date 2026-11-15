@@ -237,6 +237,9 @@ public final class RuleContext {
                 && org.openrewrite.java.tree.TypeUtils.isAssignableTo("org.reactivestreams.Publisher", m.decl().getMethodType().getReturnType());
     }
 
+    /** Methods of job/listener flows (metrics.defaults "jobs"), computed once per scan. */
+    Set<String> jobFlow;
+
     private ValueTrace values;
 
     /** Whether a logged value is an MDC key's value, followed back through locals and callers. */

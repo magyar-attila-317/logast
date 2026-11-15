@@ -12,4 +12,15 @@ public class CouponSender {
         log.debug("Sending coupon {} to the channel", couponId);
         log.info("Coupon sent, couponId={}", couponId);
     }
+
+    /** A failure logged and handled here: an outcome worth counting by default. */
+    public boolean resend(String couponId) {
+        try {
+            send(couponId);
+            return true;
+        } catch (IllegalStateException e) {
+            log.warn("Coupon resend failed [couponId={}]", couponId, e);
+            return false;
+        }
+    }
 }

@@ -187,12 +187,14 @@ public final class MetricsMap {
                 continue; // a business-event observation: counted already
             }
             for (LogCall lc : m.facts().logs) {
-                if (lc.level().compareTo(dev.logast.model.Level.INFO) < 0) {
-                    continue;
-                }
                 String raw = MessageTemplate.text(lc.template());
                 if (raw == null) {
                     continue; // built at runtime: no wording to judge
+                }
+                // DEBUG lines are details, except a database write's row count (often DEBUG because it runs per item)
+                boolean rowCount = raw.contains("[rows={}") || raw.contains(", rows={}");
+                if (lc.level().compareTo(dev.logast.model.Level.INFO) < 0 && !rowCount) {
+                    continue;
                 }
                 String text = MessageTemplate.compliantBase(raw).strip();
                 String event = phrasing.eventOf(text);

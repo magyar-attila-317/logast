@@ -109,7 +109,8 @@ public final class MetricsFile {
         Path file = root.resolve(PATH);
         Map<String, JsonNode> previous = raw(file);
         Map<String, WorkOrder> current = new LinkedHashMap<>();
-        orders.stream().filter(o -> o.rule().equals(RULE)).forEach(o -> current.put(o.id(), o));
+        // outcomes counted by default (metrics.defaults) are written by apply, not decided here
+        orders.stream().filter(o -> o.rule().equals(RULE) && !Boolean.TRUE.equals(o.data().get("auto"))).forEach(o -> current.put(o.id(), o));
         if (current.isEmpty() && !Files.exists(file)) {
             return new FillsFile.Update(0, 0, 0, 0, false);
         }

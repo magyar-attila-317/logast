@@ -26,12 +26,13 @@ public class CouponRepository {
     public void close(String couponId) {
         int rows = jdbcTemplate.update(CLOSE, couponId);
         AfterCommit.log(() -> log.debug("Coupons updated [rows={}]", rows)); // logast:wording
+        Outcomes.record("coupons", "updated", "rows", rows);
     }
 
     public int countUse(String couponId) {
         int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, couponId);
         AfterCommit.log(() -> log.info("Coupon usage saved [uses={}]", uses)); // logast:wording
-        Outcomes.record("coupon.usage", "saved", "uses", uses);
+        Outcomes.count("coupon.usage", "saved", "uses", uses);
         return uses;
     }
 

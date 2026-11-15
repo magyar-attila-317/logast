@@ -24,4 +24,5 @@ vocabulary:
       sources:
         params: [agreementId]
 metrics:
+  defaults: []
   catalog: single
