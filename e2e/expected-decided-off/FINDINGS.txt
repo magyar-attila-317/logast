@@ -1,7 +1,7 @@
-logast · 67 files · 19 entrypoints · 72/192 methods reachable · 140 call edges
+logast · 69 files · 21 entrypoints · 74/194 methods reachable · 141 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 78.9% (jobs 8/8 · http 7/11)   (places that should log and do)
-71 orders: 0 AUTO, 20 NEEDS TEXT, 51 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
+72 orders: 0 AUTO, 21 NEEDS TEXT, 51 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: coupon, order, agreement
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -33,7 +33,7 @@ RBR-21df7c  medium  REPORT-ONLY  ROW_BY_ROW_WRITE  src/main/java/com/example/e2e
   note: One bulk statement (UPDATE … WHERE …) or paging with batch updates scales with the data. Report only: logast does not change data access.
 LAR-fd8fcd  medium  REPORT-ONLY  LOG_AND_RETHROW  src/main/java/com/example/e2e/coupon/CouponLookup.java:22  CouponLookup.find
   Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it
-  path: GET /coupons/{couponId}/details → CouponDetailsController.details → CouponLookup.find
+  path: GET /coupons/{couponId}/details → CouponDetailsController.details → CouponLookup.find  (+1 more)
   note: Not removed: nothing else is known to log it on the path through @ExceptionHandler CouponErrors.missing (maps it without logging), so this line may be its only record. Log it there (or in an @ExceptionHandler), then delete this one.
 ARI-dacf62  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/coupon/CouponService.java:26  CouponService.delete
   The audit record record(…) in CouponService.delete does not say who did it
@@ -50,6 +50,7 @@ LHL-77ee4d  medium  REPORT-ONLY  LOG_HELPER  src/main/java/com/example/e2e/edge/
   note: Inline it: an explicit log statement at each call site with domain wording, e.g. log.debug("Coupon income entities prepared [count={}]", entities.size()). Keep a helper only for verified cross-cutting behaviour (redaction, alert contract, sink adaptation).
 KEH-b1f2de  medium  REPORT-ONLY  KAFKA_NO_ERROR_HANDLER  src/main/java/com/example/e2e/messaging/CouponMessages.java:19
   Kafka listeners on the default error handling: a failing record is retried 9 times without delay, then logged and skipped (lost)
+  also fixes: KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/order/OrderEvents.java:15
   note: Declare a CommonErrorHandler bean (Spring Boot wires it into the listener containers): new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate), new ExponentialBackOff(1000, 2)) sends records that still fail to <topic>-dlt; or use @RetryableTopic per listener.
 SWA-91b292  medium  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/e2e/order/LoyaltyClient.java:20  LoyaltyClient.balance
   Exception is caught and dropped without a log line in LoyaltyClient.balance (falls back silently)
@@ -88,6 +89,16 @@ DOM-a2969a  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/j
   + … (4 lines)
   (+2 more edits)
   MSG: Entry log for POST /admin/coupons/{couponId}/revoke (CouponController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
+DOM-1a500b  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/CouponDetailsController.java:27  CouponDetailsController.hold
+  POST /coupons/{couponId}/hold: MDC lacks couponId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
+  path: POST /coupons/{couponId}/hold → CouponDetailsController.hold
+  - lookup.find(couponId.value());
+  + try (var mdc = MdcScope.of("couponId", couponId.value())) {
+  + log.info("{{MSG}}");
+  + lookup.find(couponId.value());
+  + … (4 lines)
+  (+2 more edits)
+  MSG: Entry log for POST /coupons/{couponId}/hold (CouponDetailsController.hold): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
 BWU-5fc605  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:20  QuoteController.quote
   CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
   path: GET /quotes/{productId} → QuoteController.quote
@@ -325,8 +336,8 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             20 log lines need wording only a person knows
+  1. write "MSG" texts in .logast/fills.json             21 log lines need wording only a person knows
   2. set "count" in .logast/metrics.json                 22 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  4. fill calls/day in .logast/traffic.yaml (optional)   19 of 19 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  4. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
   5. logast scan . --format summary                      29 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide

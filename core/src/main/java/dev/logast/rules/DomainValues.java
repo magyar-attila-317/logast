@@ -30,8 +30,11 @@ public final class DomainValues {
             Value found = null;
             for (var v : vars.entrySet()) {
                 if (src.params().contains(v.getKey())) {
-                    found = new Value(key, v.getKey());
-                    break;
+                    String expr = valueOf(v.getKey(), v.getValue());
+                    if (expr != null) {   // a value object without a readable value is left out, not logged as Foo[...]
+                        found = new Value(key, expr);
+                        break;
+                    }
                 }
             }
             if (found == null) {
@@ -48,6 +51,44 @@ public final class DomainValues {
             }
         }
         return out;
+    }
+
+    private static final Set<String> SCALARS = Set.of("java.lang.String", "java.lang.CharSequence", "java.lang.Long",
+            "java.lang.Integer", "java.lang.Short", "java.lang.Byte", "java.lang.Character", "java.lang.Boolean",
+            "java.lang.Double", "java.lang.Float", "java.util.UUID", "java.math.BigInteger", "java.math.BigDecimal");
+
+    /**
+     * What to put into MDC for a variable named like a key (#49): the variable when its value prints well (text,
+     * number, UUID, enum), {@code x.orElse(null)} for an Optional of one, {@code x.value()} for a record wrapping one,
+     * otherwise null (not usable). An unresolved type is taken as it is: no classpath must not lose MDC keys.
+     */
+    static String valueOf(String name, JavaType type) {
+        if (type == null || type instanceof JavaType.Unknown || type instanceof JavaType.Primitive || scalar(type)) {
+            return name;
+        }
+        JavaType.FullyQualified fq = TypeUtils.asFullyQualified(type);
+        if (fq == null) {
+            return null;
+        }
+        if (fq.getFullyQualifiedName().equals("java.util.Optional")) {
+            List<JavaType> params = type instanceof JavaType.Parameterized p ? p.getTypeParameters() : List.of();
+            return !params.isEmpty() && scalar(params.getFirst()) ? name + ".orElse(null)" : null;
+        }
+        if (fq.getKind() == JavaType.FullyQualified.Kind.Record) {
+            List<JavaType.Variable> fields = fq.getMembers().stream().filter(f -> !f.hasFlags(org.openrewrite.java.tree.Flag.Static)).toList();
+            if (fields.size() == 1 && scalar(fields.getFirst().getType())) {
+                return name + "." + fields.getFirst().getName() + "()";
+            }
+        }
+        return null;
+    }
+
+    private static boolean scalar(JavaType t) {
+        if (t instanceof JavaType.Primitive) {
+            return true;
+        }
+        JavaType.FullyQualified fq = TypeUtils.asFullyQualified(t);
+        return fq != null && (SCALARS.contains(fq.getFullyQualifiedName()) || fq.getKind() == JavaType.FullyQualified.Kind.Enum);
     }
 
     /** Registry key an argument expression corresponds to, if any. */

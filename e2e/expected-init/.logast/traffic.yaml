@@ -12,6 +12,7 @@ entrypoints:
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
   "POST /admin/coupons/{couponId}/revoke":     # http, CouponController.revoke
   "POST /coupons/redeem":     # http, CouponController.redeem
+  "POST /coupons/{couponId}/hold":     # http, CouponDetailsController.hold
   "POST /coupons/{couponId}/publish":     # http, CouponController.publish
   "POST /coupons/{couponId}/use":     # http, CouponController.use
   "POST /orders":     # http, CouponController.place
@@ -21,6 +22,7 @@ entrypoints:
   "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
   # kafka
   "@KafkaListener coupon-batches":     # kafka, CouponMessages.onBatch
+  "@KafkaListener orders":     # kafka, OrderEvents.onOrder
   # jms
   "@JmsListener coupon-audits":     # jms, CouponMessages.onAudit
   # rabbit

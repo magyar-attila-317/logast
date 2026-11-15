@@ -1,3 +1,32 @@
+diff --git a/src/main/java/com/example/e2e/web/CouponDetailsController.java b/src/main/java/com/example/e2e/web/CouponDetailsController.java
+index 74714ec..b05acc6 100644
+--- a/src/main/java/com/example/e2e/web/CouponDetailsController.java
++++ b/src/main/java/com/example/e2e/web/CouponDetailsController.java
+@@ -3,11 +3,13 @@ 
+ import com.example.e2e.coupon.CouponId;
+ import com.example.e2e.coupon.CouponLookup;
+ import com.example.e2e.logging.MdcScope;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.PostMapping;
+ import org.springframework.web.bind.annotation.RestController;
+ 
++@Slf4j
+ @RestController
+ public class CouponDetailsController {
+     private final CouponLookup lookup;
+@@ -25,6 +27,9 @@
+ 
+     @PostMapping("/coupons/{couponId}/hold")
+     public void hold(@PathVariable CouponId couponId) {
+-        lookup.find(couponId.value());
++        try (var mdc = MdcScope.of("couponId", couponId.value())) {
++            log.info("Coupon sweep started");
++            lookup.find(couponId.value());
++        }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/web/CouponController.java b/src/main/java/com/example/e2e/web/CouponController.java
 index 644a8d2..523c830 100644
 --- a/src/main/java/com/example/e2e/web/CouponController.java

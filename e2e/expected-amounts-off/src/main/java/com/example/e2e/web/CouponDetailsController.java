@@ -1,9 +1,11 @@
 package com.example.e2e.web;
 
+import com.example.e2e.coupon.CouponId;
 import com.example.e2e.coupon.CouponLookup;
 import com.example.e2e.logging.MdcScope;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -19,5 +21,10 @@ public class CouponDetailsController {
         try (var mdc = MdcScope.of("couponId", couponId)) {
             return lookup.find(couponId);
         }
+    }
+
+    @PostMapping("/coupons/{couponId}/hold")
+    public void hold(@PathVariable CouponId couponId) {
+        lookup.find(couponId.value());
     }
 }
