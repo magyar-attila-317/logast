@@ -435,6 +435,11 @@ public final class RepeatedValueRules {
 
         Map<String, Plan> out = new LinkedHashMap<>();
         for (Candidate c : byKey.values()) {
+            if (ctx.reactive(m)) {
+                decide(c.key(), m, "no scope", "returns a Mono/Flux: a scope here ends before the pipeline runs "
+                        + "(use Reactor's automatic context propagation instead)");
+                continue;
+            }
             int total = c.logs().size() + chainCount(m, c.key(), 0, new HashSet<>(Set.of(m.key())));
             if (setBelow(m, c.key(), 0, new HashSet<>())) {
                 decide(c.key(), m, "no scope", "a method below sets " + c.key() + " in MDC itself: a scope here would nest");

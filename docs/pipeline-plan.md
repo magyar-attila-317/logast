@@ -33,8 +33,8 @@ of the earlier one. The shared plan state (`plannedOwnKeys`, `plannedLocalKeys`,
 | step | rules | what the step may assume |
 |---|---|---|
 | 0 setup | SETUP_SUPPORT_STARTER, SETUP_OTEL_STARTER, SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING, SETUP_SERVICE_IDENTITY, TRACING_SAMPLING, KAFKA_OBSERVATION_DISABLED, HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT, JOB_LAUNCH_UNTRACED | nothing |
-| 1a structure | MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NOT_OWNER (legacy MDC to scopes), ENTRYPOINT_NOT_OBSERVED (wrapper only, no keys), SCHEDULED_TASK_UNTRACED, ASYNC_CONTEXT_LOSS, BUSINESS_EVENT_UNMEASURED | support classes exist |
-| 1b lines | ENTRYPOINT_SILENT, JOB_OUTCOME_MISSING, BATCH_SUMMARY_MISSING, SKIP_UNLOGGED, STATE_CHANGE_UNLOGGED, DB_OUTCOME_UNLOGGED, LIFECYCLE_UNEVEN, SWALLOWED_EXCEPTION, LOST_THROWABLE | wrappers are in the code (their runtime outcome line counts) |
+| 1a structure | MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NOT_OWNER (legacy MDC to scopes), ENTRYPOINT_NOT_OBSERVED (wrapper only, no keys), SCHEDULED_TASK_UNTRACED, ASYNC_CONTEXT_LOSS | support classes exist |
+| 1b lines | ENTRYPOINT_SILENT, JOB_OUTCOME_MISSING, BATCH_SUMMARY_MISSING, SKIP_UNLOGGED, STATE_CHANGE_UNLOGGED, DB_OUTCOME_UNLOGGED, LIFECYCLE_UNEVEN, SWALLOWED_EXCEPTION, LOST_THROWABLE, BUSINESS_EVENT_UNMEASURED (after the lines it reads: a job outcome line can make a method a business event) | wrappers are in the code (their runtime outcome line counts) |
 | 2a MDC | MISSING_DOMAIN_MDC (entrypoint keys, added to the wrapper or as a scope), REPEATED_LOG_VALUE (highest stable point of a chain), MDC_KEY_ALIAS, MDC_NESTED_KEY, AREA_MDC_MISSING (report) | every line exists |
 | 2b messages | LOG_FORMAT (incl. dropping keys MDC carries), STRING_CONCAT_LOG, LOG_KEY_STYLE, GLOSSARY_VIOLATION, MESSAGE_PHRASING, PII_IN_LOG, LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_KEY_VALUE_IN_MDC, MESSAGE_SUGGESTED, MESSAGE_VAGUE (report), LOG_HELPER (report) | MDC scopes are in the code |
 | 2c exceptions | LOG_AND_RETHROW, EXCEPTION_LOGGED_TWICE | context is in MDC where it will be |

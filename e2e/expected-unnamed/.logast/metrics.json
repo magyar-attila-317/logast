@@ -124,13 +124,46 @@
     "_paths" : [ "event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)" ],
     "_tag" : "not available here (no observation known to run)"
   },
+  "OUM-21d0c8" : {
+    "count" : "",
+    "name" : "coupon.messages",
+    "outcome" : "completed",
+    "_event" : "completed",
+    "_message" : "INFO \"Coupon messages completed\"",
+    "_where" : "src/main/java/com/example/e2e/messaging/CouponMessages.java:31 CouponMessages.onReturn",
+    "_frequency" : "unknown: no rate for \"@RabbitListener coupon-returns\" in .logast/traffic.yaml",
+    "_paths" : [ "rabbit @RabbitListener coupon-returns" ],
+    "_tag" : "available"
+  },
+  "OUM-620a15" : {
+    "count" : "",
+    "name" : "coupon.messages",
+    "outcome" : "completed",
+    "_event" : "completed",
+    "_message" : "INFO \"Coupon messages completed\"",
+    "_where" : "src/main/java/com/example/e2e/messaging/CouponMessages.java:39 CouponMessages.onAudit",
+    "_frequency" : "unknown: no rate for \"@JmsListener coupon-audits\" in .logast/traffic.yaml",
+    "_paths" : [ "jms @JmsListener coupon-audits" ],
+    "_tag" : "available"
+  },
+  "OUM-4284aa" : {
+    "count" : "",
+    "name" : "coupon.lookup",
+    "outcome" : "failed",
+    "_event" : "failed",
+    "_message" : "WARN \"Coupon lookup failed\"",
+    "_where" : "src/main/java/com/example/e2e/messaging/ReactiveCouponLookup.java:17 ReactiveCouponLookup.find",
+    "_frequency" : "unknown: no entrypoint is known to reach it",
+    "_paths" : [ ],
+    "_tag" : "not available here (no observation known to run)"
+  },
   "OUM-0f37ab" : {
     "count" : "",
     "name" : "order.confirmation",
     "outcome" : "sent",
     "_event" : "sent",
     "_message" : "INFO \"Order confirmation sent\"",
-    "_where" : "src/main/java/com/example/e2e/order/OrderNotifications.java:15 OrderNotifications.onPlaced",
+    "_where" : "src/main/java/com/example/e2e/order/OrderNotifications.java:17 OrderNotifications.onPlaced",
     "_frequency" : "unknown: no rate for \"POST /orders\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /orders" ],
     "_tag" : "available"

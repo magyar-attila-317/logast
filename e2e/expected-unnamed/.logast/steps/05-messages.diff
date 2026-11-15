@@ -137,10 +137,10 @@ index a82b3b1..5153ba7 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 6ddf0da..0acad53 100644
+index 3422916..765de3d 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -12,7 +12,7 @@ 
+@@ -14,8 +14,8 @@ 
  
      @EventListener
      public void onPlaced(OrderPlaced event) {
@@ -149,7 +149,8 @@ index 6ddf0da..0acad53 100644
 +        log.info("Order confirmation sent");
 +        log.debug("Confirmation amount [amountCents={}]", event.amountCents());
      }
- }
+ 
+     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
 diff --git a/src/main/java/com/example/e2e/edge/CouponTask.java b/src/main/java/com/example/e2e/edge/CouponTask.java
 index b5b44e5..c942299 100644
 --- a/src/main/java/com/example/e2e/edge/CouponTask.java
@@ -309,6 +310,28 @@ index 75a07b2..dbee97b 100644
          return Optional.empty();
      }
  }
+diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+index e59f84e..3655c4c 100644
+--- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
++++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+@@ -27,7 +27,7 @@ 
+     @RabbitListener(queues = "coupon-returns")
+     public void onReturn(String couponId) {
+         try (var mdc = MdcScope.of("couponId", couponId)) {
+-            log.info("Coupon return received [couponId={}]", couponId);
++            log.info("Coupon return received");
+             log.info("Coupon messages completed"); // logast:wording
+         }
+     }
+@@ -35,7 +35,7 @@
+     @JmsListener(destination = "coupon-audits")
+     public void onAudit(String couponId) {
+         try (var mdc = MdcScope.of("couponId", couponId)) {
+-            log.info("Coupon audit received [couponId={}]", couponId);
++            log.info("Coupon audit received");
+             log.info("Coupon messages completed"); // logast:wording
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
 index 84cd343..1e94776 100644
 --- a/src/main/java/com/example/e2e/job/CalculationJob.java

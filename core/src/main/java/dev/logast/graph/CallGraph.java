@@ -51,18 +51,21 @@ public final class CallGraph {
     }
 
     private static final String PUBLISHER = "org.springframework.context.ApplicationEventPublisher";
-    private static final List<String> LISTENERS = List.of("org.springframework.context.event.EventListener",
-            "org.springframework.transaction.event.TransactionalEventListener");
+    private static final String EVENT_LISTENER = "org.springframework.context.event.EventListener";
+    private static final String TX_LISTENER = "org.springframework.transaction.event.TransactionalEventListener";
 
     /**
      * Spring's event dispatch, which is not a call in the code: {@code publisher.publishEvent(new OrderPlaced(…))}
      * reaches every {@code @EventListener} whose parameter type the event fits. Synchronous listeners run in the
      * publisher's thread (its MDC and span); {@code @Async} ones on another thread, through the TaskDecorator.
+     * A {@code @TransactionalEventListener} runs when the transaction commits (AFTER_COMMIT by default), after the
+     * publisher's scopes may have closed: not part of the publisher's flow, unless its phase is BEFORE_COMMIT.
      */
     private void events(CodeIndex index) {
         List<MethodInfo> listeners = index.methods().stream()
                 .filter(l -> l.hasBody() && !l.type().getParameterTypes().isEmpty()
-                        && LISTENERS.stream().anyMatch(a -> l.decl().getLeadingAnnotations().stream().anyMatch(x -> Annotations.is(x, a))))
+                        && l.decl().getLeadingAnnotations().stream().anyMatch(x -> Annotations.is(x, EVENT_LISTENER)
+                        || Annotations.is(x, TX_LISTENER) && Annotations.rawAttribute(x, "phase").orElse("").contains("BEFORE_COMMIT")))
                 .toList();
         if (listeners.isEmpty()) {
             return;

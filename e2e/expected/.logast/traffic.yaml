@@ -12,5 +12,12 @@ entrypoints:
   # scheduled
   "@Scheduled CouponCleanupJob.cleanup":     # scheduled, CouponCleanupJob.cleanup
   "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
+  # kafka
+  "@KafkaListener coupon-batches":     # kafka, CouponMessages.onBatch
+  # jms
+  "@JmsListener coupon-audits":     # jms, CouponMessages.onAudit
+  # rabbit
+  "@RabbitListener coupon-returns":     # rabbit, CouponMessages.onReturn
   # in-process event listeners: their rate follows whoever publishes the event (fill only if you know it)
   "@EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)":     # event, SettlementJobExecutor.onReady
+  "@TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)":     # event, OrderNotifications.onCommitted

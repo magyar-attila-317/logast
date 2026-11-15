@@ -1,3 +1,25 @@
+diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+index 01e8d81..6ddaebe 100644
+--- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
++++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+@@ -28,7 +28,7 @@ 
+     public void onReturn(String couponId) {
+         try (var mdc = MdcScope.of("couponId", couponId)) {
+             log.info("Coupon return received");
+-            log.info("Coupon messages completed"); // logast:wording
++            log.info("Coupon sweep completed");
+         }
+     }
+ 
+@@ -36,7 +36,7 @@
+     public void onAudit(String couponId) {
+         try (var mdc = MdcScope.of("couponId", couponId)) {
+             log.info("Coupon audit received");
+-            log.info("Coupon messages completed"); // logast:wording
++            log.info("Coupon sweep completed");
+         }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
 index 25c31a9..f13982f 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeJob.java
@@ -48,6 +70,19 @@ index 7bf2b77..4ba5455 100644
 -        log.info("Export job completed"); // logast:wording
 +        log.info("Coupon sweep started");
 +        log.info("Coupon sweep completed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 5c0b6d0..2abd838 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -25,7 +25,7 @@ 
+                 .quiet()
+                 .run(() -> {
+                     log.info("Order audit recorded [orderId={}]", event.orderId());
+-                    log.info("Order notifications completed"); // logast:wording
++                    log.info("Coupon sweep completed");
+                 });
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java

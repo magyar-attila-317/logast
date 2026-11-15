@@ -39,6 +39,39 @@ index b5ef221..74b60cd 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+index c2e5489..e59f84e 100644
+--- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
++++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.messaging;
+ 
++import com.example.e2e.logging.MdcScope;
+ import com.example.e2e.logging.ObservedContext;
+ import java.util.List;
+ import org.slf4j.Logger;
+@@ -25,13 +26,17 @@
+ 
+     @RabbitListener(queues = "coupon-returns")
+     public void onReturn(String couponId) {
+-        log.info("Coupon return received [couponId={}]", couponId);
+-        log.info("Coupon messages completed"); // logast:wording
++        try (var mdc = MdcScope.of("couponId", couponId)) {
++            log.info("Coupon return received [couponId={}]", couponId);
++            log.info("Coupon messages completed"); // logast:wording
++        }
+     }
+ 
+     @JmsListener(destination = "coupon-audits")
+     public void onAudit(String couponId) {
+-        log.info("Coupon audit received [couponId={}]", couponId);
+-        log.info("Coupon messages completed"); // logast:wording
++        try (var mdc = MdcScope.of("couponId", couponId)) {
++            log.info("Coupon audit received [couponId={}]", couponId);
++            log.info("Coupon messages completed"); // logast:wording
++        }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/income/IncomeCalculator.java b/src/main/java/com/example/e2e/income/IncomeCalculator.java
 index 04a4db7..a82b3b1 100644
 --- a/src/main/java/com/example/e2e/income/IncomeCalculator.java

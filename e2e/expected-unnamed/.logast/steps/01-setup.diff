@@ -1,8 +1,8 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index a914af8..4a504dd 100644
+index a914af8..446bb54 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -1,5 +1,25 @@ 
+@@ -1,5 +1,32 @@ 
 -spring:
  logging:
    structured:
@@ -15,6 +15,13 @@ index a914af8..4a504dd 100644
 +          name: ${spring.application.name}
 +          version: ${spring.application.version}
 +spring:
++  kafka:
++    listener:
++      observation-enabled: true
++  rabbitmq:
++    listener:
++      simple:
++        observation-enabled: true
 +  application:
 +    name: billing-service
 +    version: ${APPLICATION_VERSION:unknown}

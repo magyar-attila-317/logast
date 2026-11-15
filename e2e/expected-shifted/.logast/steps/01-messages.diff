@@ -1,0 +1,113 @@
+diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
+index e3599f9..0ed064f 100644
+--- a/src/main/java/com/example/e2e/order/PaymentClient.java
++++ b/src/main/java/com/example/e2e/order/PaymentClient.java
+@@ -13,7 +13,7 @@ 
+         try (var mdc = MdcScope.of("orderId", order.id())) {
+             try {
+                 log.debug("Charge requested");
+-                log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
++                log.debug("Charging the card [amountCents={}]", order.amountCents());
+                 gateway(order);
+             } catch (IllegalStateException e) {
+                 throw new PaymentException("charge failed", e);
+diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+index 01e8d81..6ddaebe 100644
+--- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
++++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+@@ -28,7 +28,7 @@ 
+     public void onReturn(String couponId) {
+         try (var mdc = MdcScope.of("couponId", couponId)) {
+             log.info("Coupon return received");
+-            log.info("Coupon messages completed"); // logast:wording
++            log.info("Coupon sweep completed");
+         }
+     }
+ 
+@@ -36,7 +36,7 @@
+     public void onAudit(String couponId) {
+         try (var mdc = MdcScope.of("couponId", couponId)) {
+             log.info("Coupon audit received");
+-            log.info("Coupon messages completed"); // logast:wording
++            log.info("Coupon sweep completed");
+         }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
+index 25c31a9..f13982f 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeJob.java
++++ b/src/main/java/com/example/e2e/edge/EdgeJob.java
+@@ -18,12 +18,12 @@ 
+ 
+     @Scheduled(cron = "0 30 3 * * *")
+     public void run() {
+-        log.info("Edge started"); // logast:wording
++        log.info("Coupon sweep started");
+         var rows = pending();
+         for (SalesTotals row : rows) {
+             flow.process(row);
+         }
+-        log.info("Edge completed [salesTotalsCount={}]", rows.size()); // logast:wording
++        log.info("Coupon sweep completed [salesTotalsCount={}]", rows.size());
+     }
+ 
+     private List<SalesTotals> pending() {
+diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+index 9f9d096..2dca8ff 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+@@ -21,12 +21,12 @@ 
+     @Transactional
+     public void cleanup() {
+         log.debug("Cleanup tick");
+-        log.info("Coupon cleanup started"); // logast:wording
++        log.info("Coupon sweep started");
+         var couponIds = repository.findOpen();
+         for (String couponId : couponIds) {
+             log.debug("Closing stale coupon [couponId={}]", couponId);
+             repository.close(couponId);
+         }
+-        AfterCommit.log(() -> log.info("Coupon cleanup completed [couponCount={}]", couponIds.size())); // logast:wording
++        AfterCommit.log(() -> log.info("Coupon sweep completed [couponCount={}]", couponIds.size()));
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 7bf2b77..4ba5455 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -10,7 +10,7 @@ 
+ public class ExportJob extends SettlementJob {
+     @Override
+     protected void doExecute() {
+-        log.info("Export job started"); // logast:wording
+-        log.info("Export job completed"); // logast:wording
++        log.info("Coupon sweep started");
++        log.info("Coupon sweep completed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 5c0b6d0..2abd838 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -25,7 +25,7 @@ 
+                 .quiet()
+                 .run(() -> {
+                     log.info("Order audit recorded [orderId={}]", event.orderId());
+-                    log.info("Order notifications completed"); // logast:wording
++                    log.info("Coupon sweep completed");
+                 });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
+index 1e94776..ff68e86 100644
+--- a/src/main/java/com/example/e2e/job/CalculationJob.java
++++ b/src/main/java/com/example/e2e/job/CalculationJob.java
+@@ -12,7 +12,7 @@ 
+ 
+     @Override
+     protected void doExecute() {
+-        log.info("Calculation started"); // logast:wording
++        log.info("Coupon sweep started");
+         log.info("Calculation completed");
+     }
+ }

@@ -61,6 +61,7 @@ public final class Rules {
     public static final String TRACING_SAMPLING = "TRACING_SAMPLING";
     public static final String SCHEDULED_TASK_UNTRACED = "SCHEDULED_TASK_UNTRACED";
     public static final String KAFKA_OBSERVATION_DISABLED = "KAFKA_OBSERVATION_DISABLED";
+    public static final String RABBIT_OBSERVATION_DISABLED = "RABBIT_OBSERVATION_DISABLED";
     public static final String JOB_LAUNCH_UNTRACED = "JOB_LAUNCH_UNTRACED";
     public static final String RUNTIME_TRACE_LOST = "RUNTIME_TRACE_LOST";
     public static final String RUNTIME_MDC_LOST = "RUNTIME_MDC_LOST";
@@ -103,7 +104,7 @@ public final class Rules {
             PACKS.put(r, Set.of("logging"));
         }
         for (String r : List.of(ENTRYPOINT_NOT_OBSERVED, MANUAL_TRACE_MDC, SETUP_OTEL_STARTER, HTTP_CLIENT_UNTRACED,
-                KAFKA_OBSERVATION_DISABLED, JOB_LAUNCH_UNTRACED, RUNTIME_TRACE_LOST, TRACING_SAMPLING)) {
+                KAFKA_OBSERVATION_DISABLED, RABBIT_OBSERVATION_DISABLED, JOB_LAUNCH_UNTRACED, RUNTIME_TRACE_LOST, TRACING_SAMPLING)) {
             PACKS.put(r, Set.of("tracing"));
         }
         // context propagation matters to MDC (logging) and spans (tracing); the starter serves every pack
@@ -139,16 +140,18 @@ public final class Rules {
 
     static {
         for (String r : List.of(SETUP_SUPPORT_STARTER, SETUP_OTEL_STARTER, SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING,
-                SETUP_SERVICE_IDENTITY, TRACING_SAMPLING, KAFKA_OBSERVATION_DISABLED, HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT,
+                SETUP_SERVICE_IDENTITY, TRACING_SAMPLING, KAFKA_OBSERVATION_DISABLED, RABBIT_OBSERVATION_DISABLED, HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT,
                 JOB_LAUNCH_UNTRACED)) {
             STEPS.put(r, Step.SETUP);
         }
         for (String r : List.of(MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NOT_OWNER, ENTRYPOINT_NOT_OBSERVED, SCHEDULED_TASK_UNTRACED,
-                ASYNC_CONTEXT_LOSS, BUSINESS_EVENT_UNMEASURED)) {
+                ASYNC_CONTEXT_LOSS)) {
             STEPS.put(r, Step.STRUCTURE);
         }
+        // BUSINESS_EVENT_UNMEASURED reads the lifecycle lines: it goes with the step that adds them (a job outcome
+        // line can be what makes a method a business event), not before it
         for (String r : List.of(ENTRYPOINT_SILENT, JOB_OUTCOME_MISSING, BATCH_SUMMARY_MISSING, SKIP_UNLOGGED, STATE_CHANGE_UNLOGGED,
-                DB_OUTCOME_UNLOGGED, LIFECYCLE_UNEVEN, SWALLOWED_EXCEPTION, LOST_THROWABLE)) {
+                DB_OUTCOME_UNLOGGED, LIFECYCLE_UNEVEN, SWALLOWED_EXCEPTION, LOST_THROWABLE, BUSINESS_EVENT_UNMEASURED)) {
             STEPS.put(r, Step.LINES);
         }
         for (String r : List.of(MISSING_DOMAIN_MDC, REPEATED_LOG_VALUE, MDC_KEY_ALIAS, MDC_NESTED_KEY, AREA_MDC_MISSING)) {
@@ -215,7 +218,7 @@ public final class Rules {
             Map.entry(UNBOUNDED_EXECUTOR, "medium"), Map.entry(BLOCKING_WAIT_UNBOUNDED, "medium"),
             Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
             Map.entry(CLIENT_ERROR_AS_SERVER_ERROR, "medium"), Map.entry(PROBLEM_DETAILS_DISABLED, "low"),
-            Map.entry(AUDIT_MISSING, "medium"), Map.entry(AUDIT_SECURITY_EVENTS, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
+            Map.entry(AUDIT_MISSING, "medium"), Map.entry(AUDIT_SECURITY_EVENTS, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(RABBIT_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
             Map.entry(LOG_IN_LOOP, "low"), Map.entry(LOG_VOLUME, "medium"),
             Map.entry(METRIC_NAMING, "low"), Map.entry(METRIC_HIGH_CARDINALITY_TAG, "high"), Map.entry(METRIC_DIRECT_REGISTRY, "low"));
@@ -293,6 +296,11 @@ public final class Rules {
         org.openrewrite.java.tree.J stmt = CoverageRules.enclosingStatement(g.method(), g.log().call());
         if (stmt == null) {
             return "Cannot place a line next to this log call automatically (not a plain statement).";
+        }
+        if (stmt instanceof org.openrewrite.java.tree.J.Return || stmt instanceof org.openrewrite.java.tree.J.Throw) {
+            // a line after it would never run (the log call sits in a lambda of the returned pipeline, e.g. doOnError)
+            return "The log line is part of a return/throw statement: a counting line after it would never run; count it "
+                    + "where it happens (inside the lambda) or mark it skip.";
         }
         String text = f.text();
         int[] lines = JavaEdits.statementLines(text, stmt);

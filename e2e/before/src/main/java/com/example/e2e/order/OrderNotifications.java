@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /** Reached only through the event: it runs inside place(), so the orderId MDC around place() is there too. */
 @Component
@@ -14,5 +15,11 @@ public class OrderNotifications {
     public void onPlaced(OrderPlaced event) {
         log.info("Order confirmation sent [orderId={}]", event.orderId());
         log.debug("Confirmation amount [orderId={}, amountCents={}]", event.orderId(), event.amountCents());
+    }
+
+    /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
+    @TransactionalEventListener
+    public void onCommitted(OrderPlaced event) {
+        log.info("Order audit recorded [orderId={}]", event.orderId());
     }
 }

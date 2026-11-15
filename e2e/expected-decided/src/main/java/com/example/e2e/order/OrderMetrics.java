@@ -12,6 +12,9 @@ public final class OrderMetrics {
     private OrderMetrics() {
     }
 
+    /** Observation (timer and span) name. */
+    public static final String ORDER_NOTIFICATIONS = "order.notifications";
+
     /** order.confirmation{outcome="sent"} +1. */
     public static void orderConfirmationSent() {
         Outcomes.count("order.confirmation", "sent");
