@@ -24,14 +24,24 @@ public final class BusinessMetrics {
     /** Observation (timer and span) name. */
     public static final String ORDER_NOTIFICATIONS = "order.notifications";
 
-    /** pledge.usage{outcome="saved"} +1; uses is one sample of the distribution pledge.usage.uses{outcome="saved"}. */
+    /** pledges{outcome="updated"} +1; rows is one sample of the distribution pledges.rows{outcome="updated"}. */
+    public static void pledgesUpdated(Number rows) {
+        Outcomes.record("pledges", "updated", "rows", rows);
+    }
+
+    /** pledge.usage{outcome="saved"} +1; pledge.usage.uses{outcome="saved"} grows by uses. */
     public static void pledgeUsageSaved(Number uses) {
-        Outcomes.record("pledge.usage", "saved", "uses", uses);
+        Outcomes.count("pledge.usage", "saved", "uses", uses);
     }
 
     /** pledge{outcome="sent"} +1. */
     public static void pledgeSent() {
         Outcomes.count("pledge", "sent");
+    }
+
+    /** pledge.resend{outcome="failed"} +1. */
+    public static void pledgeResendFailed() {
+        Outcomes.count("pledge.resend", "failed");
     }
 
     /** pledge{outcome="published"} +1. */
@@ -92,6 +102,11 @@ public final class BusinessMetrics {
     /** order{outcome="placed"} +1. */
     public static void orderPlaced() {
         Outcomes.count("order", "placed");
+    }
+
+    /** order.shipment{outcome="skipped"} +1. */
+    public static void orderShipmentSkipped() {
+        Outcomes.count("order.shipment", "skipped");
     }
 
     /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */

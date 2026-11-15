@@ -76,6 +76,8 @@ metrics:
   catalog: per-package             # metric names in one place (METRIC_CATALOG): per-package = an XMetrics class per
                                    # package that counts; single = all in catalogClass; off = names at the call sites
   # catalogClass: com.example.metrics.BusinessMetrics   # for single (default: <app package>.metrics.BusinessMetrics)
+  defaults: [failures, jobs, skips, db-writes]   # counted without a metrics.json decision, marked
+                                   # "// logast:metric review, confidence: …"; [] = only what metrics.json decides
   tags:                            # tag vocabulary: aliases are renamed to the key (METRIC_TAG_KEY)
     outcome:
       aliases: [result, success, succeeded]

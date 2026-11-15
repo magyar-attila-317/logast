@@ -29,6 +29,7 @@ public class PledgeMessages {
         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
             log.info("Pledge return received");
             log.info("Pledge messages completed"); // logast:wording
+            MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
         }
     }
 
@@ -37,6 +38,7 @@ public class PledgeMessages {
         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
             log.info("Pledge audit received");
             log.info("Pledge messages completed"); // logast:wording
+            MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
         }
     }
 }

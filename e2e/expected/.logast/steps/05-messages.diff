@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 34ef8c0..44a836d 100644
+index f57d1f4..c8b6e69 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
 @@ -18,10 +18,10 @@ 
@@ -136,6 +136,30 @@ index a82b3b1..5153ba7 100644
          return new StipendOutcome(false, result);
      }
  }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+index 6178d15..c2e743a 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+@@ -10,8 +10,8 @@ 
+     private static final Logger log = LoggerFactory.getLogger(PledgeSender.class);
+ 
+     public void send(String pledgeId) {
+-        log.debug("Sending pledge {} to the channel", pledgeId);
+-        log.info("Pledge sent, pledgeId={}", pledgeId);
++        log.debug("Sending pledge to the channel");
++        log.info("Pledge sent");
+     }
+ 
+     /** A failure logged and handled here: an outcome worth counting by default. */
+@@ -21,7 +21,7 @@
+                 send(pledgeId);
+                 return true;
+             } catch (IllegalStateException e) {
+-                log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
++                log.warn("Pledge resend failed", e);
+                 return false;
+             }
+         }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
 index 3422916..765de3d 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
@@ -163,20 +187,6 @@ index b5b44e5..c942299 100644
 -        log.info("Task step two [pledgeId={}]", pledgeId);
 +        log.info("Task step one");
 +        log.info("Task step two");
-     }
- }
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index 1b9add7..0f5a523 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-@@ -9,7 +9,7 @@ 
-     private static final Logger log = LoggerFactory.getLogger(PledgeSender.class);
- 
-     public void send(String pledgeId) {
--        log.debug("Sending pledge {} to the channel", pledgeId);
--        log.info("Pledge sent, pledgeId={}", pledgeId);
-+        log.debug("Sending pledge to the channel");
-+        log.info("Pledge sent");
      }
  }
 diff --git a/src/main/java/com/example/e2e/stipend/PledgeChecks.java b/src/main/java/com/example/e2e/stipend/PledgeChecks.java

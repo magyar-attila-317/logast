@@ -12,4 +12,15 @@ public class PledgeSender {
         log.debug("Sending pledge {} to the channel", pledgeId);
         log.info("Pledge sent, pledgeId={}", pledgeId);
     }
+
+    /** A failure logged and handled here: an outcome worth counting by default. */
+    public boolean resend(String pledgeId) {
+        try {
+            send(pledgeId);
+            return true;
+        } catch (IllegalStateException e) {
+            log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
+            return false;
+        }
+    }
 }

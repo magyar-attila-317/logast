@@ -14,5 +14,6 @@ public class TallyJob extends SettlementJob {
     protected void doExecute() {
         log.info("Pledge sweep started");
         log.info("Tally completed");
+        JobMetrics.tallyCompleted(); // logast:metric review, confidence: medium
     }
 }

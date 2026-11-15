@@ -66,8 +66,12 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      *                that counts, next to its code), "single" (all in {@code catalogClass}) or "off" (names stay at the
      *                call sites)
      * @param catalogClass the class for "single"; default {@code <app package>.metrics.BusinessMetrics}
+     * @param defaults     logged outcomes counted without a metrics.json decision, best effort and marked for review:
+     *                     failures, jobs (job/listener outcomes), skips, db-writes (all by default; [] for none)
      */
-    public record Metrics(Map<String, MetricTag> tags, Boolean events, String amounts, String catalog, String catalogClass) {
+    public record Metrics(Map<String, MetricTag> tags, Boolean events, String amounts, String catalog, String catalogClass,
+                          List<String> defaults) {
+        public static final List<String> DEFAULTS = List.of("failures", "jobs", "skips", "db-writes");
         public static final List<String> AMOUNTS = List.of("total", "per-run", "off");
         public static final List<String> CATALOGS = List.of("per-package", "single", "off");
 
@@ -86,6 +90,12 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
                 throw new IllegalArgumentException("metrics.catalog must be one of " + CATALOGS + " (got \"" + catalog + "\")");
             }
             catalogClass = catalogClass == null || catalogClass.isBlank() ? null : catalogClass.strip();
+            defaults = defaults == null ? DEFAULTS : defaults.stream().map(d -> d.strip().toLowerCase(Locale.ROOT)).toList();
+            for (String d : defaults) {
+                if (!DEFAULTS.contains(d)) {
+                    throw new IllegalArgumentException("metrics.defaults: unknown category \"" + d + "\" (known: " + DEFAULTS + ")");
+                }
+            }
         }
 
         /** Alias → canonical tag key. */
@@ -320,7 +330,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         support = support == null ? new Support(null, null, null, null) : support;
         rules = rules == null ? Map.of() : Map.copyOf(rules);
         verify = verify == null ? new Verify(null, null) : verify;
-        metrics = metrics == null ? new Metrics(null, null, null, null, null) : metrics;
+        metrics = metrics == null ? new Metrics(null, null, null, null, null, null) : metrics;
         resilience = resilience == null ? new Resilience(null, null) : resilience;
         audit = audit == null ? new Audit(null, null) : audit;
     }

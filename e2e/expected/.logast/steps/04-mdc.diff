@@ -72,6 +72,38 @@ index c2e5489..e59f84e 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+index bb218a8..6178d15 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Component;
+@@ -15,12 +16,14 @@
+ 
+     /** A failure logged and handled here: an outcome worth counting by default. */
+     public boolean resend(String pledgeId) {
+-        try {
+-            send(pledgeId);
+-            return true;
+-        } catch (IllegalStateException e) {
+-            log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
+-            return false;
++        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++            try {
++                send(pledgeId);
++                return true;
++            } catch (IllegalStateException e) {
++                log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
++                return false;
++            }
+         }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/stipend/StipendCalculator.java b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
 index 04a4db7..a82b3b1 100644
 --- a/src/main/java/com/example/e2e/stipend/StipendCalculator.java

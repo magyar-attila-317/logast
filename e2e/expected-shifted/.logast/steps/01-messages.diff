@@ -12,7 +12,7 @@ index e3599f9..0ed064f 100644
              } catch (IllegalStateException e) {
                  throw new PaymentException("charge failed", e);
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 01e8d81..6ddaebe 100644
+index 70d0891..80ba904 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -28,7 +28,7 @@ 
@@ -21,18 +21,18 @@ index 01e8d81..6ddaebe 100644
              log.info("Pledge return received");
 -            log.info("Pledge messages completed"); // logast:wording
 +            log.info("Pledge sweep completed");
+             MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
          }
      }
- 
-@@ -36,7 +36,7 @@
+@@ -37,7 +37,7 @@
      public void onAudit(String pledgeId) {
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge audit received");
 -            log.info("Pledge messages completed"); // logast:wording
 +            log.info("Pledge sweep completed");
+             MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
          }
      }
- }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
 index 25c31a9..f13982f 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeJob.java
@@ -72,10 +72,10 @@ index 9f9d096..2dca8ff 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 7bf2b77..4ba5455 100644
+index 86da61d..c209433 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
-@@ -10,7 +10,7 @@ 
+@@ -10,8 +10,8 @@ 
  public class ExportJob extends SettlementJob {
      @Override
      protected void doExecute() {
@@ -83,6 +83,7 @@ index 7bf2b77..4ba5455 100644
 -        log.info("Export job completed"); // logast:wording
 +        log.info("Pledge sweep started");
 +        log.info("Pledge sweep completed");
+         JobMetrics.exportJobCompleted(); // logast:metric review, confidence: low
      }
  }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
@@ -99,7 +100,7 @@ index 5c0b6d0..2abd838 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index 1e94776..ff68e86 100644
+index 97bc73b..3970db8 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -12,7 +12,7 @@ 
@@ -109,5 +110,5 @@ index 1e94776..ff68e86 100644
 -        log.info("Tally started"); // logast:wording
 +        log.info("Pledge sweep started");
          log.info("Tally completed");
+         JobMetrics.tallyCompleted(); // logast:metric review, confidence: medium
      }
- }

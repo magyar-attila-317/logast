@@ -12,14 +12,24 @@ public final class PledgeMetrics {
     private PledgeMetrics() {
     }
 
-    /** pledge.usage{outcome="saved"} +1; uses is one sample of the distribution pledge.usage.uses{outcome="saved"}. */
+    /** pledges{outcome="updated"} +1; rows is one sample of the distribution pledges.rows{outcome="updated"}. */
+    public static void pledgesUpdated(Number rows) {
+        Outcomes.record("pledges", "updated", "rows", rows);
+    }
+
+    /** pledge.usage{outcome="saved"} +1; pledge.usage.uses{outcome="saved"} grows by uses. */
     public static void pledgeUsageSaved(Number uses) {
-        Outcomes.record("pledge.usage", "saved", "uses", uses);
+        Outcomes.count("pledge.usage", "saved", "uses", uses);
     }
 
     /** pledge{outcome="sent"} +1. */
     public static void pledgeSent() {
         Outcomes.count("pledge", "sent");
+    }
+
+    /** pledge.resend{outcome="failed"} +1. */
+    public static void pledgeResendFailed() {
+        Outcomes.count("pledge.resend", "failed");
     }
 
     /** pledge{outcome="published"} +1. */

@@ -27,14 +27,15 @@ import java.util.*;
  * <ul>
  *   <li>objects merge deeply, lists append (distinct), scalars of later layers win;</li>
  *   <li>{@code override: true} on an object replaces it instead of merging;</li>
- *   <li>{@code packs} and {@code mdc.ambientKeys} are replaced, not appended (they are selections);</li>
+ *   <li>{@code packs}, {@code mdc.ambientKeys} and {@code metrics.defaults} are replaced, not appended (they are
+ *       selections: {@code defaults: []} switches them all off);</li>
  *   <li>every explicit override, and every scalar a later layer changes after a non-default layer set it, is
  *       recorded in {@link Policy#overrides()} so the standard's deviations stay visible.</li>
  * </ul>
  */
 public final class PolicyLoader {
     static final String DEFAULTS = "classpath:logast-defaults.yaml";
-    private static final Set<String> REPLACED_LISTS = Set.of("packs", "mdc.ambientKeys");
+    private static final Set<String> REPLACED_LISTS = Set.of("packs", "mdc.ambientKeys", "metrics.defaults");
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory())
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 

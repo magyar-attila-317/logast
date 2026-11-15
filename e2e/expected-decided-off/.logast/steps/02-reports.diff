@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 44a836d..01b3770 100644
+index c8b6e69..2a75879 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
 @@ -1,5 +1,6 @@ 
@@ -9,7 +9,7 @@ index 44a836d..01b3770 100644
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
  import org.springframework.context.ApplicationEventPublisher;
-@@ -22,11 +23,13 @@
+@@ -22,15 +23,18 @@
          payments.charge(order);
          events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
          log.info("Order placed");
@@ -18,31 +18,46 @@ index 44a836d..01b3770 100644
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
      public void ship(java.util.List<Order> orders, int batchNumber) {
+         if (orders.isEmpty()) {
+             log.info("Order shipment skipped");
++            Outcomes.count("order.shipment", "skipped");
+             return;
+         }
          orders.forEach(payments::charge);
          log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
 +        Outcomes.count("orders", "shipped", "items", orders.size());
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index 0f5a523..838276a 100644
+index c2e743a..5259e5c 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-@@ -1,5 +1,6 @@ 
+@@ -1,6 +1,7 @@ 
  package com.example.e2e.pledge;
  
+ import com.example.e2e.logging.MdcScope;
 +import com.example.e2e.logging.Outcomes;
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
  import org.springframework.stereotype.Component;
-@@ -11,5 +12,6 @@
+@@ -12,6 +13,7 @@
      public void send(String pledgeId) {
          log.debug("Sending pledge to the channel");
          log.info("Pledge sent");
 +        Outcomes.count("pledge", "sent");
      }
- }
+ 
+     /** A failure logged and handled here: an outcome worth counting by default. */
+@@ -22,6 +24,7 @@
+                 return true;
+             } catch (IllegalStateException e) {
+                 log.warn("Pledge resend failed", e);
++                Outcomes.count("pledge.resend", "failed");
+                 return false;
+             }
+         }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-index 436af48..0487c5f 100644
+index 436af48..35ee033 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 @@ -1,6 +1,7 @@ 
@@ -53,11 +68,17 @@ index 436af48..0487c5f 100644
  import java.util.List;
  import lombok.extern.slf4j.Slf4j;
  import org.springframework.jdbc.core.JdbcTemplate;
-@@ -30,6 +31,7 @@
+@@ -25,11 +26,13 @@
+     public void close(String pledgeId) {
+         int rows = jdbcTemplate.update(CLOSE, pledgeId);
+         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
++        Outcomes.record("pledges", "updated", "rows", rows);
+     }
+ 
      public int countUse(String pledgeId) {
          int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
          AfterCommit.log(() -> log.info("Pledge usage saved [uses={}]", uses)); // logast:wording
-+        Outcomes.record("pledge.usage", "saved", "uses", uses);
++        Outcomes.count("pledge.usage", "saved", "uses", uses);
          return uses;
      }
  

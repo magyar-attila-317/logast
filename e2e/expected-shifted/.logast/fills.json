@@ -9,11 +9,11 @@
   "SUG-3b5d90" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledge usage saved | suffix keys added by the tool: [uses]",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:32 PledgeRepository.countUse"
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.countUse"
   },
   "SUG-56cdac" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges read | suffix keys added by the tool: [count]",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:38 PledgeRepository.findOpen"
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:39 PledgeRepository.findOpen"
   }
 }

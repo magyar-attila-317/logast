@@ -26,12 +26,13 @@ public class PledgeRepository {
     public void close(String pledgeId) {
         int rows = jdbcTemplate.update(CLOSE, pledgeId);
         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
+        Outcomes.record("pledges", "updated", "rows", rows);
     }
 
     public int countUse(String pledgeId) {
         int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
         AfterCommit.log(() -> log.info("Pledge usage saved [uses={}]", uses)); // logast:wording
-        Outcomes.record("pledge.usage", "saved", "uses", uses);
+        Outcomes.count("pledge.usage", "saved", "uses", uses);
         return uses;
     }
 

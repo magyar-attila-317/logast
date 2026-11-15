@@ -26,6 +26,11 @@ public class OrderService {
 
     /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
     public void ship(java.util.List<Order> orders, int batchNumber) {
+        if (orders.isEmpty()) {
+            log.info("Order shipment skipped");
+            OrderMetrics.orderShipmentSkipped(); // logast:metric review, confidence: medium
+            return;
+        }
         orders.forEach(payments::charge);
         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
     }

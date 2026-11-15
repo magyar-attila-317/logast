@@ -19,12 +19,12 @@
   "SUG-3b5d90" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledge usage saved | suffix keys added by the tool: [uses]",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:32 PledgeRepository.countUse"
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.countUse"
   },
   "SUG-56cdac" : {
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges read | suffix keys added by the tool: [count]",
-    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:38 PledgeRepository.findOpen"
+    "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:39 PledgeRepository.findOpen"
   },
   "SUG-2f8476" : {
     "MSG" : "",
@@ -59,7 +59,7 @@
   "SUG-15854c" : {
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages completed | must read as: {subject} completed",
-    "_where" : "src/main/java/com/example/e2e/messaging/PledgeMessages.java:39 PledgeMessages.onAudit"
+    "_where" : "src/main/java/com/example/e2e/messaging/PledgeMessages.java:40 PledgeMessages.onAudit"
   },
   "SUG-85eb33" : {
     "MSG" : "",

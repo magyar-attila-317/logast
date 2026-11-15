@@ -1,10 +1,12 @@
 diff --git a/src/main/java/com/example/e2e/job/JobMetrics.java b/src/main/java/com/example/e2e/job/JobMetrics.java
 new file mode 100644
-index 0000000..c7ce403
+index 0000000..0ccb055
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/job/JobMetrics.java
-@@ -0,0 +1,18 @@ 
+@@ -0,0 +1,35 @@ 
 +package com.example.e2e.job;
++
++import com.example.e2e.logging.Outcomes;
 +
 +/**
 + * Metric names of com.example.e2e.job, in one place: call sites call a member here and never name a metric.
@@ -21,14 +23,31 @@ index 0000000..c7ce403
 +
 +    /** Observation (timer and span) name. */
 +    public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
++
++    /** tally{outcome="completed"} +1. */
++    public static void tallyCompleted() {
++        Outcomes.count("tally", "completed");
++    }
++
++    /** export.job{outcome="completed"} +1. */
++    public static void exportJobCompleted() {
++        Outcomes.count("export.job", "completed");
++    }
++
++    /** preload.export{outcome="completed"} +1. */
++    public static void preloadExportCompleted() {
++        Outcomes.count("preload.export", "completed");
++    }
 +}
 diff --git a/src/main/java/com/example/e2e/messaging/MessagingMetrics.java b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
 new file mode 100644
-index 0000000..b4460ec
+index 0000000..d9d4958
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
-@@ -0,0 +1,15 @@ 
+@@ -0,0 +1,22 @@ 
 +package com.example.e2e.messaging;
++
++import com.example.e2e.logging.Outcomes;
 +
 +/**
 + * Metric names of com.example.e2e.messaging, in one place: call sites call a member here and never name a metric.
@@ -42,14 +61,21 @@ index 0000000..b4460ec
 +
 +    /** Observation (timer and span) name. */
 +    public static final String PLEDGE_MESSAGES_ON_BATCH = "pledge-messages.on-batch";
++
++    /** pledge.messages{outcome="completed"} +1. */
++    public static void pledgeMessagesCompleted() {
++        Outcomes.count("pledge.messages", "completed");
++    }
 +}
 diff --git a/src/main/java/com/example/e2e/order/OrderMetrics.java b/src/main/java/com/example/e2e/order/OrderMetrics.java
 new file mode 100644
-index 0000000..81fb0d6
+index 0000000..73d8b68
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/order/OrderMetrics.java
-@@ -0,0 +1,15 @@ 
+@@ -0,0 +1,22 @@ 
 +package com.example.e2e.order;
++
++import com.example.e2e.logging.Outcomes;
 +
 +/**
 + * Metric names of com.example.e2e.order, in one place: call sites call a member here and never name a metric.
@@ -63,6 +89,11 @@ index 0000000..81fb0d6
 +
 +    /** Observation (timer and span) name. */
 +    public static final String ORDER_NOTIFICATIONS = "order.notifications";
++
++    /** order.shipment{outcome="skipped"} +1. */
++    public static void orderShipmentSkipped() {
++        Outcomes.count("order.shipment", "skipped");
++    }
 +}
 diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
 index fd83167..c5a3469 100644
@@ -91,7 +122,7 @@ index 0819a35..94d9e4a 100644
                  .run(() -> {
                      job.execute();
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 3655c4c..01e8d81 100644
+index 3655c4c..70d0891 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -17,7 +17,7 @@ 
@@ -103,6 +134,22 @@ index 3655c4c..01e8d81 100644
                  .debugOnSuccess()
                  .run(() -> {
                      log.info("Pledge batch received [count={}]", pledgeIds.size());
+@@ -29,6 +29,7 @@
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+             log.info("Pledge return received");
+             log.info("Pledge messages completed"); // logast:wording
++            MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
+         }
+     }
+ 
+@@ -37,6 +38,7 @@
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+             log.info("Pledge audit received");
+             log.info("Pledge messages completed"); // logast:wording
++            MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
+         }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
 index 765de3d..5c0b6d0 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
@@ -116,3 +163,139 @@ index 765de3d..5c0b6d0 100644
                  .quiet()
                  .run(() -> {
                      log.info("Order audit recorded [orderId={}]", event.orderId());
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index c05ebc5..e7f4395 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -46,6 +46,7 @@ 
+                 log.info("Pledge parsed"); // a transformed value
+                 new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
+                 log.info("Edge processing completed");
++                EdgeMetrics.edgeProcessingCompleted(); // logast:metric review, confidence: medium
+             }
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
+index c8b6e69..85606e5 100644
+--- a/src/main/java/com/example/e2e/order/OrderService.java
++++ b/src/main/java/com/example/e2e/order/OrderService.java
+@@ -28,6 +28,7 @@ 
+     public void ship(java.util.List<Order> orders, int batchNumber) {
+         if (orders.isEmpty()) {
+             log.info("Order shipment skipped");
++            OrderMetrics.orderShipmentSkipped(); // logast:metric review, confidence: medium
+             return;
+         }
+         orders.forEach(payments::charge);
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 7bf2b77..86da61d 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -12,5 +12,6 @@ 
+     protected void doExecute() {
+         log.info("Export job started"); // logast:wording
+         log.info("Export job completed"); // logast:wording
++        JobMetrics.exportJobCompleted(); // logast:metric review, confidence: low
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
+index a656908..a777948 100644
+--- a/src/main/java/com/example/e2e/job/PreloadJob.java
++++ b/src/main/java/com/example/e2e/job/PreloadJob.java
+@@ -14,5 +14,6 @@ 
+     protected void doExecute() {
+         log.info("Preload export started");
+         log.info("Preload export completed");
++        JobMetrics.preloadExportCompleted(); // logast:metric review, confidence: medium
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+index 436af48..b9f74c9 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+@@ -25,6 +25,7 @@ 
+     public void close(String pledgeId) {
+         int rows = jdbcTemplate.update(CLOSE, pledgeId);
+         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
++        PledgeMetrics.pledgesUpdated(rows); // logast:metric review, confidence: low
+     }
+ 
+     public int countUse(String pledgeId) {
+diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
+index 1e94776..97bc73b 100644
+--- a/src/main/java/com/example/e2e/job/TallyJob.java
++++ b/src/main/java/com/example/e2e/job/TallyJob.java
+@@ -14,5 +14,6 @@ 
+     protected void doExecute() {
+         log.info("Tally started"); // logast:wording
+         log.info("Tally completed");
++        JobMetrics.tallyCompleted(); // logast:metric review, confidence: medium
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+index c2e743a..5b04172 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+@@ -22,6 +22,7 @@ 
+                 return true;
+             } catch (IllegalStateException e) {
+                 log.warn("Pledge resend failed", e);
++                PledgeMetrics.pledgeResendFailed(); // logast:metric review, confidence: medium
+                 return false;
+             }
+         }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeMetrics.java b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
+new file mode 100644
+index 0000000..45c88ce
+--- /dev/null
++++ b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
+@@ -0,0 +1,24 @@ 
++package com.example.e2e.pledge;
++
++import com.example.e2e.logging.Outcomes;
++
++/**
++ * Metric names of com.example.e2e.pledge, in one place: call sites call a member here and never name a metric.
++ * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
++ * ones at the end.
++ */
++// logast:metrics-catalog
++public final class PledgeMetrics {
++    private PledgeMetrics() {
++    }
++
++    /** pledges{outcome="updated"} +1; pledges.rows{outcome="updated"} grows by rows. */
++    public static void pledgesUpdated(Number rows) {
++        Outcomes.count("pledges", "updated", "rows", rows);
++    }
++
++    /** pledge.resend{outcome="failed"} +1. */
++    public static void pledgeResendFailed() {
++        Outcomes.count("pledge.resend", "failed");
++    }
++}
+diff --git a/src/main/java/com/example/e2e/edge/EdgeMetrics.java b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
+new file mode 100644
+index 0000000..69dff84
+--- /dev/null
++++ b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
+@@ -0,0 +1,19 @@ 
++package com.example.e2e.edge;
++
++import com.example.e2e.logging.Outcomes;
++
++/**
++ * Metric names of com.example.e2e.edge, in one place: call sites call a member here and never name a metric.
++ * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
++ * ones at the end.
++ */
++// logast:metrics-catalog
++public final class EdgeMetrics {
++    private EdgeMetrics() {
++    }
++
++    /** edge.processing{outcome="completed"} +1. */
++    public static void edgeProcessingCompleted() {
++        Outcomes.count("edge.processing", "completed");
++    }
++}

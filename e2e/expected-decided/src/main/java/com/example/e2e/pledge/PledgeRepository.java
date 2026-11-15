@@ -25,6 +25,7 @@ public class PledgeRepository {
     public void close(String pledgeId) {
         int rows = jdbcTemplate.update(CLOSE, pledgeId);
         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
+        PledgeMetrics.pledgesUpdated(rows);
     }
 
     public int countUse(String pledgeId) {

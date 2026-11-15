@@ -55,6 +55,11 @@ public final class OrderBuilder {
     List<String> paths = List.of();
     String suggestion;
     final List<Edit> edits = new ArrayList<>();
+
+    /** Drops the edits again (a default that could not be written: the order stays a decision to make). */
+    void clearEdits() {
+        edits.clear();
+    }
     final Map<String, Slot> slots = new LinkedHashMap<>();
     WorkOrder.Context context = WorkOrder.Context.EMPTY;
     final Set<String> dependsOn = new LinkedHashSet<>();
