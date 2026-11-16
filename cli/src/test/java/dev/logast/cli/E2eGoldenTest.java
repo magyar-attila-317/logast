@@ -511,6 +511,34 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-source-markers"), actual);
     }
 
+    @Test
+    void flagsInlineNamedPlaceholderWithoutRewordingItsMessage() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path source = app.resolve("src/main/java/com/example/e2e/review/ScheduleCanceller.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.review;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    class ScheduleCanceller {
+                        private static final Logger log = LoggerFactory.getLogger(ScheduleCanceller.class);
+
+                        void cancel(String dealId) {
+                            log.info("No schedules found for given dealId: {}. There was nothhing to cancel.", dealId);
+                        }
+                    }
+                    """);
+        });
+
+        String source = actual.get("src/main/java/com/example/e2e/review/ScheduleCanceller.java");
+        assertThat(source).contains("log.info(\"No schedules found for given dealId: {}. There was nothhing to cancel.\", dealId); // logast: LOG_FORMAT ");
+        assertThat(actual.get(".logast/fills.json")).contains("FMT-").contains("dealId");
+        assertThat(actual.get("FINDINGS.txt")).contains("No schedules found for given dealId");
+        golden(EXPECTED.resolveSibling("expected-inline-named-placeholder"), actual);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);
