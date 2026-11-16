@@ -25,6 +25,18 @@ import java.util.regex.Pattern;
 /** Project-level checks: build dependencies, logback configuration, structured logging properties. */
 public final class SetupRules {
     private static final Pattern DEPENDENCIES = Pattern.compile("(?m)^dependencies\\s*\\{[^\\n]*$");
+    private static final Pattern BOOT_PLUGIN_VERSION = Pattern.compile(
+            "\\bid\\s*(?:\\(\\s*)?[\\\"']org\\.springframework\\.boot[\\\"']\\s*\\)?\\s*version\\s*[\\\"']([^\\\"']+)[\\\"']");
+    private static final Pattern BOOT_PLUGIN_CLASSPATH_VERSION = Pattern.compile(
+            "org\\.springframework\\.boot:spring-boot-gradle-plugin:([0-9][^\\s\\\"']*)");
+    private static final Pattern BOOT_CORE_JAR_MAJOR = Pattern.compile("^spring-boot-([0-9]+)\\..*\\.jar$");
+    private static final String BOOT4_OTEL_STARTER = "spring-boot-starter-opentelemetry";
+    private static final String ACTUATOR_STARTER = "spring-boot-starter-actuator";
+    private static final String OTEL_BRIDGE = "micrometer-tracing-bridge-otel";
+    private static final String BRAVE_BRIDGE = "micrometer-tracing-bridge-brave";
+    private static final String OTEL_EXPORTER = "opentelemetry-exporter-otlp";
+    private static final String OTEL_SPRING_STARTER = "opentelemetry-spring-boot-starter";
+    private static final String OTEL_JAVA_AGENT = "opentelemetry-javaagent";
     private static final Set<String> STANDARD_APPENDERS = Set.of("ch.qos.logback.core.ConsoleAppender");
     private static final Set<String> STANDARD_ENCODERS = Set.of("", "ch.qos.logback.classic.encoder.PatternLayoutEncoder");
     private static final Set<String> JSON_FORMATS = Set.of("ecs", "logstash", "gelf");
@@ -85,17 +97,36 @@ public final class SetupRules {
             ctx.supportOrderId = b.id();
         }
 
-        boolean otelOnClasspath = ctx.a.project.classpath().stream()
-                .anyMatch(p -> p.getFileName().toString().startsWith("spring-boot-starter-opentelemetry"));
-        if (!otelOnClasspath && !text.contains("spring-boot-starter-opentelemetry")
-                && ctx.enabled(Rules.SETUP_OTEL_STARTER)) {
-            OrderBuilder b = ctx.order(Rules.SETUP_OTEL_STARTER, "otel|" + rel).at(rel, 1)
-                    .title("Add spring-boot-starter-opentelemetry (tracing + trace/span ids in logs)");
-            Edit e = dependencyInsert(rel, text, kts, "org.springframework.boot:spring-boot-starter-opentelemetry");
-            if (e == null) {
-                b.suggestion("No top-level dependencies {} block found: add it manually.");
-            } else {
-                b.edit(e).line = lineOf(text, e.start());
+        if (ctx.enabled(Rules.SETUP_OTEL_STARTER)) {
+            int bootMajor = springBootMajor(buildFile);
+            List<String> compatibility = otelCompatibilityWarnings(text, bootMajor);
+            if (!compatibility.isEmpty()) {
+                ctx.order(Rules.SETUP_OTEL_STARTER, "otel-compat|" + rel).at(rel, 1)
+                        .title("Review the existing Micrometer and OpenTelemetry setup")
+                        .suggestion(String.join(" ", compatibility) + " No dependency changes were made.");
+                return;
+            }
+            List<String> coordinates = bootMajor == 3
+                    ? List.of("org.springframework.boot:" + ACTUATOR_STARTER, "io.micrometer:" + OTEL_BRIDGE,
+                            "io.opentelemetry:" + OTEL_EXPORTER)
+                    : bootMajor >= 4 ? List.of("org.springframework.boot:" + BOOT4_OTEL_STARTER) : List.of();
+            List<String> missing = coordinates.stream().filter(coordinate ->
+                    !dependencyPresent(text, coordinate, bootMajor)).toList();
+            if (!coordinates.isEmpty() && !missing.isEmpty()) {
+                String title = bootMajor == 3
+                        ? "Add Spring Boot 3 Micrometer OpenTelemetry tracing dependencies"
+                        : "Add " + BOOT4_OTEL_STARTER + " (tracing + trace/span ids in logs)";
+                OrderBuilder b = ctx.order(Rules.SETUP_OTEL_STARTER, "otel|" + rel).at(rel, 1).title(title);
+                Edit e = dependencyInsert(rel, text, kts, missing);
+                if (e == null) {
+                    b.suggestion("No top-level dependencies {} block found: add them manually.");
+                } else {
+                    b.edit(e).line = lineOf(text, e.start());
+                }
+            } else if (coordinates.isEmpty()) {
+                ctx.order(Rules.SETUP_OTEL_STARTER, "otel|" + rel).at(rel, 1)
+                        .title("Check the OpenTelemetry tracing dependencies")
+                        .suggestion("Could not identify a supported Spring Boot version; choose the tracing dependencies manually.");
             }
         }
     }
@@ -298,6 +329,10 @@ public final class SetupRules {
     }
 
     static Edit dependencyInsert(String rel, String text, boolean kts, String coordinates) {
+        return dependencyInsert(rel, text, kts, List.of(coordinates));
+    }
+
+    private static Edit dependencyInsert(String rel, String text, boolean kts, List<String> coordinates) {
         Matcher m = DEPENDENCIES.matcher(text);
         if (!m.find()) {
             return null;
@@ -307,8 +342,124 @@ public final class SetupRules {
         if (indent.isEmpty()) {
             indent = "    ";
         }
-        String line = kts ? "implementation(\"" + coordinates + "\")" : "implementation '" + coordinates + "'";
-        return Edit.insert(rel, at, indent + line + "\n");
+        String indentation = indent;
+        String lines = coordinates.stream().map(coordinate -> indentation + (kts ? "implementation(\"" + coordinate + "\")"
+                : "implementation '" + coordinate + "'")).collect(java.util.stream.Collectors.joining("\n"));
+        return Edit.insert(rel, at, lines + "\n");
+    }
+
+    /** Spring Boot 3 uses Micrometer's OTel bridge; the dedicated starter is for Boot 4+. */
+    private int springBootMajor(Path buildFile) {
+        for (Path dir = buildFile.getParent(); dir != null && dir.startsWith(root); dir = dir.getParent()) {
+            for (String name : List.of("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle")) {
+                Path candidate = dir.resolve(name);
+                if (!Files.isRegularFile(candidate)) {
+                    continue;
+                }
+                int major = bootMajorFromBuild(read(candidate));
+                if (major > 0) {
+                    return major;
+                }
+            }
+            Path catalog = dir.resolve("gradle/libs.versions.toml");
+            if (Files.isRegularFile(catalog)) {
+                int major = bootMajorFromCatalog(read(catalog));
+                if (major > 0) {
+                    return major;
+                }
+            }
+        }
+        return classpathBootMajor();
+    }
+
+    private static int bootMajorFromBuild(String text) {
+        Matcher plugin = BOOT_PLUGIN_VERSION.matcher(text);
+        if (plugin.find()) {
+            return major(plugin.group(1));
+        }
+        Matcher classpath = BOOT_PLUGIN_CLASSPATH_VERSION.matcher(text);
+        return classpath.find() ? major(classpath.group(1)) : 0;
+    }
+
+    private static int bootMajorFromCatalog(String text) {
+        Matcher plugin = Pattern.compile("(?m)^[\\w.-]+\\s*=\\s*\\{[^\\n]*id\\s*=\\s*[\\\"']org\\.springframework\\.boot[\\\"'][^\\n]*}")
+                .matcher(text);
+        if (!plugin.find()) {
+            return 0;
+        }
+        Matcher direct = Pattern.compile("version\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']").matcher(plugin.group());
+        if (direct.find()) {
+            return major(direct.group(1));
+        }
+        Matcher ref = Pattern.compile("version\\.ref\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']").matcher(plugin.group());
+        if (!ref.find()) {
+            return 0;
+        }
+        Matcher version = Pattern.compile("(?m)^\\s*" + Pattern.quote(ref.group(1))
+                + "\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']").matcher(text);
+        return version.find() ? major(version.group(1)) : 0;
+    }
+
+    private static int major(String version) {
+        Matcher m = Pattern.compile("^(\\d+)(?:\\.|$)").matcher(version);
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
+    }
+
+    private int classpathBootMajor() {
+        Set<Integer> majors = new TreeSet<>();
+        for (Path path : ctx.a.project.classpath()) {
+            Matcher m = BOOT_CORE_JAR_MAJOR.matcher(path.getFileName().toString());
+            if (m.matches()) {
+                majors.add(Integer.parseInt(m.group(1)));
+            }
+        }
+        return majors.size() == 1 ? majors.iterator().next() : 0;
+    }
+
+    private boolean dependencyPresent(String text, String coordinate, int bootMajor) {
+        String artifact = coordinate.substring(coordinate.indexOf(':') + 1);
+        return artifactPresent(text, artifact, bootMajor);
+    }
+
+    private List<String> otelCompatibilityWarnings(String text, int bootMajor) {
+        List<String> warnings = new ArrayList<>();
+        boolean boot4Starter = artifactPresent(text, BOOT4_OTEL_STARTER, bootMajor);
+        boolean otelBridge = artifactPresent(text, OTEL_BRIDGE, bootMajor);
+        boolean braveBridge = artifactPresent(text, BRAVE_BRIDGE, bootMajor);
+        boolean communityStarter = artifactPresent(text, OTEL_SPRING_STARTER, bootMajor);
+        boolean javaAgent = text.contains(OTEL_JAVA_AGENT)
+                || text.toLowerCase(Locale.ROOT).contains("-javaagent:") && text.toLowerCase(Locale.ROOT).contains("opentelemetry")
+                || artifactPresent(text, OTEL_JAVA_AGENT, bootMajor);
+
+        if (bootMajor > 0 && bootMajor < 4 && boot4Starter) {
+            warnings.add("spring-boot-starter-opentelemetry is the Spring Boot 4 starter and does not match this Spring Boot "
+                    + bootMajor + " project. Remove it and use the Boot 3 Actuator, Micrometer OTel bridge, and OTLP exporter path.");
+        }
+        if (otelBridge && braveBridge) {
+            warnings.add("Both Micrometer OTel and Brave tracer bridges are present; Micrometer supports only one tracer bridge. Choose one.");
+        } else if (braveBridge) {
+            warnings.add("A Micrometer Brave bridge is already present. Choose whether to keep Brave or switch to OpenTelemetry before adding another tracer.");
+        }
+        if (communityStarter) {
+            warnings.add("The OpenTelemetry Spring Boot starter is already present. It is an alternative integration; review its compatibility before adding Spring Boot OpenTelemetry dependencies.");
+        }
+        if (javaAgent) {
+            warnings.add("An OpenTelemetry Java agent is configured. The OpenTelemetry Spring Boot starter is not compatible with the Java agent; choose one instrumentation path.");
+        }
+        if (bootMajor >= 4 && !boot4Starter && otelBridge) {
+            warnings.add("A Micrometer OpenTelemetry bridge is already present. Check its exporter configuration instead of adding a second starter.");
+        }
+        return warnings;
+    }
+
+    private boolean artifactPresent(String text, String artifact, int bootMajor) {
+        if (text.contains(artifact)) {
+            return true;
+        }
+        if (bootMajor <= 0 || bootMajor != classpathBootMajor()) {
+            return false;
+        }
+        return ctx.a.project.classpath().stream().anyMatch(path -> path.getFileName().toString().startsWith(artifact + "-"));
     }
 
     // ---- logback ----------------------------------------------------------------------------

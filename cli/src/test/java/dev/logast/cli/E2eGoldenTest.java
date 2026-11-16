@@ -71,7 +71,7 @@ class E2eGoldenTest {
     }
     private static final boolean UPDATE = Boolean.getBoolean("logast.e2e.update");
     /** Generated each run or machine-specific: not part of the snapshot. */
-    private static final Set<String> SKIP = Set.of(".logast/orders.json");
+    private static final Set<String> SKIP = Set.of(".logast/orders.json", ".logast/classpath.txt", ".logast/classpath-root.txt");
 
     @TempDir
     Path tmp;
@@ -364,6 +364,91 @@ class E2eGoldenTest {
             assertThat(app.resolve("src/main/java/com/example/e2e/logging/MdcScope.java"))
                     .as("but not with the logging set-up the pack did not ask for").doesNotExist();
         }
+    }
+
+    @Test
+    void springBoot3UsesMicrometerTracingDependencies() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path build = app.resolve("build.gradle.kts");
+            String text = Files.readString(build);
+            String boot3 = text.replace("plugins { java }", "plugins {\n    java\n    id(\"org.springframework.boot\") version \"3.5.7\"\n}");
+            assertThat(boot3).as("the scenario declares the target Spring Boot version").isNotEqualTo(text);
+            boot3 = boot3.replace("spring-boot-starter-webmvc", "spring-boot-starter-web")
+                    .replace("dependencies {", "repositories { mavenCentral() }\n\ndependencies {\n"
+                            + "    implementation(platform(\"org.springframework.boot:spring-boot-dependencies:3.5.7\"))");
+            Files.writeString(build, boot3);
+        });
+
+        String build = actual.get("build.gradle.kts");
+        assertThat(build).contains("org.springframework.boot:spring-boot-starter-actuator")
+                .contains("io.micrometer:micrometer-tracing-bridge-otel")
+                .contains("io.opentelemetry:opentelemetry-exporter-otlp")
+                .doesNotContain("spring-boot-starter-opentelemetry");
+        assertThat(build.split("spring-boot-starter-actuator", -1)).hasSize(2);
+        assertThat(build.split("micrometer-tracing-bridge-otel", -1)).hasSize(2);
+        assertThat(build.split("opentelemetry-exporter-otlp", -1)).hasSize(2);
+        golden(EXPECTED.resolveSibling("expected-boot3"), actual);
+    }
+
+    @Test
+    void springBoot3FlagsExistingConflictingOpenTelemetrySetup() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path build = app.resolve("build.gradle.kts");
+            String text = Files.readString(build);
+            String boot3 = text.replace("plugins { java }", "plugins {\n    java\n    id(\"org.springframework.boot\") version \"3.5.7\"\n}")
+                    .replace("spring-boot-starter-webmvc", "spring-boot-starter-web")
+                    .replace("dependencies {", "repositories { mavenCentral() }\n\ndependencies {\n"
+                            + "    implementation(platform(\"org.springframework.boot:spring-boot-dependencies:3.5.7\"))\n"
+                            + "    implementation(\"org.springframework.boot:spring-boot-starter-opentelemetry\")\n"
+                            + "    implementation(\"io.micrometer:micrometer-tracing-bridge-otel\")\n"
+                            + "    implementation(\"io.micrometer:micrometer-tracing-bridge-brave\")\n"
+                            + "    implementation(\"io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter\")");
+            boot3 += "\ntasks.withType<JavaExec>().configureEach { jvmArgs(\"-javaagent:/opt/opentelemetry-javaagent.jar\") }\n";
+            assertThat(boot3).as("the scenario declares the target Spring Boot version and conflicting integrations")
+                    .isNotEqualTo(text);
+            Files.writeString(build, boot3);
+        });
+
+        String build = actual.get("build.gradle.kts");
+        assertThat(build).contains("spring-boot-starter-opentelemetry")
+                .contains("micrometer-tracing-bridge-otel")
+                .contains("micrometer-tracing-bridge-brave")
+                .doesNotContain("spring-boot-starter-actuator")
+                .doesNotContain("opentelemetry-exporter-otlp");
+        assertThat(actual.get("FINDINGS.txt")).contains("Spring Boot 4 starter")
+                .contains("only one tracer bridge")
+                .contains("OpenTelemetry Java agent")
+                .contains("OpenTelemetry Spring Boot starter is already present");
+        golden(EXPECTED.resolveSibling("expected-boot3-conflict"), actual);
+    }
+
+    @Test
+    void springBoot4UsesOpenTelemetryStarter() throws IOException {
+        Path classpath = tmp.resolve("classpath-without-otel-starter.txt");
+        Files.write(classpath, Files.readAllLines(Path.of(CLASSPATH)).stream()
+                .filter(p -> {
+                    String name = Path.of(p).getFileName().toString();
+                    return !name.startsWith("spring-boot-starter-opentelemetry-")
+                            && !name.startsWith("spring-boot-micrometer-tracing-opentelemetry-")
+                            && !name.startsWith("micrometer-tracing-bridge-otel-")
+                            && !name.startsWith("opentelemetry-exporter-otlp-");
+                })
+                .toList());
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath.toString(), app -> {
+            Path build = app.resolve("build.gradle.kts");
+            String text = Files.readString(build);
+            String boot4 = text.replace("plugins { java }", "plugins {\n    java\n    id(\"org.springframework.boot\") version \"4.1.2\"\n}")
+                    .replace("dependencies {", "repositories { mavenCentral() }\n\ndependencies {\n"
+                            + "    implementation(platform(\"org.springframework.boot:spring-boot-dependencies:4.1.2\"))");
+            assertThat(boot4).as("the scenario declares the target Spring Boot version").isNotEqualTo(text);
+            Files.writeString(build, boot4);
+        });
+
+        String build = actual.get("build.gradle.kts");
+        assertThat(build).contains("org.springframework.boot:spring-boot-starter-opentelemetry")
+                .doesNotContain("micrometer-tracing-bridge-otel");
+        assertThat(build.split("spring-boot-starter-opentelemetry", -1)).hasSize(2);
+        golden(EXPECTED.resolveSibling("expected-boot4"), actual);
     }
 
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
@@ -687,7 +772,8 @@ class E2eGoldenTest {
             for (Path p : s.filter(Files::isRegularFile).toList()) {
                 String rel = root.relativize(p).toString().replace('\\', '/');
                 // the copied support classes are logast's own code: compiled, not compared
-                if (rel.startsWith("out/") || SKIP.contains(rel) || rel.startsWith("src/main/java/com/example/e2e/logging/")) {
+                if (rel.startsWith("out/") || rel.startsWith("build/") || rel.startsWith(".gradle/") || SKIP.contains(rel)
+                        || rel.startsWith("src/main/java/com/example/e2e/logging/")) {
                     continue;
                 }
                 out.put(rel, Files.readString(p));
