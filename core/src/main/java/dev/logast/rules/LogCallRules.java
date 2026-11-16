@@ -416,8 +416,12 @@ final class LogCallRules {
             issues.add(Rules.LOG_KEY_STYLE);
         }
         String unnamed = MessageTemplate.removeNamedPlaceholders(raw);
-        boolean mechanical = !mismatch && (compliant || MessageTemplate.placeholdersTrailing(unnamed));
-        if (!compliant) {
+        boolean namedPlaceholderInProse = !compliant
+                && named.stream().anyMatch(Objects::nonNull)
+                && !MessageTemplate.placeholdersTrailing(raw);
+        boolean mechanical = !mismatch && !namedPlaceholderInProse
+                && (compliant || MessageTemplate.placeholdersTrailing(unnamed));
+        if (!compliant && !namedPlaceholderInProse) {
             raw = unnamed;
         }
         if (!compliant) {
