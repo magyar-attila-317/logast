@@ -84,7 +84,7 @@ final class TracingRules {
             return;
         }
         // set per profile (application-prod.yml) or by environment: not ours to judge
-        for (Path dir : SpringProperties.resourceDirs(ctx.a.project.root())) {
+        for (Path dir : java.util.Optional.ofNullable(SpringProperties.appResources(ctx.a.project.root())).stream().toList()) {
             try (var files = Files.list(dir)) {
                 if (files.filter(p -> p.getFileName().toString().startsWith("application"))
                         .anyMatch(p -> SetupRules.read(p).contains("probability"))) {
@@ -100,16 +100,13 @@ final class TracingRules {
                 .suggestion("Sets 1.0 (every trace exported). With high traffic, sample in the collector instead (tail sampling).");
         String snippet = "management:\n  tracing:\n    sampling:\n      probability: 1.0\n";
         {
-            b.edit(Edit.yamlMerge(yml[0], snippet, false));
+            ServiceYaml.merge(ctx, b, snippet);
         }
     }
 
-    /** {relative path} of the service's base application.yaml/.yml (existing or to create). */
+    /** {relative path} of the service's config file where fixes go (the application module's, #47). */
     private String[] applicationYml() {
-        List<Path> resources = SpringProperties.resourceDirs(ctx.a.project.root());
-        Path dir = resources.isEmpty() ? ctx.a.project.root().resolve("src/main/resources") : resources.getFirst();
-        Path yml = Files.exists(dir.resolve("application.yaml")) ? dir.resolve("application.yaml") : dir.resolve("application.yml");
-        return new String[]{ctx.a.project.root().relativize(yml).toString().replace('\\', '/')};
+        return new String[]{ServiceYaml.path(ctx)};
     }
 
     // ---- OpenFeign ------------------------------------------------------------------------------
@@ -456,7 +453,7 @@ final class TracingRules {
         StringBuilder snippet = new StringBuilder("spring:\n  kafka:\n");
         missing.keySet().forEach(k -> snippet.append("    ").append(k).append(":\n      observation-enabled: true\n"));
         {
-            b.edit(Edit.yamlMerge(rel, snippet.toString(), false));
+            ServiceYaml.merge(ctx, b, snippet.toString());
         }
         templateUses.forEach(t -> b.location(t[0], Integer.parseInt(t[1]), Rules.KAFKA_OBSERVATION_DISABLED));
         listeners.forEach(ep -> b.location(ep.method().file().relPath(), ep.method().line(), Rules.KAFKA_OBSERVATION_DISABLED));
@@ -480,7 +477,7 @@ final class TracingRules {
         String rel = applicationYml()[0];
         OrderBuilder b = ctx.order(Rules.RABBIT_OBSERVATION_DISABLED, "rabbit|" + type).at(rel, 1)
                 .title("RabbitMQ listeners without observation: the trace stops at the queue");
-        b.edit(Edit.yamlMerge(rel, "spring:\n  rabbitmq:\n    listener:\n      " + type + ":\n        observation-enabled: true\n", false));
+        ServiceYaml.merge(ctx, b, "spring:\n  rabbitmq:\n    listener:\n      " + type + ":\n        observation-enabled: true\n");
         listeners.forEach(ep -> b.location(ep.method().file().relPath(), ep.method().line(), Rules.RABBIT_OBSERVATION_DISABLED));
         ctx.rabbitListenerObservationPlanned = true;
     }

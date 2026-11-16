@@ -5,7 +5,8 @@ package dev.logast.orders;
  *
  * @param kind  {@code replace} (start..end replaced by text; start == end inserts), {@code create}, {@code delete}, or
  *              {@code yaml-merge} (text is a YAML snippet merged into the file as it is when applied, created if missing;
- *              start 1 = the snippet's values replace existing ones). YAML merges never conflict with each other.
+ *              start 1 = the snippet's values replace existing ones), or {@code properties-merge} (key=value lines
+ *              merged into the base document of a .properties file the same way). Merges never conflict with each other.
  */
 public record Edit(String file, String kind, int start, int end, String text) {
     public static Edit replace(String file, int start, int end, String text) {
@@ -24,12 +25,20 @@ public record Edit(String file, String kind, int start, int end, String text) {
         return new Edit(file, "yaml-merge", overwrite ? 1 : 0, overwrite ? 1 : 0, snippet);
     }
 
+    public static Edit propertiesMerge(String file, String lines, boolean overwrite) {
+        return new Edit(file, "properties-merge", overwrite ? 1 : 0, overwrite ? 1 : 0, lines);
+    }
+
+    public boolean merge() {
+        return kind.equals("yaml-merge") || kind.equals("properties-merge");
+    }
+
     public static Edit delete(String file) {
         return new Edit(file, "delete", 0, 0, "");
     }
 
     public boolean overlaps(Edit o) {
-        if (kind.equals("yaml-merge") && o.kind.equals("yaml-merge")) {
+        if (merge() && o.merge()) {
             return false;   // merged one after the other at apply time
         }
         if (!file.equals(o.file) || !kind.equals("replace") || !o.kind.equals("replace")) {
