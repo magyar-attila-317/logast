@@ -69,13 +69,14 @@ final class Out {
     }
 
     /**
-     * A progress line for long work. On a terminal: one line, rewritten in place, with a spinner and the elapsed time
-     * (cleared when done). Elsewhere (CI, pipes): each new step printed once.
+     * Progress for long work. On a terminal, each step stays visible above a live spinner with elapsed time. Elsewhere
+     * (CI, pipes), each new step is printed once.
      */
     static final class Progress implements AutoCloseable {
         private static final String[] FRAMES = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
         private final long start = System.nanoTime();
         private final boolean live = Ansi.enabled();
+        private final java.io.PrintStream err = System.err;
         private volatile String step = "";
         private final Thread ticker;
 
@@ -92,16 +93,24 @@ final class Out {
                 return;
             }
             step = text;
-            if (!live && !detail) {
-                System.err.println(Ansi.dim("… " + text));
+            if (!detail) {
+                synchronized (err) {
+                    if (live) {
+                        err.print("\r\u001b[2K");
+                    }
+                    err.println(Ansi.dim("… " + text));
+                    err.flush();
+                }
             }
         }
 
         private void tick() {
             int i = 0;
             while (!Thread.currentThread().isInterrupted()) {
-                System.err.print("\r\u001b[2K" + Ansi.cyan(FRAMES[i++ % FRAMES.length]) + " " + step + Ansi.dim("  " + seconds(start)));
-                System.err.flush();
+                synchronized (err) {
+                    err.print("\r\u001b[2K" + Ansi.cyan(FRAMES[i++ % FRAMES.length]) + " " + step + Ansi.dim("  " + seconds(start)));
+                    err.flush();
+                }
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
@@ -119,8 +128,10 @@ final class Out {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-                System.err.print("\r\u001b[2K");
-                System.err.flush();
+                synchronized (err) {
+                    err.print("\r\u001b[2K");
+                    err.flush();
+                }
             }
         }
     }
