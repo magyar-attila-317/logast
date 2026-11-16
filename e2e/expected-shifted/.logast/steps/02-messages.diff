@@ -1,13 +1,13 @@
 diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
-index c4465f7..530f5ab 100644
+index 3379e06..2a72480 100644
 --- a/src/main/java/com/example/e2e/order/PaymentClient.java
 +++ b/src/main/java/com/example/e2e/order/PaymentClient.java
 @@ -13,7 +13,7 @@ 
          try (var mdc = MdcScope.of("orderId", order.id())) {
              try {
                  log.debug("Charge requested");
--                log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
-+                log.debug("Charging the card [amountCents={}]", order.amountCents());
+-                log.debug("Charging order {} with {} cents", order.id(), order.amountCents()); // logast: LOG_FORMAT FMT-93dcb8
++                log.debug("Charging the card [amountCents={}]", order.amountCents()); // logast: LOG_FORMAT FMT-93dcb8
                  gateway(order);
              } catch (IllegalStateException e) {
                  log.error("Charge failed for order", e);
@@ -99,21 +99,8 @@ index 86da61d..c209433 100644
          JobMetrics.exportJobCompleted(); // logast:metric review, confidence: low
      }
  }
-diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index c9408d9..d42fcaa 100644
---- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
-+++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-@@ -45,7 +45,7 @@ 
-                         log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
-                         .whenComplete((result, error) -> {
-                             if (error != null) {
--                                log.error("Edge flow async work failed", error); // logast:wording
-+                                log.error("Pledge sweep failed", error);
-                             }
-                         });
-                 log.info("Pledge parsed"); // a transformed value
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 5c0b6d0..2abd838 100644
+index 971a2a7..5484d08 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -25,7 +25,7 @@ 

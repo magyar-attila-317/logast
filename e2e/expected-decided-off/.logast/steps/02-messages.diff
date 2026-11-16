@@ -11,28 +11,6 @@ index 17cde43..d41dc0c 100644
                      }
                  });
          return result;
-diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 3655c4c..059d4d5 100644
---- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-+++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-@@ -28,7 +28,7 @@ 
-     public void onReturn(String pledgeId) {
-         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-             log.info("Pledge return received");
--            log.info("Pledge messages completed"); // logast:wording
-+            log.info("Pledge sweep completed");
-         }
-     }
- 
-@@ -36,7 +36,7 @@
-     public void onAudit(String pledgeId) {
-         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-             log.info("Pledge audit received");
--            log.info("Pledge messages completed"); // logast:wording
-+            log.info("Pledge sweep completed");
-         }
-     }
- }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
 index 7334819..b7b69da 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeJob.java
@@ -71,35 +49,8 @@ index 046add5..31f08a9 100644
 +        AfterCommit.log(() -> log.info("Pledge sweep completed [pledgeCount={}]", pledgeIds.size()));
      }
  }
-diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 7bf2b77..4ba5455 100644
---- a/src/main/java/com/example/e2e/job/ExportJob.java
-+++ b/src/main/java/com/example/e2e/job/ExportJob.java
-@@ -10,7 +10,7 @@ 
- public class ExportJob extends SettlementJob {
-     @Override
-     protected void doExecute() {
--        log.info("Export job started"); // logast:wording
--        log.info("Export job completed"); // logast:wording
-+        log.info("Pledge sweep started");
-+        log.info("Pledge sweep completed");
-     }
- }
-diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 6f18f77..9d7cd6b 100644
---- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
-+++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-@@ -45,7 +45,7 @@ 
-                         log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
-                         .whenComplete((result, error) -> {
-                             if (error != null) {
--                                log.error("Edge flow async work failed", error); // logast:wording
-+                                log.error("Pledge sweep failed", error);
-                             }
-                         });
-                 log.info("Pledge parsed"); // a transformed value
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 765de3d..df014e6 100644
+index f88fc48..4ca3fb1 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -25,7 +25,7 @@ 
@@ -112,7 +63,7 @@ index 765de3d..df014e6 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index 1e94776..ff68e86 100644
+index 3147f68..497f151 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -12,7 +12,7 @@ 
@@ -121,7 +72,7 @@ index 1e94776..ff68e86 100644
      protected void doExecute() {
 -        log.info("Tally started"); // logast:wording
 +        log.info("Pledge sweep started");
-         log.info("Tally completed");
+         log.info("Tally completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-9f157d
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java

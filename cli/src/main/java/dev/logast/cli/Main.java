@@ -131,6 +131,7 @@ public final class Main {
                 if (mu.written() && (format.equals("compact") || format.equals("summary"))) {
                     Out.progress(metricsLine(mu));
                 }
+                dev.logast.apply.FindingComments.update(root(), Logast.lastAnalysis, r.orders());
             }
 
             Path baselineFile = baseline == null || baseline.isEmpty() ? root().resolve(".logast/baseline.json") : Path.of(baseline);

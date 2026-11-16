@@ -1,34 +1,34 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 5f70c44..d8ccbc8 100644
+index 21163d9..9df6e79 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
 @@ -35,15 +35,18 @@ 
          payments.charge(order);
          events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
-         log.info("Order placed");
+         log.info("Order placed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-d691d7
 +        OrderMetrics.orderPlaced();
      }
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
      public void ship(java.util.List<Order> orders, int batchNumber) {
          if (orders.isEmpty()) {
-             log.info("Order shipment skipped");
+             log.info("Order shipment skipped"); // logast: METRIC_OUTCOME_UNMEASURED OUM-164f3d
 +            OrderMetrics.orderShipmentSkipped();
              return;
          }
          orders.forEach(payments::charge);
-         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
+         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber); // logast: METRIC_OUTCOME_UNMEASURED OUM-00f4c0
 +        OrderMetrics.ordersShipped(orders.size());
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index c2e743a..c50982e 100644
+index ee5dce1..ccf43ea 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 @@ -12,6 +12,7 @@ 
      public void send(String pledgeId) {
          log.debug("Sending pledge to the channel");
-         log.info("Pledge sent");
+         log.info("Pledge sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-027987
 +        PledgeMetrics.pledgeSent();
      }
  
@@ -36,19 +36,19 @@ index c2e743a..c50982e 100644
 @@ -22,6 +23,7 @@
                  return true;
              } catch (IllegalStateException e) {
-                 log.warn("Pledge resend failed", e);
+                 log.warn("Pledge resend failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-e22a2d
 +                PledgeMetrics.pledgeResendFailed();
                  return false;
              }
          }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-index e2c3a76..8798a37 100644
+index 8c7fefd..a252e4f 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 @@ -20,6 +20,7 @@ 
              return load(pledgeId);
          } catch (IllegalStateException e) {
-             log.warn("Pledge lookup failed", e);
+             log.warn("Pledge lookup failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-02f9e9
 +            PledgeMetrics.pledgeLookupFailed();
              throw new PledgeMissing(pledgeId, e);
          }
@@ -72,40 +72,40 @@ index 436af48..c14ab60 100644
      }
  
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 9d7cd6b..1929a2f 100644
+index d2011b2..89f15c1 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -49,8 +49,10 @@ 
                              }
                          });
-                 log.info("Pledge parsed"); // a transformed value
+                 log.info("Pledge parsed"); // a transformed value; logast: METRIC_OUTCOME_UNMEASURED OUM-be530b
 +                EdgeMetrics.pledgeParsed();
                  new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
-                 log.info("Edge processing completed");
+                 log.info("Edge processing completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-0d4ba2
 +                EdgeMetrics.edgeProcessingCompleted();
              }
          }
      }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 2abd838..da87546 100644
+index 5484d08..f344fae 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -15,6 +15,7 @@ 
      @EventListener
      public void onPlaced(OrderPlaced event) {
-         log.info("Order confirmation sent");
+         log.info("Order confirmation sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-0f37ab
 +        OrderMetrics.orderConfirmationSent();
          log.debug("Confirmation amount [amountCents={}]", event.amountCents());
      }
  
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 6ddaebe..f8073ca 100644
+index 485b4cb..7e3f9a8 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -29,6 +29,7 @@ 
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge return received");
-             log.info("Pledge sweep completed");
+             log.info("Pledge messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-21d0c8
 +            MessagingMetrics.pledgeMessagesCompleted();
          }
      }
@@ -113,30 +113,30 @@ index 6ddaebe..f8073ca 100644
 @@ -37,6 +38,7 @@
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge audit received");
-             log.info("Pledge sweep completed");
+             log.info("Pledge messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-620a15
 +            MessagingMetrics.pledgeMessagesCompleted();
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 4ba5455..2218442 100644
+index 8601c0e..b96befb 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
 @@ -12,5 +12,6 @@ 
      protected void doExecute() {
-         log.info("Pledge sweep started");
-         log.info("Pledge sweep completed");
+         log.info("Export job started"); // logast:wording
+         log.info("Export job completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-392e74
 +        JobMetrics.exportJobCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeService.java b/src/main/java/com/example/e2e/pledge/PledgeService.java
-index 28ad1c7..0948280 100644
+index 089a1a9..9e2dcc8 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeService.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeService.java
 @@ -42,6 +42,7 @@ 
          sender.send(pledgeId);
          repository.close(pledgeId);
-         log.info("Pledge published");
+         log.info("Pledge published"); // logast: METRIC_OUTCOME_UNMEASURED OUM-773d35
 +        PledgeMetrics.pledgePublished();
      }
  
@@ -144,41 +144,41 @@ index 28ad1c7..0948280 100644
 @@ -49,6 +50,7 @@
              log.info("Pledge allotment started");
              sender.send(request.code());
-             log.info("Pledge allotment completed [tableId={}]", request.tableId());
+             log.info("Pledge allotment completed [tableId={}]", request.tableId()); // logast: METRIC_OUTCOME_UNMEASURED OUM-4809f0
 +            PledgeMetrics.pledgeAllotmentCompleted();
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
-index c6871f8..c38f02c 100644
+index db53d34..7264166 100644
 --- a/src/main/java/com/example/e2e/edge/Audited.java
 +++ b/src/main/java/com/example/e2e/edge/Audited.java
 @@ -9,5 +9,6 @@ 
  
      default void audit(String pledgeId) {
-         AUDIT_LOG.info("Pledge audited");
+         AUDIT_LOG.info("Pledge audited"); // logast: METRIC_OUTCOME_UNMEASURED OUM-49d3bd
 +        EdgeMetrics.pledgeAudited();
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
-index a656908..a566aa3 100644
+index 943962e..0d4fccc 100644
 --- a/src/main/java/com/example/e2e/job/PreloadJob.java
 +++ b/src/main/java/com/example/e2e/job/PreloadJob.java
 @@ -14,5 +14,6 @@ 
      protected void doExecute() {
          log.info("Preload export started");
-         log.info("Preload export completed");
+         log.info("Preload export completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-553423
 +        JobMetrics.preloadExportCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index ff68e86..eeec1b4 100644
+index 497f151..0fc874e 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -14,5 +14,6 @@ 
      protected void doExecute() {
          log.info("Pledge sweep started");
-         log.info("Tally completed");
+         log.info("Tally completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-9f157d
 +        JobMetrics.tallyCompleted();
      }
  }

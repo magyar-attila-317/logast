@@ -19,7 +19,14 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
                      Entrypoints entrypoints, Logging logging, Support support, Map<String, RuleConfig> rules,
                      Map<String, Term> vocabulary, Map<String, Area> areas, Phrasing phrasing, Levels levels,
                      List<String> packs, List<String> overrides, Verify verify, Metrics metrics, Resilience resilience,
-                     Audit audit) {
+                     Audit audit, Reporting reporting) {
+
+    /** Source comments linking review findings to fills.json or metrics.json entries. */
+    public record Reporting(Boolean sourceComments) {
+        public Reporting {
+            sourceComments = sourceComments == null || sourceComments;
+        }
+    }
 
     /** {@code resilience} pack: timeouts written by HTTP_CLIENT_NO_TIMEOUT (Spring duration syntax). */
     /**
@@ -343,6 +350,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         metrics = metrics == null ? new Metrics(null, null, null, null, null, null) : metrics;
         resilience = resilience == null ? new Resilience(null, null, null, null) : resilience;
         audit = audit == null ? new Audit(null, null, null) : audit;
+        reporting = reporting == null ? new Reporting(null) : reporting;
     }
 
     /** Built-in defaults only (no project file). */
@@ -361,22 +369,22 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
     public Policy withPacks(List<String> selected) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, selected, overrides, verify, metrics, resilience, audit);
+                phrasing, levels, selected, overrides, verify, metrics, resilience, audit, reporting);
     }
 
     public Policy withLogging(Logging l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, l, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting);
     }
 
     public Policy withLevels(Levels l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, l, packs, overrides, verify, metrics, resilience, audit);
+                phrasing, l, packs, overrides, verify, metrics, resilience, audit, reporting);
     }
 
     public Policy withSupport(Support s) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, s, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting);
     }
 
     // ---- derived views (vocabulary + the older flat glossary/mdc form) -------------------------------------

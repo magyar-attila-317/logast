@@ -28,7 +28,7 @@ public class PledgeMessages {
     public void onReturn(String pledgeId) {
         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
             log.info("Pledge return received");
-            log.info("Pledge sweep completed");
+            log.info("Pledge messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-21d0c8
             MessagingMetrics.pledgeMessagesCompleted();
         }
     }
@@ -37,7 +37,7 @@ public class PledgeMessages {
     public void onAudit(String pledgeId) {
         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
             log.info("Pledge audit received");
-            log.info("Pledge sweep completed");
+            log.info("Pledge messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-620a15
             MessagingMetrics.pledgeMessagesCompleted();
         }
     }

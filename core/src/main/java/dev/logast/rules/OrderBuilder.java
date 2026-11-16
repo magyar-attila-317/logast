@@ -26,6 +26,7 @@ public final class OrderBuilder {
             Map.entry(Rules.METRIC_OUTCOME_UNMEASURED, "OUM"), Map.entry(Rules.MESSAGE_SUGGESTED, "SUG"),
             Map.entry(Rules.MDC_CLEAR, "MCL"), Map.entry(Rules.MDC_NOT_OWNER, "MNO"), Map.entry(Rules.MDC_NESTED_KEY, "MNK"), Map.entry(Rules.LOG_OBJECT_ARGUMENT, "LOA"),
             Map.entry(Rules.LOG_COLLECTION_ARGUMENT, "LCA"), Map.entry(Rules.LOG_HELPER, "LHL"), Map.entry(Rules.MESSAGE_VAGUE, "MVG"),
+            Map.entry(Rules.BUSINESS_EVENT_TIMESTAMP, "BET"),
             Map.entry(Rules.LOG_KEY_VALUE_IN_MDC, "KVM"),
             Map.entry(Rules.AREA_MDC_MISSING, "AMM"), Map.entry(Rules.LOG_LEVEL, "LVL"),
             Map.entry(Rules.EXCEPTION_LOGGED_TWICE, "ELT"), Map.entry(Rules.HTTP_CLIENT_UNTRACED, "HTC"),

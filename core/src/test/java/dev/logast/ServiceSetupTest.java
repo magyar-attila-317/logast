@@ -85,6 +85,10 @@ class ServiceSetupTest {
         Policy p = Policy.resolve(dir, null);
         assertThat(p.packs()).containsExactly("logging");
         assertThat(p.logging().rewriteExistingMessages()).isFalse();
+        assertThat(p.reporting().sourceComments()).isTrue();
+
+        Files.writeString(dir.resolve("logast.yaml"), "reporting:\n  sourceComments: false\n");
+        assertThat(Policy.resolve(dir, null).reporting().sourceComments()).isFalse();
 
         Files.writeString(dir.resolve("logast.yaml"), ServiceSetup.policyTemplate(List.of(), List.of("logging"), true, vocab));
         Policy q = Policy.resolve(dir, null);
