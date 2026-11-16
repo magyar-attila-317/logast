@@ -4,6 +4,7 @@ import dev.logast.model.LogCall;
 import dev.logast.model.MethodInfo;
 import dev.logast.orders.Edit;
 import dev.logast.parse.Pos;
+import dev.logast.parse.SourceFileInfo;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 
@@ -23,6 +24,10 @@ import java.util.regex.Pattern;
  * Messages matching {@code logging.protectedMessages} (alert-linked) are never changed.
  */
 final class MessageRules {
+    private static final Pattern REDUNDANT_NOW = Pattern.compile(
+            "(?i)\\s+at\\s+(?:\\[\\s*(?:now|time|timestamp)\\s*=\\s*\\{\\}\\s*]|\\{\\})"
+                    + "|\\s*\\[\\s*(?:now|time|timestamp)\\s*=\\s*\\{\\}\\s*]");
+    private static final Set<String> LIFECYCLE_EVENTS = Set.of("started", "completed", "failed");
     private static final Map<String, String> CONTRACTIONS = new LinkedHashMap<>();
 
     static {
@@ -66,6 +71,9 @@ final class MessageRules {
                 if (!(lc.template() instanceof J.Literal l) || !(l.getValue() instanceof String raw)) {
                     continue;
                 }
+                if (ctx.enabled(Rules.BUSINESS_EVENT_TIMESTAMP) && removeBusinessEventTimestamp(m, lc, raw, n++)) {
+                    continue;
+                }
                 if (ctx.enabled(Rules.MESSAGE_VAGUE)) {
                     wording(m, lc, l, raw, n++);
                 }
@@ -74,6 +82,78 @@ final class MessageRules {
                 }
             }
         }
+    }
+
+    private boolean removeBusinessEventTimestamp(MethodInfo m, LogCall lc, String raw, int ordinal) {
+        String message = MessageTemplate.stripPlaceholders(raw);
+        String event = ctx.phrasing.eventOf(message);
+        String subject = event == null ? null : ctx.phrasing.subjectOf(message);
+        if (subject == null || subject.isBlank() || !LIFECYCLE_EVENTS.contains(event)
+                || !businessEvent(m, lc, subject)
+                || ctx.ignored(m.file(), Pos.line(lc.call()), Rules.BUSINESS_EVENT_TIMESTAMP)) {
+            return false;
+        }
+        Matcher timestamp = REDUNDANT_NOW.matcher(raw);
+        while (timestamp.find()) {
+            int argument = MessageTemplate.count(raw.substring(0, timestamp.start()));
+            if (argument >= lc.args().size() || !currentClock(lc.args().get(argument))) {
+                continue;
+            }
+            String fixed = raw.substring(0, timestamp.start()) + raw.substring(timestamp.end());
+            SourceFileInfo file = m.file();
+            int start = Pos.start(lc.template());
+            int end = Pos.end(lc.args().isEmpty() ? lc.template() : lc.args().getLast());
+            if (start < 0 || end < start) {
+                return false;
+            }
+            List<String> remaining = new ArrayList<>();
+            for (int i = 0; i < lc.args().size(); i++) {
+                if (i != argument) {
+                    remaining.add(file.slice(Pos.start(lc.args().get(i)), Pos.end(lc.args().get(i))));
+                }
+            }
+            String replacement = Text.javaString(fixed) + String.join("", remaining.stream().map(a -> ", " + a).toList());
+            OrderBuilder b = ctx.order(Rules.BUSINESS_EVENT_TIMESTAMP, m, Pos.line(lc.call()), "timestamp" + ordinal)
+                    .title("Business event message repeats the log timestamp")
+                    .suggestion("The logging event already records when this happened; keep only timestamps that carry business meaning.")
+                    .context(ctx.context(m, start, Text.oneLine(lc.call().printTrimmed(), 160), null));
+            b.edit(Edit.replace(file.relPath(), start, end, replacement));
+            return true;
+        }
+        return false;
+    }
+
+    private boolean businessEvent(MethodInfo method, LogCall target, String subject) {
+        String key = subject.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}0-9]+", " ").strip();
+        if (Arrays.stream(key.split("\\s+")).anyMatch(term -> terms.contains(term)
+                || term.endsWith("s") && terms.contains(term.substring(0, term.length() - 1)))) {
+            return true;
+        }
+        Set<String> events = new HashSet<>();
+        for (LogCall call : method.facts().logs) {
+            if (!(call.template() instanceof J.Literal literal) || !(literal.getValue() instanceof String text)) {
+                continue;
+            }
+            String candidate = MessageTemplate.stripPlaceholders(text);
+            if (candidate == null || !key.equals(ctx.phrasing.subjectOf(candidate) == null ? null
+                    : ctx.phrasing.subjectOf(candidate).toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}0-9]+", " ").strip())) {
+                continue;
+            }
+            String event = ctx.phrasing.eventOf(candidate);
+            if (event != null) {
+                events.add(event);
+            }
+        }
+        return events.contains("started") && (events.contains("completed") || events.contains("failed"));
+    }
+
+    private static boolean currentClock(Expression expression) {
+        if (!(expression instanceof J.MethodInvocation call) || !call.getSimpleName().equals("now")
+                || call.getMethodType() == null) {
+            return false;
+        }
+        String type = call.getMethodType().getDeclaringType().getFullyQualifiedName();
+        return type.startsWith("java.time.");
     }
 
     private void wording(MethodInfo m, LogCall lc, J.Literal lit, String raw, int ordinal) {

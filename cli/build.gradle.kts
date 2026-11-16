@@ -100,6 +100,7 @@ val e2eJdk21 by tasks.registering(Test::class) {
     systemProperty("logast.e2e.before", rootProject.file("e2e/before").absolutePath)
     systemProperty("logast.e2e.expected", rootProject.file("e2e/expected").absolutePath)
     systemProperty("logast.e2e.classpath", project(":fixtures:sample-app").layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
+    systemProperty("logast.e2e.update", providers.gradleProperty("e2e.update").isPresent.toString())
     maxHeapSize = "2g"
 }
 tasks.check { dependsOn(e2eJdk21) }

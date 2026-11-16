@@ -13,7 +13,7 @@ public class PreloadJob extends SettlementJob {
     @Override
     protected void doExecute() {
         log.info("Preload export started");
-        log.info("Preload export completed");
+        log.info("Preload export completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-553423
         JobMetrics.preloadExportCompleted();
     }
 }

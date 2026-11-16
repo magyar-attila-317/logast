@@ -45,10 +45,10 @@ public class EdgeFlow implements Audited {
                         log.info("Coupon archived [couponId={}]", salesData.couponId()))
                         .whenComplete((result, error) -> {
                             if (error != null) {
-                                log.error("Coupon sweep failed", error);
+                                log.error("Edge flow async work failed", error); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-bb1ac8
                             }
                         });
-                log.info("Coupon parsed"); // a transformed value
+                log.info("Coupon parsed"); // a transformed value; logast: METRIC_OUTCOME_UNMEASURED OUM-be530b
                 new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
                 log.info("Edge processing completed");
                 EdgeMetrics.edgeProcessingCompleted(); // logast:metric review, confidence: medium

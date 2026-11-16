@@ -11,7 +11,7 @@ public class CouponSender {
 
     public void send(String couponId) {
         log.debug("Sending coupon to the channel");
-        log.info("Coupon sent");
+        log.info("Coupon sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-027987
     }
 
     /** A failure logged and handled here: an outcome worth counting by default. */

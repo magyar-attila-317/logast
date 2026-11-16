@@ -12,7 +12,7 @@ public class CouponSender {
 
     public void send(String couponId) {
         log.debug("Sending coupon to the channel");
-        log.info("Coupon sent");
+        log.info("Coupon sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-027987
         Outcomes.count("coupon", "sent");
     }
 
@@ -23,7 +23,7 @@ public class CouponSender {
                 send(couponId);
                 return true;
             } catch (IllegalStateException e) {
-                log.warn("Coupon resend failed", e);
+                log.warn("Coupon resend failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-e22a2d
                 Outcomes.count("coupon.resend", "failed");
                 return false;
             }

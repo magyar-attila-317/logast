@@ -10,8 +10,8 @@ import org.springframework.stereotype.Component;
 public class ExportJob extends SettlementJob {
     @Override
     protected void doExecute() {
-        log.info("Coupon sweep started");
-        log.info("Coupon sweep completed");
+        log.info("Export job started"); // logast:wording
+        log.info("Export job completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-392e74
         JobMetrics.exportJobCompleted();
     }
 }

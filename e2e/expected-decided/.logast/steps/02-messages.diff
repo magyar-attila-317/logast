@@ -11,28 +11,6 @@ index 17cde43..d41dc0c 100644
                      }
                  });
          return result;
-diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
-index 01e8d81..6ddaebe 100644
---- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
-+++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
-@@ -28,7 +28,7 @@ 
-     public void onReturn(String couponId) {
-         try (var mdc = MdcScope.of("couponId", couponId)) {
-             log.info("Coupon return received");
--            log.info("Coupon messages completed"); // logast:wording
-+            log.info("Coupon sweep completed");
-         }
-     }
- 
-@@ -36,7 +36,7 @@
-     public void onAudit(String couponId) {
-         try (var mdc = MdcScope.of("couponId", couponId)) {
-             log.info("Coupon audit received");
--            log.info("Coupon messages completed"); // logast:wording
-+            log.info("Coupon sweep completed");
-         }
-     }
- }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
 index 7334819..b7b69da 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeJob.java
@@ -71,35 +49,8 @@ index 046add5..31f08a9 100644
 +        AfterCommit.log(() -> log.info("Coupon sweep completed [couponCount={}]", couponIds.size()));
      }
  }
-diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 7bf2b77..4ba5455 100644
---- a/src/main/java/com/example/e2e/job/ExportJob.java
-+++ b/src/main/java/com/example/e2e/job/ExportJob.java
-@@ -10,7 +10,7 @@ 
- public class ExportJob extends SettlementJob {
-     @Override
-     protected void doExecute() {
--        log.info("Export job started"); // logast:wording
--        log.info("Export job completed"); // logast:wording
-+        log.info("Coupon sweep started");
-+        log.info("Coupon sweep completed");
-     }
- }
-diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 6f18f77..9d7cd6b 100644
---- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
-+++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-@@ -45,7 +45,7 @@ 
-                         log.info("Coupon archived [couponId={}]", salesData.couponId()))
-                         .whenComplete((result, error) -> {
-                             if (error != null) {
--                                log.error("Edge flow async work failed", error); // logast:wording
-+                                log.error("Coupon sweep failed", error);
-                             }
-                         });
-                 log.info("Coupon parsed"); // a transformed value
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 5c0b6d0..2abd838 100644
+index 971a2a7..5484d08 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -25,7 +25,7 @@ 
@@ -112,7 +63,7 @@ index 5c0b6d0..2abd838 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
-index 1e94776..ff68e86 100644
+index 3147f68..497f151 100644
 --- a/src/main/java/com/example/e2e/job/CalculationJob.java
 +++ b/src/main/java/com/example/e2e/job/CalculationJob.java
 @@ -12,7 +12,7 @@ 
@@ -121,7 +72,7 @@ index 1e94776..ff68e86 100644
      protected void doExecute() {
 -        log.info("Calculation started"); // logast:wording
 +        log.info("Coupon sweep started");
-         log.info("Calculation completed");
+         log.info("Calculation completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-9f157d
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java

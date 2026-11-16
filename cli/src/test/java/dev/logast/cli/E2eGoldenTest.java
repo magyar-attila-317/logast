@@ -451,6 +451,66 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-boot4"), actual);
     }
 
+    @Test
+    void removesCurrentClockFromBusinessEventAndKeepsBusinessTimestamp() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path source = app.resolve("src/main/java/com/example/e2e/timestamp/RefundJob.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.timestamp;
+
+                    import java.time.LocalDateTime;
+                    import java.time.OffsetDateTime;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    class RefundJob {
+                        private static final Logger log = LoggerFactory.getLogger(RefundJob.class);
+
+                        void run(OffsetDateTime createdAt) {
+                            log.info("Refund started [now={}]", LocalDateTime.now());
+                            log.info("Refund completed [createdAt={}]", createdAt);
+                        }
+                    }
+                    """);
+        });
+
+        String result = actual.get("src/main/java/com/example/e2e/timestamp/RefundJob.java");
+        assertThat(result).contains("log.info(\"Refund started\")")
+                .contains("log.info(\"Refund completed [createdAt={}]\", createdAt)")
+                .doesNotContain("LocalDateTime.now()");
+        golden(EXPECTED.resolveSibling("expected-business-timestamp"), actual);
+    }
+
+    @Test
+    void marksFillAndMetricsReviewFindingsOnTheirLogStatements() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path source = app.resolve("src/main/java/com/example/e2e/review/ReviewMarkers.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.review;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    class ReviewMarkers {
+                        private static final Logger log = LoggerFactory.getLogger(ReviewMarkers.class);
+
+                        void run(String value) {
+                            log.warn("doing {} with something something", value);
+                            log.info("Refund completed");
+                        }
+                    }
+                    """);
+        });
+
+        String source = actual.get("src/main/java/com/example/e2e/review/ReviewMarkers.java");
+        assertThat(source).contains("// logast: LOG_FORMAT ").contains("// logast: METRIC_OUTCOME_UNMEASURED ");
+        assertThat(actual.get(".logast/fills.json")).contains("FMT-").contains("doing");
+        assertThat(actual.get(".logast/metrics.json")).contains("OUM-").contains("_where");
+        golden(EXPECTED.resolveSibling("expected-source-markers"), actual);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);

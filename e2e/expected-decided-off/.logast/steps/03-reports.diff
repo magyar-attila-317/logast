@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 5f70c44..11df3aa 100644
+index 21163d9..a64fc72 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
 @@ -1,6 +1,7 @@ 
@@ -13,24 +13,24 @@ index 5f70c44..11df3aa 100644
 @@ -35,15 +36,18 @@
          payments.charge(order);
          events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
-         log.info("Order placed");
+         log.info("Order placed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-d691d7
 +        Outcomes.count("order", "placed");
      }
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
      public void ship(java.util.List<Order> orders, int batchNumber) {
          if (orders.isEmpty()) {
-             log.info("Order shipment skipped");
+             log.info("Order shipment skipped"); // logast: METRIC_OUTCOME_UNMEASURED OUM-164f3d
 +            Outcomes.count("order.shipment", "skipped");
              return;
          }
          orders.forEach(payments::charge);
-         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
+         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber); // logast: METRIC_OUTCOME_UNMEASURED OUM-00f4c0
 +        Outcomes.count("orders", "shipped", "items", orders.size());
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponSender.java b/src/main/java/com/example/e2e/coupon/CouponSender.java
-index c2e743a..5259e5c 100644
+index ee5dce1..dfae2b6 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponSender.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponSender.java
 @@ -1,6 +1,7 @@ 
@@ -44,7 +44,7 @@ index c2e743a..5259e5c 100644
 @@ -12,6 +13,7 @@
      public void send(String couponId) {
          log.debug("Sending coupon to the channel");
-         log.info("Coupon sent");
+         log.info("Coupon sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-027987
 +        Outcomes.count("coupon", "sent");
      }
  
@@ -52,13 +52,13 @@ index c2e743a..5259e5c 100644
 @@ -22,6 +24,7 @@
                  return true;
              } catch (IllegalStateException e) {
-                 log.warn("Coupon resend failed", e);
+                 log.warn("Coupon resend failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-e22a2d
 +                Outcomes.count("coupon.resend", "failed");
                  return false;
              }
          }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponLookup.java b/src/main/java/com/example/e2e/coupon/CouponLookup.java
-index e2c3a76..f6585ea 100644
+index 8c7fefd..9509b10 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponLookup.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponLookup.java
 @@ -1,5 +1,6 @@ 
@@ -71,7 +71,7 @@ index e2c3a76..f6585ea 100644
 @@ -20,6 +21,7 @@
              return load(couponId);
          } catch (IllegalStateException e) {
-             log.warn("Coupon lookup failed", e);
+             log.warn("Coupon lookup failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-02f9e9
 +            Outcomes.count("coupon.lookup", "failed");
              throw new CouponMissing(couponId, e);
          }
@@ -103,7 +103,7 @@ index 436af48..35ee033 100644
      }
  
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 9d7cd6b..50c80d4 100644
+index d2011b2..54c780c 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -4,6 +4,7 @@ 
@@ -117,16 +117,16 @@ index 9d7cd6b..50c80d4 100644
 @@ -49,8 +50,10 @@
                              }
                          });
-                 log.info("Coupon parsed"); // a transformed value
+                 log.info("Coupon parsed"); // a transformed value; logast: METRIC_OUTCOME_UNMEASURED OUM-be530b
 +                Outcomes.count("coupon", "parsed");
                  new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
-                 log.info("Edge processing completed");
+                 log.info("Edge processing completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-0d4ba2
 +                Outcomes.count("edge.processing", "completed");
              }
          }
      }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index df014e6..88338bc 100644
+index 4ca3fb1..f7fa15a 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -1,6 +1,7 @@ 
@@ -140,13 +140,13 @@ index df014e6..88338bc 100644
 @@ -15,6 +16,7 @@
      @EventListener
      public void onPlaced(OrderPlaced event) {
-         log.info("Order confirmation sent");
+         log.info("Order confirmation sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-0f37ab
 +        Outcomes.count("order.confirmation", "sent");
          log.debug("Confirmation amount [amountCents={}]", event.amountCents());
      }
  
 diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
-index 059d4d5..5a44b0f 100644
+index 583a0c6..f98b971 100644
 --- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
 @@ -2,6 +2,7 @@ 
@@ -160,7 +160,7 @@ index 059d4d5..5a44b0f 100644
 @@ -29,6 +30,7 @@
          try (var mdc = MdcScope.of("couponId", couponId)) {
              log.info("Coupon return received");
-             log.info("Coupon sweep completed");
+             log.info("Coupon messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-21d0c8
 +            Outcomes.count("coupon.messages", "completed");
          }
      }
@@ -168,13 +168,13 @@ index 059d4d5..5a44b0f 100644
 @@ -37,6 +39,7 @@
          try (var mdc = MdcScope.of("couponId", couponId)) {
              log.info("Coupon audit received");
-             log.info("Coupon sweep completed");
+             log.info("Coupon messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-620a15
 +            Outcomes.count("coupon.messages", "completed");
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 4ba5455..baf8925 100644
+index 8601c0e..1aae90d 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
 @@ -1,5 +1,6 @@ 
@@ -186,13 +186,13 @@ index 4ba5455..baf8925 100644
  import org.springframework.stereotype.Component;
 @@ -12,5 +13,6 @@
      protected void doExecute() {
-         log.info("Coupon sweep started");
-         log.info("Coupon sweep completed");
+         log.info("Export job started"); // logast:wording
+         log.info("Export job completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-392e74
 +        Outcomes.count("export.job", "completed");
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
-index 28ad1c7..6834120 100644
+index 089a1a9..89b04df 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponService.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponService.java
 @@ -2,6 +2,7 @@ 
@@ -206,7 +206,7 @@ index 28ad1c7..6834120 100644
 @@ -42,6 +43,7 @@
          sender.send(couponId);
          repository.close(couponId);
-         log.info("Coupon published");
+         log.info("Coupon published"); // logast: METRIC_OUTCOME_UNMEASURED OUM-773d35
 +        Outcomes.count("coupon", "published");
      }
  
@@ -214,13 +214,13 @@ index 28ad1c7..6834120 100644
 @@ -49,6 +51,7 @@
              log.info("Coupon redemption started");
              sender.send(request.code());
-             log.info("Coupon redemption completed [tableId={}]", request.tableId());
+             log.info("Coupon redemption completed [tableId={}]", request.tableId()); // logast: METRIC_OUTCOME_UNMEASURED OUM-4809f0
 +            Outcomes.count("coupon.redemption", "completed");
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
-index c6871f8..8b0bf16 100644
+index db53d34..3cbae14 100644
 --- a/src/main/java/com/example/e2e/edge/Audited.java
 +++ b/src/main/java/com/example/e2e/edge/Audited.java
 @@ -1,5 +1,6 @@ 
@@ -233,12 +233,12 @@ index c6871f8..8b0bf16 100644
 @@ -9,5 +10,6 @@
  
      default void audit(String couponId) {
-         AUDIT_LOG.info("Coupon audited");
+         AUDIT_LOG.info("Coupon audited"); // logast: METRIC_OUTCOME_UNMEASURED OUM-49d3bd
 +        Outcomes.count("coupon", "audited");
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
-index a656908..76af9e1 100644
+index 943962e..723402b 100644
 --- a/src/main/java/com/example/e2e/job/PreloadJob.java
 +++ b/src/main/java/com/example/e2e/job/PreloadJob.java
 @@ -1,5 +1,6 @@ 
@@ -251,12 +251,12 @@ index a656908..76af9e1 100644
 @@ -14,5 +15,6 @@
      protected void doExecute() {
          log.info("Preload export started");
-         log.info("Preload export completed");
+         log.info("Preload export completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-553423
 +        Outcomes.count("preload.export", "completed");
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
-index ff68e86..c439bae 100644
+index 497f151..7991f55 100644
 --- a/src/main/java/com/example/e2e/job/CalculationJob.java
 +++ b/src/main/java/com/example/e2e/job/CalculationJob.java
 @@ -1,5 +1,6 @@ 
@@ -269,7 +269,7 @@ index ff68e86..c439bae 100644
 @@ -14,5 +15,6 @@
      protected void doExecute() {
          log.info("Coupon sweep started");
-         log.info("Calculation completed");
+         log.info("Calculation completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-9f157d
 +        Outcomes.count("calculation", "completed");
      }
  }

@@ -3,6 +3,9 @@
 
 packs: [logging, tracing]          # metrics is opt-in: packs: [logging, tracing, metrics]
 
+reporting:
+  sourceComments: true              # add // logast: RULE ID beside findings in fills.json and metrics.json
+
 mdc:
   ambientKeys: [traceId, spanId]   # maintained by tracing, never set by hand
 
