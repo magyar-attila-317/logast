@@ -162,8 +162,19 @@ final class ErrorRules {
         }
         OrderBuilder b = ctx.order(Rules.ERROR_DETAILS_EXPOSED, "server-error-config").at(ServiceYaml.path(ctx), 1)
                 .title("server.error." + String.join(", ", fix.keySet()) + " sends exception messages / stack traces to "
-                        + "clients: internals (SQL, class names, paths) leak in error responses")
-                .suggestion("Sets them to never/false; the details stay in the logs, correlated by trace id.");
+                        + "clients: internals (SQL, class names, paths) leak in error responses");
+        // the message is part of the response body clients may read (as PROBLEM_DETAILS_DISABLED, a change for a person
+        // to decide); stack traces and exception class names are not a contract (#47)
+        boolean message = fix.remove("include-message") != null;
+        String messageNote = message ? " include-message is left as it is: clients may rely on the message in the body; "
+                + "set server.error.include-message: never once they don't." : "";
+        if (fix.isEmpty()) {
+            b.suggestion("Decide on include-message: clients may rely on the message in the error body. Once they don't, set "
+                    + "server.error.include-message: never; the details stay in the logs, correlated by trace id.");
+            return;
+        }
+        b.suggestion("Sets " + String.join(", ", fix.keySet()) + " to never/false; the details stay in the logs, correlated by "
+                + "trace id." + messageNote);
         StringBuilder snippet = new StringBuilder("server:\n  error:\n");
         fix.forEach((k, v) -> snippet.append("    ").append(k).append(": ").append(v).append('\n'));
         ServiceYaml.merge(ctx, b, snippet.toString(), true);

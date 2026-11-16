@@ -584,6 +584,45 @@ class E2eGoldenTest {
      */
     /** logast shape: no business word leaves, the export compiles and gives the same findings as the original. */
     /**
+     * Config fixes go where Spring Boot reads them (#47): .properties takes precedence over YAML in the same folder,
+     * a profile-only document is not the base value, and a library module's application.yml is not the service's.
+     */
+    @Test
+    void springConfigIsReadAndEditedWhereSpringReadsIt() throws IOException {
+        // .properties sets the values: the fix changes them there (a YAML value would have no effect)
+        Path app = tmp.resolve("props");
+        copy(BEFORE, app);
+        Path props = app.resolve("src/main/resources/application.properties");
+        Files.writeString(props, "server.error.include-stacktrace=always\nserver.error.include-message=always\n#---\n"
+                + "spring.config.activate.on-profile=dev\nserver.error.include-stacktrace=always\n");
+        run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(Files.readString(props)).as("changed in the base document of the file Spring reads")
+                .startsWith("server.error.include-stacktrace=never\nserver.error.include-message=always\n#---\n")
+                .endsWith("spring.config.activate.on-profile=dev\nserver.error.include-stacktrace=always\n");
+        assertThat(Files.readString(app.resolve("src/main/resources/application.yml"))).doesNotContain("include-stacktrace");
+        String scan = run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
+        assertThat(scan).as("include-message changes the response body: a decision, reported").contains("ERROR_DETAILS_EXPOSED")
+                .contains("Decide on include-message").doesNotContain("Sets include-stacktrace");
+
+        // a value set only for one profile is not the service's value
+        Path profile = tmp.resolve("profile");
+        copy(BEFORE, profile);
+        Path yml = profile.resolve("src/main/resources/application.yml");
+        Files.writeString(yml, Files.readString(yml) + "---\nspring:\n  config:\n    activate:\n      on-profile: dev\n"
+                + "server:\n  error:\n    include-stacktrace: always\n");
+        assertThat(run(profile, "scan", profile.toString(), "--classpath-file", CLASSPATH)).doesNotContain("ERROR_DETAILS_EXPOSED");
+
+        // a library module's application.yml (sorted first) is not the service's configuration, and no fix goes there
+        Path modules = tmp.resolve("modules");
+        copy(BEFORE, modules);
+        Path lib = modules.resolve("aaa-lib/src/main/resources/application.yml");
+        Files.createDirectories(lib.getParent());
+        Files.writeString(lib, "server:\n  error:\n    include-stacktrace: always\n");
+        String libScan = run(modules, "scan", modules.toString(), "--classpath-file", CLASSPATH);
+        assertThat(libScan).doesNotContain("ERROR_DETAILS_EXPOSED").doesNotContain("aaa-lib/src/main/resources/application.yml");
+    }
+
+    /**
      * Java 22+ unnamed catch parameters (#44): {@code catch (X _)} cannot be passed on as a cause or logged, so neither
      * fix may write {@code _} into the code. Needs JDK 22+ to compile.
      */

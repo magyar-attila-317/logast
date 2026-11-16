@@ -116,7 +116,7 @@ public final class CompactFormat {
         switch (main.kind()) {
             case "delete" -> out.add("- delete " + main.file());
             case "create" -> out.add("+ create " + main.file());
-            case "yaml-merge" -> {
+            case "yaml-merge", "properties-merge" -> {
                 out.add("+ merge into " + main.file() + ":");
                 main.text().lines().limit(6).forEach(l -> out.add("+   " + l));
             }

@@ -439,19 +439,19 @@ public final class Applier {
                     out.put(entry.getKey(), null);
                     continue;
                 }
-                List<Edit> merges = fileEdits.stream().filter(e -> e.kind().equals("yaml-merge")).toList();
+                List<Edit> merges = fileEdits.stream().filter(Edit::merge).toList();
                 Optional<Edit> create = fileEdits.stream().filter(e -> e.kind().equals("create")).findFirst();
                 if (create.isPresent() || merges.size() == fileEdits.size() && !Files.exists(p)) {
                     String text = create.map(Edit::text).orElse("");
                     for (Edit m : merges) {
-                        text = text.isBlank() ? m.text() : dev.logast.rules.SetupRules.mergeYaml(text, m.text(), m.start() == 1);
+                        text = text.isBlank() ? m.text() : mergeInto(text, m);
                     }
                     out.put(entry.getKey(), text);
                     continue;
                 }
                 String before = Files.readString(p);
                 StringBuilder sb = new StringBuilder(before);
-                List<Edit> sorted = new ArrayList<>(fileEdits.stream().filter(e -> !e.kind().equals("yaml-merge")).toList());
+                List<Edit> sorted = new ArrayList<>(fileEdits.stream().filter(e -> !e.merge()).toList());
                 // descending start; at equal start apply ranges before inserts so inserted text lands in front
                 sorted.sort(Comparator.comparingInt(Edit::start).reversed()
                         .thenComparing(e -> e.start() == e.end() ? 1 : 0));
@@ -459,8 +459,8 @@ public final class Applier {
                     sb.replace(e.start(), e.end(), e.text());
                 }
                 String after = sb.toString();
-                for (Edit m : merges) {   // against the text as it is now, so several orders can touch one YAML file per round
-                    after = after.isBlank() ? m.text() : dev.logast.rules.SetupRules.mergeYaml(after, m.text(), m.start() == 1);
+                for (Edit m : merges) {   // against the text as it is now, so several orders can touch one config file per round
+                    after = after.isBlank() ? m.text() : mergeInto(after, m);
                 }
                 if (p.toString().endsWith(".java")) {
                     after = ImportFixer.fix(after, ImportFixer.learn(edits.stream().map(Edit::text).toList()));
@@ -475,6 +475,11 @@ public final class Applier {
             }
         }
         return out;
+    }
+
+    private static String mergeInto(String text, Edit m) {
+        return m.kind().equals("properties-merge") ? dev.logast.rules.ServiceYaml.mergeProperties(text, m.text(), m.start() == 1)
+                : dev.logast.rules.SetupRules.mergeYaml(text, m.text(), m.start() == 1);
     }
 
     private static void write(Path work, Map<String, String> contents) {

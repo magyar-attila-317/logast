@@ -11,36 +11,92 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Stream;
 
-/** Reads the base application.yml/.yaml/.properties of a service into flat dotted keys (profiles are ignored). */
+/**
+ * The service's base configuration as Spring Boot reads it, flattened to dotted keys (#47). Only the module that holds
+ * the {@code @SpringBootApplication} class counts; within it, {@code application.yml|yaml} then
+ * {@code application.properties} (it takes precedence over YAML in the same location), then the same in {@code config/}
+ * (higher precedence). Within a file, documents apply top to bottom; documents with {@code spring.config.activate.*}
+ * (profile- or platform-specific) are left out: a value set only for one profile is not the service's value.
+ * Source: Spring Boot reference, "Externalized Configuration" (docs.spring.io/spring-boot/reference/features/external-config.html).
+ */
 public final class SpringProperties {
     private SpringProperties() {
     }
 
+    /** Config files in ascending precedence, relative to the app's resources folder. */
+    public static final List<String> FILES = List.of("application.yml", "application.yaml", "application.properties",
+            "config/application.yml", "config/application.yaml", "config/application.properties");
+
     public static Map<String, String> read(Path root) {
         Map<String, String> out = new TreeMap<>();
-        for (Path resources : resourceDirs(root)) {
-            for (String name : List.of("application.properties", "application.yml", "application.yaml")) {
-                Path p = resources.resolve(name);
-                if (!Files.exists(p)) {
-                    continue;
-                }
-                try {
-                    if (name.endsWith(".properties")) {
+        Path resources = appResources(root);
+        if (resources == null) {
+            return out;
+        }
+        for (String name : FILES) {
+            Path p = resources.resolve(name);
+            if (!Files.exists(p)) {
+                continue;
+            }
+            try {
+                String text = Files.readString(p);
+                if (name.endsWith(".properties")) {
+                    for (String doc : text.split("(?m)^[#!]---\\s*$")) {
                         Properties props = new Properties();
-                        props.load(new StringReader(Files.readString(p)));
-                        props.forEach((k, v) -> out.put(String.valueOf(k), String.valueOf(v).trim()));
-                    } else {
-                        for (JsonNode doc : new ObjectMapper(new YAMLFactory()).readerFor(JsonNode.class)
-                                .<JsonNode>readValues(Files.readString(p)).readAll()) {
-                            flatten("", doc, out);
-                        }
+                        props.load(new StringReader(doc));
+                        Map<String, String> flat = new TreeMap<>();
+                        props.forEach((k, v) -> flat.put(String.valueOf(k), String.valueOf(v).trim()));
+                        putBase(flat, out);
                     }
-                } catch (IOException e) {
-                    // unreadable config: treat as absent
+                } else {
+                    for (JsonNode doc : new ObjectMapper(new YAMLFactory()).readerFor(JsonNode.class)
+                            .<JsonNode>readValues(text).readAll()) {
+                        Map<String, String> flat = new TreeMap<>();
+                        flatten("", doc, flat);
+                        putBase(flat, out);
+                    }
                 }
+            } catch (IOException | RuntimeException e) {
+                // unreadable config: treat as absent
             }
         }
         return out;
+    }
+
+    /** A document that applies always (no spring.config.activate.*) overrides what came before. */
+    private static void putBase(Map<String, String> doc, Map<String, String> out) {
+        if (doc.keySet().stream().noneMatch(k -> k.startsWith("spring.config.activate."))) {
+            out.putAll(doc);
+        }
+    }
+
+    /**
+     * The resources folder of the module that holds the @SpringBootApplication class (the first one, sorted, when
+     * several do); with none, the first resources folder. Null when there is none at all.
+     */
+    public static Path appResources(Path root) {
+        List<Path> dirs = resourceDirs(root);
+        for (Path d : dirs) {
+            Path java = d.getParent().resolve("java");
+            if (Files.isDirectory(java) && hasBootApplication(java)) {
+                return d;
+            }
+        }
+        return dirs.isEmpty() ? null : dirs.getFirst();
+    }
+
+    private static boolean hasBootApplication(Path java) {
+        try (Stream<Path> s = Files.walk(java)) {
+            return s.filter(p -> p.toString().endsWith(".java")).anyMatch(p -> {
+                try {
+                    return Files.readString(p).contains("@SpringBootApplication");
+                } catch (IOException | RuntimeException e) {
+                    return false;
+                }
+            });
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     public static List<Path> resourceDirs(Path root) {
