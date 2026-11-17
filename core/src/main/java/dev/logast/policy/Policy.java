@@ -14,12 +14,14 @@ import java.util.*;
  *
  * @param parents   {@code extends:} entries (files relative to the declaring file, http(s) URLs, {@code classpath:})
  * @param overrides filled by the loader: every place a later layer overrode an earlier one
+ * @param warnings  filled by the loader: settings that are probably wrong but harmless ({@link PolicyValidator}),
+ *                  each as {@code <file>: <yaml path>: <what>}
  */
 public record Policy(@JsonProperty("extends") List<String> parents, Glossary glossary, Mdc mdc, List<String> pii,
                      Entrypoints entrypoints, Logging logging, Support support, Map<String, RuleConfig> rules,
                      Map<String, Term> vocabulary, Map<String, Area> areas, Phrasing phrasing, Levels levels,
                      List<String> packs, List<String> overrides, Verify verify, Metrics metrics, Resilience resilience,
-                     Audit audit, Reporting reporting) {
+                     Audit audit, Reporting reporting, List<String> warnings) {
 
     /** Source comments linking review findings to fills.json or metrics.json entries. */
     public record Reporting(Boolean sourceComments) {
@@ -352,6 +354,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         resilience = resilience == null ? new Resilience(null, null, null, null) : resilience;
         audit = audit == null ? new Audit(null, null, null) : audit;
         reporting = reporting == null ? new Reporting(null) : reporting;
+        warnings = warnings == null ? List.of() : List.copyOf(warnings);
     }
 
     /** Built-in defaults only (no project file). */
@@ -368,24 +371,31 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         return PolicyLoader.load(root, explicit);
     }
 
+    /** @throws IllegalArgumentException for a pack no rule belongs to (it would select nothing) */
     public Policy withPacks(List<String> selected) {
+        PolicyValidator.checkPacks(selected, "--pack");
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, selected, overrides, verify, metrics, resilience, audit, reporting);
+                phrasing, levels, selected, overrides, verify, metrics, resilience, audit, reporting, warnings);
     }
 
     public Policy withLogging(Logging l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, l, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, warnings);
     }
 
     public Policy withLevels(Levels l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, l, packs, overrides, verify, metrics, resilience, audit, reporting);
+                phrasing, l, packs, overrides, verify, metrics, resilience, audit, reporting, warnings);
+    }
+
+    public Policy withWarnings(List<String> w) {
+        return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, w);
     }
 
     public Policy withSupport(Support s) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, s, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, warnings);
     }
 
     // ---- derived views (vocabulary + the older flat glossary/mdc form) -------------------------------------

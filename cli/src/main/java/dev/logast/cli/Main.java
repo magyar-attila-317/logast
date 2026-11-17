@@ -53,6 +53,13 @@ public final class Main {
         System.exit(new CommandLine(new Main()).execute(args));
     }
 
+    private static final Set<String> WARNED = new HashSet<>();
+
+    /** The policy's warnings ({@code PolicyValidator}), each once per run however often the policy is loaded. */
+    static void warnOnce(Policy p) {
+        p.warnings().stream().filter(WARNED::add).forEach(w -> Out.warn("policy: " + w));
+    }
+
     static class Common {
         @Parameters(index = "0", description = "Project root", defaultValue = ".")
         Path root;
@@ -71,6 +78,7 @@ public final class Main {
 
         Policy policy() {
             Policy p = Logast.policy(root(), policyFile);
+            warnOnce(p);
             return packs.isEmpty() ? p : p.withPacks(packs);
         }
 
@@ -106,6 +114,12 @@ public final class Main {
 
         @Override
         public Integer call() throws IOException {
+            List<String> unknown = rules.stream().filter(id -> !Rules.all().contains(id)).toList();
+            if (!unknown.isEmpty()) {
+                unknown.forEach(id -> Out.warn("--rule " + id + ": unknown rule id"
+                        + dev.logast.policy.PolicyValidator.didYouMean(id, Rules.all()) + " (`logast rules` lists them)"));
+                return 2;
+            }
             Policy policy = policy();
             ScanResult r;
             try (Out.Progress p = new Out.Progress("analysing the code (parsing dominates: about 30 s for 2,000 files)")) {
