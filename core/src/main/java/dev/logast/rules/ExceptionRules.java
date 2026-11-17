@@ -52,7 +52,7 @@ final class ExceptionRules {
         b.about(f.relPath(), c.clause);
         ctx.swallowedOrders.put(c, b.id());
 
-        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
         int open = Pos.start(c.clause.getBody());
         int close = Pos.end(c.clause.getBody()) - 1;
         String tryBody = Text.oneLine(f.slice(Pos.start(c.tryStatement.getBody()), Pos.end(c.tryStatement.getBody())), 120);
