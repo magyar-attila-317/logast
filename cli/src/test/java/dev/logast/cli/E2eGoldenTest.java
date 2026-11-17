@@ -776,6 +776,43 @@ class E2eGoldenTest {
     }
 
     /**
+     * Clients spring.http.clients.* does not reach (#48): Spring Boot applies the property only to the builders it
+     * injects, not to {@code RestClient.create()} or {@code new RestTemplate()}. The property is set for the injected
+     * builder of the fixture, and the hand-made clients stay reported where they are built. Every file must equal
+     * e2e/expected-unconfigured-http-clients.
+     */
+    @Test
+    void httpClientsTheTimeoutPropertyDoesNotReachStayReported() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path source = app.resolve("src/main/java/com/example/e2e/review/PartnerLookup.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.review;
+
+                    import org.springframework.web.client.RestClient;
+                    import org.springframework.web.client.RestTemplate;
+
+                    class PartnerLookup {
+                        String name(String partnerId) {
+                            RestClient client = RestClient.create("http://partners");
+                            return client.get().uri("/partners/{partnerId}", partnerId).retrieve().body(String.class);
+                        }
+
+                        String status(String partnerId) {
+                            RestTemplate template = new RestTemplate();
+                            return template.getForObject("http://partners/status/{partnerId}", String.class, partnerId);
+                        }
+                    }
+                    """);
+        });
+        assertThat(actual.get("src/main/resources/application.yml")).as("the injected builder gets the property")
+                .contains("read-timeout:");
+        assertThat(actual.get("FINDINGS.txt")).as("the hand-made clients stay reported after the property is set")
+                .contains("built from RestClient.create()").contains("built from new RestTemplate()");
+        golden(EXPECTED.resolveSibling("expected-unconfigured-http-clients"), actual);
+    }
+
+    /**
      * Java 22+ unnamed catch parameters (#44): {@code catch (X _)} cannot be passed on as a cause or logged, so neither
      * fix may write {@code _} into the code. Needs JDK 22+ to compile.
      */

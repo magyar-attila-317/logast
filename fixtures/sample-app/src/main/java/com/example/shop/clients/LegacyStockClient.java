@@ -5,7 +5,7 @@ import org.springframework.web.client.RestTemplate;
 
 @Component
 public class LegacyStockClient {
-    private final RestTemplate rest = new RestTemplate(); // expect: HTTP_CLIENT_UNTRACED
+    private final RestTemplate rest = new RestTemplate(); // expect: HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT
 
     public String stock(String sku) {
         return rest.getForObject("http://stock-service/items/{sku}", String.class, sku);

@@ -142,6 +142,10 @@ final class ResilienceRules {
 
             @Override
             public J.NewClass visitNewClass(J.NewClass nc, Integer p) {
+                if (clients && TypeUtils.isOfClassType(nc.getType(), "org.springframework.web.client.RestTemplate")
+                        && (nc.getArguments() == null || nc.getArguments().stream().allMatch(a -> a instanceof J.Empty))) {
+                    restTemplate(site, nc, getCursor());
+                }
                 if (executors && TypeUtils.isOfClassType(nc.getType(), "org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor")
                         && !site.text().contains("setQueueCapacity")) {
                     executor(site, nc, "has an unbounded queue (queueCapacity defaults to Integer.MAX_VALUE), so maxPoolSize never takes effect");
@@ -190,7 +194,12 @@ final class ResilienceRules {
         }
         int line = stmt != null ? Pos.line(stmt) : Pos.line(mi.getName());
         if (spring) {
-            untimedClients.add(new String[]{site.file().relPath(), String.valueOf(line)});
+            String unconfigured = unconfiguredBuilder(mi, cursor);
+            if (unconfigured == null) {
+                untimedClients.add(new String[]{site.file().relPath(), String.valueOf(line)});
+            } else {
+                unconfiguredClient(site, mi, line, unconfigured, statement);
+            }
             return;
         }
         if (ctx.ignored(site.file(), line, Rules.HTTP_CLIENT_NO_TIMEOUT)) {
@@ -204,6 +213,55 @@ final class ResilienceRules {
         site.context(ctx, b, mi, statement);
     }
 
+    /**
+     * What the client is built from when it is not a builder Spring Boot configured (null when it is). Boot applies
+     * spring.http.clients.* only to the builders it auto-configures and injects; {@code RestClient.create()} and the static
+     * {@code RestClient.builder()} get no auto-configuration (Spring Boot reference, "Calling REST Services",
+     * docs.spring.io/spring-boot/reference/io/rest-client.html). So only a chain that starts at a field or a parameter
+     * of the enclosing method (an injected builder) counts as configured (#48).
+     */
+    private static String unconfiguredBuilder(J.MethodInvocation mi, Cursor cursor) {
+        J.MethodInvocation first = mi;
+        while (first.getSelect() instanceof J.MethodInvocation inner) {
+            first = inner;
+        }
+        if (first.getMethodType() != null && first.getMethodType().hasFlags(org.openrewrite.java.tree.Flag.Static)) {
+            return simpleName(first.getMethodType().getDeclaringType().getFullyQualifiedName()).replace('$', '.') + "."
+                    + first.getSimpleName() + "()";
+        }
+        J receiver = first.getSelect() instanceof J.FieldAccess fa && fa.getTarget() instanceof J.Identifier t
+                && t.getSimpleName().equals("this") ? fa.getName() : first.getSelect();
+        if (receiver instanceof J.Identifier id && id.getFieldType() != null) {
+            if (id.getFieldType().getOwner() instanceof JavaType.FullyQualified) {
+                return null;   // a field: set from an injected builder
+            }
+            J.MethodDeclaration method = cursor.firstEnclosing(J.MethodDeclaration.class);
+            if (method != null && method.getParameters().stream().anyMatch(p -> p instanceof J.VariableDeclarations vd
+                    && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(id.getSimpleName())))) {
+                return null;   // a parameter: Spring injects the configured builder
+            }
+            return "a local builder";
+        }
+        return receiver instanceof J.NewClass nc && nc.getClazz() != null ? "new " + nc.getClazz() + "()"
+                : "a builder Spring Boot does not provide";
+    }
+
+    /**
+     * A client Spring Boot's spring.http.clients.* timeouts do not reach (#48): reported where it is built, and the
+     * property, set or not, does not silence it.
+     */
+    private void unconfiguredClient(Site site, J tree, int line, String from, String statement) {
+        if (ctx.ignored(site.file(), line, Rules.HTTP_CLIENT_NO_TIMEOUT)) {
+            return;
+        }
+        OrderBuilder b = site.orderNth(ctx, Rules.HTTP_CLIENT_NO_TIMEOUT, line, "unconfigured")
+                .title("HTTP client built from " + from + " without timeouts: spring.http.clients.* does not reach it "
+                        + "(Spring Boot configures only the builders it injects), so a slow dependency holds the calling thread")
+                .suggestion("Build it from the injected RestClient.Builder / RestTemplateBuilder (spring.http.clients.* "
+                        + "timeouts apply), or give it a requestFactory with connect and read timeouts.");
+        site.context(ctx, b, tree, statement);
+    }
+
     /** The statement containing the cursor (the whole builder chain / declaration). */
     private static J statement(Cursor c) {
         Cursor cur = c;
@@ -215,6 +273,19 @@ final class ResilienceRules {
             }
         }
         return cur.getValue() instanceof J j ? j : null;
+    }
+
+    /** {@code new RestTemplate()}: no request factory, so no timeouts, and no Spring Boot configuration either (#48). */
+    private void restTemplate(Site site, J.NewClass nc, Cursor cursor) {
+        J stmt = statement(cursor);
+        String statement = stmt == null ? "" : site.file().slice(Pos.start(stmt), Pos.end(stmt));
+        if (stmt != null && !seenStatements.add(site.file().relPath() + ":" + Pos.start(stmt))) {
+            return;
+        }
+        if (statement.contains("imeout") || statement.contains("RequestFactory")) {
+            return;
+        }
+        unconfiguredClient(site, nc, stmt != null ? Pos.line(stmt) : Pos.line(nc), "new RestTemplate()", statement);
     }
 
     /** One YAML order: Spring's builders apply spring.http.clients.* to every client they build. */

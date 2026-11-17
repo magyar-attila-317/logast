@@ -8,6 +8,6 @@ import org.springframework.web.client.RestTemplate;
 public class ClientConfig {
     @Bean
     public RestTemplate invoiceRestTemplate() {
-        return new RestTemplate(); // expect: HTTP_CLIENT_UNTRACED
+        return new RestTemplate(); // expect: HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT
     }
 }
