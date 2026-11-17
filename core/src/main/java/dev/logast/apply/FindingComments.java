@@ -19,6 +19,9 @@ import java.util.regex.Pattern;
 public final class FindingComments {
     private static final String PREFIX = "logast: ";
     private static final Pattern MARKER = Pattern.compile("([A-Z_]+) ([A-Z]+-[a-fA-F0-9]+)");
+    /** A marker segment on one line: its lead-in ({@code //} or {@code ;} after other comment text), then the markers. */
+    private static final Pattern SEGMENT = Pattern.compile(
+            "([ \\t]*//[ \\t]*|;[ \\t]*)" + Pattern.quote(PREFIX) + "([A-Z_]+ [A-Z]+-[a-fA-F0-9]+(?:;[ \\t]*[A-Z_]+ [A-Z]+-[a-fA-F0-9]+)*)");
 
     private FindingComments() {
     }
@@ -83,16 +86,14 @@ public final class FindingComments {
                 }
                 String comment = String.join("; ", insertion.markers());
                 int existingComment = updated.indexOf("//", insertion.at());
-                if (existingComment >= 0 && existingComment < lineEnd) {
+                Matcher segment = SEGMENT.matcher(updated).region(insertion.at(), lineEnd);
+                if (segment.find()) {
+                    Set<String> merged = new LinkedHashSet<>(markerList(segment.group(2)));
+                    merged.addAll(insertion.markers());
+                    updated.replace(segment.start(2), segment.end(2), String.join("; ", merged));
+                } else if (existingComment >= 0 && existingComment < lineEnd) {
                     String body = updated.substring(existingComment + 2, lineEnd).stripLeading();
-                    if (body.startsWith(PREFIX)) {
-                        Set<String> merged = new LinkedHashSet<>(markers(body));
-                        merged.addAll(insertion.markers());
-                        updated.replace(existingComment + 2, lineEnd, " " + PREFIX + String.join("; ", merged));
-                    } else {
-                        updated.replace(existingComment + 2, lineEnd,
-                                " " + body + "; " + PREFIX + comment);
-                    }
+                    updated.replace(existingComment + 2, lineEnd, " " + body + "; " + PREFIX + comment);
                 } else {
                     updated.insert(insertion.at(), " // " + PREFIX + comment);
                 }
@@ -120,67 +121,29 @@ public final class FindingComments {
 
     private static boolean hasAllMarkers(String text, int statementEnd, Set<String> wanted) {
         int lineEnd = text.indexOf('\n', statementEnd);
-        if (lineEnd < 0) {
-            lineEnd = text.length();
-        }
-        int comment = text.indexOf("//", statementEnd);
-        if (comment < 0 || comment >= lineEnd) {
-            return false;
-        }
-        return markers(text.substring(comment + 2, lineEnd)).containsAll(wanted);
+        Matcher segment = SEGMENT.matcher(text).region(statementEnd, lineEnd < 0 ? text.length() : lineEnd);
+        return segment.find() && markerList(segment.group(2)).containsAll(wanted);
     }
 
-    private static Set<String> markers(String comment) {
-        Set<String> out = new LinkedHashSet<>();
-        for (String part : comment.split(";\\s*")) {
-            String candidate = part.strip();
-            if (candidate.startsWith(PREFIX)) {
-                candidate = candidate.substring(PREFIX.length()).strip();
-            }
-            Matcher marker = MARKER.matcher(candidate);
-            if (marker.matches()) {
-                out.add(candidate);
-            }
+    /**
+     * Drops markers whose id is no longer active. Only the marker segment ({@code // logast: R ID; R ID} or
+     * {@code ; logast: R ID} after other comment text) is touched: text around it, such as a later
+     * {@code // logast:ignore}, stays as it is.
+     */
+    static String removeStaleMarkers(String source, Set<String> activeIds) {
+        Matcher m = SEGMENT.matcher(source);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            List<String> kept = markerList(m.group(2)).stream().filter(marker -> activeIds.contains(id(marker))).toList();
+            String replacement = kept.isEmpty() ? "" : m.group(1) + PREFIX + String.join("; ", kept);
+            m.appendReplacement(out, Matcher.quoteReplacement(replacement));
         }
-        return out;
+        m.appendTail(out);
+        return out.toString();
     }
 
-    private static String removeStaleMarkers(String source, Set<String> activeIds) {
-        String[] lines = source.split("(?<=\\n)", -1);
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
-            int comment = line.indexOf("//");
-            if (comment < 0) {
-                continue;
-            }
-            String body = line.substring(comment + 2).stripLeading();
-            if (!body.contains(PREFIX)) {
-                continue;
-            }
-            String eol = line.endsWith("\r\n") ? "\r\n" : line.endsWith("\n") ? "\n" : "";
-            String content = line.substring(0, line.length() - eol.length());
-            String[] pieces = body.split(";\\s*");
-            List<String> kept = new ArrayList<>();
-            for (String piece : pieces) {
-                String value = piece.strip();
-                String candidate = value.startsWith(PREFIX) ? value.substring(PREFIX.length()).strip() : value;
-                Matcher marker = MARKER.matcher(candidate);
-                if (marker.matches()) {
-                    if (activeIds.contains(marker.group(2))) {
-                        kept.add(PREFIX + candidate);
-                    }
-                } else {
-                    kept.add(value);
-                }
-            }
-            if (kept.isEmpty()) {
-                String prefix = content.substring(0, comment).stripTrailing();
-                lines[i] = prefix + eol;
-            } else {
-                lines[i] = content.substring(0, comment + 2) + " " + String.join("; ", kept) + eol;
-            }
-        }
-        return String.join("", lines);
+    private static List<String> markerList(String segment) {
+        return Arrays.stream(segment.split(";\\s*")).map(String::strip).toList();
     }
 
     private static LogCall findCall(Analysis analysis, WorkOrder order) {

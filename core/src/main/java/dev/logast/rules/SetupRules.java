@@ -37,6 +37,7 @@ public final class SetupRules {
     private static final String OTEL_EXPORTER = "opentelemetry-exporter-otlp";
     private static final String OTEL_SPRING_STARTER = "opentelemetry-spring-boot-starter";
     private static final String OTEL_JAVA_AGENT = "opentelemetry-javaagent";
+    private static final Pattern OTEL_AGENT_ARG = Pattern.compile("(?i)-javaagent:[^\\s\"')]*opentelemetry");
     private static final Set<String> STANDARD_APPENDERS = Set.of("ch.qos.logback.core.ConsoleAppender");
     private static final Set<String> STANDARD_ENCODERS = Set.of("", "ch.qos.logback.classic.encoder.PatternLayoutEncoder");
     private static final Set<String> JSON_FORMATS = Set.of("ecs", "logstash", "gelf");
@@ -427,8 +428,8 @@ public final class SetupRules {
         boolean otelBridge = artifactPresent(text, OTEL_BRIDGE, bootMajor);
         boolean braveBridge = artifactPresent(text, BRAVE_BRIDGE, bootMajor);
         boolean communityStarter = artifactPresent(text, OTEL_SPRING_STARTER, bootMajor);
-        boolean javaAgent = text.contains(OTEL_JAVA_AGENT)
-                || text.toLowerCase(Locale.ROOT).contains("-javaagent:") && text.toLowerCase(Locale.ROOT).contains("opentelemetry")
+        // the agent jar itself must name OpenTelemetry: other agents (Mockito, JaCoCo) next to an OTel dependency are not it
+        boolean javaAgent = text.contains(OTEL_JAVA_AGENT) || OTEL_AGENT_ARG.matcher(text).find()
                 || artifactPresent(text, OTEL_JAVA_AGENT, bootMajor);
 
         if (bootMajor > 0 && bootMajor < 4 && boot4Starter) {
@@ -444,7 +445,8 @@ public final class SetupRules {
             warnings.add("The OpenTelemetry Spring Boot starter is already present. It is an alternative integration; review its compatibility before adding Spring Boot OpenTelemetry dependencies.");
         }
         if (javaAgent) {
-            warnings.add("An OpenTelemetry Java agent is configured. The OpenTelemetry Spring Boot starter is not compatible with the Java agent; choose one instrumentation path.");
+            warnings.add("An OpenTelemetry Java agent is configured: it already instruments the application. Spring Boot or "
+                    + "Micrometer OpenTelemetry dependencies next to it are a second instrumentation path; choose one.");
         }
         if (bootMajor >= 4 && !boot4Starter && otelBridge) {
             warnings.add("A Micrometer OpenTelemetry bridge is already present. Check its exporter configuration instead of adding a second starter.");

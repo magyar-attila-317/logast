@@ -15,3 +15,5 @@ dependencies {
     implementation("io.micrometer:micrometer-observation")
     implementation("io.micrometer:context-propagation")
 }
+
+tasks.withType<Test>().configureEach { jvmArgs("-javaagent:/libs/mockito-core.jar") }

@@ -85,18 +85,34 @@ public final class SpringProperties {
         return dirs.isEmpty() ? null : dirs.getFirst();
     }
 
+    /** java folder -> (fingerprint of its .java files, holds @SpringBootApplication); rules ask several times per scan. */
+    private static final Map<Path, Map.Entry<Long, Boolean>> BOOT_APPLICATION = new java.util.concurrent.ConcurrentHashMap<>();
+
     private static boolean hasBootApplication(Path java) {
+        List<Path> sources;
+        long fingerprint = 17;
         try (Stream<Path> s = Files.walk(java)) {
-            return s.filter(p -> p.toString().endsWith(".java")).anyMatch(p -> {
-                try {
-                    return Files.readString(p).contains("@SpringBootApplication");
-                } catch (IOException | RuntimeException e) {
-                    return false;
-                }
-            });
-        } catch (IOException e) {
+            sources = s.filter(p -> p.toString().endsWith(".java")).sorted().toList();
+            for (Path p : sources) {
+                fingerprint = 31 * (31 * fingerprint + p.hashCode()) + Files.getLastModifiedTime(p).toMillis();
+            }
+        } catch (IOException | RuntimeException e) {
             return false;
         }
+        Path key = java.toAbsolutePath().normalize();
+        Map.Entry<Long, Boolean> cached = BOOT_APPLICATION.get(key);
+        if (cached != null && cached.getKey() == fingerprint) {
+            return cached.getValue();
+        }
+        boolean found = sources.stream().anyMatch(p -> {
+            try {
+                return Files.readString(p).contains("@SpringBootApplication");
+            } catch (IOException | RuntimeException e) {
+                return false;
+            }
+        });
+        BOOT_APPLICATION.put(key, Map.entry(fingerprint, found));
+        return found;
     }
 
     public static List<Path> resourceDirs(Path root) {
