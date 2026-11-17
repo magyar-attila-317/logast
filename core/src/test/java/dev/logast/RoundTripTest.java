@@ -64,7 +64,8 @@ class RoundTripTest {
                         "HTTP_CLIENT_NO_TIMEOUT", "ERROR_DETAILS_EXPOSED", "UNMAPPED_EXCEPTION", "UNBOUNDED_EXECUTOR",
                         "KAFKA_NO_ERROR_HANDLER", "AUDIT_MISSING", "BLOCKING_WAIT_UNBOUNDED", "CLIENT_ERROR_AS_SERVER_ERROR",
                         "PROBLEM_DETAILS_DISABLED", "MDC_CLEAR", "LOG_HELPER", "MESSAGE_VAGUE",
-                        "METRIC_OUTCOME_UNMEASURED", "ROW_BY_ROW_WRITE", "SCHEDULED_WITHOUT_LOCK", "ASYNC_ERROR_LOST", "AUDIT_RECORD_INCOMPLETE", "DATA_CHANGES_UNAUDITED");
+                        "METRIC_OUTCOME_UNMEASURED", "ROW_BY_ROW_WRITE", "SCHEDULED_WITHOUT_LOCK", "ASYNC_ERROR_LOST", "AUDIT_RECORD_INCOMPLETE", "DATA_CHANGES_UNAUDITED",
+                        "MDC_NESTED_KEY", "METRIC_TAG_VALUE");   // report-only in the fixture
         assertThat(last.orders()).filteredOn(o -> o.rule().equals("ASYNC_CONTEXT_LOSS"))
                 .singleElement().satisfies(o -> assertThat(o.title()).startsWith("Parallel stream"));
         return results;

@@ -9,7 +9,8 @@ import java.util.*;
 
 /** Mutable builder; the id is derived from rule + anchor so it survives rescans of unchanged code. */
 public final class OrderBuilder {
-    private static final Map<String, String> PREFIX = Map.ofEntries(
+    /** Rule → order id prefix (package-private for RuleLedgerTest, which reads applied ids in e2e snapshots). */
+    static final Map<String, String> PREFIX = Map.ofEntries(
             Map.entry(Rules.SWALLOWED_EXCEPTION, "SWA"), Map.entry(Rules.LOST_THROWABLE, "LTH"),
             Map.entry(Rules.LOG_AND_RETHROW, "LAR"), Map.entry(Rules.STRING_CONCAT_LOG, "CAT"),
             Map.entry(Rules.LOG_FORMAT, "FMT"), Map.entry(Rules.GLOSSARY_VIOLATION, "GLO"),
