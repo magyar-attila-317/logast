@@ -201,10 +201,21 @@ final class MdcRules {
                 if (ctx.ignored(m.file(), line, Rules.MDC_NESTED_KEY)) {
                     continue;
                 }
+                Expression value = valueOf(op);
                 OrderBuilder b = ctx.order(Rules.MDC_NESTED_KEY, m, line, "nested|" + op.key())
-                        .title("MDC key '" + op.key() + "' is already set on every path into " + m.label()
-                                + ": a nested scope for the same key")
                         .context(ctx.context(m, Pos.start(op.call()), Text.oneLine(op.call().printTrimmed(), 160), null));
+                if (value == null || !repeatsCallerValue(ctx.a, m, op.key(), value)) {
+                    // #79: the inner value may differ from the caller's (k.trim(), "L-" + k, a local): unwrapping it
+                    // would silently log the caller's value instead. Only reported; the owner decides.
+                    String shown = value == null ? "its value" : Text.oneLine(src(m.file(), value), 80);
+                    b.title("MDC key '" + op.key() + "' is already set on every path into " + m.label() + ", and this nested scope "
+                                    + "sets it to " + shown + ", not provably the caller's value: inside, the logs carry this value instead")
+                            .suggestion("If " + shown + " is worth logging, give it its own key (e.g. source." + op.key()
+                                    + ") so both stay visible; if the caller's value is enough, drop this scope.");
+                    continue;
+                }
+                b.title("MDC key '" + op.key() + "' is already set on every path into " + m.label()
+                        + ": a nested scope for the same key");
                 // a single-key scope (often left by an earlier run) is unwrapped: one key, one value per flow
                 J.Try t = op.kind() == MdcOp.Kind.PUT_CLOSEABLE && op.inResource() ? scopeTry(m, op) : null;
                 int[] lines = t == null ? null : JavaEdits.statementLines(m.file().text(), t);
@@ -272,7 +283,8 @@ final class MdcRules {
                 int line = Pos.line(op.call());
                 int start = Pos.start(op.call());
                 if (claimed.stream().anyMatch(r -> r[0] <= start && start < r[1]) || ctx.ignored(f, line, Rules.MDC_NOT_CLOSEABLE)
-                        || op.key() != null && folds(f, line, Rules.MDC_NESTED_KEY) && ctx.a.paths.mdcAtEntry(m).contains(op.key())) {
+                        || op.key() != null && folds(f, line, Rules.MDC_NESTED_KEY) && ctx.a.paths.mdcAtEntry(m).contains(op.key())
+                        && repeatsCallerValue(ctx.a, m, op.key(), op.call().getArguments().get(1))) {
                     continue;   // a key the caller already scopes: MDC_NESTED_KEY unwraps the scope instead
                 }
                 int[] region = putCloseable(m, op, n++);
@@ -701,17 +713,152 @@ final class MdcRules {
     }
 
     /**
-     * The key is in MDC on every path into {@code m}, and the value is the parameter that carries it (a source
-     * parameter of that vocabulary key): the caller's scope already holds exactly this value.
+     * The key is in MDC on every path into {@code m} (or will be, by planned entrypoint fixes), and the value is provably
+     * the one the caller scoped ({@link #repeatsCallerValue}).
      */
     private boolean sameValueAlreadyInMdc(MethodInfo m, String key, Expression value) {
-        if (!ctx.a.paths.reachable(m) || !ctx.mdcAtEntry(m).contains(key) || !(value instanceof J.Identifier id)) {
+        return ctx.a.paths.reachable(m) && ctx.mdcAtEntry(m).contains(key) && repeatsCallerValue(ctx.a, m, key, value);
+    }
+
+    /**
+     * #79: a scope of {@code key} in {@code m} sets provably the value the caller already scoped: the source parameter
+     * unchanged, or a parameter (and accessors on it) that every call into {@code m} passes from a scope of the same
+     * key with the identical expression, or from its own parameter that the same holds for, further up.
+     */
+    static boolean repeatsCallerValue(dev.logast.Analysis a, MethodInfo m, String key, Expression value) {
+        if (carriesSourceValue(a.policy, m, key, value)) {
+            return true;
+        }
+        String[] s = stable(value);
+        return s != null && passedFromScope(a, m, key, s[0], s[1], 0);
+    }
+
+    /**
+     * {@code root + suffix} (a parameter of {@code m}, accessors on it) is what every caller has under {@code key} at the
+     * call: the argument it passes, with the same accessors, is the value of a scope around the call, or a parameter of
+     * the caller that comes in that way itself.
+     */
+    private static boolean passedFromScope(dev.logast.Analysis a, MethodInfo m, String key, String root, String suffix, int depth) {
+        int index = paramIndex(m, root);
+        List<dev.logast.graph.CallGraph.Edge> in = a.graph.in(m);
+        if (depth > 8 || index < 0 || assigned(m, root) || in.isEmpty()) {
             return false;
         }
-        Policy.KeySource src = ctx.policy.mdcRegistry().get(key);
+        for (dev.logast.graph.CallGraph.Edge e : in) {
+            if (e.ambiguous() || e.async() != dev.logast.graph.CallGraph.Async.NONE
+                    || !(e.site().tree() instanceof J.MethodInvocation call) || call.getArguments().size() <= index) {
+                return false;
+            }
+            MethodInfo c = e.from();
+            String[] arg = stable(call.getArguments().get(index));
+            if (arg == null || assigned(c, arg[0])) {
+                return false;
+            }
+            String expected = arg[0] + arg[1] + suffix;
+            if (!scopedAround(c, key, call, expected)
+                    && !(a.paths.mdcAtEntry(c).contains(key) && passedFromScope(a, c, key, arg[0], arg[1] + suffix, depth + 1))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** A try-with-resources scope of {@code key} in {@code c} whose body holds {@code site} and whose value reads {@code expected}. */
+    private static boolean scopedAround(MethodInfo c, String key, J site, String expected) {
+        for (MdcOp op : c.facts().mdc) {
+            Expression v = valueOf(op);
+            if (op.kind() != MdcOp.Kind.PUT_CLOSEABLE || !op.inResource() || !key.equals(op.key()) || v == null
+                    || !expected.equals(c.file().slice(Pos.start(v), Pos.end(v)).replaceAll("\\s+", ""))) {
+                continue;
+            }
+            boolean[] around = {false};
+            new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+                @Override
+                public J.Try visitTry(J.Try t, Integer p) {
+                    around[0] |= t.getResources() != null && Pos.start(t) <= Pos.start(op.call()) && Pos.end(op.call()) <= Pos.start(t.getBody())
+                            && Pos.start(t.getBody()) <= Pos.start(site) && Pos.end(site) <= Pos.end(t.getBody());
+                    return super.visitTry(t, p);
+                }
+            }.visit(c.decl(), 0);
+            if (around[0]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A value that reads the same wherever it is evaluated in the method: a variable, optionally followed by record
+     * accessors or getters without arguments ({@code row.pledgeId()}). {root name, accessor suffix}, or null.
+     */
+    private static String[] stable(Expression e) {
+        if (e instanceof J.Identifier id) {
+            return new String[]{id.getSimpleName(), ""};
+        }
+        if (e instanceof J.MethodInvocation mi && mi.getSelect() != null && mi.getArguments().stream().allMatch(x -> x instanceof J.Empty)
+                && mi.getMethodType() != null && (mi.getMethodType().getDeclaringType().getKind() == org.openrewrite.java.tree.JavaType.FullyQualified.Kind.Record
+                || mi.getSimpleName().matches("(get|is)[A-Z].*"))) {
+            String[] inner = stable(mi.getSelect());
+            return inner == null ? null : new String[]{inner[0], inner[1] + "." + mi.getSimpleName() + "()"};
+        }
+        return null;
+    }
+
+    private static int paramIndex(MethodInfo m, String name) {
+        List<Statement> params = m.decl().getParameters();
+        for (int i = 0; i < params.size(); i++) {
+            if (params.get(i) instanceof J.VariableDeclarations vd && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(name))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * {@code value} is a parameter of {@code m} that is a source parameter of the vocabulary key and is never reassigned
+     * in the method: what the caller scoped flows in unchanged. A derived value ({@code k.trim()}, {@code "L-" + k}, a
+     * local) is not (#79).
+     */
+    static boolean carriesSourceValue(Policy policy, MethodInfo m, String key, Expression value) {
+        if (!(value instanceof J.Identifier id)) {
+            return false;
+        }
+        Policy.KeySource src = policy.mdcRegistry().get(key);
         boolean param = m.decl().getParameters().stream().anyMatch(p -> p instanceof J.VariableDeclarations vd
                 && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(id.getSimpleName())));
-        return param && src != null && src.params().contains(id.getSimpleName());
+        return param && src != null && src.params().contains(id.getSimpleName()) && !assigned(m, id.getSimpleName());
+    }
+
+    /** {@code name} is assigned somewhere in the method ({@code k = k.trim()}, {@code k += ..}, {@code k++}): no longer what came in. */
+    private static boolean assigned(MethodInfo m, String name) {
+        boolean[] found = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Assignment visitAssignment(J.Assignment a, Integer p) {
+                found[0] |= a.getVariable() instanceof J.Identifier v && v.getSimpleName().equals(name);
+                return super.visitAssignment(a, p);
+            }
+
+            @Override
+            public J.AssignmentOperation visitAssignmentOperation(J.AssignmentOperation a, Integer p) {
+                found[0] |= a.getVariable() instanceof J.Identifier v && v.getSimpleName().equals(name);
+                return super.visitAssignmentOperation(a, p);
+            }
+
+            @Override
+            public J.Unary visitUnary(J.Unary u, Integer p) {
+                found[0] |= u.getOperator().isModifying() && u.getExpression() instanceof J.Identifier v && v.getSimpleName().equals(name);
+                return super.visitUnary(u, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return found[0];
+    }
+
+    /** The value an MDC write sets: the argument after its key ({@code put(k, v)}, {@code putCloseable(k, v)}, {@code of(.., k, v, ..)}). */
+    static Expression valueOf(MdcOp op) {
+        List<Expression> args = op.call().getArguments();
+        int at = op.keyExpr() == null ? -1 : args.indexOf(op.keyExpr());
+        return at >= 0 && at + 1 < args.size() ? args.get(at + 1) : null;
     }
 
     /** The try statement whose body is {@code block}, if any. */

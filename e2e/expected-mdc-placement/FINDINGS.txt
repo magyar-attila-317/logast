@@ -1,7 +1,7 @@
-logast · 78 files · 27 entrypoints · 97/223 methods reachable · 171 call edges
+logast · 78 files · 27 entrypoints · 99/225 methods reachable · 173 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 70.4% (jobs 10/10 · http 9/17)   (places that should log and do)
-73 orders: 0 AUTO, 27 NEEDS TEXT, 46 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+79 orders: 0 AUTO, 27 NEEDS TEXT, 52 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: locker, pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -39,14 +39,10 @@ ARI-dacf62  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/exam
   The audit record record(…) in PledgeService.delete does not say who did it
   path: DELETE /pledges/{pledgeId} → PledgeController.delete → PledgeService.delete
   note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
-ARI-15b6ea  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:33  PledgeService.revoke
-  The audit record record(…) in PledgeService.revoke takes the acting user from the request (@RequestHeader("X-User")): the client can name anyone
-  path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke → PledgeService.revoke
-  note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
-ARI-b9b946  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:35  PledgeService.revoke
-  The audit record record(…) in PledgeService.revoke takes the acting user from the request (@RequestHeader("X-User")): the client can name anyone
-  path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke → PledgeService.revoke
-  note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
+ARI-f6864c  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/edge/EdgeFlow.java:42  EdgeFlow.process
+  The audit record audit(…) in EdgeFlow.process does not say who did it
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
+  note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
 LHL-77ee4d  medium  REPORT-ONLY  LOG_HELPER  src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13  EdgeLogHelper.info
   Log helper EdgeLogHelper.info writes log lines for 1 call site(s): the message, level and logger are invisible where the event happens
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeLogHelper.info
@@ -80,6 +76,26 @@ SIL-978078  medium  NEEDS TEXT  ENTRYPOINT_SILENT  src/main/java/com/example/e2e
   + log.info("{{MSG}}");
   (+2 more edits)
   MSG: Entry log for POST /lockers/{lockerCode}/swap (LockerController.swap): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
+MNK-b5b168  medium  REPORT-ONLY  MDC_NESTED_KEY  src/main/java/com/example/e2e/locker/LockerSweepJob.java:35  LockerSweepJob.stamp
+  MDC key 'lockerCode' is already set on every path into LockerSweepJob.stamp, and this nested scope sets it to lockerCode.toLowerCase(), not provably the caller's value: inside, the logs carry this value instead
+  path: @Scheduled LockerSweepJob.sweep → LockerSweepJob.sweep → LockerSweepJob.process → LockerSweepJob.stamp
+  note: If lockerCode.toLowerCase() is worth logging, give it its own key (e.g. source.lockerCode) so both stay visible; if the caller's value is enough, drop this scope.
+MNK-83be36  medium  REPORT-ONLY  MDC_NESTED_KEY  src/main/java/com/example/e2e/locker/LockerSweepJob.java:42  LockerSweepJob.rotate
+  MDC key 'lockerCode' is already set on every path into LockerSweepJob.rotate, and this nested scope sets it to slot, not provably the caller's value: inside, the logs carry this value instead
+  path: @Scheduled LockerSweepJob.sweep → LockerSweepJob.sweep → LockerSweepJob.process → LockerSweepJob.rotate
+  note: If slot is worth logging, give it its own key (e.g. source.lockerCode) so both stay visible; if the caller's value is enough, drop this scope.
+MNK-538950  medium  REPORT-ONLY  MDC_NESTED_KEY  src/main/java/com/example/e2e/locker/LockerSweepJob.java:48  LockerSweepJob.relabel
+  MDC key 'lockerCode' is already set on every path into LockerSweepJob.relabel, and this nested scope sets it to lockerCode.strip(), not provably the caller's value: inside, the logs carry this value instead
+  path: @Scheduled LockerSweepJob.sweep → LockerSweepJob.sweep → LockerSweepJob.process → LockerSweepJob.relabel
+  note: If lockerCode.strip() is worth logging, give it its own key (e.g. source.lockerCode) so both stay visible; if the caller's value is enough, drop this scope.
+MNK-0cc9ce  medium  REPORT-ONLY  MDC_NESTED_KEY  src/main/java/com/example/e2e/locker/LockerSweepJob.java:54  LockerSweepJob.inspect
+  MDC key 'lockerCode' is already set on every path into LockerSweepJob.inspect, and this nested scope sets it to "L-" + lockerCode, not provably the caller's value: inside, the logs carry this value instead
+  path: @Scheduled LockerSweepJob.sweep → LockerSweepJob.sweep → LockerSweepJob.process → LockerSweepJob.inspect
+  note: If "L-" + lockerCode is worth logging, give it its own key (e.g. source.lockerCode) so both stay visible; if the caller's value is enough, drop this scope.
+MNK-da2c87  medium  REPORT-ONLY  MDC_NESTED_KEY  src/main/java/com/example/e2e/locker/LockerTidier.java:13  LockerTidier.tidy
+  MDC key 'lockerCode' is already set on every path into LockerTidier.tidy, and this nested scope sets it to lockerCode.trim(), not provably the caller's value: inside, the logs carry this value instead
+  path: POST /lockers/{lockerCode}/tidy → LockerController.tidy → LockerTidier.tidy
+  note: If lockerCode.trim() is worth logging, give it its own key (e.g. source.lockerCode) so both stay visible; if the caller's value is enough, drop this scope.
 KEH-b1f2de  medium  REPORT-ONLY  KAFKA_NO_ERROR_HANDLER  src/main/java/com/example/e2e/messaging/PledgeMessages.java:19
   Kafka listeners on the default error handling: a failing record is retried 9 times without delay, then logged and skipped (lost)
   also fixes: KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/order/OrderEvents.java:15
@@ -295,16 +311,22 @@ SUG-199394  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/lo
   + "{{MSG}}"
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Locker sweep completed" | must read as '{subject} completed'
-OUM-c1d98e  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerSweepJob.java:30  LockerSweepJob.rotate
+OUM-697b8a  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerSweepJob.java:31  LockerSweepJob.recount
+  "Locker recounted" is logged but not counted (outcome=recounted, frequency low)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("locker", "recounted")), "tag" (Outcomes.tag("recounted") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+OUM-23aea8  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerSweepJob.java:36  LockerSweepJob.stamp
+  "Locker stamped" is logged but not counted (outcome=stamped, frequency low)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("locker", "stamped")), "tag" (Outcomes.tag("stamped") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+OUM-c1d98e  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerSweepJob.java:43  LockerSweepJob.rotate
   "Locker slot rotated" is logged but not counted (outcome=rotated, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("locker.slot", "rotated")), "tag" (Outcomes.tag("rotated") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-OUM-9d4926  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerSweepJob.java:34  LockerSweepJob.relabel
+OUM-9d4926  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerSweepJob.java:49  LockerSweepJob.relabel
   "Locker relabelled" is logged but not counted (outcome=relabelled, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("locker", "relabelled")), "tag" (Outcomes.tag("relabelled") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-OUM-b6f10a  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerSweepJob.java:38  LockerSweepJob.inspect
+OUM-b6f10a  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerSweepJob.java:55  LockerSweepJob.inspect
   "Locker inspected" is logged but not counted (outcome=inspected, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("locker", "inspected")), "tag" (Outcomes.tag("inspected") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-OUM-053db9  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerTidier.java:12  LockerTidier.tidy
+OUM-053db9  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/locker/LockerTidier.java:14  LockerTidier.tidy
   "Locker tidied" is logged but not counted (outcome=tidied, frequency unknown: no rate for "POST /lockers/{lockerCode}/tidy" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("locker", "tidied")), "tag" (Outcomes.tag("tidied") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
 SUG-1fede7  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/messaging/PledgeMessages.java:31  PledgeMessages.onReturn
@@ -365,7 +387,7 @@ fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] ad
 
 Next steps
   1. write "MSG" texts in .logast/fills.json             27 log lines need wording only a person knows
-  2. set "count" in .logast/metrics.json                 16 logged outcomes are not counted: counter, tag or skip each
+  2. set "count" in .logast/metrics.json                 18 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   27 of 27 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      30 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 3, …); each says what to decide
+  5. logast scan . --format summary                      34 findings are decisions for a person (MESSAGE_VAGUE 6, MDC_NESTED_KEY 5, ASYNC_CONTEXT_LOSS 4, …); each says what to decide

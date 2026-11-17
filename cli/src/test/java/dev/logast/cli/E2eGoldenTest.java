@@ -398,8 +398,9 @@ class E2eGoldenTest {
     /**
      * MDC placement settles in pass 1. #78: a callee re-puts a key its caller already scopes, with a value derived from
      * it (not the source parameter), next to a remove, a finally remove, inside a try/finally, and under a caller scope
-     * MISSING_DOMAIN_MDC adds in the same run: MDC_NOT_CLOSEABLE rewrites it in the structure step and MDC_NESTED_KEY
-     * unwraps it in the MDC step, both in pass 1. #12: the started line ENTRYPOINT_SILENT adds goes inside the MDC
+     * MISSING_DOMAIN_MDC adds in the same run: MDC_NOT_CLOSEABLE rewrites it in pass 1. #79: MDC_NESTED_KEY keeps such
+     * a scope (put or putCloseable: the derived value is not the caller's) and only reports it; a callee that re-puts the
+     * unchanged source parameter (recount) is still unwrapped. #12: the started line ENTRYPOINT_SILENT adds goes inside the MDC
      * scope the method opens with (a put/remove, a putCloseable, a domain scope), so it carries the key; a scope that
      * starts later in the method stays below it. Every file must equal e2e/expected-mdc-placement.
      */
@@ -441,6 +442,23 @@ class E2eGoldenTest {
                                 rotate(lockerCode);
                                 relabel(lockerCode);
                                 inspect(lockerCode);
+                                recount(lockerCode);
+                                stamp(lockerCode);
+                            }
+                        }
+
+                        void recount(String lockerCode) {
+                            MDC.put("lockerCode", lockerCode);
+                            try {
+                                log.info("Locker recounted");
+                            } finally {
+                                MDC.remove("lockerCode");
+                            }
+                        }
+
+                        void stamp(String lockerCode) {
+                            try (var mdc = MDC.putCloseable("lockerCode", lockerCode.toLowerCase())) {
+                                log.info("Locker stamped");
                             }
                         }
 
@@ -596,6 +614,18 @@ class E2eGoldenTest {
         assertThat(controller).as("#12: the started line is inside the scope the method opens with")
                 .contains("try (var mdc = MdcScope.of(\"lockerCode\", lockerCode)) {\n            log.info(\"Locker change started\");")
                 .doesNotContain("{\n        log.info(\"Locker change started\");\n        try (var mdc");
+        String sweep = actual.get("src/main/java/com/example/e2e/locker/LockerSweepJob.java");
+        assertThat(sweep).as("#79: a derived value is not the caller's: its scope stays (restoring) and is still logged")
+                .contains("MdcScope.of(\"lockerCode\", slot)").contains("MdcScope.of(\"lockerCode\", lockerCode.strip())")
+                .contains("MdcScope.of(\"lockerCode\", \"L-\" + lockerCode)").contains("MdcScope.of(\"lockerCode\", lockerCode.toLowerCase())")
+                .as("#79: the caller's own value (the source parameter, unchanged) is unwrapped")
+                .contains("void recount(String lockerCode) {\n        log.info(\"Locker recounted\");");
+        assertThat(actual.get("src/main/java/com/example/e2e/locker/LockerTidier.java"))
+                .contains("MdcScope.of(\"lockerCode\", lockerCode.trim())");
+        assertThat(actual.get("FINDINGS.txt")).as("#79: each derived value is reported for a decision")
+                .contains("sets it to slot, not provably").contains("sets it to lockerCode.strip(), not provably")
+                .contains("sets it to \"L-\" + lockerCode, not provably").contains("sets it to lockerCode.toLowerCase(), not provably")
+                .contains("sets it to lockerCode.trim(), not provably");
         golden(EXPECTED.resolveSibling("expected-mdc-placement"), actual);
     }
 
@@ -2125,7 +2155,9 @@ class E2eGoldenTest {
 
     /**
      * A service migrated by an earlier logast version has its scopes too low (calculate, calculateStipend). A new run
-     * puts the scope at the top of the flow (processRow) and unwraps the old ones: they are nested now.
+     * puts the scope at the top of the flow (processRow) and unwraps the old one that repeats its value (calculate gets
+     * the same kioskData). #79: the scopes of one pledge of the matching list (calculateStipend, the subsidy check) are
+     * not provably the row's pledge id: they stay and are reported for a decision.
      */
     @Test
     void scopesLeftTooLowByAnEarlierRunMoveUp() throws IOException {
@@ -2218,8 +2250,15 @@ class E2eGoldenTest {
         assertThat(out).doesNotContain("CHECK FAILED");
         assertThat(Files.readString(app.resolve("src/main/java/com/example/e2e/stipend/TallyService.java")))
                 .contains("MdcScope.of(\"pledgeId\", kioskData.pledgeId())");
-        assertThat(Files.readString(calc)).doesNotContain("\"pledgeId\"");
-        assertThat(Files.readString(checks)).as(Files.readString(checks)).doesNotContain("\"pledgeId\"");
+        String calculator = Files.readString(calc);
+        assertThat(calculator).as("the same expression on the parameter processRow passes: unwrapped")
+                .doesNotContain("MdcScope.of(\"pledgeId\", kioskData.pledgeId())")
+                .as("#79: one pledge of a list is not provably the row's pledge: kept and reported")
+                .contains("MdcScope.of(\"pledgeId\", pledge.pledgeId())");
+        assertThat(Files.readString(checks)).as(Files.readString(checks)).contains("MdcScope.of(\"pledgeId\", pledge.pledgeId(), \"sponsorshipId\"");
+        String scan = run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
+        assertThat(scan).contains("MDC_NESTED_KEY  src/main/java/com/example/e2e/stipend/StipendCalculator.java")
+                .contains("MDC_NESTED_KEY  src/main/java/com/example/e2e/stipend/PledgeChecks.java");
         compile(app);
     }
 

@@ -22,20 +22,38 @@ public class LockerSweepJob {
             rotate(lockerCode);
             relabel(lockerCode);
             inspect(lockerCode);
+            recount(lockerCode);
+            stamp(lockerCode);
+        }
+    }
+
+    void recount(String lockerCode) {
+        log.info("Locker recounted");
+    }
+
+    void stamp(String lockerCode) {
+        try (var mdc = MdcScope.of("lockerCode", lockerCode.toLowerCase())) {
+            log.info("Locker stamped");
         }
     }
 
     void rotate(String lockerCode) {
         String slot = lockerCode.toUpperCase();
-        log.info("Locker slot rotated");
+        try (var mdc = MdcScope.of("lockerCode", slot)) {
+            log.info("Locker slot rotated");
+        }
     }
 
     void relabel(String lockerCode) {
-        log.info("Locker relabelled");
+        try (var mdc = MdcScope.of("lockerCode", lockerCode.strip())) {
+            log.info("Locker relabelled");
+        }
     }
 
     void inspect(String lockerCode) {
-        log.info("Locker inspected");
+        try (var mdc = MdcScope.of("lockerCode", "L-" + lockerCode)) {
+            log.info("Locker inspected");
+        }
     }
 
     private String nextLocker() {

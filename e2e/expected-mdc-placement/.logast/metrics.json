@@ -91,13 +91,35 @@
     "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
     "_tag" : "available"
   },
+  "OUM-697b8a" : {
+    "count" : "",
+    "name" : "locker",
+    "outcome" : "recounted",
+    "_event" : "recounted",
+    "_message" : "INFO \"Locker recounted\"",
+    "_where" : "src/main/java/com/example/e2e/locker/LockerSweepJob.java:31 LockerSweepJob.recount",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled LockerSweepJob.sweep" ],
+    "_tag" : "available"
+  },
+  "OUM-23aea8" : {
+    "count" : "",
+    "name" : "locker",
+    "outcome" : "stamped",
+    "_event" : "stamped",
+    "_message" : "INFO \"Locker stamped\"",
+    "_where" : "src/main/java/com/example/e2e/locker/LockerSweepJob.java:36 LockerSweepJob.stamp",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled LockerSweepJob.sweep" ],
+    "_tag" : "available"
+  },
   "OUM-c1d98e" : {
     "count" : "",
     "name" : "locker.slot",
     "outcome" : "rotated",
     "_event" : "rotated",
     "_message" : "INFO \"Locker slot rotated\"",
-    "_where" : "src/main/java/com/example/e2e/locker/LockerSweepJob.java:30 LockerSweepJob.rotate",
+    "_where" : "src/main/java/com/example/e2e/locker/LockerSweepJob.java:43 LockerSweepJob.rotate",
     "_frequency" : "low",
     "_paths" : [ "scheduled @Scheduled LockerSweepJob.sweep" ],
     "_tag" : "available"
@@ -108,7 +130,7 @@
     "outcome" : "relabelled",
     "_event" : "relabelled",
     "_message" : "INFO \"Locker relabelled\"",
-    "_where" : "src/main/java/com/example/e2e/locker/LockerSweepJob.java:34 LockerSweepJob.relabel",
+    "_where" : "src/main/java/com/example/e2e/locker/LockerSweepJob.java:49 LockerSweepJob.relabel",
     "_frequency" : "low",
     "_paths" : [ "scheduled @Scheduled LockerSweepJob.sweep" ],
     "_tag" : "available"
@@ -119,7 +141,7 @@
     "outcome" : "inspected",
     "_event" : "inspected",
     "_message" : "INFO \"Locker inspected\"",
-    "_where" : "src/main/java/com/example/e2e/locker/LockerSweepJob.java:38 LockerSweepJob.inspect",
+    "_where" : "src/main/java/com/example/e2e/locker/LockerSweepJob.java:55 LockerSweepJob.inspect",
     "_frequency" : "low",
     "_paths" : [ "scheduled @Scheduled LockerSweepJob.sweep" ],
     "_tag" : "available"
@@ -130,7 +152,7 @@
     "outcome" : "tidied",
     "_event" : "tidied",
     "_message" : "INFO \"Locker tidied\"",
-    "_where" : "src/main/java/com/example/e2e/locker/LockerTidier.java:12 LockerTidier.tidy",
+    "_where" : "src/main/java/com/example/e2e/locker/LockerTidier.java:14 LockerTidier.tidy",
     "_frequency" : "unknown: no rate for \"POST /lockers/{lockerCode}/tidy\" in .logast/traffic.yaml",
     "_paths" : [ "http POST /lockers/{lockerCode}/tidy" ],
     "_tag" : "available"
