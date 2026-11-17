@@ -50,6 +50,8 @@ public final class CompactFormat {
         }
         sb.append('\n');
         Path root = Path.of(r.root());
+        Map<String, String> ruleById = new HashMap<>();
+        orders.forEach(o -> ruleById.put(o.id(), o.rule()));
         for (WorkOrder o : orders) {
             String kind = o.reportOnly() ? "REPORT-ONLY" : o.slots().isEmpty() ? "AUTO" : "NEEDS TEXT";
             sb.append(Ansi.bold(o.id())).append("  ").append(Ansi.severity(o.severity())).append("  ").append(Ansi.kind(kind)).append("  ")
@@ -87,8 +89,15 @@ public final class CompactFormat {
                 sb.append("  also fixes: ").append(o.locations().stream().map(l -> l.rule() + " " + l.file() + ":" + l.line())
                         .collect(Collectors.joining(", "))).append('\n');
             }
+            String why = basisLine(o);
+            if (why != null) {
+                sb.append(Ansi.dim("  " + why)).append('\n');
+            }
             if (o.suggestion() != null) {
                 sb.append(Ansi.dim("  note: " + o.suggestion())).append('\n');
+            }
+            for (String line : decisionLines(o, ruleById)) {
+                sb.append("  ").append(line).append('\n');
             }
             if (!o.dependsOn().isEmpty()) {
                 sb.append("  depends on: ").append(String.join(", ", o.dependsOn())).append('\n');
@@ -98,6 +107,27 @@ public final class CompactFormat {
             sb.append("\n").append(Ansi.dim("fills.json: \"MSG\" is plain text, no {} and no [k=v]; optional \"args\": [\"var\"] adds variables")).append('\n');
         }
         return sb.toString();
+    }
+
+    /** "why: …", the evidence a decision (an order logast does not fix itself) rests on, or null (#57). */
+    static String basisLine(WorkOrder o) {
+        return o.reportOnly() && o.basis() != null ? "why: " + o.basis() : null;
+    }
+
+    /**
+     * "done when: …" for a decision (an order logast does not fix itself), and "related: …" for orders on the same code,
+     * whose advice has to be read together (#57). Empty parts print nothing.
+     */
+    static List<String> decisionLines(WorkOrder o, Map<String, String> ruleById) {
+        List<String> out = new ArrayList<>();
+        if (o.reportOnly() && o.doneWhen() != null) {
+            out.add("done when: " + o.doneWhen());
+        }
+        if (!o.related().isEmpty()) {
+            out.add("related: " + o.related().stream().map(id -> ruleById.containsKey(id) ? id + " (" + ruleById.get(id) + ")" : id)
+                    .collect(Collectors.joining(", ")) + "  (same code: decide them together)");
+        }
+        return out;
     }
 
     public static List<String> previewLines(Path root, WorkOrder o) {

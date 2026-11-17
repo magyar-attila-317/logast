@@ -58,6 +58,8 @@ final class AsyncRules {
                     ctx.orderNth(Rules.ASYNC_CONTEXT_LOSS, m, hop.line(), "parallel")
                             .title("Parallel stream lambdas run in the ForkJoin common pool without MDC/trace context")
                             .suggestion("Use a sequential stream, or open an MdcScope inside the lambda for the keys its logs need.")
+                            .doneWhen("the stream is sequential (no parallel() or parallelStream() in the chain)")
+                            .about(m.file().relPath(), hop.call())
                             .context(ctx.context(m, Pos.start(hop.call()), Text.oneLine(hop.call().printTrimmed(), 160), null));
                     continue;
                 }
@@ -68,6 +70,10 @@ final class AsyncRules {
                             .suggestion(hop.api().startsWith("CompletableFuture")
                                     ? "Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean."
                                     : "Wrap the executor where it is created: ContextExecutors.wrap(...), or inject a Spring TaskExecutor.")
+                            .doneWhen(hop.api().startsWith("CompletableFuture")
+                                    ? "its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)"
+                                    : "it runs on a Spring TaskExecutor, or on a field initialised with ContextExecutors.wrap(…)")
+                            .about(m.file().relPath(), hop.call())
                             .context(ctx.context(m, Pos.start(hop.call()), Text.oneLine(hop.call().printTrimmed(), 160), null));
                     continue;
                 }

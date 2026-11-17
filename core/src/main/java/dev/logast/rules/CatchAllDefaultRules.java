@@ -44,7 +44,10 @@ final class CatchAllDefaultRules {
                         .title("catch (" + c.typeNames() + ") returns " + r.getExpression().printTrimmed() + ": the caller cannot "
                                 + "tell a failure from an empty result")
                         .suggestion("Let the exception through (or wrap it), catch only the exceptions that really mean "
-                                + "\"nothing there\", or return a result type that carries the failure.");
+                                + "\"nothing there\", or return a result type that carries the failure.")
+                        .doneWhen("the catch no longer returns a default value (null, 0, false, \"\", an empty collection or "
+                                + "Optional), or catches something narrower than Exception, RuntimeException or Throwable")
+                        .about(m.file().relPath(), c.clause);
             }
         }
     }

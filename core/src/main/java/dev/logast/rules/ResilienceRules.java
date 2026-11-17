@@ -360,7 +360,9 @@ final class ResilienceRules {
                             + "waiting on a lock or a slow statement holds its connection indefinitely")
                     .suggestion("Decide a default (spring.transaction.default-timeout) above the longest legitimate transaction, "
                             + "or set timeout = … on the @Transactional methods that need one. Not applied automatically: it "
-                            + "applies to every @Transactional, batch jobs included.");
+                            + "applies to every @Transactional, batch jobs included.")
+                    .basis("@Transactional methods exist and no Spring configuration file sets spring.transaction.default-timeout")
+                    .doneWhen("spring.transaction.default-timeout is set in the Spring configuration");
         }
     }
 
@@ -389,7 +391,8 @@ final class ResilienceRules {
                 .title(unlocked.size() + " @Scheduled job(s) without a lock: with more than one instance each runs on every "
                         + "instance at the same time (" + String.join(", ", unlocked.stream().map(MethodInfo::label).toList()) + ")")
                 .suggestion("Add a lock that keeps a run to one instance (ShedLock: @SchedulerLock(name = …) with a LockProvider), "
-                        + "or set resilience.singleInstance: true in logast.yaml if the service never runs more than once.");
+                        + "or set resilience.singleInstance: true in logast.yaml if the service never runs more than once.")
+                .doneWhen("every @Scheduled method has @SchedulerLock, or logast.yaml sets resilience.singleInstance: true");
         unlocked.stream().skip(1).forEach(m -> b.location(m.file().relPath(), m.line(), Rules.SCHEDULED_WITHOUT_LOCK));
     }
 
@@ -428,7 +431,8 @@ final class ResilienceRules {
                     .title(m.label() + " is @Transactional and calls a remote service inside the transaction: "
                             + String.join(" → ", path) + ". The database connection is held while the network call waits")
                     .suggestion("Move the call out of the transaction (before it, or after commit: TransactionSynchronization / "
-                            + "@TransactionalEventListener / an outbox), or make the transaction only cover the database work.");
+                            + "@TransactionalEventListener / an outbox), or make the transaction only cover the database work.")
+                    .doneWhen("no blocking HTTP call is reachable from it on the same thread (up to 4 calls deep)");
         }
     }
 
@@ -498,7 +502,10 @@ final class ResilienceRules {
                         + "then logged and skipped (lost)")
                 .suggestion("Declare a CommonErrorHandler bean (Spring Boot wires it into the listener containers): "
                         + "new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate), new ExponentialBackOff(1000, 2)) "
-                        + "sends records that still fail to <topic>-dlt; or use @RetryableTopic per listener.");
+                        + "sends records that still fail to <topic>-dlt; or use @RetryableTopic per listener.")
+                .basis("no source file mentions DefaultErrorHandler, CommonErrorHandler, DeadLetterPublishingRecoverer, "
+                        + "@RetryableTopic or setCommonErrorHandler")
+                .doneWhen("a source file uses one of them (e.g. declares a DefaultErrorHandler bean)");
         listeners.stream().skip(1).forEach(ep -> b.location(ep.method().file().relPath(), ep.method().line(), Rules.KAFKA_NO_ERROR_HANDLER));
     }
 
@@ -513,7 +520,8 @@ final class ResilienceRules {
                 .title(Text.oneLine(tree.printTrimmed(), 60) + " " + why)
                 .suggestion("Bound it: new ThreadPoolExecutor(core, max, 60s, new ArrayBlockingQueue<>(capacity), rejection policy), "
                         + "or ThreadPoolTaskExecutor with setQueueCapacity(..); decide what happens when it is full "
-                        + "(CallerRunsPolicy slows the producer down instead of dropping work).");
+                        + "(CallerRunsPolicy slows the producer down instead of dropping work).")
+                .doneWhen("the executor is not created by this Executors factory");
         site.context(ctx, b, tree, tree.printTrimmed());
     }
 
@@ -525,7 +533,8 @@ final class ResilienceRules {
         OrderBuilder b = site.orderNth(ctx, Rules.BLOCKING_WAIT_UNBOUNDED, line, "wait")
                 .title(what + " without a timeout on a request path: if the work never finishes, the request thread waits forever")
                 .suggestion("Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the "
-                        + "TimeoutException (fail the request, or return a partial answer).");
+                        + "TimeoutException (fail the request, or return a partial answer).")
+                .doneWhen("the wait itself takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..))");
         site.context(ctx, b, mi, mi.printTrimmed());
     }
 }

@@ -172,8 +172,11 @@ final class MessageRules {
             return;
         }
         String plain = text.strip();
-        if (vague.stream().anyMatch(p -> p.matcher(plain).find())) {
+        Pattern matched = vague.stream().filter(p -> p.matcher(plain).find()).findFirst().orElse(null);
+        if (matched != null) {
             ctx.order(Rules.MESSAGE_VAGUE, m, line, "wording" + ordinal)
+                    .basis("the text matches '" + matched.pattern() + "' (policy logging.vagueMessages)")
+                    .doneWhen("the message matches no logging.vagueMessages pattern")
                     .title("Vague message \"" + Text.oneLine(raw, 60) + "\": it does not say what started, completed or failed")
                     .suggestion("Name the business operation and its outcome: \"<Subject> started / completed / failed / skipped\", "
                             + "e.g. \"Pledge stipend invoice publication completed [count={}]\".")

@@ -326,7 +326,9 @@ final class ErrorRules {
                     .title(c.simpleName() + " is thrown on HTTP paths (" + sites.size() + "×) but no handler or @ResponseStatus maps it"
                             + (catchAll ? ": it ends in the catch-all handler" : ": the client gets a 500"))
                     .suggestion("Decide its status: @ResponseStatus(HttpStatus.CONFLICT) on the class, or an @ExceptionHandler returning "
-                            + "a ProblemDetail (with a stable error code) in the controller advice.");
+                            + "a ProblemDetail (with a stable error code) in the controller advice.")
+                    .doneWhen("@ResponseStatus on it or a supertype, it extends ResponseStatusException (or is an ErrorResponse), "
+                            + "or an @ExceptionHandler names it or a supertype narrower than Exception / RuntimeException");
             sites.stream().limit(10).forEach(s -> b.location(s[0], Integer.parseInt(s[1]), Rules.UNMAPPED_EXCEPTION));
         });
     }
@@ -394,7 +396,10 @@ final class ErrorRules {
                 .title("Spring MVC errors (400 bad input, 405, 415, ...) are not RFC 9457 ProblemDetail responses: "
                         + "every service answers them in its own shape")
                 .suggestion("Set spring.mvc.problemdetails.enabled: true (or extend ResponseEntityExceptionHandler in the controller "
-                        + "advice). Not applied automatically: it changes the error body API clients see.");
+                        + "advice). Not applied automatically: it changes the error body API clients see.")
+                .basis("spring.mvc.problemdetails.enabled is " + Optional.ofNullable(ctx.a.springProperties.get("spring.mvc.problemdetails.enabled"))
+                        .map(v -> "'" + v + "'").orElse("not set") + ", and no class extends ResponseEntityExceptionHandler")
+                .doneWhen("spring.mvc.problemdetails.enabled: true, or a class extends ResponseEntityExceptionHandler");
     }
 
     private static String names(List<JavaType.FullyQualified> types) {

@@ -64,10 +64,18 @@ final class CauseRules {
         String call = Text.oneLine(mi.printTrimmed(), 120);
         OrderBuilder b = ctx.orderNth(Rules.CAUSE_DROPPED, m, line, "cause")
                 .title("catch (" + c.typeNames() + " " + c.param + ") throws " + call + " without " + c.param
-                        + " as its cause: the original stack trace is lost");
+                        + " as its cause: the original stack trace is lost")
+                .about(m.file().relPath(), c.clause)
+                .doneWhen("what is thrown gets " + caught(c) + " (or a Throwable wrapping it) as an argument, or initCause("
+                        + caught(c) + ") before the throw");
         b.suggestion(c.param.equals("_") ? "Name the caught exception (catch (" + c.typeNames() + " e)) and pass it as the cause."
                 : "Pass " + c.param + " as the cause: give " + mi.getSimpleName() + " a (…, Throwable cause) overload, or call "
                 + "initCause(" + c.param + ") on what it returns before throwing.");
+    }
+
+    /** The caught exception's name, for a done-when line; an unnamed one ({@code _}) has to get a name first. */
+    private static String caught(CatchInfo c) {
+        return c.param.equals("_") ? "the caught exception" : c.param;
     }
 
     private void dropped(MethodInfo m, CatchInfo c, J.NewClass nc) {
@@ -79,7 +87,10 @@ final class CauseRules {
         String type = nc.getClazz().printTrimmed();
         OrderBuilder b = ctx.orderNth(Rules.CAUSE_DROPPED, m, line, "cause")
                 .title("catch (" + c.typeNames() + " " + c.param + ") throws a new " + type + " without " + c.param
-                        + " as its cause: the original stack trace is lost");
+                        + " as its cause: the original stack trace is lost")
+                .about(f.relPath(), c.clause)
+                .doneWhen("the new " + type + " gets " + caught(c) + " (or a Throwable wrapping it) as a constructor argument, "
+                        + "or initCause(" + caught(c) + ") before the throw");
         List<Expression> args = args(nc);
         if (c.param.equals("_")) {
             // an unnamed catch parameter (Java 22+) cannot be passed on: it has to get a name first

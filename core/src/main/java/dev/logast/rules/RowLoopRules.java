@@ -50,6 +50,7 @@ final class RowLoopRules {
                                             + "): the whole result is held in memory and N items mean N statements")
                                     .suggestion("One bulk statement (UPDATE … WHERE …) or paging with batch updates scales with the data. "
                                             + "Report only: logast does not change data access.")
+                                    .doneWhen("the loop over the query result no longer writes per item")
                                     .context(ctx.context(m, Pos.start(loop), Text.oneLine(loop.printTrimmed(), 160), null));
                         }
                     }

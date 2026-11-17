@@ -29,7 +29,8 @@ class ApplierGuardTest {
 
     private static WorkOrder order(String id, Edit edit) {
         return new WorkOrder(id, Rules.DB_OUTCOME_UNLOGGED, List.of(Rules.DB_OUTCOME_UNLOGGED), "low", "test " + id,
-                "A.java", 1, List.of(), null, List.of(), "", List.of(edit), Map.of(), WorkOrder.Context.EMPTY, List.of(), Map.of());
+                "A.java", 1, List.of(), null, List.of(), "", List.of(edit), Map.of(), WorkOrder.Context.EMPTY, List.of(), Map.of(),
+                null, null, List.of());
     }
 
     private static String read(Path p) {

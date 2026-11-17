@@ -8,81 +8,108 @@ ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e
   CompletableFuture.runAsync runs on another thread without MDC/trace context
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+  done when: its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 ASY-e82926  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:18  QuoteController.quote
   CompletableFuture.supplyAsync runs on another thread without MDC/trace context
   path: GET /quotes/{productId} → QuoteController.quote
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+  done when: its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 ASY-0537b2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:19  QuoteController.quote
   CompletableFuture.supplyAsync runs on another thread without MDC/trace context
   path: GET /quotes/{productId} → QuoteController.quote
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+  done when: its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 ASY-535b95  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:27  QuoteController.refresh
   CompletableFuture.runAsync runs on another thread without MDC/trace context
   path: GET /quotes/{productId}/refresh → QuoteController.refresh
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+  done when: its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 DBT-225aab  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/resources/application.yml:1
   Transactions without a timeout: spring.transaction.default-timeout has no default, so a transaction waiting on a lock or a slow statement holds its connection indefinitely
+  why: @Transactional methods exist and no Spring configuration file sets spring.transaction.default-timeout
   note: Decide a default (spring.transaction.default-timeout) above the longest legitimate transaction, or set timeout = … on the @Transactional methods that need one. Not applied automatically: it applies to every @Transactional, batch jobs included.
+  done when: spring.transaction.default-timeout is set in the Spring configuration
 SWL-aa8bfe  medium  REPORT-ONLY  SCHEDULED_WITHOUT_LOCK  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
   2 @Scheduled job(s) without a lock: with more than one instance each runs on every instance at the same time (PledgeCleanupJob.cleanup, PledgeReloadJob.run)
   also fixes: SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:17
   note: Add a lock that keeps a run to one instance (ShedLock: @SchedulerLock(name = …) with a LockProvider), or set resilience.singleInstance: true in logast.yaml if the service never runs more than once.
+  done when: every @Scheduled method has @SchedulerLock, or logast.yaml sets resilience.singleInstance: true
 RBR-21df7c  medium  REPORT-ONLY  ROW_BY_ROW_WRITE  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:25  PledgeCleanupJob.cleanup
   Loop over 'repository.findOpen()' writes one row per item (PledgeRepository.close): the whole result is held in memory and N items mean N statements
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup
   note: One bulk statement (UPDATE … WHERE …) or paging with batch updates scales with the data. Report only: logast does not change data access.
+  done when: the loop over the query result no longer writes per item
 LAR-fd8fcd  medium  REPORT-ONLY  LOG_AND_RETHROW  src/main/java/com/example/e2e/pledge/PledgeLookup.java:22  PledgeLookup.find
   Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it
   path: GET /pledges/{pledgeId}/details → PledgeDetailsController.details → PledgeLookup.find  (+1 more)
   note: Not removed: nothing else is known to log it on the path through @ExceptionHandler PledgeErrors.missing (maps it without logging), so this line may be its only record. Log it there (or in an @ExceptionHandler), then delete this one.
+  done when: a catch or @ExceptionHandler logs it on the path through @ExceptionHandler PledgeErrors.missing (maps it without logging); then logast deletes this line itself. Or the line is gone
 ARI-dacf62  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:26  PledgeService.delete
   The audit record record(…) in PledgeService.delete does not say who did it
   path: DELETE /pledges/{pledgeId} → PledgeController.delete → PledgeService.delete
+  why: the audit call is a call on AuditLog, recognised by its name (audit.emitters is empty)
   note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
+  done when: an argument comes from the security context (a Principal / Authentication parameter, @AuthenticationPrincipal, SecurityContextHolder), or the audit method reads it itself
 ARI-15b6ea  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:33  PledgeService.revoke
   The audit record record(…) in PledgeService.revoke takes the acting user from the request (@RequestHeader("X-User")): the client can name anyone
   path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke → PledgeService.revoke
+  why: the audit call is a call on AuditLog, recognised by its name (audit.emitters is empty)
   note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
+  done when: an argument comes from the security context (a Principal / Authentication parameter, @AuthenticationPrincipal, SecurityContextHolder), or the audit method reads it itself
 ARI-b9b946  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:35  PledgeService.revoke
   The audit record record(…) in PledgeService.revoke takes the acting user from the request (@RequestHeader("X-User")): the client can name anyone
   path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke → PledgeService.revoke
+  why: the audit call is a call on AuditLog, recognised by its name (audit.emitters is empty)
   note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
+  done when: an argument comes from the security context (a Principal / Authentication parameter, @AuthenticationPrincipal, SecurityContextHolder), or the audit method reads it itself
 LHL-77ee4d  medium  REPORT-ONLY  LOG_HELPER  src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13  EdgeLogHelper.info
   Log helper EdgeLogHelper.info writes log lines for 1 call site(s): the message, level and logger are invisible where the event happens
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeLogHelper.info
   also fixes: LOG_HELPER src/main/java/com/example/e2e/edge/EdgeFlow.java:43
+  why: a static method that logs, in a class named like a log helper
   note: Inline it: an explicit log statement at each call site with domain wording, e.g. log.debug("Pledge stipend entities prepared [count={}]", entities.size()). Keep a helper only for verified cross-cutting behaviour (redaction, alert contract, sink adaptation).
+  done when: no other class calls it, or it masks or redacts (its name or body says mask, redact, sanitize, …)
 KEH-b1f2de  medium  REPORT-ONLY  KAFKA_NO_ERROR_HANDLER  src/main/java/com/example/e2e/messaging/PledgeMessages.java:19
   Kafka listeners on the default error handling: a failing record is retried 9 times without delay, then logged and skipped (lost)
   also fixes: KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/order/OrderEvents.java:15
+  why: no source file mentions DefaultErrorHandler, CommonErrorHandler, DeadLetterPublishingRecoverer, @RetryableTopic or setCommonErrorHandler
   note: Declare a CommonErrorHandler bean (Spring Boot wires it into the listener containers): new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate), new ExponentialBackOff(1000, 2)) sends records that still fail to <topic>-dlt; or use @RetryableTopic per listener.
+  done when: a source file uses one of them (e.g. declares a DefaultErrorHandler bean)
 SWA-91b292  medium  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/e2e/order/LoyaltyClient.java:20  LoyaltyClient.balance
   Exception is caught and dropped without a log line in LoyaltyClient.balance (falls back silently)
   + log.warn("{{MSG}}"{{ARGS}}, e);
   (+2 more edits)
   MSG: What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri("/balances/{customerId}", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as '{subject} failed'
   mdc: []  vars: customerId:String, e:Exception
+  related: CAD-265862 (CATCH_ALL_DEFAULT)  (same code: decide them together)
 CAD-265862  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:21  LoyaltyClient.balance
   catch (Exception) returns 0L: the caller cannot tell a failure from an empty result
   note: Let the exception through (or wrap it), catch only the exceptions that really mean "nothing there", or return a result type that carries the failure.
+  done when: the catch no longer returns a default value (null, 0, false, "", an empty collection or Optional), or catches something narrower than Exception, RuntimeException or Throwable
+  related: SWA-91b292 (SWALLOWED_EXCEPTION)  (same code: decide them together)
 RCT-2df7d7  medium  REPORT-ONLY  REMOTE_CALL_IN_TRANSACTION  src/main/java/com/example/e2e/order/OrderService.java:26  OrderService.placeAndReward
   OrderService.placeAndReward is @Transactional and calls a remote service inside the transaction: OrderService.placeAndReward → LoyaltyClient.award → RestClient.post. The database connection is held while the network call waits
   note: Move the call out of the transaction (before it, or after commit: TransactionSynchronization / @TransactionalEventListener / an outbox), or make the transaction only cover the database work.
+  done when: no blocking HTTP call is reachable from it on the same thread (up to 4 calls deep)
 LAR-277884  medium  REPORT-ONLY  LOG_AND_RETHROW  src/main/java/com/example/e2e/order/PaymentClient.java:18  PaymentClient.charge
   Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it
   path: POST /orders → PledgeController.place → OrderService.place → PaymentClient.charge
   note: Not removed: nothing else is known to log it on the path through OrderService.ship (no caller in the code), so this line may be its only record. Log it there (or in an @ExceptionHandler), then delete this one.
+  done when: a catch or @ExceptionHandler logs it on the path through OrderService.ship (no caller in the code); then logast deletes this line itself. Or the line is gone
 CDR-2c546b  medium  REPORT-ONLY  CAUSE_DROPPED  src/main/java/com/example/e2e/order/PaymentClient.java:38  PaymentClient.verify
   catch (IllegalStateException e) throws a new OrderRejected without e as its cause: the original stack trace is lost
   note: Pass e as the cause: add a constructor (…, Throwable cause) to OrderRejected, or call initCause(e) before throwing.
+  done when: the new OrderRejected gets e (or a Throwable wrapping it) as a constructor argument, or initCause(e) before the throw
 UMX-665400  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e2e/order/PaymentException.java:3
   PaymentException is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it: the client gets a 500
   also fixes: UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentClient.java:19
   note: Decide its status: @ResponseStatus(HttpStatus.CONFLICT) on the class, or an @ExceptionHandler returning a ProblemDetail (with a stable error code) in the controller advice.
+  done when: @ResponseStatus on it or a supertype, it extends ResponseStatusException (or is an ErrorResponse), or an @ExceptionHandler names it or a supertype narrower than Exception / RuntimeException
 AFU-a566e5  medium  REPORT-ONLY  AUDIT_FAILURES_UNRECORDED  src/main/java/com/example/e2e/web/PledgeController.java:48  PledgeController.delete
   DELETE /pledges/{pledgeId} records an audit event only when it succeeds: a rejected or failed attempt leaves no record (DELETE **)
   path: DELETE /pledges/{pledgeId} → PledgeController.delete
   note: Record the attempt's outcome either way: an audit call in a catch (with the failure) or in a finally (with the outcome), or record the attempt before the work starts.
+  done when: an audit call it reaches sits in a catch or finally block, or comes before the other work
 DOM-a2969a  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/PledgeController.java:55  PledgeController.revoke
   POST /admin/pledges/{pledgeId}/revoke: MDC lacks pledgeId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
   path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke
@@ -107,10 +134,12 @@ BWU-5fc605  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/exam
   CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
+  done when: the wait itself takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..))
 BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:20  QuoteController.quote
   CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
+  done when: the wait itself takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..))
 ALM-f2e935  low  REPORT-ONLY  AUDIT_LOG_MIXED  src/main/java/com/example/e2e/audit/AuditLog.java:8
   AuditLog writes audit records and diagnostics through one logger: routed apart, the diagnostics would leave the application log; mixed, the records do
   note: Give the records their own logger (private static final Logger AUDIT = LoggerFactory.getLogger("audit")) and keep the class logger for the diagnostics: checkCapacity (WARN).
@@ -152,6 +181,7 @@ SUG-d99e11  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pl
 OUM-03f513  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:33  PledgeRepository.countUse
   "Pledge usage saved" is logged but not counted (outcome=saved, frequency unknown: no rate for "POST /pledges/{pledgeId}/use" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge.usage", "saved")), "tag" (Outcomes.tag("saved") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 SUG-3b5d90  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:33  PledgeRepository.countUse
   Generated wording "Pledge usage saved [uses={}]": say it in domain terms
   path: POST /pledges/{pledgeId}/use → PledgeController.use → PledgeRepository.countUse
@@ -169,25 +199,33 @@ SUG-56cdac  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pl
 OUM-027987  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeSender.java:14  PledgeSender.send
   "Pledge sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /pledges/allot" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge", "sent")), "tag" (Outcomes.tag("sent") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 MVG-53c6bf  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/pledge/PledgeService.java:41  PledgeService.publish
   Vague message "Publishing pledge": it does not say what started, completed or failed
   path: POST /pledges/{pledgeId}/publish → PledgeController.publish → PledgeService.publish
+  why: the text matches '^(publishing|completed publishing|finished publishing)\b' (policy logging.vagueMessages)
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
+  done when: the message matches no logging.vagueMessages pattern
 OUM-773d35  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeService.java:44  PledgeService.publish
   "Pledge published" is logged but not counted (outcome=published, frequency unknown: no rate for "POST /pledges/{pledgeId}/publish" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge", "published")), "tag" (Outcomes.tag("published") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 OUM-4809f0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeService.java:51  PledgeService.allot
   "Pledge allotment completed" is logged but not counted (outcome=completed, frequency unknown: no rate for "POST /pledges/allot" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge.allotment", "completed")), "tag" (Outcomes.tag("completed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 OUM-49d3bd  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/Audited.java:11  Audited.audit
   "Pledge audited" is logged but not counted (outcome=audited, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge", "audited")), "tag" (Outcomes.tag("audited") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 OUM-3c3200  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:45  EdgeFlow.process
   "Pledge archived" is logged but not counted (outcome=archived, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge", "archived")), "tag" (Outcomes.tag("archived") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 OUM-bb1ac8  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:48  EdgeFlow.process
   "Edge flow async work failed" is logged but not counted (outcome=failed, frequency low)
   note: The log line runs inside a lambda, only under a condition: a counting line after the statement would count every run; count it inside the lambda, next to the log line, or mark it skip. Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("edge.flow.async.work", "failed")), "tag" (Outcomes.tag("failed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 SUG-6b173f  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/edge/EdgeFlow.java:48  EdgeFlow.process
   Generated wording "Edge flow async work failed": say it in domain terms
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
@@ -198,10 +236,13 @@ SUG-6b173f  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/ed
 OUM-be530b  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:51  EdgeFlow.process
   "Pledge parsed" is logged but not counted (outcome=parsed, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge", "parsed")), "tag" (Outcomes.tag("parsed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 MVG-9330c1  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/edge/EdgeFlow.java:60  EdgeFlow.publishOne
   Vague message "Publishing pledge": it does not say what started, completed or failed
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeFlow.publishOne
+  why: the text matches '^(publishing|completed publishing|finished publishing)\b' (policy logging.vagueMessages)
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
+  done when: the message matches no logging.vagueMessages pattern
 SUG-2f8476  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/edge/EdgeJob.java:23  EdgeJob.run
   Generated wording "Edge started": say it in domain terms
   path: @Scheduled EdgeJob.run → EdgeJob.run
@@ -240,19 +281,27 @@ SUG-7055a3  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/jo
 MVG-c21d8c  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:21  PublishRunJob.doRun
   Vague message "Publishing started": it does not say what started, completed or failed
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
+  why: the text matches '^(publishing|completed publishing|finished publishing)\b' (policy logging.vagueMessages)
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
+  done when: the message matches no logging.vagueMessages pattern
 MVG-35393e  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:25  PublishRunJob.doRun
   Vague message "Publishing batch": it does not say what started, completed or failed
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
+  why: the text matches '^(publishing|completed publishing|finished publishing)\b' (policy logging.vagueMessages)
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
+  done when: the message matches no logging.vagueMessages pattern
 MVG-340194  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:27  PublishRunJob.doRun
   Vague message "Publishing completed": it does not say what started, completed or failed
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
+  why: the text matches '^(publishing|completed publishing|finished publishing)\b' (policy logging.vagueMessages)
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
+  done when: the message matches no logging.vagueMessages pattern
 MVG-4a4ce2  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:33  PublishRunJob.notifyDone
   Vague message "Publishing notified": it does not say what started, completed or failed
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun → PublishRunJob.notifyDone
+  why: the text matches '^(publishing|completed publishing|finished publishing)\b' (policy logging.vagueMessages)
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
+  done when: the message matches no logging.vagueMessages pattern
 SUG-1fede7  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/messaging/PledgeMessages.java:31  PledgeMessages.onReturn
   Generated wording "Pledge messages completed": say it in domain terms
   path: @RabbitListener pledge-returns → PledgeMessages.onReturn
@@ -270,9 +319,11 @@ SUG-15854c  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/me
 OUM-4284aa  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17  ReactivePledgeLookup.find
   "Pledge lookup failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
   note: The log line is part of a return/throw statement: a counting line after it would never run; count it where it happens (inside the lambda) or mark it skip. Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge.lookup", "failed")) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 OUM-0f37ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderNotifications.java:17  OrderNotifications.onPlaced
   "Order confirmation sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /orders" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("order.confirmation", "sent")), "tag" (Outcomes.tag("sent") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 SUG-85eb33  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/order/OrderNotifications.java:28  OrderNotifications.onCommitted
   Generated wording "Order notifications completed": say it in domain terms
   path: @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced) → OrderNotifications.onCommitted
@@ -283,12 +334,15 @@ SUG-85eb33  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/or
 DCU-db43f0  low  REPORT-ONLY  DATA_CHANGES_UNAUDITED  src/main/java/com/example/e2e/order/OrderRecord.java:6
   OrderRecord is changed through a Spring Data repository, but nothing records who last changed it
   note: Add @LastModifiedBy (and @CreatedBy, @LastModifiedDate) fields and enable auditing (@EnableJpaAuditing / @EnableJdbcAuditing with an AuditorAware bean that reads the current user).
+  done when: OrderRecord has a field annotated @LastModifiedBy
 OUM-d691d7  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderService.java:37  OrderService.place
   "Order placed" is logged but not counted (outcome=placed, frequency unknown: no rate for "POST /orders" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("order", "placed")), "tag" (Outcomes.tag("placed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 OUM-00f4c0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderService.java:48  OrderService.ship
   "Orders shipped" is logged but not counted (outcome=shipped, frequency unknown: no entrypoint is known to reach it)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("orders", "shipped")) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 FMT-93dcb8  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/order/PaymentClient.java:15  PaymentClient.charge
   DEBUG log: not in 'Text [k=v]' format or repeats MDC values
   path: POST /orders → PledgeController.place → OrderService.place → PaymentClient.charge
@@ -299,9 +353,11 @@ FMT-93dcb8  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/order/Pay
 OUM-7df60f  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/review/BinChecker.java:10  BinChecker.check
   "Bin checked" is logged but not counted (outcome=checked, frequency unknown: no entrypoint is known to reach it)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("bin", "checked")) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 OUM-e7540a  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/review/BinChecker.java:14  BinChecker.empty
   "Bin emptied" is logged but not counted (outcome=emptied, frequency unknown: no entrypoint is known to reach it)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("bin", "emptied")) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 SUG-08dd18  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/web/QuoteController.java:30  QuoteController.refresh
   Generated wording "Quote controller async work failed": say it in domain terms
   path: GET /quotes/{productId}/refresh → QuoteController.refresh
@@ -311,7 +367,9 @@ SUG-08dd18  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/we
   MSG: Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: "Quote controller async work failed" | must read as '{subject} failed'
 PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/application.yml:1
   Spring MVC errors (400 bad input, 405, 415, ...) are not RFC 9457 ProblemDetail responses: every service answers them in its own shape
+  why: spring.mvc.problemdetails.enabled is not set, and no class extends ResponseEntityExceptionHandler
   note: Set spring.mvc.problemdetails.enabled: true (or extend ResponseEntityExceptionHandler in the controller advice). Not applied automatically: it changes the error body API clients see.
+  done when: spring.mvc.problemdetails.enabled: true, or a class extends ResponseEntityExceptionHandler
 
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
