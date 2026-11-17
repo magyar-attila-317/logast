@@ -71,7 +71,7 @@ final class AsyncRules {
                                     ? "Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean."
                                     : "Wrap the executor where it is created: ContextExecutors.wrap(...), or inject a Spring TaskExecutor.")
                             .doneWhen(hop.api().startsWith("CompletableFuture")
-                                    ? "its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)"
+                                    ? "its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)"
                                     : "it runs on a Spring TaskExecutor, or on a field initialised with ContextExecutors.wrap(…)")
                             .about(m.file().relPath(), hop.call())
                             .context(ctx.context(m, Pos.start(hop.call()), Text.oneLine(hop.call().printTrimmed(), 160), null));

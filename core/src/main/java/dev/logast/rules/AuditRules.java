@@ -286,17 +286,27 @@ final class AuditRules {
             }
             List<String> diagnostics = new ArrayList<>();
             int recordLines = 0;
+            int apartRecords = 0;
+            boolean diagnosticsOnAudit = false;
+            Set<String> auditFields = auditLoggerFields(c);
             for (MethodInfo m : ctx.a.index.methodsOf(c.fqn())) {
                 for (dev.logast.model.LogCall lc : m.facts().logs) {
+                    boolean onAudit = onAuditLogger(lc.call(), auditFields);
                     if (!records.contains(m) || lc.level().compareTo(dev.logast.model.Level.WARN) >= 0) {
                         diagnostics.add(m.name() + " (" + lc.level().name() + ")");
+                        diagnosticsOnAudit |= onAudit;
+                    } else if (onAudit) {
+                        apartRecords++;
                     } else {
                         recordLines++;
                     }
                 }
             }
-            if (recordLines == 0) {
+            if (recordLines == 0 && apartRecords == 0) {
                 continue;   // its records are not log lines (written to a store): the class logger carries diagnostics only
+            }
+            if (recordLines == 0 && !diagnosticsOnAudit) {
+                continue;   // records on the audit logger, diagnostics on the class logger: already apart (#84)
             }
             if (!diagnostics.isEmpty()) {
                 if (!ctx.ignored(c.file(), Pos.line(c.decl()), Rules.AUDIT_LOG_MIXED)) {
@@ -305,7 +315,9 @@ final class AuditRules {
                                     + "diagnostics would leave the application log; mixed, the records do")
                             .suggestion("Give the records their own logger (private static final Logger AUDIT = "
                                     + "LoggerFactory.getLogger(\"" + name + "\")) and keep the class logger for the diagnostics: "
-                                    + String.join(", ", diagnostics.stream().distinct().limit(5).toList()) + ".");
+                                    + String.join(", ", diagnostics.stream().distinct().limit(5).toList()) + ".")
+                            .doneWhen("its records are written through a logger named \"" + name + "\" and its "
+                                    + "diagnostics through the class logger");
                 }
                 continue;
             }
@@ -330,6 +342,51 @@ final class AuditRules {
                 }
             }
         }
+    }
+
+    /**
+     * Fields of {@code c} holding the audit logger: {@code LoggerFactory.getLogger("audit")} (the policy's audit.logger,
+     * or "audit"), or Lombok's {@code log} under {@code @Slf4j(topic = "audit")}.
+     */
+    private Set<String> auditLoggerFields(ClassInfo c) {
+        Set<String> out = new HashSet<>();
+        for (Statement s : c.decl().getBody().getStatements()) {
+            if (s instanceof J.VariableDeclarations vd && TypeUtils.isAssignableTo("org.slf4j.Logger", vd.getType())) {
+                for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
+                    if (auditLoggerCall(v.getInitializer())) {
+                        out.add(v.getSimpleName());
+                    }
+                }
+            }
+        }
+        for (J.Annotation a : c.decl().getLeadingAnnotations()) {
+            if (a.getSimpleName().equals("Slf4j") && a.getArguments() != null && a.getArguments().stream().anyMatch(arg ->
+                    arg instanceof J.Assignment as && as.getVariable() instanceof J.Identifier k && k.getSimpleName().equals("topic")
+                            && auditLoggerName(as.getAssignment()))) {
+                out.add("log");
+            }
+        }
+        return out;
+    }
+
+    /** A log call whose logger (the root of the select chain) is an audit logger field or {@code getLogger("audit")}. */
+    private boolean onAuditLogger(J.MethodInvocation call, Set<String> auditFields) {
+        Expression root = call.getSelect();
+        while (root instanceof J.MethodInvocation inner && !inner.getSimpleName().equals("getLogger")) {
+            root = inner.getSelect();
+        }
+        String field = root instanceof J.Identifier id ? id.getSimpleName() : root instanceof J.FieldAccess fa ? fa.getSimpleName() : null;
+        return field != null && auditFields.contains(field) || auditLoggerCall(root);
+    }
+
+    private boolean auditLoggerCall(Expression e) {
+        return e instanceof J.MethodInvocation init && init.getSimpleName().equals("getLogger")
+                && init.getArguments().size() == 1 && auditLoggerName(init.getArguments().getFirst());
+    }
+
+    private boolean auditLoggerName(Expression e) {
+        return e instanceof J.Literal l && l.getValue() instanceof String n
+                && (n.equalsIgnoreCase(cfg.logger()) || n.equalsIgnoreCase("audit"));
     }
 
     private OrderBuilder order(ClassInfo c, int line) {
