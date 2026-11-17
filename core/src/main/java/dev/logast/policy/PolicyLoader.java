@@ -40,7 +40,8 @@ public final class PolicyLoader {
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     private final List<String> overrides = new ArrayList<>();
-    private final Map<String, String> origin = new HashMap<>();
+    /** YAML path → the layer that last set it; list items appended by a later layer as {@code path[i]}. */
+    private final Map<String, String> origin = new LinkedHashMap<>();
     private final Deque<String> loading = new ArrayDeque<>();
 
     private PolicyLoader() {
@@ -66,11 +67,55 @@ public final class PolicyLoader {
         }
         merged.remove("extends");
         merged.set("overrides", JsonNodeFactory.instance.arrayNode().addAll(loader.overrides.stream().map(TextNode::new).toList()));
+        merged.remove("warnings");
+        Policy policy;
         try {
-            return YAML.treeToValue(merged, Policy.class);
+            policy = YAML.treeToValue(merged, Policy.class);
         } catch (IOException e) {
             throw new IllegalArgumentException("invalid policy (" + file + "): " + e.getMessage(), e);
         }
+        return loader.validate(policy);
+    }
+
+    /** Errors fail the load, all of them in one message; warnings travel with the policy. */
+    private Policy validate(Policy policy) {
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        for (PolicyValidator.Problem pr : PolicyValidator.check(policy, path -> !label(DEFAULTS).equals(source(path)))) {
+            (pr.error() ? errors : warnings).add(source(pr.path()) + ": " + pr.path() + ": " + pr.message());
+        }
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException("invalid policy:\n  " + String.join("\n  ", errors)
+                    + (warnings.isEmpty() ? "" : "\nwarnings:\n  " + String.join("\n  ", warnings)));
+        }
+        return policy.withWarnings(warnings);
+    }
+
+    /**
+     * The layer that set {@code path}: the path itself, else the last layer that set something below it (a map key
+     * whose entries merged), else the nearest enclosing path.
+     */
+    private String source(String path) {
+        for (String p = path; !p.isEmpty(); p = parentPath(p)) {
+            if (origin.containsKey(p)) {
+                return origin.get(p);
+            }
+            String below = null;
+            for (var e : origin.entrySet()) {
+                if (e.getKey().startsWith(p + ".") || e.getKey().startsWith(p + "[")) {
+                    below = e.getValue();
+                }
+            }
+            if (below != null) {
+                return below;
+            }
+        }
+        return label(DEFAULTS);
+    }
+
+    private static String parentPath(String path) {
+        int cut = Math.max(path.lastIndexOf('.'), path.lastIndexOf('['));
+        return cut < 0 ? "" : path.substring(0, cut);
     }
 
     private void layer(ObjectNode target, String location, String from) {
@@ -107,7 +152,7 @@ public final class PolicyLoader {
                     overrides.add(layer + " overrides " + p);
                 }
                 target.set(key, copy);
-                origin.put(p, layer);
+                setOrigin(p, layer);
             } else if (value.isObject() && existing != null && existing.isObject()) {
                 merge((ObjectNode) existing, (ObjectNode) value, p, layer);
             } else if (value.isArray() && existing != null && existing.isArray() && !REPLACED_LISTS.contains(p)) {
@@ -116,17 +161,24 @@ public final class PolicyLoader {
                 arr.forEach(present::add);
                 value.forEach(v -> {
                     if (present.add(v)) {
+                        origin.put(p + "[" + arr.size() + "]", layer);
                         arr.add(v);
                     }
                 });
             } else {
-                if (existing != null && !existing.equals(value) && !label(DEFAULTS).equals(origin.getOrDefault(p, label(DEFAULTS)))) {
-                    overrides.add(layer + " overrides " + p + " (was " + existing + " from " + origin.get(p) + ")");
+                if (existing != null && !existing.equals(value) && !label(DEFAULTS).equals(source(p))) {
+                    overrides.add(layer + " overrides " + p + " (was " + existing + " from " + source(p) + ")");
                 }
                 target.set(key, value.deepCopy());
-                origin.put(p, layer);
+                setOrigin(p, layer);
             }
         }
+    }
+
+    /** {@code path} now comes whole from {@code layer}: what earlier layers set below it is gone. */
+    private void setOrigin(String path, String layer) {
+        origin.keySet().removeIf(k -> k.startsWith(path + ".") || k.startsWith(path + "["));
+        origin.put(path, layer);
     }
 
     private static String resolve(String location, String from) {

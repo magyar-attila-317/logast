@@ -37,6 +37,7 @@ final class Fleet implements Callable<Integer> {
         for (Path root : roots) {
             Path r = root.toAbsolutePath().normalize();
             Policy policy = Logast.policy(r, null);
+            Main.warnOnce(policy);
             System.err.println("scanning " + r);
             ScanResult scan = Logast.scan(r, Logast.classpath(r, null), policy);
             result.add(FleetReport.service(r.getFileName().toString(), scan, policy.overrides(), policy.packs(),

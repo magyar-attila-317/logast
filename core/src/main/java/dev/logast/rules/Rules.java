@@ -199,6 +199,13 @@ public final class Rules {
         return s;
     }
 
+    /** Every pack some rule belongs to: what {@code packs:} and {@code --pack} can select. */
+    public static Set<String> packs() {
+        Set<String> out = new TreeSet<>();
+        PACKS.values().forEach(out::addAll);
+        return out;
+    }
+
     public static Set<String> packsOf(String rule) {
         return PACKS.getOrDefault(rule, Set.of("logging"));
     }
