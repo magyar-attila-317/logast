@@ -20,9 +20,12 @@ class PacksTest {
     @Test
     void yamlFixes() {
         ScanResult r = scan();
-        WorkOrder timeouts = r.orders().stream().filter(o -> o.rule().equals(Rules.HTTP_CLIENT_NO_TIMEOUT) && !o.edits().isEmpty())
-                .findFirst().orElseThrow();
-        assertThat(timeouts.edits().getFirst().text()).contains("connect-timeout: 5s").contains("read-timeout: 30s");
+        // RestClient.builder() is not the builder Spring Boot configures: spring.http.clients.* would not reach it (#48),
+        // so it is reported where it is built and no property is set for it (the YAML fix is in e2e/expected)
+        WorkOrder timeouts = only(r, Rules.HTTP_CLIENT_NO_TIMEOUT, "ShippingClient.java");
+        assertThat(timeouts.reportOnly()).isTrue();
+        assertThat(timeouts.title()).contains("built from RestClient.builder()");
+        assertThat(r.orders()).noneMatch(o -> o.rule().equals(Rules.HTTP_CLIENT_NO_TIMEOUT) && !o.edits().isEmpty());
 
         WorkOrder leak = only(r, Rules.ERROR_DETAILS_EXPOSED, "application.yml");
         // include-message changes the error body clients may read: a decision, not an automatic fix (#47)
