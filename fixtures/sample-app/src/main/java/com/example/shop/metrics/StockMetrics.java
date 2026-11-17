@@ -42,4 +42,15 @@ public class StockMetrics {
         AtomicInteger queue = new AtomicInteger();
         registry.gauge("stock.queue", queue); // expect: METRIC_GAUGE_WEAK_REF
     }
+
+    /** #58 f: near miss, the same tag keys in another order. */
+    public void released(String channel, String reason) {
+        Counter.builder("stock.released").tag("channel", channel).tag("reason", reason) // expect-not: METRIC_TAG_KEYS_MISMATCH
+                .register(registry).increment();
+    }
+
+    public void releasedAsPlanned(String channel) {
+        Counter.builder("stock.released").tag("reason", "none").tag("channel", channel) // expect-not: METRIC_TAG_KEYS_MISMATCH
+                .register(registry).increment();
+    }
 }

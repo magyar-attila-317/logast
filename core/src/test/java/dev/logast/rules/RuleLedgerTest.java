@@ -37,10 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       rescans it: no {@code CHECK FAILED}, pass 2 and a second apply apply nothing);</li>
  *   <li>for report-only rules, which have no fix: a near miss in the fixture marked {@code // expect-not: RULE} on the
  *       line the rule would report if it fired; checked here;</li>
- *   <li>or a named unit test that asserts the rule stays silent on a near miss ({@link #SILENT_IN_UNIT_TEST}).</li>
+ *   <li>or a named unit test that asserts the rule stays silent on a near miss ({@link #SILENT_IN_UNIT_TEST}); for
+ *       project-wide findings that is the project with the note's remedy applied ({@link RemedyTest}, #58 c).</li>
  * </ul>
- * A dedicated negative fixture per rule is #58 f (negative corpus); rules still without any are in
- * {@link #NO_MUST_NOT_FIRE_CASE}.
+ * The near misses are #58 f (negative corpus); rules still without one are in {@link #NO_MUST_NOT_FIRE_CASE}.
  *
  * <p><b>Knock-out</b>: each rule reported in a corpus is switched off via the policy ({@code rules: {X: {enabled: false}}})
  * and the corpus rescanned: no order of the rule may remain, nor list it under "also fixes", and the result must differ. Rescans only rebuild the
@@ -66,15 +66,20 @@ class RuleLedgerTest {
             Rules.LOG_IN_LOOP, "LoopSizeTest#infoPerItemDependsOnTheLoopSize",            // declared small, fixed loops
             Rules.RUNTIME_TRACE_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss",
             Rules.RUNTIME_MDC_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss",
-            Rules.RUNTIME_NULL_VALUE, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss");
+            Rules.RUNTIME_NULL_VALUE, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss",
+            // #58 c: project-wide findings, so the near miss is the whole project with the note's remedy applied
+            Rules.KAFKA_NO_ERROR_HANDLER, "rules/RemedyTest#kafkaListenerWithACommonErrorHandlerBean",
+            Rules.PROBLEM_DETAILS_DISABLED, "rules/RemedyTest#problemDetailsByPropertyOrByAdvice",
+            Rules.SCHEDULED_WITHOUT_LOCK, "rules/RemedyTest#scheduledJobWithALockOrOnASingleInstance");
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus(
-            Rules.AUDIT_SECURITY_EVENTS,
-            Rules.BLOCKING_WAIT_UNBOUNDED, Rules.CATCH_ALL_DEFAULT, Rules.DATA_CHANGES_UNAUDITED,
-            Rules.KAFKA_NO_ERROR_HANDLER, Rules.LOG_HELPER, Rules.METRIC_DIRECT_REGISTRY, Rules.METRIC_TAG_KEYS_MISMATCH,
-            Rules.PROBLEM_DETAILS_DISABLED, Rules.REMOTE_CALL_IN_TRANSACTION, Rules.ROW_BY_ROW_WRITE,
-            Rules.SCHEDULED_WITHOUT_LOCK, Rules.UNBOUNDED_EXECUTOR);
+            Rules.AUDIT_SECURITY_EVENTS);
+
+    static {
+        NO_MUST_NOT_FIRE_CASE.put(Rules.BLOCKING_WAIT_UNBOUNDED, "#58 f: its near miss is a false positive: "
+                + "CompletableFuture.allOf(a, b).get(5, SECONDS); then a.join() (already complete) is still reported");
+    }
 
     /** Rules the core knock-out cannot test: where they fire instead, or why switching them off changes nothing. */
     static final Map<String, String> NO_KNOCKOUT = Map.of(

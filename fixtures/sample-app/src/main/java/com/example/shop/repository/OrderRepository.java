@@ -28,4 +28,8 @@ public class OrderRepository {
     public Collection<Order> findAll() {
         return List.copyOf(orders.values());
     }
+
+    public void deleteAll(Collection<String> orderIds) {
+        orderIds.forEach(orders::remove);
+    }
 }

@@ -16,4 +16,9 @@ public final class LogHelper {
             log.debug("{} [count={}]", label, collection.size());
         }
     }
+
+    /** #58 f: near miss, redaction is a cross-cutting reason to log through a helper. */
+    public static void logMaskedEmail(Logger log, String label, String email) { // expect-not: LOG_HELPER
+        log.info("{} [recipient={}]", label, email.replaceAll("(?<=.).(?=[^@]*@)", "*"));
+    }
 }
