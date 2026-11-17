@@ -699,7 +699,7 @@ They use the same entrypoint and call-path analysis, so a finding says *which re
 | SCHEDULED_WITHOUT_LOCK | `@Scheduled` jobs without a lock (ShedLock's `@SchedulerLock`): with more than one instance, each runs on every instance at the same time | report, one finding listing all of them; `resilience.singleInstance: true` in logast.yaml for services that never run more than once |
 | KAFKA_NO_ERROR_HANDLER | listeners on the default handling: 9 immediate retries, then the record is skipped | report: `DefaultErrorHandler` + `DeadLetterPublishingRecoverer` + backoff |
 | UNBOUNDED_EXECUTOR | `newCachedThreadPool`, `newFixedThreadPool` (unbounded queue), `ThreadPoolTaskExecutor` without queue capacity | report |
-| BLOCKING_WAIT_UNBOUNDED | `future.get()`, `join()`, `latch.await()` without timeout on a request/message path | report |
+| BLOCKING_WAIT_UNBOUNDED | `future.get()`, `join()`, `latch.await()` without timeout on a request/message path (`orTimeout(..)` in the chain, or an earlier bounded wait such as `allOf(a, b).get(5, SECONDS)` on the same futures, counts as one) | report |
 
 **errors**: what an HTTP client sees when something goes wrong.
 

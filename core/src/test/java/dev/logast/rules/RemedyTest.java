@@ -304,9 +304,11 @@ class RemedyTest {
         fires(Rules.BLOCKING_WAIT_UNBOUNDED, Map.of(java("QuoteController"), controller.formatted("quote.join()")));
         gone(Rules.BLOCKING_WAIT_UNBOUNDED, "get(5, TimeUnit.SECONDS)", Map.of(java("QuoteController"),
                 controller.formatted("quote.get(5, TimeUnit.SECONDS)")));
-        stillFires(Rules.BLOCKING_WAIT_UNBOUNDED, "orTimeout(..)", "#58 c: the note suggests orTimeout(..), but the join() "
-                        + "after it has no arguments and is reported anyway",
-                Map.of(java("QuoteController"), controller.formatted("quote.orTimeout(5, TimeUnit.SECONDS).join()")));
+        gone(Rules.BLOCKING_WAIT_UNBOUNDED, "orTimeout(..) (#82)", Map.of(java("QuoteController"),
+                controller.formatted("quote.orTimeout(5, TimeUnit.SECONDS).join()")));
+        gone(Rules.BLOCKING_WAIT_UNBOUNDED, "a bounded wait on the future first (#82)", Map.of(java("QuoteController"),
+                controller.replace("return %s;", "CompletableFuture.allOf(quote).get(5, TimeUnit.SECONDS);\n"
+                        + "        return quote.join();")));
     }
 
     // ---- REMOTE_CALL_IN_TRANSACTION --------------------------------------------------------------------------------

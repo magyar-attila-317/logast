@@ -42,6 +42,7 @@ class GraphTest {
                 "DELETE /admin/sessions/{sessionId}",
                 "DELETE /orders/{orderId}",
                 "GET /admin/exports/{exportId}",
+                "GET /admin/exports/{exportId}/pair",
                 "GET /live",
                 "GET /orders/{orderId}",
                 "GET /orders/{orderId}/lines",

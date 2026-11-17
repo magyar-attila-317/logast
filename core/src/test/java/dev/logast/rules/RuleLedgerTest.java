@@ -76,11 +76,6 @@ class RuleLedgerTest {
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus(
             Rules.AUDIT_SECURITY_EVENTS);
 
-    static {
-        NO_MUST_NOT_FIRE_CASE.put(Rules.BLOCKING_WAIT_UNBOUNDED, "#58 f: its near miss is a false positive: "
-                + "CompletableFuture.allOf(a, b).get(5, SECONDS); then a.join() (already complete) is still reported");
-    }
-
     /** Rules the core knock-out cannot test: where they fire instead, or why switching them off changes nothing. */
     static final Map<String, String> NO_KNOCKOUT = Map.of(
             Rules.AUDIT_SECURITY_EVENTS, "#58: fires nowhere (see NO_FIRING_CASE)",
