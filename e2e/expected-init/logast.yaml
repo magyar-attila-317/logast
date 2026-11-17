@@ -45,24 +45,37 @@ logging:
 #   mdc.key       the MDC key for the id; mdc.aliases are old key names, renamed to mdc.key
 #   mdc.sources   where the id comes from: parameter names, or "com.x.Type: accessor()"
 #
-# The entries below were found in your code. Rename terms, merge duplicates, and delete what is not
-# a business concept. Then run `logast vocabulary .` again: it lists only what is still missing.
+# The entries below were found in your code, one per key as the code spells it. Organise them as
+# the example shows, then run `logast vocabulary .` again: it lists only what is still missing.
 # ---------------------------------------------------------------------------------------------
-# Harvested from 53 source files: MDC keys, [k=v] keys in log messages and id-like variables.
-# Counts: mdc / log / declared, files. Rename terms, merge duplicates (move a spelling into `mdc.aliases`),
-# drop what is not a business concept, and add banned words to `aliases`.
+# Harvested from 53 source files: MDC keys, [k=v] keys in log messages and id-like variables,
+# one term per key, written as in the code. Counts: mdc / log / declared, files. "same value as" and
+# "a kind of" are only hints: nothing is merged or renamed until you edit it.
+#
+# How to organise it (https://github.com/magyar-attila-317/logast/blob/main/docs/vocabulary.md):
+# a term is the business word, its mdc.key the key every log line carries.
+#   order:                             # renamed from orderId: name the term with the business word
+#     aliases: [purchase]              # banned words: "purchase" in a message becomes "order"
+#     mdc: { key: orderId, aliases: [order_id, orderUuid] }  # same value: its other spellings merged
+#   supplier:                          # supplierId and supplierNumber are two values: two terms
+#     mdc: { key: supplierId }
+#   supplierNumber:
+#     mdc: { key: supplierNumber }
+#   approver:                          # a role: another field of the same kind as userId,
+#     mdc: { key: approverUserId }     # so its own term, never an alias of it
+# Delete the keys that are not business terms (technical ones like retryCount).
 vocabulary:
-  coupon:     # 0 / 31 / 26, 21 files
+  couponId:    # 0 / 31 / 26, 21 files
     mdc: { key: couponId, sources: { params: [couponId] } }
-  "run.code": # 1 / 5 / 0, 2 files
+  runCode:     # 1 / 5 / 0, 2 files
     mdc: { key: runCode }
-  order:      # 0 / 3 / 2, 3 files
+  orderId:     # 0 / 3 / 2, 3 files
     mdc: { key: orderId, sources: { params: [orderId] } }
-  agreement:  # 0 / 2 / 1, 2 files
+  agreementId: # 0 / 2 / 1, 2 files
     mdc: { key: agreementId, sources: { params: [agreementId] } }
-  table:      # 0 / 1 / 1, 2 files
+  tableId:     # 0 / 1 / 1, 2 files
     mdc: { key: tableId, sources: { params: [tableId] } }
-  batch:      # 0 / 1 / 0, 1 file
+  batchNumber: # 0 / 1 / 0, 1 file
     mdc: { key: batchNumber }
 
 # ---------------------------------------------------------------------------------------------

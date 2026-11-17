@@ -137,8 +137,8 @@ public final class ServiceSetup {
                 #   mdc.key       the MDC key for the id; mdc.aliases are old key names, renamed to mdc.key
                 #   mdc.sources   where the id comes from: parameter names, or "com.x.Type: accessor()"
                 #
-                # The entries below were found in your code. Rename terms, merge duplicates, and delete what is not
-                # a business concept. Then run `logast vocabulary .` again: it lists only what is still missing.
+                # The entries below were found in your code, one per key as the code spells it. Organise them as
+                # the example shows, then run `logast vocabulary .` again: it lists only what is still missing.
                 # ---------------------------------------------------------------------------------------------
                 """);
         if (vocabulary == null || !vocabulary.contains("vocabulary:")) {

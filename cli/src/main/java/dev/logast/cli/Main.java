@@ -528,7 +528,8 @@ public final class Main {
     }
 
     @Command(name = "vocabulary", description = "Harvest a draft vocabulary from the code (MDC keys, [k=v] keys in log messages, "
-            + "id-like variables): terms the policy does not cover yet, as YAML to reorganise and paste into logast.yaml")
+            + "id-like variables) the policy does not cover yet: one term per key as written, hints in comments, to organise and "
+            + "paste into logast.yaml")
     static class VocabularyCmd extends Common implements Callable<Integer> {
         @Option(names = "--min-declared", defaultValue = "3",
                 description = "Identifiers that are never logged or put in MDC need this many declarations (default 3)")
