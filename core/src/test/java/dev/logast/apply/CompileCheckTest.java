@@ -156,4 +156,50 @@ class CompileCheckTest {
                 .as("Lombok does not run in the gate: the logger it would create is no new error").isEmpty();
         assertThat(check.lombokProblem()).as("the gate says why it does not trust Lombok").isNotNull();
     }
+
+    /**
+     * #81: a classpath built for a newer Java than logast runs on (class file "has wrong version"): javac stops before
+     * annotation processing, so Lombok's loggers are missing everywhere. Such a compile gives no verdict; the gate says
+     * once why instead of rejecting every fix that adds a log line.
+     */
+    @Test
+    void aClasspathForANewerJavaGivesNoVerdict() throws Exception {
+        // a library class whose class file claims a Java version newer than the one running this test
+        Path lib = Files.createDirectories(work.resolve("lib-src/lib"));
+        Files.writeString(lib.resolve("Contract.java"), "package lib;\n\npublic class Contract {\n    public static int code() {\n        return 1;\n    }\n}\n");
+        Path classes = Files.createDirectories(work.resolve("lib-classes"));
+        assertThat(javax.tools.ToolProvider.getSystemJavaCompiler().run(null, null, null, "-d", classes.toString(),
+                lib.resolve("Contract.java").toString())).isZero();
+        Path cls = classes.resolve("lib/Contract.class");
+        byte[] b = Files.readAllBytes(cls);
+        int newer = Runtime.version().feature() + 44 + 4;   // one newer is only a warning; the service had four (69 on 65)
+        b[6] = (byte) (newer >> 8);
+        b[7] = (byte) newer;
+        Files.write(cls, b);
+        List<Path> classpath = new java.util.ArrayList<>(List.of(classes));
+        java.util.Arrays.stream(System.getProperty("logast.test.lombok").split(java.io.File.pathSeparator)).map(Path::of)
+                .forEach(classpath::add);
+        // reached through another source file javac loads from the source path, as on the service
+        write("src/main/java/a/Publisher.java", "package a;\n\nimport lib.Contract;\n\nclass Publisher {\n    int publish() {\n        return Contract.code();\n    }\n}\n");
+        String before = """
+                package a;
+
+                import lombok.extern.slf4j.Slf4j;
+
+                @Slf4j
+                class J {
+                    int m() {
+                        return new Publisher().publish();
+                    }
+                }
+                """;
+        write("src/main/java/a/J.java", before);
+        String logged = before.replace("return new Publisher().publish();", "log.info(\"Published\");\n        return new Publisher().publish();");
+        CompileCheck check = new CompileCheck(classpath);
+        assertThat(check.newErrors(work, Map.of("src/main/java/a/J.java", logged)))
+                .as("no verdict from a compile that cannot read the classpath").isEmpty();
+        assertThat(check.newErrors(work, Map.of("src/main/java/a/J.java", logged.replace("log.info", "zzz.info"))))
+                .as("not even for a real error: javac cannot be trusted on this classpath").isEmpty();
+        assertThat(check.problem()).as("the gate says why").contains("newer Java");
+    }
 }

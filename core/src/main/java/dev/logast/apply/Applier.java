@@ -523,9 +523,11 @@ public final class Applier {
                     }
                 });
                 compile.newErrors(work, java).forEach((f, err) -> broken.put(f, "does not compile: " + err));
-                if (compile.lombokProblem() != null && !lombokWarned) {
-                    lombokWarned = true;   // #81: say once why Lombok's loggers are not compile-checked
-                    progress.accept("Lombok is on the classpath but does not run in logast's compile check, so lines "
+                if (compile.problem() != null && !lombokWarned) {
+                    lombokWarned = true;   // #81: say once why the compile check is limited
+                    progress.accept(compile.lombokProblem() == null || compile.problem().contains("newer Java")
+                            ? "compile check skipped: " + compile.problem()
+                            : "Lombok is on the classpath but does not run in logast's compile check, so lines "
                             + "using Lombok loggers are not compile-checked (javac: " + compile.lombokProblem() + ")");
                 }
             }
