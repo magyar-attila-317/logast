@@ -73,6 +73,8 @@ final class LogCallRules {
         OrderBuilder b = ctx.order(twice ? Rules.EXCEPTION_LOGGED_TWICE : Rules.LOG_AND_RETHROW, m, line, "log" + ordinal)
                 .title(twice ? "Exception is logged here and again by " + String.join(", ", handlers) + " (log once, where it is handled)"
                         : "Exception is logged here and rethrown: it will be logged again by whoever handles it");
+        b.about(m.file().relPath(), lc.inCatch().clause)
+                .doneWhen("this catch no longer logs the exception it rethrows");
         Set<String> inMdc = ctx.mdcInside(m);
         List<String> lostContext = new ArrayList<>();
         for (Expression arg : lc.args()) {
@@ -83,6 +85,10 @@ final class LogCallRules {
             b.suggestion(lostContext.isEmpty() ? "Remove the log statement; let the handler log it."
                     : "Not removed: the message carries " + lostContext + " which is not in MDC here. Put it into MDC "
                     + "upstream (MdcScope) or attach it to the rethrown exception, then delete this log.");
+            if (!lostContext.isEmpty() && lc.statement()) {
+                b.doneWhen(String.join(", ", lostContext) + " " + (lostContext.size() == 1 ? "is" : "are")
+                        + " in MDC here, or the line is gone");
+            }
             return false;
         }
         // deleting it is only safe when something else logs the exception on every way it can travel (#46)
@@ -90,7 +96,9 @@ final class LogCallRules {
         if (silent != null) {
             b.title("Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it")
                     .suggestion("Not removed: nothing else is known to log it on the path through " + silent + ", so this line may be "
-                    + "its only record. Log it there (or in an @ExceptionHandler), then delete this one.");
+                    + "its only record. Log it there (or in an @ExceptionHandler), then delete this one.")
+                    .doneWhen("a catch or @ExceptionHandler logs it on the path through " + silent
+                            + "; then logast deletes this line itself. Or the line is gone");
             return false;
         }
         b.edit(JavaEdits.deleteStatement(m.file(), lc.call()));

@@ -151,6 +151,30 @@ public final class OrderBuilder {
         return this;
     }
 
+    String basis;
+    String doneWhen;
+    /** The code construct the finding is about (a catch, a call), as file@offset: orders on one subject are related. */
+    String subject;
+
+    /** The evidence the rule decided on, where the title does not show it: one short line. */
+    public OrderBuilder basis(String s) {
+        this.basis = s;
+        return this;
+    }
+
+    /** The observable condition after which the next scan no longer reports it: one short line. */
+    public OrderBuilder doneWhen(String s) {
+        this.doneWhen = s;
+        return this;
+    }
+
+    /** The finding is about this tree in this file: other orders about the same tree are listed as related. */
+    public OrderBuilder about(String file, org.openrewrite.Tree tree) {
+        int start = dev.logast.parse.Pos.start(tree);
+        this.subject = start < 0 ? null : file + "@" + start;
+        return this;
+    }
+
     public OrderBuilder data(String key, Object value) {
         if (value != null) {
             data.put(key, value);
@@ -161,6 +185,6 @@ public final class OrderBuilder {
     WorkOrder build() {
         return new WorkOrder(id(), rule, List.copyOf(fixes), severity, title, file, line, List.copyOf(locations),
                 method, paths, suggestion, List.copyOf(edits), Map.copyOf(slots), context, List.copyOf(dependsOn),
-                java.util.Collections.unmodifiableMap(new LinkedHashMap<>(data)));
+                java.util.Collections.unmodifiableMap(new LinkedHashMap<>(data)), basis, doneWhen, List.of());
     }
 }

@@ -84,7 +84,10 @@ final class AsyncErrorRules {
         boolean completable = TypeUtils.isAssignableTo("java.util.concurrent.CompletionStage", mi.getType());
         OrderBuilder b = ctx.orderNth(Rules.ASYNC_ERROR_LOST, m, line, "async-error")
                 .title("The result of " + mi.getSimpleName() + "(…) is thrown away: if the work fails, its exception stays in "
-                        + "the future and is never logged");
+                        + "the future and is never logged")
+                .about(f.relPath(), mi)
+                .doneWhen("the result is no longer a statement of its own: assigned, returned, or handled in the chain "
+                        + "(exceptionally, handle, whenComplete, get, join)");
         JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
         if (!completable || logger.name() == null) {
             b.suggestion("Use execute(…) for fire-and-forget work (an uncaught exception is then logged), or keep the Future "

@@ -44,6 +44,20 @@ public final class Sarif {
                 result.put("relatedLocations", o.locations().stream().limit(50).map(l -> location(l.file(), l.line())).toList());
             }
             result.put("partialFingerprints", Map.of("logastOrderId", o.id()));
+            // optional property bag (SARIF §3.8): only what is set, so earlier consumers see the same result (#57)
+            Map<String, Object> properties = new LinkedHashMap<>();
+            if (o.basis() != null) {
+                properties.put("basis", o.basis());
+            }
+            if (o.doneWhen() != null) {
+                properties.put("doneWhen", o.doneWhen());
+            }
+            if (!o.related().isEmpty()) {
+                properties.put("related", o.related());
+            }
+            if (!properties.isEmpty()) {
+                result.put("properties", properties);
+            }
             results.add(result);
         }
         return Map.of(

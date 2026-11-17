@@ -359,4 +359,93 @@ class RemedyTest {
                         });
                 """)));
     }
+
+    // ---- ASYNC_CONTEXT_LOSS ----------------------------------------------------------------------------------------
+
+    @Test
+    void asyncWorkOnASpringTaskExecutor() throws IOException {
+        String controller = """
+                package x;
+
+                import java.util.concurrent.CompletableFuture;
+                import java.util.concurrent.Executor;
+                import org.springframework.core.task.TaskExecutor;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class RefreshController {
+                    private final Executor pool;
+                    private final TaskExecutor tasks;
+
+                    public RefreshController(Executor pool, TaskExecutor tasks) {
+                        this.pool = pool;
+                        this.tasks = tasks;
+                    }
+
+                    @GetMapping("/refresh")
+                    public void refresh() {
+                        CompletableFuture.runAsync(() -> System.out.println("refresh")%s);
+                    }
+                }
+                """;
+        // the starter's ContextExecutors.wrap(Executor) returns a plain Executor
+        String wrap = "package x;\n\nimport java.util.concurrent.Executor;\n\npublic final class ContextExecutors {\n"
+                + "    public static Executor wrap(Executor delegate) {\n        return delegate;\n    }\n}\n";
+        fires(Rules.ASYNC_CONTEXT_LOSS, Map.of(java("RefreshController"), controller.formatted("")));
+        gone(Rules.ASYNC_CONTEXT_LOSS, "a Spring TaskExecutor bean", Map.of(java("RefreshController"), controller.formatted(", tasks")));
+        stillFires(Rules.ASYNC_CONTEXT_LOSS, "ContextExecutors.wrap(executor)", "#57: the note names ContextExecutors.wrap(executor) "
+                        + "first, but only a Spring TaskExecutor / TaskScheduler argument counts (FactsExtractor.asyncApiManaged)",
+                Map.of(java("RefreshController"), controller.formatted(", ContextExecutors.wrap(pool)"), java("ContextExecutors"), wrap));
+    }
+
+    // ---- AUDIT_LOG_MIXED -------------------------------------------------------------------------------------------
+
+    @Test
+    void auditRecordsOnTheirOwnLogger() throws IOException {
+        String auditLog = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class AuditLog {
+                    private static final Logger log = LoggerFactory.getLogger(AuditLog.class);
+                %s
+                    public void record(String action, String target) {
+                        %s.info("Audit record written [action={}, target={}]", action, target);
+                    }
+
+                    public void checkCapacity(int limit) {
+                        log.warn("Audit store is almost full [limit={}]", limit);
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(java("AuditLog"), auditLog.formatted("", "log"), java("ParcelService"), """
+                package x;
+
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class ParcelService {
+                    private final AuditLog audit;
+
+                    public ParcelService(AuditLog audit) {
+                        this.audit = audit;
+                    }
+
+                    public void close(String parcelId) {
+                        audit.record("parcel.close", parcelId);
+                    }
+                }
+                """);
+        fires(Rules.AUDIT_LOG_MIXED, before);
+        stillFires(Rules.AUDIT_LOG_MIXED, "the records on their own logger", "#57: the note says to give the records their own "
+                        + "logger and keep the class logger for the diagnostics, but the rule counts every log line of the class, "
+                        + "whichever logger writes it",
+                with(before, java("AuditLog"), auditLog.formatted(
+                        "    private static final Logger AUDIT = LoggerFactory.getLogger(\"audit\");\n", "AUDIT")));
+    }
 }

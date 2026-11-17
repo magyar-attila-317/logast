@@ -49,6 +49,7 @@ final class ExceptionRules {
                 .severity(severity)
                 .title(c.typeNames() + " is caught and dropped without a log line in " + m.label()
                         + (commented ? " (documented as intentional)" : fallback ? " (falls back silently)" : ""));
+        b.about(f.relPath(), c.clause);
         ctx.swallowedOrders.put(c, b.id());
 
         JavaEdits.LoggerPlan logger = ctx.logger(m.owner());

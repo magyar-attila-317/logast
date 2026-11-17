@@ -100,6 +100,7 @@ final class AuditRules {
                     .suggestion("Record an audit event on the success path with actor, tenant and the affected id"
                             + (cfg.emitters().isEmpty() ? "" : " (" + String.join(", ", cfg.emitters()) + ")")
                             + "; or mark it // logast:ignore AUDIT_MISSING if it is not auditable.")
+                    .doneWhen("an audit call is reachable from it")
                     .context(ctx.context(m, dev.logast.parse.Pos.start(m.decl()), Text.oneLine(ep.label(), 160), null));
         }
     }
@@ -117,7 +118,8 @@ final class AuditRules {
                 .title(ep.label() + " records an audit event only when it succeeds: a rejected or failed attempt leaves no "
                         + "record (" + describe(action) + ")")
                 .suggestion("Record the attempt's outcome either way: an audit call in a catch (with the failure) or in a "
-                        + "finally (with the outcome), or record the attempt before the work starts.");
+                        + "finally (with the outcome), or record the attempt before the work starts.")
+                .doneWhen("an audit call it reaches sits in a catch or finally block, or comes before the other work");
     }
 
     /**
@@ -236,7 +238,8 @@ final class AuditRules {
             ctx.order(Rules.DATA_CHANGES_UNAUDITED, "data-audit|" + e.fqn()).at(e.file().relPath(), Pos.line(e.decl()))
                     .title(e.simpleName() + " is changed through a Spring Data repository, but nothing records who last changed it")
                     .suggestion("Add @LastModifiedBy (and @CreatedBy, @LastModifiedDate) fields and enable auditing "
-                            + "(@EnableJpaAuditing / @EnableJdbcAuditing with an AuditorAware bean that reads the current user).");
+                            + "(@EnableJpaAuditing / @EnableJdbcAuditing with an AuditorAware bean that reads the current user).")
+                    .doneWhen(e.simpleName() + " has a field annotated @LastModifiedBy");
         }
         boolean auditorAware = ctx.a.index.classes().stream().anyMatch(c -> TypeUtils.isAssignableTo("org.springframework.data.domain.AuditorAware", c.type()))
                 || ctx.a.index.methods().stream().anyMatch(m -> m.type() != null
@@ -247,7 +250,8 @@ final class AuditRules {
             ctx.order(Rules.DATA_CHANGES_UNAUDITED, "data-audit-auditor").at(first.file().relPath(), Pos.line(first.decl()))
                     .title("Entities have @CreatedBy / @LastModifiedBy, but no AuditorAware bean fills them: they stay empty")
                     .suggestion("Add an AuditorAware bean that returns the current user (from the security context), and enable "
-                            + "auditing (@EnableJpaAuditing / @EnableJdbcAuditing).");
+                            + "auditing (@EnableJpaAuditing / @EnableJdbcAuditing).")
+                    .doneWhen("a class implements AuditorAware, or a method returns one");
         }
     }
 
@@ -450,13 +454,20 @@ final class AuditRules {
             return;
         }
         String record = "The audit record " + mi.getSimpleName() + "(…) in " + m.label();
+        String basis = "the audit call is " + recognised(mi);
+        String done = String.join("; and ", java.util.stream.Stream.of(
+                actor ? null : "an argument comes from the security context (a Principal / Authentication parameter, "
+                        + "@AuthenticationPrincipal, SecurityContextHolder), or the audit method reads it itself",
+                target ? null : "an argument is the record's id (a domain key, or named id, …Id, …Key, …Code, …Number)")
+                .filter(Objects::nonNull).toList());
         if (!actor && client != null) {
             ctx.orderNth(Rules.AUDIT_RECORD_INCOMPLETE, m, line, "audit-record")
                     .title(record + " takes the acting user from the request (" + client.printTrimmed()
                             + "): the client can name anyone" + (target ? "" : ", and it does not say to which record"))
                     .suggestion("Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication "
                             + "parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate "
-                            + "field. " + (!target ? "Pass the id of the record acted on. " : "") + "A record without them proves nothing.");
+                            + "field. " + (!target ? "Pass the id of the record acted on. " : "") + "A record without them proves nothing.")
+                    .basis(basis).doneWhen(done);
             return;
         }
         String missing = !actor && !target ? "who did it and to which record" : !actor ? "who did it" : "to which record";
@@ -465,7 +476,8 @@ final class AuditRules {
                 .suggestion((!actor ? "Pass the acting user (from the security context: SecurityContextHolder / the "
                         + "authenticated principal), or let the audit method read it itself. " : "")
                         + (!target ? "Pass the id of the record acted on. " : "")
-                        + "A record without them proves nothing.");
+                        + "A record without them proves nothing.")
+                .basis(basis).doneWhen(done);
     }
 
     /** The argument, and the parts of a record built in it: constructor arguments, a builder chain's arguments. */
@@ -627,26 +639,32 @@ final class AuditRules {
     }
 
     private boolean emitter(J.MethodInvocation mi) {
+        return recognised(mi) != null;
+    }
+
+    /** Why the call counts as an audit record (shown as the finding's basis, #57), or null when it is none. */
+    private String recognised(J.MethodInvocation mi) {
         JavaType.Method mt = mi.getMethodType();
         if (mt == null) {
-            return false;
+            return null;
         }
         String owner = mt.getDeclaringType().getFullyQualifiedName();
         if (!cfg.emitters().isEmpty()) {
             return cfg.emitters().stream().anyMatch(e -> e.contains("#")
                     ? e.equals(owner + "#" + mt.getName())
-                    : e.equals(owner) || TypeUtils.isAssignableTo(e, mt.getDeclaringType()));
+                    : e.equals(owner) || TypeUtils.isAssignableTo(e, mt.getDeclaringType())) ? "listed in audit.emitters" : null;
         }
         if (owner.equals("org.springframework.boot.actuate.audit.AuditEventRepository")) {
-            return true;
+            return "Spring Boot's AuditEventRepository";
         }
         if (builderStep(mt) || logger(mi)) {
-            return false;   // AuditEntry.builder().actor(…): a part of one record, not a record (#50)
+            return null;   // AuditEntry.builder().actor(…): a part of one record, not a record (#50)
         }
         List<Expression> args = mi.getArguments().stream().filter(a -> !(a instanceof J.Empty)).toList();
         String simple = ownName(owner);
         if (simple.contains("Audit") && !simple.contains("Logger") && !args.isEmpty()) {
-            return true;   // a call that passes something to an audit type; entry.getActor() or build() records nothing
+            // a call that passes something to an audit type; entry.getActor() or build() records nothing
+            return "a call on " + simple + ", recognised by its name (audit.emitters is empty)";
         }
         boolean publish = mt.getName().startsWith("publish");
         for (Expression arg : args) {
@@ -658,10 +676,10 @@ final class AuditRules {
             // AuditableDomainEvent. Not an entity whose superclass is AbstractAuditable: repository.save(order) (#50)
             if (ownName(t.getFullyQualifiedName()).contains("Audit") && !owner.startsWith("java.")
                     || publish && auditType(t, new HashSet<>())) {
-                return true;
+                return "it is given a " + ownName(t.getFullyQualifiedName()) + ", recognised by its type name (audit.emitters is empty)";
             }
         }
-        return false;
+        return null;
     }
 
     /** A builder's setter, its build() or the builder() factory: returns a *Builder or the declaring type itself. */

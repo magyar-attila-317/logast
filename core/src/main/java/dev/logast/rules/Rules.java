@@ -292,7 +292,9 @@ public final class Rules {
                     .title("\"" + u.message() + "\" is logged but not counted (outcome=" + u.event() + ", frequency " + u.frequency() + ")")
                     .data("name", g.name()).data("outcome", u.event()).data("event", u.event())
                     .data("message", u.level().toUpperCase(java.util.Locale.ROOT) + " \"" + u.message() + "\"")
-                    .data("frequency", u.frequency()).data("paths", u.paths()).data("tagAvailable", g.tagAvailable());
+                    .data("frequency", u.frequency()).data("paths", u.paths()).data("tagAvailable", g.tagAvailable())
+                    .doneWhen("a metric counts this outcome, or its decision in " + dev.logast.apply.MetricsFile.PATH
+                            + " is applied (logast apply . --auto)");
             if (!ctx.policy.metrics().amounts().equals("off") && !g.amounts().isEmpty()) {
                 b.data("amounts", List.copyOf(g.amounts().keySet()));   // numbers the line logs: metrics.json offers them
             }
@@ -630,6 +632,7 @@ public final class Rules {
         numberOrdinals(ctx.orders);
         Set<String> ids = new HashSet<>();
         List<WorkOrder> orders = new ArrayList<>();
+        Map<String, String> subjects = new HashMap<>();
         for (OrderBuilder b : ctx.orders) {
             WorkOrder o = b.build();
             String base = b.anchor;
@@ -641,8 +644,12 @@ public final class Rules {
                 o = b.build();
             }
             orders.add(o);
+            if (b.subject != null) {
+                subjects.put(o.id(), b.subject);
+            }
         }
         orders.removeIf(o -> !enabled(a.policy, o.rule()));
+        orders = relate(orders, subjects);
         orders.sort(Comparator.comparingInt((WorkOrder o) -> -rank(o.severity()))
                 .thenComparing(WorkOrder::file).thenComparingInt(WorkOrder::line).thenComparing(WorkOrder::id));
 
@@ -653,6 +660,23 @@ public final class Rules {
             }
         }
         return new ScanResult(1, a.project.root().toString(), a.stats(), fingerprints, orders, coverage);
+    }
+
+    /** Links orders about the same code construct (one catch, one call) to each other, by id (#57). */
+    static List<WorkOrder> relate(List<WorkOrder> orders, Map<String, String> subjects) {
+        Map<String, List<String>> bySubject = new HashMap<>();
+        for (WorkOrder o : orders) {
+            String s = subjects.get(o.id());
+            if (s != null) {
+                bySubject.computeIfAbsent(s, k -> new ArrayList<>()).add(o.id());
+            }
+        }
+        List<WorkOrder> out = new ArrayList<>(orders.size());
+        for (WorkOrder o : orders) {
+            List<String> same = bySubject.getOrDefault(subjects.get(o.id()), List.of());
+            out.add(same.size() < 2 ? o : o.withRelated(same.stream().filter(id -> !id.equals(o.id())).toList()));
+        }
+        return out;
     }
 
     static String fingerprint(Path p) {

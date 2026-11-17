@@ -360,7 +360,9 @@ final class LogArgumentRules {
                             + "level and logger are invisible where the event happens")
                     .suggestion("Inline it: an explicit log statement at each call site with domain wording, e.g. "
                             + "log.debug(\"Coupon income entities prepared [count={}]\", entities.size()). Keep a helper only "
-                            + "for verified cross-cutting behaviour (redaction, alert contract, sink adaptation).");
+                            + "for verified cross-cutting behaviour (redaction, alert contract, sink adaptation).")
+                    .basis(loggerParam ? "it takes a Logger parameter" : "a static method that logs, in a class named like a log helper")
+                    .doneWhen("no other class calls it, or it masks or redacts (its name or body says mask, redact, sanitize, …)");
             callers.stream().limit(10).forEach(e -> b.location(e.from().file().relPath(), e.site().line(), Rules.LOG_HELPER));
         }
     }

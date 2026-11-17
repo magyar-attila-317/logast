@@ -1,5 +1,7 @@
 package dev.logast.orders;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 import java.util.Map;
 
@@ -10,10 +12,23 @@ import java.util.Map;
 public record WorkOrder(String id, String rule, List<String> fixes, String severity, String title,
                         String file, int line, List<Location> locations, String method, List<String> paths,
                         String suggestion, List<Edit> edits, Map<String, Slot> slots, Context context,
-                        List<String> dependsOn, Map<String, Object> data) {
-    /** @param data structured details for decision files and tools (e.g. a metric's suggested name and outcome) */
+                        List<String> dependsOn, Map<String, Object> data, String basis, String doneWhen,
+                        @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> related) {
+    /**
+     * @param data     structured details for decision files and tools (e.g. a metric's suggested name and outcome)
+     * @param basis    the evidence the rule decided on that the title does not show (a property value, how an audit call
+     *                 was recognised), or null
+     * @param doneWhen the observable condition after which the next scan no longer reports it, or null
+     * @param related  ids of other orders on the same code (one catch, one call): their advice has to be read together
+     */
     public WorkOrder {
         data = data == null ? Map.of() : data;
+        related = related == null ? List.of() : related;
+    }
+
+    public WorkOrder withRelated(List<String> ids) {
+        return new WorkOrder(id, rule, fixes, severity, title, file, line, locations, method, paths, suggestion, edits, slots,
+                context, dependsOn, data, basis, doneWhen, List.copyOf(ids));
     }
 
     /** Another place this order fixes, e.g. an {@code @Async} method covered by adding the starter. */
