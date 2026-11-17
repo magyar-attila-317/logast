@@ -1422,6 +1422,244 @@ class E2eGoldenTest {
     }
 
     /**
+     * #50: audit emitters, actor and target are recognised by type and value origin, not by name. A save of an entity
+     * whose superclass is named *Audit* records nothing; the actor read from a {@code Principal} (directly, through
+     * {@code getName()}, a local, a constructor or a builder) is the actor; a domain object named {@code user}, a
+     * client-supplied header and a boolean named {@code paid} are not; recording the attempt first, with getters as
+     * its arguments, records failures too. Every file must equal e2e/expected-audit-origin.
+     */
+    @Test
+    void recognisesAuditEmittersActorAndTargetByTypeAndOrigin() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = app.resolve("src/main/java/com/example/e2e/box");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("AuditableRecord.java"), """
+                    package com.example.e2e.box;
+
+                    /** A base class named like audit (as AbstractAuditable): its subclasses are not audit records. */
+                    public abstract class AuditableRecord {
+                        private String changedBy;
+
+                        public String changedBy() {
+                            return changedBy;
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("Box.java"), """
+                    package com.example.e2e.box;
+
+                    public class Box extends AuditableRecord {
+                        private final String id;
+
+                        public Box(String id) {
+                            this.id = id;
+                        }
+
+                        public String id() {
+                            return id;
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("BoxKeeper.java"), """
+                    package com.example.e2e.box;
+
+                    public record BoxKeeper(String name) {
+                    }
+                    """);
+            Files.writeString(dir.resolve("BoxStore.java"), """
+                    package com.example.e2e.box;
+
+                    import java.util.Map;
+                    import java.util.concurrent.ConcurrentHashMap;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class BoxStore {
+                        private final Map<String, Box> boxes = new ConcurrentHashMap<>();
+
+                        public void save(Box box) {
+                            boxes.put(box.id(), box);
+                        }
+
+                        public void clear(String boxId) {
+                            boxes.remove(boxId);
+                        }
+
+                        public BoxKeeper keeper(String boxId) {
+                            return new BoxKeeper(boxId);
+                        }
+
+                        public boolean pay(String boxId) {
+                            return boxes.containsKey(boxId);
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("BoxAuditEntry.java"), """
+                    package com.example.e2e.box;
+
+                    public final class BoxAuditEntry {
+                        private final String action;
+                        private final String boxId;
+                        private final String by;
+
+                        public BoxAuditEntry(String action, String boxId, String by) {
+                            this.action = action;
+                            this.boxId = boxId;
+                            this.by = by;
+                        }
+
+                        public static BoxAuditEntryBuilder builder() {
+                            return new BoxAuditEntryBuilder();
+                        }
+
+                        @Override
+                        public String toString() {
+                            return by + " " + action + " " + boxId;
+                        }
+
+                        /** Named as Lombok names it: its steps are no audit records. */
+                        public static final class BoxAuditEntryBuilder {
+                            private String action;
+                            private String boxId;
+                            private String by;
+
+                            public BoxAuditEntryBuilder action(String action) {
+                                this.action = action;
+                                return this;
+                            }
+
+                            public BoxAuditEntryBuilder box(String boxId) {
+                                this.boxId = boxId;
+                                return this;
+                            }
+
+                            public BoxAuditEntryBuilder by(String by) {
+                                this.by = by;
+                                return this;
+                            }
+
+                            public BoxAuditEntry build() {
+                                return new BoxAuditEntry(action, boxId, by);
+                            }
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("BoxAudit.java"), """
+                    package com.example.e2e.box;
+
+                    import java.util.List;
+                    import java.util.concurrent.CopyOnWriteArrayList;
+                    import org.springframework.stereotype.Component;
+
+                    /** Writes audit records (here: in memory). */
+                    @Component
+                    public class BoxAudit {
+                        private final List<String> entries = new CopyOnWriteArrayList<>();
+
+                        public void record(String action, Object target, Object by) {
+                            entries.add(by + " " + action + " " + target);
+                        }
+
+                        public void record(BoxAuditEntry entry) {
+                            entries.add(entry.toString());
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("BoxController.java"), """
+                    package com.example.e2e.box;
+
+                    import java.security.Principal;
+                    import org.springframework.web.bind.annotation.DeleteMapping;
+                    import org.springframework.web.bind.annotation.PathVariable;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RequestHeader;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    public class BoxController {
+                        private final BoxStore store;
+                        private final BoxAudit audit;
+
+                        public BoxController(BoxStore store, BoxAudit audit) {
+                            this.store = store;
+                            this.audit = audit;
+                        }
+
+                        /** Saves an entity whose superclass is named like audit: no audit record. */
+                        @DeleteMapping("/boxes/{boxId}")
+                        public void remove(@PathVariable String boxId) {
+                            store.save(new Box(boxId));
+                        }
+
+                        /** Records the attempt first, the actor through a getter: failures are recorded too. */
+                        @DeleteMapping("/boxes/{boxId}/contents")
+                        public void empty(@PathVariable String boxId, Principal principal) {
+                            audit.record("box.empty", boxId, principal.getName());
+                            store.clear(boxId);
+                        }
+
+                        /** The box's keeper, a domain object named like the actor: not who did it. */
+                        @PostMapping("/boxes/{boxId}/handover")
+                        public void handover(@PathVariable String boxId) {
+                            BoxKeeper user = store.keeper(boxId);
+                            audit.record("box.handover", boxId, user);
+                        }
+
+                        /** The acting user as the client sends it: anyone can claim to be anyone. */
+                        @PostMapping("/boxes/{boxId}/lock")
+                        public void lock(@PathVariable String boxId, @RequestHeader("X-User") String user) {
+                            audit.record("box.lock", boxId, user);
+                        }
+
+                        /** A flag named like an id (paid): not the record acted on. */
+                        @PostMapping("/boxes/{boxId}/pay")
+                        public void pay(@PathVariable String boxId, Principal principal) {
+                            boolean paid = store.pay(boxId);
+                            audit.record("box.pay", paid, principal);
+                        }
+
+                        /** The actor through a local read from the principal. */
+                        @PostMapping("/boxes/{boxId}/label")
+                        public void label(@PathVariable String boxId, Principal principal) {
+                            String who = principal.getName();
+                            audit.record("box.label", boxId, who);
+                        }
+
+                        /** One record built by a constructor. */
+                        @PostMapping("/boxes/{boxId}/open")
+                        public void open(@PathVariable String boxId, Principal principal) {
+                            audit.record(new BoxAuditEntry("box.open", boxId, principal.getName()));
+                        }
+
+                        /** One record built by a builder chain. */
+                        @PostMapping("/boxes/{boxId}/close")
+                        public void close(@PathVariable String boxId, Principal principal) {
+                            audit.record(BoxAuditEntry.builder().action("box.close").box(boxId).by(principal.getName()).build());
+                        }
+                    }
+                    """);
+        });
+
+        String findings = actual.get("FINDINGS.txt");
+        assertThat(findings).as("a save of an entity whose superclass is named *Audit* is no audit record")
+                .contains("DELETE /boxes/{boxId} is an auditable action");
+        assertThat(findings).as("recording the attempt first, with a getter as argument, records failures too")
+                .doesNotContain("DELETE /boxes/{boxId}/contents records an audit event only when it succeeds");
+        assertThat(findings).as("the actor from a Principal: through getName(), a local, a constructor, a builder")
+                .doesNotContain("in BoxController.empty").doesNotContain("in BoxController.label")
+                .doesNotContain("in BoxController.open").doesNotContain("in BoxController.close");
+        assertThat(findings).as("a domain object named user is not the actor")
+                .contains("The audit record record(…) in BoxController.handover does not say who did it");
+        assertThat(findings).as("a header names the actor the client claims to be")
+                .contains("The audit record record(…) in BoxController.lock takes the acting user from the request");
+        assertThat(findings).as("a boolean named paid is no record id")
+                .contains("The audit record record(…) in BoxController.pay does not say to which record");
+        assertThat(findings).as("a @Scheduled path has no user: no actor asked for")
+                .doesNotContain("The audit record audit(…) in EdgeFlow.process");
+        golden(EXPECTED.resolveSibling("expected-audit-origin"), actual);
+    }
+
+    /**
      * #53: a fix logs through the logger in scope: an inherited or enclosing SLF4J logger, or Lombok's field under the
      * name lombok.config gives it. A class logging through another API (Lombok's @Log4j2, a java.util.logging field)
      * gets no SLF4J edits, and the result is the same with and without Lombok on logast's classpath.

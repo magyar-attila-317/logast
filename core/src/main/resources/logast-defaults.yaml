@@ -95,7 +95,8 @@ resilience:                        # opt-in pack: packs: [..., resilience]
 
 audit:                             # opt-in pack: packs: [..., audit]
   emitters: []                     # e.g. [com.example.audit.AuditService, com.example.ActivityLogger#log];
-                                   # empty: any call on a *Audit* type or with an *Audit* argument (AuditAction enum)
+                                   # empty: a call passing something to a *Audit* type (not a builder), or passing
+                                   # a value of a *Audit* type (AuditAction enum); the type's own name, not a superclass
   logger: audit                    # audit classes log through this logger name (AUDIT_LOG_MIXED): route it apart
   actions:                         # entrypoints that must record an audit event (any field matches)
     - http: "DELETE **"

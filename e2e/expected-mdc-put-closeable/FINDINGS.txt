@@ -1,7 +1,7 @@
 logast · 76 files · 22 entrypoints · 86/216 methods reachable · 165 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 81.8% (jobs 10/10 · http 8/12)   (places that should log and do)
-66 orders: 0 AUTO, 23 NEEDS TEXT, 43 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+67 orders: 0 AUTO, 23 NEEDS TEXT, 44 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: shelf, pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -42,10 +42,14 @@ ARI-dacf62  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/exam
   The audit record record(…) in PledgeService.delete does not say who did it
   path: DELETE /pledges/{pledgeId} → PledgeController.delete → PledgeService.delete
   note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
-ARI-f6864c  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/edge/EdgeFlow.java:42  EdgeFlow.process
-  The audit record audit(…) in EdgeFlow.process does not say who did it
-  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
-  note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
+ARI-15b6ea  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:33  PledgeService.revoke
+  The audit record record(…) in PledgeService.revoke takes the acting user from the request (@RequestHeader("X-User")): the client can name anyone
+  path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke → PledgeService.revoke
+  note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
+ARI-b9b946  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:35  PledgeService.revoke
+  The audit record record(…) in PledgeService.revoke takes the acting user from the request (@RequestHeader("X-User")): the client can name anyone
+  path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke → PledgeService.revoke
+  note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
 LHL-77ee4d  medium  REPORT-ONLY  LOG_HELPER  src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13  EdgeLogHelper.info
   Log helper EdgeLogHelper.info writes log lines for 1 call site(s): the message, level and logger are invisible where the event happens
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeLogHelper.info
@@ -330,4 +334,4 @@ Next steps
   2. set "count" in .logast/metrics.json                 13 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   22 of 22 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      30 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
+  5. logast scan . --format summary                      31 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 3, …); each says what to decide

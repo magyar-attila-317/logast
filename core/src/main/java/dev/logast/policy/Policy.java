@@ -47,7 +47,8 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * {@code audit} pack.
      *
      * @param emitters calls that record an audit event: {@code com.x.AuditService} or {@code com.x.ActivityLogger#log};
-     *                 empty: any call on a type named *Audit*, or with an *Audit* argument (an AuditAction enum)
+     *                 empty: a call passing something to a type whose own name says *Audit* (not a builder step), or
+     *                 passing a value of such a type (an AuditAction enum); see AuditRules
      * @param actions  entrypoints that must record one
      * @param logger   the logger name audit classes log through (AUDIT_LOG_MIXED), so the log pipeline can route audit
      *                 lines apart (their own index, longer retention); default "audit"

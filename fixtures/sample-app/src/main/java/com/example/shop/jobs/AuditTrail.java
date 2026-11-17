@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class AuditTrail {
     private static final Logger log = LoggerFactory.getLogger(AuditTrail.class); // expect: AUDIT_LOG_MIXED
+    private final java.util.List<String> entries = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public void record(String action, String tenantId) {
         try {
@@ -18,5 +19,9 @@ public class AuditTrail {
         } finally {
             MDC.clear();
         }
+    }
+
+    public void record(String action, String customerId, String actor) {
+        entries.add(actor + " " + action + " " + customerId);
     }
 }
