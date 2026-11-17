@@ -23,3 +23,5 @@ vocabulary:
       key: sponsorshipId
       sources:
         params: [sponsorshipId]
+reporting:
+  sourceComments: true

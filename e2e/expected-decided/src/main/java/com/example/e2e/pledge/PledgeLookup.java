@@ -19,7 +19,7 @@ public class PledgeLookup {
         try {
             return load(pledgeId);
         } catch (IllegalStateException e) {
-            log.warn("Pledge lookup failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-02f9e9
+            log.warn("Pledge lookup failed", e);
             PledgeMetrics.pledgeLookupFailed();
             throw new PledgeMissing(pledgeId, e);
         }

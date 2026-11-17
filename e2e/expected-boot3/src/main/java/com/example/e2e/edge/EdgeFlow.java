@@ -45,10 +45,10 @@ public class EdgeFlow implements Audited {
                         log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
                         .whenComplete((result, error) -> {
                             if (error != null) {
-                                log.error("Edge flow async work failed", error); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-bb1ac8
+                                log.error("Edge flow async work failed", error); // logast:wording
                             }
                         });
-                log.info("Pledge parsed"); // a transformed value; logast: METRIC_OUTCOME_UNMEASURED OUM-be530b
+                log.info("Pledge parsed"); // a transformed value
                 new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
                 log.info("Edge processing completed");
                 EdgeMetrics.edgeProcessingCompleted(); // logast:metric review, confidence: medium

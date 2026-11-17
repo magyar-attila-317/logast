@@ -24,7 +24,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
     /** Source comments linking review findings to fills.json or metrics.json entries. */
     public record Reporting(Boolean sourceComments) {
         public Reporting {
-            sourceComments = sourceComments == null || sourceComments;
+            sourceComments = sourceComments != null && sourceComments;
         }
     }
 

@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory;
 class ScheduleCanceller {
     private static final Logger log = LoggerFactory.getLogger(ScheduleCanceller.class);
 
-    void cancel(String dealId) {
-        log.info("No schedules found for given dealId: {}. There was nothhing to cancel.", dealId); // logast: LOG_FORMAT FMT-286bdb
+    void cancel(String orderId) {
+        log.info("No schedules found for given orderId: {}. There was nothing to cancel.", orderId);
     }
 }

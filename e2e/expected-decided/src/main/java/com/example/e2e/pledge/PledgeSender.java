@@ -11,7 +11,7 @@ public class PledgeSender {
 
     public void send(String pledgeId) {
         log.debug("Sending pledge to the channel");
-        log.info("Pledge sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-027987
+        log.info("Pledge sent");
         PledgeMetrics.pledgeSent();
     }
 
@@ -22,7 +22,7 @@ public class PledgeSender {
                 send(pledgeId);
                 return true;
             } catch (IllegalStateException e) {
-                log.warn("Pledge resend failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-e22a2d
+                log.warn("Pledge resend failed", e);
                 PledgeMetrics.pledgeResendFailed();
                 return false;
             }

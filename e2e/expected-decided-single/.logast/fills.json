@@ -1,6 +1,6 @@
 {
   "_readme" : "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.",
-  "_status" : "10 finding(s) below need a message text.",
+  "_status" : "5 finding(s) below need a message text.",
   "SWA-91b292" : {
     "MSG" : "",
     "_MSG" : "What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri(\"/balances/{customerId}\", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as: {subject} failed",
@@ -20,31 +20,6 @@
     "MSG" : "",
     "_MSG" : "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges read | suffix keys added by the tool: [count]",
     "_where" : "src/main/java/com/example/e2e/pledge/PledgeRepository.java:38 PledgeRepository.findOpen"
-  },
-  "SUG-6b173f" : {
-    "MSG" : "Pledge sweep failed",
-    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: Edge flow async work failed | must read as: {subject} failed",
-    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process"
-  },
-  "SUG-4dc17a" : {
-    "MSG" : "Pledge sweep started",
-    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Export job started | must read as: {subject} started",
-    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:13 ExportJob.doExecute"
-  },
-  "SUG-7055a3" : {
-    "MSG" : "Pledge sweep completed",
-    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Export job completed | must read as: {subject} completed",
-    "_where" : "src/main/java/com/example/e2e/job/ExportJob.java:14 ExportJob.doExecute"
-  },
-  "SUG-1fede7" : {
-    "MSG" : "Pledge sweep completed",
-    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages completed | must read as: {subject} completed",
-    "_where" : "src/main/java/com/example/e2e/messaging/PledgeMessages.java:32 PledgeMessages.onReturn"
-  },
-  "SUG-15854c" : {
-    "MSG" : "Pledge sweep completed",
-    "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages completed | must read as: {subject} completed",
-    "_where" : "src/main/java/com/example/e2e/messaging/PledgeMessages.java:40 PledgeMessages.onAudit"
   },
   "FMT-93dcb8" : {
     "MSG" : "",

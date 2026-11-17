@@ -25,7 +25,10 @@ class PacksTest {
         assertThat(timeouts.edits().getFirst().text()).contains("connect-timeout: 5s").contains("read-timeout: 30s");
 
         WorkOrder leak = only(r, Rules.ERROR_DETAILS_EXPOSED, "application.yml");
-        assertThat(leak.edits().getFirst().text()).contains("include-message: never").doesNotContain("always");
+        // include-message changes the error body clients may read: a decision, not an automatic fix (#47)
+        assertThat(leak.edits()).isEmpty();
+        assertThat(leak.reportOnly()).isTrue();
+        assertThat(leak.suggestion()).contains("Decide on include-message");
 
         WorkOrder problem = only(r, Rules.PROBLEM_DETAILS_DISABLED, "application.yml");
         assertThat(problem.reportOnly()).isTrue();   // changes the API's error body: a decision, not a mechanical fix

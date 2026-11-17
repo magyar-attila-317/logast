@@ -165,7 +165,7 @@ SUG-56cdac  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pl
 OUM-027987  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeSender.java:14  PledgeSender.send
   "Pledge sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /pledges/allot" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge", "sent")), "tag" (Outcomes.tag("sent") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-MVG-8e4291  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/pledge/PledgeService.java:41  PledgeService.publish
+MVG-53c6bf  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/pledge/PledgeService.java:41  PledgeService.publish
   Vague message "Publishing pledge": it does not say what started, completed or failed
   path: POST /pledges/{pledgeId}/publish → PledgeController.publish → PledgeService.publish
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
@@ -194,7 +194,7 @@ SUG-6b173f  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/ed
 OUM-be530b  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:51  EdgeFlow.process
   "Pledge parsed" is logged but not counted (outcome=parsed, frequency low)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("pledge", "parsed")), "tag" (Outcomes.tag("parsed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-MVG-1245ff  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/edge/EdgeFlow.java:60  EdgeFlow.publishOne
+MVG-9330c1  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/edge/EdgeFlow.java:60  EdgeFlow.publishOne
   Vague message "Publishing pledge": it does not say what started, completed or failed
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeFlow.publishOne
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
@@ -233,19 +233,19 @@ SUG-7055a3  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/jo
   + "{{MSG}}"
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Export job completed" | must read as '{subject} completed'
-MVG-35393e  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:21  PublishRunJob.doRun
+MVG-c21d8c  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:21  PublishRunJob.doRun
   Vague message "Publishing started": it does not say what started, completed or failed
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
-MVG-5ce375  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:25  PublishRunJob.doRun
+MVG-35393e  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:25  PublishRunJob.doRun
   Vague message "Publishing batch": it does not say what started, completed or failed
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
-MVG-fff5e6  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:27  PublishRunJob.doRun
+MVG-340194  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:27  PublishRunJob.doRun
   Vague message "Publishing completed": it does not say what started, completed or failed
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
-MVG-bb7d82  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:33  PublishRunJob.notifyDone
+MVG-4a4ce2  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:33  PublishRunJob.notifyDone
   Vague message "Publishing notified": it does not say what started, completed or failed
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun → PublishRunJob.notifyDone
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
@@ -272,7 +272,7 @@ OUM-0f37ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
 SUG-85eb33  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/order/OrderNotifications.java:28  OrderNotifications.onCommitted
   Generated wording "Order notifications completed": say it in domain terms
   path: @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced) → OrderNotifications.onCommitted
-  - (2 lines replaced)
+  - "Order notifications completed"
   + "{{MSG}}"
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Order notifications completed" | must read as '{subject} completed'
@@ -294,10 +294,10 @@ FMT-93dcb8  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/order/Pay
   mdc: [orderId]  vars: order:Order, mdc:MdcScope
 FMT-286bdb  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/review/ScheduleCanceller.java:10  ScheduleCanceller.cancel
   INFO log: not in 'Text [k=v]' format or repeats MDC values
-  - "No schedules found for given dealId: {}. There was nothhing to cancel.", dealId
-  + "{{MSG}}", dealId{{ARGS}}
-  MSG: Reword this INFO message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: "No schedules found for given dealId: {}. There was nothhing to cancel." | suffix keys: [dealId]
-  mdc: []  vars: dealId:String
+  - "No schedules found for given orderId: {}. There was nothing to cancel.", orderId
+  + "{{MSG}}", orderId{{ARGS}}
+  MSG: Reword this INFO message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: "No schedules found for given orderId: {}. There was nothing to cancel." | suffix keys: [orderId]
+  mdc: []  vars: orderId:String
 SUG-08dd18  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/web/QuoteController.java:30  QuoteController.refresh
   Generated wording "Quote controller async work failed": say it in domain terms
   path: GET /quotes/{productId}/refresh → QuoteController.refresh

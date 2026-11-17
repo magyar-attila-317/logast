@@ -103,7 +103,7 @@
   },
   "FMT-286bdb" : {
     "MSG" : "",
-    "_MSG" : "Reword this INFO message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: No schedules found for given dealId: {}. There was nothhing to cancel. | suffix keys added by the tool: [dealId]",
+    "_MSG" : "Reword this INFO message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: No schedules found for given orderId: {}. There was nothing to cancel. | suffix keys added by the tool: [orderId]",
     "_where" : "src/main/java/com/example/e2e/review/ScheduleCanceller.java:10 ScheduleCanceller.cancel"
   },
   "SUG-08dd18" : {

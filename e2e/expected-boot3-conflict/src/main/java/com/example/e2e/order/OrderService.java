@@ -34,7 +34,7 @@ public class OrderService {
         log.info("Placing order");
         payments.charge(order);
         events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
-        log.info("Order placed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-d691d7
+        log.info("Order placed");
     }
 
     /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
@@ -45,6 +45,6 @@ public class OrderService {
             return;
         }
         orders.forEach(payments::charge);
-        log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber); // logast: METRIC_OUTCOME_UNMEASURED OUM-00f4c0
+        log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
     }
 }

@@ -13,7 +13,7 @@ public class PaymentClient {
         try (var mdc = MdcScope.of("orderId", order.id())) {
             try {
                 log.debug("Charge requested");
-                log.debug("Charging the card [amountCents={}]", order.amountCents()); // logast: LOG_FORMAT FMT-93dcb8
+                log.debug("Charging the card [amountCents={}]", order.amountCents());
                 gateway(order);
             } catch (IllegalStateException e) {
                 log.error("Charge failed for order", e);

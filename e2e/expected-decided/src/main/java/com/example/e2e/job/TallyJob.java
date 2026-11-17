@@ -13,7 +13,7 @@ public class TallyJob extends SettlementJob {
     @Override
     protected void doExecute() {
         log.info("Pledge sweep started");
-        log.info("Tally completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-9f157d
+        log.info("Tally completed");
         JobMetrics.tallyCompleted();
     }
 }

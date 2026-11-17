@@ -25,27 +25,14 @@ Next steps
   6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 
 === after writing every text and counting every outcome
-applied (31): DOM-1a500b DOM-a2969a SUG-08dd18 SUG-2f8476 SUG-44443e SUG-85eb33 SUG-a2a43c SUG-a4b461 SUG-bc8896 SUG-bd5779 SUG-dd88b2 OUM-00f4c0 OUM-027987 OUM-02f9e9 OUM-03f513 OUM-0d4ba2 OUM-0f37ab OUM-164f3d OUM-21d0c8 OUM-392e74 OUM-4809f0 OUM-49d3bd OUM-553423 OUM-620a15 OUM-773d35 OUM-8a8603 OUM-9f157d OUM-be530b OUM-d691d7 OUM-e22a2d MCA-b6f38b
+applied (36): DOM-1a500b DOM-a2969a SUG-08dd18 SUG-15854c SUG-1fede7 SUG-2f8476 SUG-44443e SUG-4dc17a SUG-6b173f SUG-7055a3 SUG-85eb33 SUG-a2a43c SUG-a4b461 SUG-bc8896 SUG-bd5779 SUG-dd88b2 OUM-00f4c0 OUM-027987 OUM-02f9e9 OUM-03f513 OUM-0d4ba2 OUM-0f37ab OUM-164f3d OUM-21d0c8 OUM-392e74 OUM-4809f0 OUM-49d3bd OUM-553423 OUM-620a15 OUM-773d35 OUM-8a8603 OUM-9f157d OUM-be530b OUM-d691d7 OUM-e22a2d MCA-b6f38b
 files (19): src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java, src/main/java/com/example/e2e/pledge/PledgeLookup.java, src/main/java/com/example/e2e/pledge/PledgeReloadJob.java, src/main/java/com/example/e2e/pledge/PledgeRepository.java, src/main/java/com/example/e2e/pledge/PledgeSender.java, src/main/java/com/example/e2e/pledge/PledgeService.java, src/main/java/com/example/e2e/edge/Audited.java, src/main/java/com/example/e2e/edge/EdgeFlow.java, src/main/java/com/example/e2e/edge/EdgeJob.java, src/main/java/com/example/e2e/job/TallyJob.java, src/main/java/com/example/e2e/job/ExportJob.java, src/main/java/com/example/e2e/job/PreloadJob.java, src/main/java/com/example/e2e/messaging/PledgeMessages.java, src/main/java/com/example/e2e/metrics/BusinessMetrics.java, src/main/java/com/example/e2e/order/OrderNotifications.java, src/main/java/com/example/e2e/order/OrderService.java, src/main/java/com/example/e2e/web/PledgeController.java, src/main/java/com/example/e2e/web/PledgeDetailsController.java, src/main/java/com/example/e2e/web/QuoteController.java  ·  4 rounds, <t>
-REJECTED SUG-15854c: produced code that [src/main/java/com/example/e2e/messaging/PledgeMessages.java does not parse] (not applied in any of its files)
-REJECTED SUG-1fede7: produced code that [src/main/java/com/example/e2e/messaging/PledgeMessages.java does not parse] (not applied in any of its files)
-REJECTED SUG-4dc17a: produced code that [src/main/java/com/example/e2e/job/ExportJob.java does not parse] (not applied in any of its files)
-REJECTED SUG-6b173f: produced code that [src/main/java/com/example/e2e/edge/EdgeFlow.java does not parse] (not applied in any of its files)
-REJECTED SUG-7055a3: produced code that [src/main/java/com/example/e2e/job/ExportJob.java does not parse] (not applied in any of its files)
-WARNING: CHECK FAILED (5): the result breaks a rule every migrated file must follow
-  src/main/java/com/example/e2e/messaging/PledgeMessages.java:40  MESSAGE_SUGGESTED (SUG-15854c) produced code that [src/main/java/com/example/e2e/messaging/PledgeMessages.java does not parse] (not applied in any of its files)
-  src/main/java/com/example/e2e/messaging/PledgeMessages.java:32  MESSAGE_SUGGESTED (SUG-1fede7) produced code that [src/main/java/com/example/e2e/messaging/PledgeMessages.java does not parse] (not applied in any of its files)
-  src/main/java/com/example/e2e/job/ExportJob.java:13  MESSAGE_SUGGESTED (SUG-4dc17a) produced code that [src/main/java/com/example/e2e/job/ExportJob.java does not parse] (not applied in any of its files)
-  src/main/java/com/example/e2e/edge/EdgeFlow.java:48  MESSAGE_SUGGESTED (SUG-6b173f) produced code that [src/main/java/com/example/e2e/edge/EdgeFlow.java does not parse] (not applied in any of its files)
-  src/main/java/com/example/e2e/job/ExportJob.java:14  MESSAGE_SUGGESTED (SUG-7055a3) produced code that [src/main/java/com/example/e2e/job/ExportJob.java does not parse] (not applied in any of its files)
 
 Next steps
   1. git diff                                            review the changes
-  2. read the CHECK FAILED lines above                   5 places break a migration invariant: a logast bug, please report the shape of the code
-  3. read the REJECTED lines above                       5 fixes could not be applied; each says why
-  4. write "MSG" texts in .logast/fills.json             10 log lines need wording only a person knows
-  5. set "count" in .logast/metrics.json                 3 logged outcomes are not counted: counter, tag or skip each
-  6. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  7. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  8. logast scan . --format summary                      29 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
-  9. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  2. write "MSG" texts in .logast/fills.json             5 log lines need wording only a person knows
+  3. set "count" in .logast/metrics.json                 3 logged outcomes are not counted: counter, tag or skip each
+  4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
+  5. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  6. logast scan . --format summary                      29 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
+  7. logast verify .                                     build and run the tests with log capture: does the result really log what it should?

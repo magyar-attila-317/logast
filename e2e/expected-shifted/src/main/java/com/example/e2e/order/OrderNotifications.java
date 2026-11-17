@@ -14,7 +14,7 @@ public class OrderNotifications {
 
     @EventListener
     public void onPlaced(OrderPlaced event) {
-        log.info("Order confirmation sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-0f37ab
+        log.info("Order confirmation sent");
         log.debug("Confirmation amount [amountCents={}]", event.amountCents());
     }
 

@@ -41,7 +41,7 @@ public class PledgeService {
         log.info("Publishing pledge");
         sender.send(pledgeId);
         repository.close(pledgeId);
-        log.info("Pledge published"); // logast: METRIC_OUTCOME_UNMEASURED OUM-773d35
+        log.info("Pledge published");
         PledgeMetrics.pledgePublished();
     }
 
@@ -49,7 +49,7 @@ public class PledgeService {
         try (var mdc = MdcScope.of("pledgeId", request.code())) {
             log.info("Pledge allotment started");
             sender.send(request.code());
-            log.info("Pledge allotment completed [tableId={}]", request.tableId()); // logast: METRIC_OUTCOME_UNMEASURED OUM-4809f0
+            log.info("Pledge allotment completed [tableId={}]", request.tableId());
             PledgeMetrics.pledgeAllotmentCompleted();
         }
     }

@@ -9,7 +9,7 @@ public interface Audited {
     Logger AUDIT_LOG = LoggerFactory.getLogger("audit");
 
     default void audit(String pledgeId) {
-        AUDIT_LOG.info("Pledge audited"); // logast: METRIC_OUTCOME_UNMEASURED OUM-49d3bd
+        AUDIT_LOG.info("Pledge audited");
         Outcomes.count("pledge", "audited");
     }
 }
