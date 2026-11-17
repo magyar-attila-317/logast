@@ -665,6 +665,171 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-collection-size-logged"), actual);
     }
 
+    /**
+     * #52: exceptions that do not come from {@code throw new X(…)} on the throw line. {@code orElseThrow} with a lambda
+     * or a constructor reference and a factory method ({@code throw Errors.expired(id)}) still reach the client as a
+     * 500 (UNMAPPED_EXCEPTION); a factory called in a catch without the caught exception drops its cause (CAUSE_DROPPED).
+     */
+    @Test
+    void followsExceptionsNotThrownWithNew() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = app.resolve("src/main/java/com/example/e2e/voucher");
+            Files.createDirectories(dir);
+            for (String name : List.of("VoucherMissing", "VoucherUnknown", "VoucherExpired", "VoucherStoreFailure")) {
+                Files.writeString(dir.resolve(name + ".java"), """
+                        package com.example.e2e.voucher;
+
+                        public class %s extends RuntimeException {
+                            public %s() {
+                                super();
+                            }
+
+                            public %s(String message) {
+                                super(message);
+                            }
+
+                            public %s(String message, Throwable cause) {
+                                super(message, cause);
+                            }
+                        }
+                        """.formatted(name, name, name, name));
+            }
+            Files.writeString(dir.resolve("VoucherGone.java"), """
+                    package com.example.e2e.voucher;
+
+                    import org.springframework.http.HttpStatus;
+                    import org.springframework.web.bind.annotation.ResponseStatus;
+
+                    @ResponseStatus(HttpStatus.GONE)
+                    public class VoucherGone extends RuntimeException {
+                        public VoucherGone(String message) {
+                            super(message);
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("VoucherErrors.java"), """
+                    package com.example.e2e.voucher;
+
+                    final class VoucherErrors {
+                        private VoucherErrors() {
+                        }
+
+                        static VoucherExpired expired(String voucherId) {
+                            return new VoucherExpired("voucher expired: " + voucherId);
+                        }
+
+                        static VoucherStoreFailure storeFailed(String voucherId) {
+                            return new VoucherStoreFailure("voucher not stored: " + voucherId);
+                        }
+
+                        static VoucherStoreFailure storeFailed(String voucherId, Throwable cause) {
+                            return new VoucherStoreFailure("voucher not stored: " + voucherId, cause);
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("VoucherStore.java"), """
+                    package com.example.e2e.voucher;
+
+                    import java.io.IOException;
+                    import java.util.Optional;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    class VoucherStore {
+                        Optional<String> findById(String voucherId) {
+                            return Optional.empty();
+                        }
+
+                        Optional<String> findCode(String voucherId) {
+                            return Optional.empty();
+                        }
+
+                        boolean expired(String voucherId) {
+                            return voucherId.isEmpty();
+                        }
+
+                        void write(String voucherId) throws IOException {
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("VoucherController.java"), """
+                    package com.example.e2e.voucher;
+
+                    import java.io.IOException;
+                    import org.springframework.web.bind.annotation.GetMapping;
+                    import org.springframework.web.bind.annotation.PathVariable;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    class VoucherController {
+                        private final VoucherStore store;
+
+                        VoucherController(VoucherStore store) {
+                            this.store = store;
+                        }
+
+                        @GetMapping("/vouchers/{voucherId}")
+                        String find(@PathVariable String voucherId) {
+                            return store.findById(voucherId).orElseThrow(() -> new VoucherMissing(voucherId));
+                        }
+
+                        @GetMapping("/vouchers/{voucherId}/code")
+                        String code(@PathVariable String voucherId) {
+                            return store.findCode(voucherId).orElseThrow(VoucherUnknown::new);
+                        }
+
+                        @GetMapping("/vouchers/{voucherId}/archived")
+                        String archived(@PathVariable String voucherId) {
+                            return store.findById(voucherId).orElseThrow(() -> new VoucherGone(voucherId));
+                        }
+
+                        @PostMapping("/vouchers/{voucherId}/allot")
+                        void allot(@PathVariable String voucherId) {
+                            if (store.expired(voucherId)) {
+                                throw VoucherErrors.expired(voucherId);
+                            }
+                        }
+
+                        @PostMapping("/vouchers/{voucherId}/store")
+                        void store(@PathVariable String voucherId) {
+                            try {
+                                store.write(voucherId);
+                            } catch (IOException e) {
+                                throw VoucherErrors.storeFailed(voucherId);
+                            }
+                        }
+
+                        @PostMapping("/vouchers/{voucherId}/restore")
+                        void restore(@PathVariable String voucherId) {
+                            try {
+                                store.write(voucherId);
+                            } catch (IOException | RuntimeException e) {
+                                throw VoucherErrors.storeFailed(voucherId, e);
+                            }
+                        }
+                    }
+                    """);
+        });
+
+        String findings = actual.get("FINDINGS.txt");
+        assertThat(findings).as("orElseThrow with a lambda")
+                .contains("VoucherMissing is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it");
+        assertThat(findings).as("orElseThrow with a constructor reference")
+                .contains("VoucherUnknown is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it");
+        assertThat(findings).as("a factory method on the throw line")
+                .contains("VoucherExpired is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it");
+        // restore's throw sits in a catch (RuntimeException) of its own try: thrown from the catch, so not caught there
+        assertThat(findings).as("the factory in a catch, with and without the cause")
+                .contains("VoucherStoreFailure is thrown on HTTP paths (2×) but no handler or @ResponseStatus maps it");
+        assertThat(findings).as("@ResponseStatus maps it").doesNotContain("VoucherGone is thrown");
+        assertThat(findings).as("a factory called without the caught exception drops the cause")
+                .contains("catch (IOException e) throws VoucherErrors.storeFailed(voucherId) without e as its cause");
+        assertThat(findings).as("the factory that gets the cause passes it on")
+                .doesNotContain("VoucherErrors.storeFailed(voucherId, e) without");
+        golden(EXPECTED.resolveSibling("expected-exceptions-not-thrown-with-new"), actual);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);

@@ -33,6 +33,8 @@ final class CauseRules {
                 for (J.Throw t : c.throwsList) {
                     if (t.getException() instanceof J.NewClass nc && nc.getBody() == null && !passesCause(nc)) {
                         dropped(m, c, nc);
+                    } else if (t.getException() instanceof J.MethodInvocation mi && !passesCause(mi)) {
+                        droppedByFactory(m, c, mi);
                     }
                 }
             }
@@ -42,6 +44,30 @@ final class CauseRules {
     /** One of the arguments is a Throwable (the caught exception, or one wrapping it). */
     private static boolean passesCause(J.NewClass nc) {
         return args(nc).stream().anyMatch(a -> TypeUtils.isAssignableTo("java.lang.Throwable", a.getType()));
+    }
+
+    /**
+     * {@code throw Errors.failed(id)}: a factory that gets no Throwable (nor is called on one, as {@code e.getCause()})
+     * cannot attach the caught exception. Report only: the factory needs an overload that takes the cause.
+     */
+    private static boolean passesCause(J.MethodInvocation mi) {
+        return mi.getArguments().stream().anyMatch(a -> TypeUtils.isAssignableTo("java.lang.Throwable", a.getType()))
+                || mi.getSelect() != null && TypeUtils.isAssignableTo("java.lang.Throwable", mi.getSelect().getType())
+                || mi.getMethodType() == null;
+    }
+
+    private void droppedByFactory(MethodInfo m, CatchInfo c, J.MethodInvocation mi) {
+        int line = Pos.line(mi);
+        if (ctx.ignored(m.file(), line, Rules.CAUSE_DROPPED)) {
+            return;
+        }
+        String call = Text.oneLine(mi.printTrimmed(), 120);
+        OrderBuilder b = ctx.orderNth(Rules.CAUSE_DROPPED, m, line, "cause")
+                .title("catch (" + c.typeNames() + " " + c.param + ") throws " + call + " without " + c.param
+                        + " as its cause: the original stack trace is lost");
+        b.suggestion(c.param.equals("_") ? "Name the caught exception (catch (" + c.typeNames() + " e)) and pass it as the cause."
+                : "Pass " + c.param + " as the cause: give " + mi.getSimpleName() + " a (…, Throwable cause) overload, or call "
+                + "initCause(" + c.param + ") on what it returns before throwing.");
     }
 
     private void dropped(MethodInfo m, CatchInfo c, J.NewClass nc) {
