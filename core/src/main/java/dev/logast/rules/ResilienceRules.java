@@ -7,6 +7,7 @@ import dev.logast.parse.Pos;
 import dev.logast.parse.SourceFileInfo;
 import org.openrewrite.Cursor;
 import org.openrewrite.java.JavaIsoVisitor;
+import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Statement;
@@ -133,7 +134,8 @@ final class ResilienceRules {
                                 ? "creates threads without limit: a burst of tasks becomes a burst of threads"
                                 : "queues tasks without limit: under load the queue grows until memory runs out, and latency with it");
                     }
-                    if (waits && requestPath && mi.getArguments().stream().allMatch(a -> a instanceof J.Empty) && unboundedWait(owner, name)) {
+                    if (waits && requestPath && mi.getArguments().stream().allMatch(a -> a instanceof J.Empty) && unboundedWait(owner, name)
+                            && !timed(mi.getSelect()) && !completedBefore(mi, getCursor())) {
                         unboundedWaitOrder(site, mi, simpleName(owner) + "." + name + "()");
                     }
                 }
@@ -163,6 +165,134 @@ final class ResilienceRules {
 
     private static String simpleName(String fqn) {
         return fqn.substring(fqn.lastIndexOf('.') + 1);
+    }
+
+    /** Stages that pass on how the stage before them ends, without a wait of their own (#82). */
+    private static final Set<String> PASS_THROUGH = Set.of("thenApply", "thenAccept", "thenRun", "exceptionally", "handle",
+            "whenComplete");
+
+    private static boolean onCompletableFuture(J.MethodInvocation mi, Set<String> names) {
+        return names.contains(mi.getSimpleName()) && mi.getMethodType() != null
+                && TypeUtils.isOfClassType(mi.getMethodType().getDeclaringType(), "java.util.concurrent.CompletableFuture");
+    }
+
+    /**
+     * #82: {@code receiver} ends within a time bound: an {@code orTimeout(..)} / {@code completeOnTimeout(..)} in its
+     * chain, followed only by stages that pass the outcome on ({@code exceptionally}, {@code thenApply}, …).
+     */
+    private static boolean timed(Expression receiver) {
+        while (receiver instanceof J.MethodInvocation mi) {
+            if (onCompletableFuture(mi, Set.of("orTimeout", "completeOnTimeout"))) {
+                return true;
+            }
+            if (!onCompletableFuture(mi, PASS_THROUGH)) {
+                return false;
+            }
+            receiver = mi.getSelect();
+        }
+        return false;
+    }
+
+    /**
+     * #82: a no-argument wait on a local future that a bounded wait has already completed: a statement before it in the
+     * same or an enclosing block (so it ran on every path that reaches the wait) waits with a bound on that variable,
+     * {@code CompletableFuture.allOf(a, b).get(5, SECONDS);} or {@code a.orTimeout(..).join();}, and the variable is
+     * never reassigned in the method. Anything less direct (a try around the bounded wait, a branch) still counts as
+     * unbounded.
+     */
+    private static boolean completedBefore(J.MethodInvocation wait, Cursor cursor) {
+        String var = local(wait.getSelect());
+        if (var == null) {
+            return false;
+        }
+        J inner = wait;
+        J.MethodDeclaration method = null;
+        boolean found = false;
+        for (Iterator<Object> it = cursor.getPath(); it.hasNext(); ) {
+            Object o = it.next();
+            if (o instanceof J.MethodDeclaration md) {
+                method = md;
+                break;
+            }
+            if (o instanceof J.ClassDeclaration) {
+                return false;
+            }
+            if (!found && o instanceof J.Block b) {
+                for (Statement s : b.getStatements()) {
+                    if (s == inner) {
+                        break;
+                    }
+                    found |= completes(s).contains(var);
+                }
+            }
+            if (o instanceof J j) {
+                inner = j;
+            }
+        }
+        return found && method != null && !reassigned(method, var);
+    }
+
+    /** The local futures a statement completes with a bounded wait. */
+    private static Set<String> completes(Statement s) {
+        Set<String> out = new HashSet<>();
+        List<Expression> calls = new ArrayList<>();
+        if (s instanceof J.MethodInvocation mi) {
+            calls.add(mi);
+        } else if (s instanceof J.Assignment a) {
+            calls.add(a.getAssignment());
+        } else if (s instanceof J.VariableDeclarations vd) {
+            vd.getVariables().forEach(v -> calls.add(v.getInitializer()));
+        }
+        for (Expression e : calls) {
+            if (!(e instanceof J.MethodInvocation mi) || mi.getMethodType() == null
+                    || !TypeUtils.isAssignableTo("java.util.concurrent.Future", mi.getMethodType().getDeclaringType())) {
+                continue;
+            }
+            boolean noArgs = mi.getArguments().stream().allMatch(a -> a instanceof J.Empty);
+            boolean bounded = mi.getSimpleName().equals("get") && mi.getArguments().size() == 2
+                    || Set.of("get", "join").contains(mi.getSimpleName()) && noArgs && timed(mi.getSelect());
+            if (!bounded) {
+                continue;
+            }
+            // the future itself: orTimeout / completeOnTimeout complete it (they return this)
+            Expression receiver = mi.getSelect();
+            boolean defaulted = false;
+            while (receiver instanceof J.MethodInvocation r && onCompletableFuture(r, Set.of("orTimeout", "completeOnTimeout"))) {
+                defaulted |= r.getSimpleName().equals("completeOnTimeout");
+                receiver = r.getSelect();
+            }
+            String var = local(receiver);
+            if (var != null) {
+                out.add(var);
+            } else if (receiver instanceof J.MethodInvocation all && onCompletableFuture(all, Set.of("allOf")) && !defaulted) {
+                // allOf(..) ends normally only once every one of its futures has (completeOnTimeout would end it anyway)
+                all.getArguments().forEach(a -> {
+                    String v = local(a);
+                    if (v != null) {
+                        out.add(v);
+                    }
+                });
+            }
+        }
+        return out;
+    }
+
+    /** The name of a local variable or parameter, else null. */
+    private static String local(J e) {
+        return e instanceof J.Identifier id && id.getFieldType() != null && id.getFieldType().getOwner() instanceof JavaType.Method
+                ? id.getSimpleName() : null;
+    }
+
+    private static boolean reassigned(J.MethodDeclaration method, String var) {
+        boolean[] found = {false};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Assignment visitAssignment(J.Assignment a, Integer p) {
+                found[0] |= a.getVariable() instanceof J.Identifier id && id.getSimpleName().equals(var);
+                return super.visitAssignment(a, p);
+            }
+        }.visit(method, 0);
+        return found[0];
     }
 
     private static boolean unboundedWait(String owner, String name) {
@@ -534,7 +664,9 @@ final class ResilienceRules {
                 .title(what + " without a timeout on a request path: if the work never finishes, the request thread waits forever")
                 .suggestion("Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the "
                         + "TimeoutException (fail the request, or return a partial answer).")
-                .doneWhen("the wait itself takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..))");
+                .doneWhen("the wait takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..)), "
+                        + "orTimeout(..) precedes it in the chain, or an earlier bounded wait on the same future "
+                        + "(allOf(..).get(5, SECONDS)) runs first on every path");
         site.context(ctx, b, mi, mi.printTrimmed());
     }
 }

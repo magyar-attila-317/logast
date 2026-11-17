@@ -11,7 +11,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.Principal;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /** Admin actions: one audited, one not; a blocking wait on a request thread. */
 @RestController
@@ -49,5 +52,14 @@ public class AdminController {
     @GetMapping("/exports/{exportId}")
     public String export(@PathVariable String exportId) throws InterruptedException, ExecutionException {
         return exports.start(exportId).get(); // expect: BLOCKING_WAIT_UNBOUNDED
+    }
+
+    /** #82: the bounded wait completes both futures first, so their join() cannot block. */
+    @GetMapping("/exports/{exportId}/pair")
+    public String exportPair(@PathVariable String exportId) throws InterruptedException, ExecutionException, TimeoutException {
+        CompletableFuture<String> head = CompletableFuture.completedFuture(exportId.strip());
+        CompletableFuture<String> tail = CompletableFuture.completedFuture(exportId.toUpperCase());
+        CompletableFuture.allOf(head, tail).get(5, TimeUnit.SECONDS);
+        return head.join() + tail.join(); // expect-not: BLOCKING_WAIT_UNBOUNDED
     }
 }
