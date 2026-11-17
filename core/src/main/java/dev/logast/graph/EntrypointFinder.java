@@ -56,7 +56,7 @@ public final class EntrypointFinder {
     public List<Entrypoint> find(CodeIndex index) {
         List<Entrypoint> out = new ArrayList<>();
         for (MethodInfo m : index.methods()) {
-            Entrypoint ep = classify(m);
+            Entrypoint ep = classify(m, index);
             if (ep != null) {
                 out.add(ep);
             }
@@ -65,16 +65,15 @@ public final class EntrypointFinder {
         return out;
     }
 
-    private Entrypoint classify(MethodInfo m) {
+    private Entrypoint classify(MethodInfo m, CodeIndex index) {
         if (!m.hasBody()) {
             return null;
         }
+        Entrypoint http = http(m, index);
+        if (http != null) {
+            return http;
+        }
         for (J.Annotation a : m.decl().getLeadingAnnotations()) {
-            for (var e : HTTP_VERBS.entrySet()) {
-                if (Annotations.is(a, e.getKey())) {
-                    return new Entrypoint(m, Kind.HTTP, httpLabel(m, a, e.getValue()), true);
-                }
-            }
             for (var e : MESSAGING.entrySet()) {
                 if (Annotations.is(a, e.getKey())) {
                     return messaging(m, a, e.getValue());
@@ -99,6 +98,40 @@ public final class EntrypointFinder {
             return new Entrypoint(m, Kind.MAIN, "main " + owner.simpleName(), false);
         }
         return null;
+    }
+
+    /**
+     * A request mapping on the method, else on the method it overrides in a source interface or superclass: Spring
+     * finds mapping annotations through the type hierarchy (API-first controllers implement a mapped interface, #51).
+     */
+    private static Entrypoint http(MethodInfo m, CodeIndex index) {
+        List<MethodInfo> declarations = new ArrayList<>();
+        declarations.add(m);
+        if (controller(m.owner(), index)) {
+            // only a controller serves the mappings it inherits: a client stub or a Feign fallback implementing a
+            // mapped interface is not an endpoint
+            declarations.addAll(index.overridden(m));
+        }
+        for (MethodInfo d : declarations) {
+            for (J.Annotation a : d.decl().getLeadingAnnotations()) {
+                for (var e : HTTP_VERBS.entrySet()) {
+                    if (Annotations.is(a, e.getKey())) {
+                        return new Entrypoint(m, Kind.HTTP, httpLabel(m, a, e.getValue(), index), true);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** {@code @Controller} / {@code @RestController} on the class or a source supertype: what Spring MVC maps. */
+    private static boolean controller(ClassInfo c, CodeIndex index) {
+        List<ClassInfo> types = new ArrayList<>();
+        types.add(c);
+        types.addAll(index.sourceSupertypes(c));
+        return types.stream().flatMap(t -> t.decl().getLeadingAnnotations().stream())
+                .anyMatch(a -> Annotations.is(a, "org.springframework.stereotype.Controller")
+                        || Annotations.is(a, WEB + "RestController"));
     }
 
     private Entrypoint messaging(MethodInfo m, J.Annotation a, Kind kind) {
@@ -176,20 +209,31 @@ public final class EntrypointFinder {
                 : "(" + Types.display(m.type().getParameterTypes().getFirst()) + ")";
     }
 
-    private static String httpLabel(MethodInfo m, J.Annotation a, String verb) {
+    private static String httpLabel(MethodInfo m, J.Annotation a, String verb, CodeIndex index) {
         if (verb.equals("ANY")) {
             verb = Annotations.rawAttribute(a, "method")
                     .map(s -> s.substring(s.lastIndexOf('.') + 1).replaceAll("[^A-Z]", ""))
                     .filter(s -> !s.isEmpty()).orElse("ANY");
         }
-        String prefix = m.owner().decl().getLeadingAnnotations().stream()
+        // the class-level mapping: on the controller, else on its nearest source supertype that has one
+        List<ClassInfo> types = new ArrayList<>();
+        types.add(m.owner());
+        types.addAll(index.sourceSupertypes(m.owner()));
+        String prefix = types.stream().flatMap(t -> t.decl().getLeadingAnnotations().stream())
                 .filter(c -> Annotations.is(c, WEB + "RequestMapping"))
-                .findFirst().flatMap(c -> Annotations.stringAttribute(c, "value", "path")).orElse("");
-        String path = Annotations.stringAttribute(a, "value", "path").orElse("");
+                .findFirst().flatMap(c -> path(c, index)).orElse("");
+        String path = path(a, index).orElse("");
         String joined = ("/" + prefix + "/" + path).replaceAll("/+", "/");
         if (joined.length() > 1 && joined.endsWith("/")) {
             joined = joined.substring(0, joined.length() - 1);
         }
         return verb + " " + joined;
+    }
+
+    /** The {@code value}/{@code path} of a mapping: a literal, a source constant or a concatenation of them (#51). */
+    private static Optional<String> path(J.Annotation a, CodeIndex index) {
+        return Annotations.attribute(a, "value", "path").map(e -> e instanceof J.NewArray na
+                        && na.getInitializer() != null && !na.getInitializer().isEmpty() ? na.getInitializer().getFirst() : e)
+                .map(e -> Constants.concatenated(index, e));
     }
 }
