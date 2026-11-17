@@ -20,6 +20,7 @@ public final class CodeIndex {
     private final ParsedProject project;
     /** Anonymous classes and enum constant bodies: their type, for registering what they implement. */
     private final Map<String, JavaType.FullyQualified> anonTypes = new HashMap<>();
+    private final LoggerScope loggers = new LoggerScope(this);
 
     private CodeIndex(ParsedProject project) {
         this.project = project;
@@ -35,7 +36,7 @@ public final class CodeIndex {
         }
         index.anonTypes.forEach((fqn, type) -> index.registerAncestors(fqn, type, new HashSet<>()));
         for (MethodInfo m : index.methods.values()) {
-            m.facts(FactsExtractor.extract(m));
+            m.facts(FactsExtractor.extract(m, index.loggers));
         }
         return index;
     }
@@ -146,6 +147,11 @@ public final class CodeIndex {
 
     public Collection<ClassInfo> classes() {
         return classes.values();
+    }
+
+    /** The loggers each class's code can name (#53). */
+    public LoggerScope loggers() {
+        return loggers;
     }
 
     public ClassInfo clazz(String fqn) {

@@ -1,0 +1,36 @@
+diff --git a/src/main/java/com/example/e2e/loggers/CleanupJob.java b/src/main/java/com/example/e2e/loggers/CleanupJob.java
+index 2b6b3cb..89f2a09 100644
+--- a/src/main/java/com/example/e2e/loggers/CleanupJob.java
++++ b/src/main/java/com/example/e2e/loggers/CleanupJob.java
+@@ -6,6 +6,7 @@ 
+         try {
+             step.run();
+         } catch (IllegalStateException e) {
++            log.warn("Step failed", e);
+         }
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/loggers/Dispatcher.java b/src/main/java/com/example/e2e/loggers/Dispatcher.java
+index 81c2c7f..47e0a21 100644
+--- a/src/main/java/com/example/e2e/loggers/Dispatcher.java
++++ b/src/main/java/com/example/e2e/loggers/Dispatcher.java
+@@ -11,6 +11,7 @@ 
+             try {
+                 step.run();
+             } catch (IllegalStateException e) {
++                LOGGER.warn("Step failed", e);
+             }
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java b/src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java
+index af58aba..dcb213f 100644
+--- a/src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java
++++ b/src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java
+@@ -9,6 +9,7 @@ 
+         try {
+             step.run();
+         } catch (IllegalStateException e) {
++            LOG.warn("Step failed", e);
+         }
+     }
+ }

@@ -1,13 +1,11 @@
 package dev.logast.rules;
 
-import dev.logast.model.Annotations;
+import dev.logast.graph.LoggerScope;
 import dev.logast.model.ClassInfo;
 import dev.logast.orders.Edit;
 import dev.logast.parse.Pos;
 import dev.logast.parse.SourceFileInfo;
 import org.openrewrite.java.tree.J;
-import org.openrewrite.java.tree.Statement;
-import org.openrewrite.java.tree.TypeUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -67,23 +65,25 @@ public final class JavaEdits {
         return out;
     }
 
-    /** @param edits empty when the logger already exists; null name when one cannot be added (interface/enum) */
-    public record LoggerPlan(String name, List<Edit> edits) {
-    }
-
-    public static LoggerPlan logger(ClassInfo owner, String preferredName) {
-        return logger(owner, preferredName, false);
-    }
-
-    /** @param lombok Lombok is on the classpath: a class without a logger gets {@code @Slf4j} (its logger is "log") */
-    public static LoggerPlan logger(ClassInfo owner, String preferredName, boolean lombok) {
-        for (Statement s : owner.decl().getBody().getStatements()) {
-            if (s instanceof J.VariableDeclarations vd && TypeUtils.isAssignableTo("org.slf4j.Logger", vd.getType())) {
-                return new LoggerPlan(vd.getVariables().getFirst().getSimpleName(), List.of());
-            }
+    /**
+     * @param edits    empty when the logger already exists
+     * @param name     null when no SLF4J logger can be added (interface/enum, or the class logs through another API)
+     * @param otherApi the other logging API the class uses (no SLF4J edits there), else null
+     */
+    public record LoggerPlan(String name, List<Edit> edits, String otherApi) {
+        public LoggerPlan(String name, List<Edit> edits) {
+            this(name, edits, null);
         }
-        if (owner.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, "lombok.extern.slf4j.Slf4j"))) {
-            return new LoggerPlan("log", List.of());
+    }
+
+    /**
+     * @param inScope the nearest logger in scope of {@code owner} ({@link LoggerScope}), or null
+     * @param lombok  Lombok is on the classpath: a class without a logger gets {@code @Slf4j} (its logger is "log", or
+     *                lombok.config's {@code lombok.log.fieldName})
+     */
+    public static LoggerPlan logger(ClassInfo owner, LoggerScope.Logger inScope, String preferredName, boolean lombok) {
+        if (inScope != null) {
+            return inScope.slf4j() ? new LoggerPlan(inScope.name(), List.of()) : new LoggerPlan(null, List.of(), inScope.api());
         }
         J.ClassDeclaration.Kind.Type kind = owner.decl().getKind();
         if (kind == J.ClassDeclaration.Kind.Type.Interface || kind == J.ClassDeclaration.Kind.Type.Enum
@@ -92,13 +92,14 @@ public final class JavaEdits {
         }
         SourceFileInfo f = owner.file();
         String text = f.text();
-        if (lombok && preferredName.equals("log")) {
+        String lombokName = lombok ? LoggerScope.lombokFieldName(f.absPath()) : null;
+        if (lombok && (preferredName.equals("log") || preferredName.equals(lombokName))) {
             int at = Pos.start(owner.decl());
             String indent = Text.indentAt(text, at);
             List<Edit> edits = new ArrayList<>();
             edits.add(Edit.insert(f.relPath(), at, "@Slf4j\n" + indent));
             edits.addAll(imports(f, "lombok.extern.slf4j.Slf4j"));
-            return new LoggerPlan("log", edits);
+            return new LoggerPlan(lombokName, edits);
         }
         int brace = Pos.start(owner.decl().getBody());
         if (brace < 0 || text.charAt(brace) != '{' || !Text.blank(text, brace + 1, Text.lineEnd(text, brace))) {
