@@ -43,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link #NO_MUST_NOT_FIRE_CASE}.
  *
  * <p><b>Knock-out</b>: each rule reported in a corpus is switched off via the policy ({@code rules: {X: {enabled: false}}})
- * and the corpus rescanned: no order of the rule may remain and the result must differ. Rescans only rebuild the
+ * and the corpus rescanned: no order of the rule may remain, nor list it under "also fixes", and the result must differ. Rescans only rebuild the
  * analysis of an already parsed project (no per-rule e2e run). Rules that cannot be knocked out this way are in
  * {@link #NO_KNOCKOUT}.
  *
@@ -82,11 +82,7 @@ class RuleLedgerTest {
             Rules.BUSINESS_EVENT_TIMESTAMP, "#58: fires in its own e2e scenario (expected-business-timestamp); no corpus has the shape",
             Rules.MESSAGE_SUGGESTED, "#58: fires on the // logast:wording marker an apply leaves behind (e2e snapshots)",
             Rules.METRIC_CATALOG, "#58: fires once metric decisions are applied (e2e expected-decided)",
-            Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)",
-            Rules.MANUAL_TRACE_MDC, "#58: switched off, the MDC_NOT_CLOSEABLE rewrite of the same put still drops the trace "
-                    + "key and lists it under 'also fixes' (MdcRules), so the scan does not change",
-            Rules.MDC_KEY_ALIAS, "#58: switched off, the MDC_NOT_CLOSEABLE rewrite of the same put still renames the key "
-                    + "and lists it under 'also fixes' (MdcRules), so the scan does not change");
+            Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)");
 
     private static Map<String, String> negativeCorpus(String... rules) {
         Map<String, String> out = new TreeMap<>();
@@ -211,6 +207,8 @@ class RuleLedgerTest {
                 List<WorkOrder> off = c.orders(disable(c.policy(), rule));
                 if (off.stream().anyMatch(o -> o.rule().equals(rule))) {
                     failed.put(rule, c.name() + ": still reported with the rule switched off");
+                } else if (mentioned(off).contains(rule)) {   // #75: another rule's rewrite folds it in or lists it
+                    failed.put(rule, c.name() + ": still listed under 'also fixes' with the rule switched off");
                 } else if (fingerprint(off).equals(baseline)) {
                     failed.put(rule, c.name() + ": switching it off changes nothing");
                 } else {

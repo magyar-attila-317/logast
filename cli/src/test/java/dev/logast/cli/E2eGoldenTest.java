@@ -243,6 +243,66 @@ class E2eGoldenTest {
     }
 
     /**
+     * #75: MANUAL_TRACE_MDC and MDC_KEY_ALIAS switched off in logast.yml. The MDC_NOT_CLOSEABLE rewrite of the same puts
+     * keeps the trace key and the key's spelling (it used to drop and rename them anyway); a try/finally whose trace key
+     * would have to go stays a report. Every file must equal e2e/expected-mdc-rules-off.
+     */
+    @Test
+    void mdcRewriteLeavesSwitchedOffRulesAlone() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml)
+                    + "rules:\n  MANUAL_TRACE_MDC: { enabled: false }\n  MDC_KEY_ALIAS: { enabled: false }\n");
+            Path source = app.resolve("src/main/java/com/example/e2e/parcel/ParcelTracker.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.parcel;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+
+                    class ParcelTracker {
+                        private static final Logger log = LoggerFactory.getLogger(ParcelTracker.class);
+
+                        void track(String parcelCode, String traceId) {
+                            MDC.put("parcel_code", parcelCode);
+                            MDC.put("traceId", traceId);
+                            log.info("Parcel tracking started");
+                            MDC.remove("traceId");
+                            MDC.remove("parcel_code");
+                        }
+
+                        void weigh(String parcelCode) {
+                            try {
+                                MDC.put("parcel_code", parcelCode);
+                                log.info("Parcel weighing started");
+                            } finally {
+                                MDC.remove("parcel_code");
+                            }
+                        }
+
+                        void sort(String parcelCode, String traceId) {
+                            try {
+                                MDC.put("traceId", traceId);
+                                MDC.put("parcel_code", parcelCode);
+                                log.info("Parcel sorting started");
+                            } finally {
+                                MDC.clear();
+                            }
+                        }
+                    }
+                    """);
+        });
+
+        String tracker = actual.get("src/main/java/com/example/e2e/parcel/ParcelTracker.java");
+        assertThat(tracker).as("the alias is not renamed").doesNotContain("\"parcelCode\"")
+                .as("the trace key is not dropped").contains("MDC.put(\"traceId\", traceId);\n")
+                .as("the plain puts are still scoped").contains("MdcScope.of(\"parcel_code\", parcelCode)");
+        golden(EXPECTED.resolveSibling("expected-mdc-rules-off"), actual);
+    }
+
+    /**
      * Lombok not on logast's classpath (missing from a copied classpath; the service still compiles with it): @Slf4j
      * loggers do not resolve. Their log calls are recognised by name, so rules see the lines they add (they used to add
      * them again on every pass), new loggers are still @Slf4j (the sources import it), apply converges in one run and

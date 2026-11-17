@@ -133,10 +133,11 @@ public final class SetupRules {
     }
 
     private void asyncLocations(OrderBuilder b) {
-        if (!ctx.a.decoratorPresent) {
+        if (!ctx.a.decoratorPresent && ctx.enabled(Rules.ASYNC_CONTEXT_LOSS)) {   // a switched-off rule is not listed (#75)
             for (MethodInfo m : ctx.a.index.methods()) {
                 if (m.decl().getLeadingAnnotations().stream()
-                        .anyMatch(an -> Annotations.is(an, "org.springframework.scheduling.annotation.Async"))) {
+                        .anyMatch(an -> Annotations.is(an, "org.springframework.scheduling.annotation.Async"))
+                        && !ctx.ignored(m.file(), m.line(), Rules.ASYNC_CONTEXT_LOSS)) {
                     b.location(m.file().relPath(), m.line(), Rules.ASYNC_CONTEXT_LOSS);
                 }
             }
