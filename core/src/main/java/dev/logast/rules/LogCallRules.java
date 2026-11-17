@@ -81,24 +81,31 @@ final class LogCallRules {
             ctx.domain.keyOf(arg).filter(k -> !inMdc.contains(k)).ifPresent(lostContext::add);
         }
         b.context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
-        if (!lostContext.isEmpty() || !lc.statement()) {
+        if (!lc.statement()) {   // not a statement of its own: logast cannot delete it
             b.suggestion(lostContext.isEmpty() ? "Remove the log statement; let the handler log it."
                     : "Not removed: the message carries " + lostContext + " which is not in MDC here. Put it into MDC "
                     + "upstream (MdcScope) or attach it to the rethrown exception, then delete this log.");
-            if (!lostContext.isEmpty() && lc.statement()) {
-                b.doneWhen(String.join(", ", lostContext) + " " + (lostContext.size() == 1 ? "is" : "are")
-                        + " in MDC here, or the line is gone");
-            }
             return false;
         }
-        // deleting it is only safe when something else logs the exception on every way it can travel (#46)
+        // deleting it is only safe when something else logs the exception on every way it can travel (#46); with
+        // context missing from MDC too, the note and done-when line name both conditions, not only the first (#85)
         String silent = silentEnd(m, thrownTypes(lc.inCatch()));
+        String carries = String.join(", ", lostContext) + " " + (lostContext.size() == 1 ? "is" : "are");
         if (silent != null) {
             b.title("Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it")
-                    .suggestion("Not removed: nothing else is known to log it on the path through " + silent + ", so this line may be "
-                    + "its only record. Log it there (or in an @ExceptionHandler), then delete this one.")
-                    .doneWhen("a catch or @ExceptionHandler logs it on the path through " + silent
-                            + "; then logast deletes this line itself. Or the line is gone");
+                    .suggestion("Not removed: " + (lostContext.isEmpty() ? "" : "the message carries " + lostContext
+                            + " which is not in MDC here, and ") + "nothing else is known to log it on the path through " + silent
+                            + ", so this line may be its only record. " + (lostContext.isEmpty() ? "Log it" : "Put the context into MDC upstream "
+                            + "(MdcScope) or attach it to the rethrown exception, and log the exception") + " there (or in an @ExceptionHandler), "
+                            + "then delete this one.")
+                    .doneWhen((lostContext.isEmpty() ? "" : carries + " in MDC here and ") + "a catch or @ExceptionHandler logs "
+                            + "it on the path through " + silent + "; then logast deletes this line itself. Or the line is gone");
+            return false;
+        }
+        if (!lostContext.isEmpty()) {
+            b.suggestion("Not removed: the message carries " + lostContext + " which is not in MDC here. Put it into MDC "
+                            + "upstream (MdcScope) or attach it to the rethrown exception, then delete this log.")
+                    .doneWhen(carries + " in MDC here (then logast deletes this line itself), or the line is gone");
             return false;
         }
         b.edit(JavaEdits.deleteStatement(m.file(), lc.call()));

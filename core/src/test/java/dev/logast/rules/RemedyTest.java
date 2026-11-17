@@ -555,8 +555,7 @@ class RemedyTest {
                         store.remove(parcelId);
                         audit.record("parcel.delete", parcelId, principal.getName());
                 """, PARCEL_AUDIT));
-        stillFires(Rules.AUDIT_FAILURES_UNRECORDED, "the audit call in a finally", "#58 c: an audit call in a finally block is not "
-                + "recognised (likely: the block's cursor parent is the JLeftPadded around it, not the J.Try)", parcelController(", Principal principal", """
+        gone(Rules.AUDIT_FAILURES_UNRECORDED, "the audit call in a finally", parcelController(", Principal principal", """
                         try {
                             store.remove(parcelId);
                         } finally {
@@ -829,8 +828,8 @@ class RemedyTest {
                     }
                 }
                 """;
-        // the transaction timeout is only checked next to a JdbcTemplate; its query timeout (an AUTO order of the same
-        // rule) is set in both, so only the transaction finding differs
+        // the JdbcTemplate's query timeout (an AUTO order of the same rule) is set in all of them, so only the
+        // transaction finding differs
         String config = """
                 spring:
                   application:
@@ -844,9 +843,35 @@ class RemedyTest {
         fires(Rules.DB_NO_TIMEOUT, before);
         gone(Rules.DB_NO_TIMEOUT, "spring.transaction.default-timeout", with(before, "src/main/resources/application.yml",
                 config + "  transaction:\n    default-timeout: 30s\n"));
-        stillFires(Rules.DB_NO_TIMEOUT, "timeout = … on the @Transactional methods", "#58 c: the note offers it, the done-when line "
-                        + "and the rule only accept the property, even when every @Transactional method has its own timeout",
+        gone(Rules.DB_NO_TIMEOUT, "timeout = … on the @Transactional methods",
                 with(before, java("ParcelService"), service.replace("TRANSACTIONAL", "Transactional(timeout = 30)")));
+        String classLevel = service.replace("@Service\n", "@Service\n@Transactional(timeout = 30)\n");
+        gone(Rules.DB_NO_TIMEOUT, "timeout = … on the class's @Transactional", with(before, java("ParcelService"),
+                classLevel.replace("    @TRANSACTIONAL\n", "")));
+        // a method's own @Transactional replaces the class's, timeout included
+        fires(Rules.DB_NO_TIMEOUT, with(before, java("ParcelService"), classLevel.replace("TRANSACTIONAL", "Transactional(readOnly = true)")));
+        // #85: not only next to a JdbcTemplate; a JPA-only service's transactions have no timeout either
+        fires(Rules.DB_NO_TIMEOUT, with(before, java("ParcelService"), """
+                package x;
+
+                import jakarta.persistence.EntityManager;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public class ParcelService {
+                    private final EntityManager em;
+
+                    public ParcelService(EntityManager em) {
+                        this.em = em;
+                    }
+
+                    @Transactional
+                    public void close(String parcelId) {
+                        em.createQuery("UPDATE Parcel p SET p.closed = TRUE WHERE p.id = :id").setParameter("id", parcelId).executeUpdate();
+                    }
+                }
+                """));
     }
 
     // ---- HTTP_CLIENT_NO_TIMEOUT, HTTP_CLIENT_UNTRACED --------------------------------------------------------------
@@ -940,16 +965,18 @@ class RemedyTest {
         String policy = PACKS + "mdc:\n  keys:\n    parcelId:\n      params: [parcelId]\n";
         Map<String, String> before = Map.of("logast.yaml", policy, java("ParcelDispatcher"), dispatcher.replace("BODY", logged));
         fires(Rules.LOG_AND_RETHROW, before);
-        assertThat(scan(before)).as("the parcelId it carries is not in MDC: report-only")
-                .anyMatch(o -> o.rule().equals(Rules.LOG_AND_RETHROW) && o.reportOnly() && o.doneWhen().startsWith("parcelId is in MDC here"));
+        // #85: the done-when line names both conditions (context in MDC, and a log on every caller path), not only the first
+        assertThat(scan(before)).as("the parcelId it carries is not in MDC, and nothing calls dispatch: report-only")
+                .anyMatch(o -> o.rule().equals(Rules.LOG_AND_RETHROW) && o.reportOnly() && o.doneWhen().startsWith(
+                        "parcelId is in MDC here and a catch or @ExceptionHandler logs it on the path through ParcelDispatcher.dispatch"));
         gone(Rules.LOG_AND_RETHROW, "the line deleted", with(before, java("ParcelDispatcher"), dispatcher.replace("BODY", """
                         send(parcelId);
                 """)));
         Map<String, String> inMdc = with(before, java("ParcelDispatcher"), dispatcher.replace("BODY",
                 "        try (MDC.MDCCloseable scope = MDC.putCloseable(\"parcelId\", parcelId)) {\n" + logged.indent(4) + "        }\n"));
-        stillFires(Rules.LOG_AND_RETHROW, "parcelId put into MDC", "#58 c: the done-when line (\"parcelId is in MDC here, or the "
-                + "line is gone\") holds, but the finding stays report-only with a new condition (a caller path that logs it), "
-                + "which the first note did not mention", inMdc);
+        assertThat(scan(inMdc)).as("with parcelId in MDC, what is left is the second condition the first line named")
+                .anyMatch(o -> o.rule().equals(Rules.LOG_AND_RETHROW) && o.reportOnly()
+                        && o.doneWhen().startsWith("a catch or @ExceptionHandler logs it on the path through ParcelDispatcher.dispatch"));
         // with that condition met too, the finding is the caller's log line logging it again, which logast deletes itself
         Map<String, String> loggedByCaller = with(inMdc, java("DispatchJob"), """
                 package x;

@@ -29,9 +29,9 @@ ASY-535b95  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e
   done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 DBT-225aab  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/resources/application.yml:1
   Transactions without a timeout: spring.transaction.default-timeout has no default, so a transaction waiting on a lock or a slow statement holds its connection indefinitely
-  why: @Transactional methods exist and no Spring configuration file sets spring.transaction.default-timeout
+  why: @Transactional methods without timeout = … exist (PledgeCleanupJob.cleanup and 1 more) and no Spring configuration file sets spring.transaction.default-timeout
   note: Decide a default (spring.transaction.default-timeout) above the longest legitimate transaction, or set timeout = … on the @Transactional methods that need one. Not applied automatically: it applies to every @Transactional, batch jobs included.
-  done when: spring.transaction.default-timeout is set in the Spring configuration
+  done when: spring.transaction.default-timeout is set in the Spring configuration, or every @Transactional method (or its class) has a timeout
 SWL-aa8bfe  medium  REPORT-ONLY  SCHEDULED_WITHOUT_LOCK  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
   2 @Scheduled job(s) without a lock: with more than one instance each runs on every instance at the same time (PledgeCleanupJob.cleanup, PledgeReloadJob.run)
   also fixes: SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:17
