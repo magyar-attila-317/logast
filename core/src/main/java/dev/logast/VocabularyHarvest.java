@@ -377,7 +377,7 @@ public final class VocabularyHarvest {
 
     private static String read(Path p) {
         try {
-            return Files.readString(p);
+            return dev.logast.parse.SourceText.read(p);
         } catch (IOException e) {
             return "";
         }

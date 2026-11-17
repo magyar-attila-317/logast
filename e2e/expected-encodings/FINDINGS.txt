@@ -1,0 +1,313 @@
+logast · 75 files · 21 entrypoints · 83/209 methods reachable · 160 call edges
+WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
+log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
+62 orders: 0 AUTO, 21 NEEDS TEXT, 41 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+glossary terms: coupon, order, agreement
+
+ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
+  CompletableFuture.runAsync runs on another thread without MDC/trace context
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+ASY-e82926  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:18  QuoteController.quote
+  CompletableFuture.supplyAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+ASY-0537b2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:19  QuoteController.quote
+  CompletableFuture.supplyAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+ASY-535b95  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:27  QuoteController.refresh
+  CompletableFuture.runAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId}/refresh → QuoteController.refresh
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+DBT-225aab  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/resources/application.yml:1
+  Transactions without a timeout: spring.transaction.default-timeout has no default, so a transaction waiting on a lock or a slow statement holds its connection indefinitely
+  note: Decide a default (spring.transaction.default-timeout) above the longest legitimate transaction, or set timeout = … on the @Transactional methods that need one. Not applied automatically: it applies to every @Transactional, batch jobs included.
+SWL-aa8bfe  medium  REPORT-ONLY  SCHEDULED_WITHOUT_LOCK  src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:22
+  2 @Scheduled job(s) without a lock: with more than one instance each runs on every instance at the same time (CouponCleanupJob.cleanup, CouponReloadJob.run)
+  also fixes: SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/coupon/CouponReloadJob.java:17
+  note: Add a lock that keeps a run to one instance (ShedLock: @SchedulerLock(name = …) with a LockProvider), or set resilience.singleInstance: true in logast.yaml if the service never runs more than once.
+RBR-21df7c  medium  REPORT-ONLY  ROW_BY_ROW_WRITE  src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:25  CouponCleanupJob.cleanup
+  Loop over 'repository.findOpen()' writes one row per item (CouponRepository.close): the whole result is held in memory and N items mean N statements
+  path: @Scheduled CouponCleanupJob.cleanup → CouponCleanupJob.cleanup
+  note: One bulk statement (UPDATE … WHERE …) or paging with batch updates scales with the data. Report only: logast does not change data access.
+LAR-fd8fcd  medium  REPORT-ONLY  LOG_AND_RETHROW  src/main/java/com/example/e2e/coupon/CouponLookup.java:22  CouponLookup.find
+  Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it
+  path: GET /coupons/{couponId}/details → CouponDetailsController.details → CouponLookup.find  (+1 more)
+  note: Not removed: nothing else is known to log it on the path through @ExceptionHandler CouponErrors.missing (maps it without logging), so this line may be its only record. Log it there (or in an @ExceptionHandler), then delete this one.
+ARI-dacf62  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/coupon/CouponService.java:26  CouponService.delete
+  The audit record record(…) in CouponService.delete does not say who did it
+  path: DELETE /coupons/{couponId} → CouponController.delete → CouponService.delete
+  note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
+ARI-f6864c  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/edge/EdgeFlow.java:42  EdgeFlow.process
+  The audit record audit(…) in EdgeFlow.process does not say who did it
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
+  note: Pass the acting user (from the security context: SecurityContextHolder / the authenticated principal), or let the audit method read it itself. A record without them proves nothing.
+LHL-77ee4d  medium  REPORT-ONLY  LOG_HELPER  src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13  EdgeLogHelper.info
+  Log helper EdgeLogHelper.info writes log lines for 1 call site(s): the message, level and logger are invisible where the event happens
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeLogHelper.info
+  also fixes: LOG_HELPER src/main/java/com/example/e2e/edge/EdgeFlow.java:43
+  note: Inline it: an explicit log statement at each call site with domain wording, e.g. log.debug("Coupon income entities prepared [count={}]", entities.size()). Keep a helper only for verified cross-cutting behaviour (redaction, alert contract, sink adaptation).
+KEH-b1f2de  medium  REPORT-ONLY  KAFKA_NO_ERROR_HANDLER  src/main/java/com/example/e2e/messaging/CouponMessages.java:19
+  Kafka listeners on the default error handling: a failing record is retried 9 times without delay, then logged and skipped (lost)
+  also fixes: KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/order/OrderEvents.java:15
+  note: Declare a CommonErrorHandler bean (Spring Boot wires it into the listener containers): new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate), new ExponentialBackOff(1000, 2)) sends records that still fail to <topic>-dlt; or use @RetryableTopic per listener.
+SWA-91b292  medium  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/e2e/order/LoyaltyClient.java:20  LoyaltyClient.balance
+  Exception is caught and dropped without a log line in LoyaltyClient.balance (falls back silently)
+  + log.warn("{{MSG}}"{{ARGS}}, e);
+  (+2 more edits)
+  MSG: What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri("/balances/{customerId}", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as '{subject} failed'
+  mdc: []  vars: customerId:String, e:Exception
+CAD-265862  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:21  LoyaltyClient.balance
+  catch (Exception) returns 0L: the caller cannot tell a failure from an empty result
+  note: Let the exception through (or wrap it), catch only the exceptions that really mean "nothing there", or return a result type that carries the failure.
+RCT-2df7d7  medium  REPORT-ONLY  REMOTE_CALL_IN_TRANSACTION  src/main/java/com/example/e2e/order/OrderService.java:26  OrderService.placeAndReward
+  OrderService.placeAndReward is @Transactional and calls a remote service inside the transaction: OrderService.placeAndReward → LoyaltyClient.award → RestClient.post. The database connection is held while the network call waits
+  note: Move the call out of the transaction (before it, or after commit: TransactionSynchronization / @TransactionalEventListener / an outbox), or make the transaction only cover the database work.
+LAR-277884  medium  REPORT-ONLY  LOG_AND_RETHROW  src/main/java/com/example/e2e/order/PaymentClient.java:18  PaymentClient.charge
+  Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it
+  path: POST /orders → CouponController.place → OrderService.place → PaymentClient.charge
+  note: Not removed: nothing else is known to log it on the path through OrderService.ship (no caller in the code), so this line may be its only record. Log it there (or in an @ExceptionHandler), then delete this one.
+CDR-2c546b  medium  REPORT-ONLY  CAUSE_DROPPED  src/main/java/com/example/e2e/order/PaymentClient.java:38  PaymentClient.verify
+  catch (IllegalStateException e) throws a new OrderRejected without e as its cause: the original stack trace is lost
+  note: Pass e as the cause: add a constructor (…, Throwable cause) to OrderRejected, or call initCause(e) before throwing.
+UMX-665400  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e2e/order/PaymentException.java:3
+  PaymentException is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it: the client gets a 500
+  also fixes: UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentClient.java:19
+  note: Decide its status: @ResponseStatus(HttpStatus.CONFLICT) on the class, or an @ExceptionHandler returning a ProblemDetail (with a stable error code) in the controller advice.
+AFU-a566e5  medium  REPORT-ONLY  AUDIT_FAILURES_UNRECORDED  src/main/java/com/example/e2e/web/CouponController.java:48  CouponController.delete
+  DELETE /coupons/{couponId} records an audit event only when it succeeds: a rejected or failed attempt leaves no record (DELETE **)
+  path: DELETE /coupons/{couponId} → CouponController.delete
+  note: Record the attempt's outcome either way: an audit call in a catch (with the failure) or in a finally (with the outcome), or record the attempt before the work starts.
+DOM-a2969a  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/CouponController.java:55  CouponController.revoke
+  POST /admin/coupons/{couponId}/revoke: MDC lacks couponId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
+  path: POST /admin/coupons/{couponId}/revoke → CouponController.revoke
+  - coupons.revoke(couponId, userId);
+  + try (var mdc = MdcScope.of("couponId", couponId)) {
+  + log.info("{{MSG}}");
+  + coupons.revoke(couponId, userId);
+  + … (4 lines)
+  (+2 more edits)
+  MSG: Entry log for POST /admin/coupons/{couponId}/revoke (CouponController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
+DOM-1a500b  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/CouponDetailsController.java:27  CouponDetailsController.hold
+  POST /coupons/{couponId}/hold: MDC lacks couponId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
+  path: POST /coupons/{couponId}/hold → CouponDetailsController.hold
+  - lookup.find(couponId.value());
+  + try (var mdc = MdcScope.of("couponId", couponId.value())) {
+  + log.info("{{MSG}}");
+  + lookup.find(couponId.value());
+  + … (4 lines)
+  (+2 more edits)
+  MSG: Entry log for POST /coupons/{couponId}/hold (CouponDetailsController.hold): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
+BWU-5fc605  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:20  QuoteController.quote
+  CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
+BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:20  QuoteController.quote
+  CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
+ALM-f2e935  low  REPORT-ONLY  AUDIT_LOG_MIXED  src/main/java/com/example/e2e/audit/AuditLog.java:8
+  AuditLog writes audit records and diagnostics through one logger: routed apart, the diagnostics would leave the application log; mixed, the records do
+  note: Give the records their own logger (private static final Logger AUDIT = LoggerFactory.getLogger("audit")) and keep the class logger for the diagnostics: checkCapacity (WARN).
+SUG-bc8896  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:23  CouponCleanupJob.cleanup
+  Generated wording "Coupon cleanup started": say it in domain terms
+  path: @Scheduled CouponCleanupJob.cleanup → CouponCleanupJob.cleanup
+  - "Coupon cleanup started"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Coupon cleanup started" | must read as '{subject} started'
+SUG-44443e  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:29  CouponCleanupJob.cleanup
+  Generated wording "Coupon cleanup completed [couponCount={}]": say it in domain terms
+  path: @Scheduled CouponCleanupJob.cleanup → CouponCleanupJob.cleanup
+  - "Coupon cleanup completed [couponCount={}]"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Coupon cleanup completed" | suffix keys: [couponCount] | must read as '{subject} completed'
+SUG-a4b461  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/coupon/CouponReloadJob.java:18  CouponReloadJob.run
+  Generated wording "Coupon reload started": say it in domain terms
+  path: @Scheduled CouponReloadJob.run → CouponReloadJob.run
+  - "Coupon reload started"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Coupon reload started" | must read as '{subject} started'
+SUG-dd88b2  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/coupon/CouponReloadJob.java:20  CouponReloadJob.run
+  Generated wording "Coupon reload completed": say it in domain terms
+  path: @Scheduled CouponReloadJob.run → CouponReloadJob.run
+  - "Coupon reload completed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Coupon reload completed" | must read as '{subject} completed'
+SUG-d99e11  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/coupon/CouponRepository.java:27  CouponRepository.close
+  Generated wording "Coupons updated [rows={}]": say it in domain terms
+  path: @Scheduled CouponCleanupJob.cleanup → CouponCleanupJob.cleanup → CouponRepository.close  (+2 more)
+  - "Coupons updated [rows={}]"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: "Coupons updated" | suffix keys: [rows]
+OUM-03f513  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/coupon/CouponRepository.java:33  CouponRepository.countUse
+  "Coupon usage saved" is logged but not counted (outcome=saved, frequency unknown: no rate for "POST /coupons/{couponId}/use" in .logast/traffic.yaml)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon.usage", "saved")), "tag" (Outcomes.tag("saved") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+SUG-3b5d90  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/coupon/CouponRepository.java:33  CouponRepository.countUse
+  Generated wording "Coupon usage saved [uses={}]": say it in domain terms
+  path: POST /coupons/{couponId}/use → CouponController.use → CouponRepository.countUse
+  - "Coupon usage saved [uses={}]"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: "Coupon usage saved" | suffix keys: [uses]
+SUG-56cdac  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/coupon/CouponRepository.java:39  CouponRepository.findOpen
+  Generated wording "Coupons read [count={}]": say it in domain terms
+  path: @Scheduled CouponCleanupJob.cleanup → CouponCleanupJob.cleanup → CouponRepository.findOpen  (+1 more)
+  - "Coupons read [count={}]"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: "Coupons read" | suffix keys: [count]
+OUM-027987  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/coupon/CouponSender.java:14  CouponSender.send
+  "Coupon sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /coupons/redeem" in .logast/traffic.yaml)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon", "sent")), "tag" (Outcomes.tag("sent") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+MVG-53c6bf  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/coupon/CouponService.java:41  CouponService.publish
+  Vague message "Publishing coupon": it does not say what started, completed or failed
+  path: POST /coupons/{couponId}/publish → CouponController.publish → CouponService.publish
+  note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Coupon income invoice publication completed [count={}]".
+OUM-773d35  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/coupon/CouponService.java:44  CouponService.publish
+  "Coupon published" is logged but not counted (outcome=published, frequency unknown: no rate for "POST /coupons/{couponId}/publish" in .logast/traffic.yaml)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon", "published")), "tag" (Outcomes.tag("published") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+OUM-4809f0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/coupon/CouponService.java:51  CouponService.redeem
+  "Coupon redemption completed" is logged but not counted (outcome=completed, frequency unknown: no rate for "POST /coupons/redeem" in .logast/traffic.yaml)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon.redemption", "completed")), "tag" (Outcomes.tag("completed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+OUM-49d3bd  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/Audited.java:11  Audited.audit
+  "Coupon audited" is logged but not counted (outcome=audited, frequency low)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon", "audited")), "tag" (Outcomes.tag("audited") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+OUM-3c3200  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:45  EdgeFlow.process
+  "Coupon archived" is logged but not counted (outcome=archived, frequency low)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon", "archived")), "tag" (Outcomes.tag("archived") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+OUM-bb1ac8  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:48  EdgeFlow.process
+  "Edge flow async work failed" is logged but not counted (outcome=failed, frequency low)
+  note: The log line runs inside a lambda, only under a condition: a counting line after the statement would count every run; count it inside the lambda, next to the log line, or mark it skip. Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("edge.flow.async.work", "failed")), "tag" (Outcomes.tag("failed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+SUG-6b173f  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/edge/EdgeFlow.java:48  EdgeFlow.process
+  Generated wording "Edge flow async work failed": say it in domain terms
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
+  - "Edge flow async work failed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: "Edge flow async work failed" | must read as '{subject} failed'
+OUM-be530b  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:51  EdgeFlow.process
+  "Coupon parsed" is logged but not counted (outcome=parsed, frequency low)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon", "parsed")), "tag" (Outcomes.tag("parsed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+MVG-9330c1  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/edge/EdgeFlow.java:60  EdgeFlow.publishOne
+  Vague message "Publishing coupon": it does not say what started, completed or failed
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeFlow.publishOne
+  note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Coupon income invoice publication completed [count={}]".
+SUG-2f8476  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/edge/EdgeJob.java:23  EdgeJob.run
+  Generated wording "Edge started": say it in domain terms
+  path: @Scheduled EdgeJob.run → EdgeJob.run
+  - "Edge started"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Edge started" | must read as '{subject} started'
+SUG-bd5779  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/edge/EdgeJob.java:28  EdgeJob.run
+  Generated wording "Edge completed [salesTotalsCount={}]": say it in domain terms
+  path: @Scheduled EdgeJob.run → EdgeJob.run
+  - "Edge completed [salesTotalsCount={}]"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Edge completed" | suffix keys: [salesTotalsCount] | must read as '{subject} completed'
+SUG-a2a43c  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/job/CalculationJob.java:15  CalculationJob.doExecute
+  Generated wording "Calculation started": say it in domain terms
+  path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → CalculationJob.doExecute
+  - "Calculation started"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Calculation started" | must read as '{subject} started'
+SUG-4dc17a  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/job/ExportJob.java:13  ExportJob.doExecute
+  Generated wording "Export job started": say it in domain terms
+  path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → ExportJob.doExecute
+  - "Export job started"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Export job started" | must read as '{subject} started'
+SUG-7055a3  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/job/ExportJob.java:14  ExportJob.doExecute
+  Generated wording "Export job completed": say it in domain terms
+  path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → ExportJob.doExecute
+  - "Export job completed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Export job completed" | must read as '{subject} completed'
+MVG-c21d8c  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:21  PublishRunJob.doRun
+  Vague message "Publishing started": it does not say what started, completed or failed
+  path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
+  note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Coupon income invoice publication completed [count={}]".
+MVG-35393e  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:25  PublishRunJob.doRun
+  Vague message "Publishing batch": it does not say what started, completed or failed
+  path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
+  note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Coupon income invoice publication completed [count={}]".
+MVG-340194  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:27  PublishRunJob.doRun
+  Vague message "Publishing completed": it does not say what started, completed or failed
+  path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun
+  note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Coupon income invoice publication completed [count={}]".
+MVG-4a4ce2  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/PublishRunJob.java:33  PublishRunJob.notifyDone
+  Vague message "Publishing notified": it does not say what started, completed or failed
+  path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → BaseRunJob.doExecute → PublishRunJob.doRun → PublishRunJob.notifyDone
+  note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Coupon income invoice publication completed [count={}]".
+SUG-1fede7  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/messaging/CouponMessages.java:31  CouponMessages.onReturn
+  Generated wording "Coupon messages completed": say it in domain terms
+  path: @RabbitListener coupon-returns → CouponMessages.onReturn
+  - "Coupon messages completed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Coupon messages completed" | must read as '{subject} completed'
+SUG-15854c  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/messaging/CouponMessages.java:40  CouponMessages.onAudit
+  Generated wording "Coupon messages completed": say it in domain terms
+  path: @JmsListener coupon-audits → CouponMessages.onAudit
+  - "Coupon messages completed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Coupon messages completed" | must read as '{subject} completed'
+OUM-4284aa  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/messaging/ReactiveCouponLookup.java:17  ReactiveCouponLookup.find
+  "Coupon lookup failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
+  note: The log line is part of a return/throw statement: a counting line after it would never run; count it where it happens (inside the lambda) or mark it skip. Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon.lookup", "failed")) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+OUM-0f37ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderNotifications.java:17  OrderNotifications.onPlaced
+  "Order confirmation sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /orders" in .logast/traffic.yaml)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("order.confirmation", "sent")), "tag" (Outcomes.tag("sent") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+SUG-85eb33  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/order/OrderNotifications.java:28  OrderNotifications.onCommitted
+  Generated wording "Order notifications completed": say it in domain terms
+  path: @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced) → OrderNotifications.onCommitted
+  - "Order notifications completed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Order notifications completed" | must read as '{subject} completed'
+DCU-db43f0  low  REPORT-ONLY  DATA_CHANGES_UNAUDITED  src/main/java/com/example/e2e/order/OrderRecord.java:6
+  OrderRecord is changed through a Spring Data repository, but nothing records who last changed it
+  note: Add @LastModifiedBy (and @CreatedBy, @LastModifiedDate) fields and enable auditing (@EnableJpaAuditing / @EnableJdbcAuditing with an AuditorAware bean that reads the current user).
+OUM-d691d7  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderService.java:37  OrderService.place
+  "Order placed" is logged but not counted (outcome=placed, frequency unknown: no rate for "POST /orders" in .logast/traffic.yaml)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("order", "placed")), "tag" (Outcomes.tag("placed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+OUM-00f4c0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderService.java:48  OrderService.ship
+  "Orders shipped" is logged but not counted (outcome=shipped, frequency unknown: no entrypoint is known to reach it)
+  note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("orders", "shipped")) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+FMT-93dcb8  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/order/PaymentClient.java:15  PaymentClient.charge
+  DEBUG log: not in 'Text [k=v]' format or repeats MDC values
+  path: POST /orders → CouponController.place → OrderService.place → PaymentClient.charge
+  - "Charging order {} with {} cents", order.id(), order.amountCents()
+  + "{{MSG}}", order.amountCents(){{ARGS}}
+  MSG: Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: "Charging order with {} cents" | suffix keys: [amountCents]
+  mdc: [orderId]  vars: order:Order, mdc:MdcScope
+SUG-08dd18  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/web/QuoteController.java:30  QuoteController.refresh
+  Generated wording "Quote controller async work failed": say it in domain terms
+  path: GET /quotes/{productId}/refresh → QuoteController.refresh
+  - "Quote controller async work failed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: "Quote controller async work failed" | must read as '{subject} failed'
+PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/application.yml:1
+  Spring MVC errors (400 bad input, 405, 415, ...) are not RFC 9457 ProblemDetail responses: every service answers them in its own shape
+  note: Set spring.mvc.problemdetails.enabled: true (or extend ResponseEntityExceptionHandler in the controller advice). Not applied automatically: it changes the error body API clients see.
+
+fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
+
+Next steps
+  1. write "MSG" texts in .logast/fills.json             21 log lines need wording only a person knows
+  2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
+  3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
+  4. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  5. logast scan . --format summary                      29 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
