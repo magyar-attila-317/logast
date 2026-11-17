@@ -18,7 +18,8 @@ import java.util.*;
  * snapshot would happily keep.
  * <ul>
  *   <li>a value MDC carries is not logged again in the message ([couponId={}] below a couponId scope);</li>
- *   <li>no scope for a key that is already in MDC on entry (nested scope);</li>
+ *   <li>no scope for a key that is already in MDC on entry with the same value (nested scope); a scope with a value
+ *       derived from it is a reported decision, not a broken result (#79);</li>
  *   <li>at most one INFO "started" and one INFO "completed" line per method.</li>
  * </ul>
  */
@@ -66,7 +67,8 @@ public final class Invariants {
             });
             Set<String> onEntry = paths.mdcAtEntry(m);
             for (MdcOp op : m.facts().mdc) {
-                if (op.kind() == MdcOp.Kind.PUT_CLOSEABLE && op.key() != null && onEntry.contains(op.key())) {
+                if (op.kind() == MdcOp.Kind.PUT_CLOSEABLE && op.key() != null && onEntry.contains(op.key())
+                        && dev.logast.rules.Rules.nestedScopeRepeatsCallerValue(a, m, op)) {
                     out.add(file + ":" + Pos.line(op.call()) + "  scopes " + op.key() + " although it is in MDC already (nested scope)");
                 }
             }

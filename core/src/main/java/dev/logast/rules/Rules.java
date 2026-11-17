@@ -208,6 +208,14 @@ public final class Rules {
         return policy.ruleEnabled(rule) && packsOf(rule).stream().anyMatch(policy::packSelected);
     }
 
+    /**
+     * A scope of {@code op}'s key in {@code m} sets provably the value the caller already scoped, so MDC_NESTED_KEY
+     * unwraps it; a derived value is only reported (#79).
+     */
+    public static boolean nestedScopeRepeatsCallerValue(dev.logast.Analysis a, dev.logast.model.MethodInfo m, dev.logast.model.MdcOp op) {
+        return op.key() != null && MdcRules.valueOf(op) != null && MdcRules.repeatsCallerValue(a, m, op.key(), MdcRules.valueOf(op));
+    }
+
     private static final Map<String, String> SEVERITY = Map.ofEntries(
             Map.entry(SWALLOWED_EXCEPTION, "high"), Map.entry(PII_IN_LOG, "high"), Map.entry(ASYNC_CONTEXT_LOSS, "high"),
             Map.entry(SETUP_SUPPORT_STARTER, "high"), Map.entry(SETUP_OTEL_STARTER, "high"),
