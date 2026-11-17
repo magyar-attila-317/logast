@@ -276,7 +276,14 @@ final class LogArgumentRules {
         if (root != null) {
             sized = m.file().slice(Pos.start(root), Pos.end(root)) + ".size()";   // lines.stream().map(..).toList() -> lines.size()
         }
-        if (simple) {
+        String already = simple ? alreadyLogged(m, lc, arg, sized) : null;
+        if (already != null) {
+            // "{} keys ...: {}", keys.size(), keys: the count is already there; a second one loses what the message says
+            b.suggestion("The call already logs its size (" + Text.oneLine(already, 40) + "): replacing '" + Text.oneLine(src, 40)
+                    + "' with it would log the same count twice. Reword the message so it keeps its meaning without the whole "
+                    + "collection (drop it, or log the individual ids at DEBUG where they are handled). Call: "
+                    + Text.oneLine(lc.call().printTrimmed(), 200));
+        } else if (simple) {
             b.edit(Edit.replace(m.file().relPath(), Pos.start(arg), Pos.end(arg), sized))
                     .suggestion("Logs its size; log individual ids at DEBUG inside the loop that handles them if needed.");
             // "[pledgeIds={}]" names the collection: the value is now a count, so is the key
@@ -295,6 +302,20 @@ final class LogArgumentRules {
         } else {
             b.suggestion("Log its size (" + src + size + ") instead.");
         }
+    }
+
+    /** Another argument of the call that prints as {@code sized} (same receiver text): the count is already logged. */
+    private static String alreadyLogged(MethodInfo m, LogCall lc, Expression arg, String sized) {
+        String wanted = sized.replaceAll("\\s+", "");
+        for (Expression other : lc.args()) {
+            if (other != arg) {
+                String text = m.file().slice(Pos.start(other), Pos.end(other));
+                if (text.replaceAll("\\s+", "").equals(wanted)) {
+                    return text;
+                }
+            }
+        }
+        return null;
     }
 
     /** {@code xs.stream().map(..).toList()}: same count as {@code xs} (no filter/distinct/limit). */
