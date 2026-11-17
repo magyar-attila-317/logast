@@ -136,7 +136,14 @@ final class EntrypointRules {
             ctx.dependOnStarter(b);
         } else {
             replacement = null;
-            b.edit(Edit.insert(f.relPath(), inner[0], indent + top));
+            // inside the MDC scopes the body opens with, so the started line carries their keys (#12)
+            J.Block at = startBlock(m);
+            int[] atInner = JavaEdits.blockInner(text, at);
+            if (atInner == null) {
+                at = m.decl().getBody();
+                atInner = inner;
+            }
+            b.edit(Edit.insert(f.relPath(), atInner[0], Text.indentAt(text, Pos.start(at)) + unit + top));
         }
         if (replacement != null) {
             ctx.wrappedMethods.add(m.key());
@@ -148,6 +155,25 @@ final class EntrypointRules {
             ctx.plannedEntryKeys.put(m.key(), new TreeSet<>(missing.stream().map(DomainValues.Value::key).toList()));
             ctx.entryOrders.put(m.key(), b.id());
         }
+    }
+
+    /**
+     * The block a started line goes into: the body, or the body of the MDC scope it opens with ({@code try (var mdc =
+     * MdcScope.of(..))} / {@code MDC.putCloseable}, nested ones too), so the line logs with the keys the method sets.
+     */
+    private static J.Block startBlock(MethodInfo m) {
+        J.Block block = m.decl().getBody();
+        while (!block.getStatements().isEmpty() && block.getStatements().getFirst() instanceof J.Try t && t.getResources() != null
+                && !t.getResources().isEmpty() && t.getResources().stream().allMatch(r -> mdcScope(m, r))) {
+            block = t.getBody();
+        }
+        return block;
+    }
+
+    private static boolean mdcScope(MethodInfo m, J.Try.Resource r) {
+        return r.getVariableDeclarations() instanceof J.VariableDeclarations vd && vd.getVariables().size() == 1
+                && m.facts().mdc.stream().anyMatch(op -> op.kind() == dev.logast.model.MdcOp.Kind.PUT_CLOSEABLE
+                && op.call() == vd.getVariables().getFirst().getInitializer());
     }
 
     /**
