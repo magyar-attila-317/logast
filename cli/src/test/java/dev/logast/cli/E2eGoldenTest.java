@@ -396,6 +396,210 @@ class E2eGoldenTest {
     }
 
     /**
+     * MDC placement settles in pass 1. #78: a callee re-puts a key its caller already scopes, with a value derived from
+     * it (not the source parameter), next to a remove, a finally remove, inside a try/finally, and under a caller scope
+     * MISSING_DOMAIN_MDC adds in the same run: MDC_NOT_CLOSEABLE rewrites it in the structure step and MDC_NESTED_KEY
+     * unwraps it in the MDC step, both in pass 1. #12: the started line ENTRYPOINT_SILENT adds goes inside the MDC
+     * scope the method opens with (a put/remove, a putCloseable, a domain scope), so it carries the key; a scope that
+     * starts later in the method stays below it. Every file must equal e2e/expected-mdc-placement.
+     */
+    @Test
+    void mdcPlacementSettlesInOnePass() throws IOException {
+        Path app = tmp.resolve("app");
+        migrate(app, CLASSPATH, a -> {
+            Path yml = a.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replace("vocabulary:\n", """
+                    vocabulary:
+                      locker:
+                        mdc:
+                          key: lockerCode
+                          sources:
+                            params: [lockerCode]
+                    """));
+            Path dir = a.resolve("src/main/java/com/example/e2e/locker");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("LockerSweepJob.java"), """
+                    package com.example.e2e.locker;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+                    import org.springframework.scheduling.annotation.Scheduled;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class LockerSweepJob {
+                        private static final Logger log = LoggerFactory.getLogger(LockerSweepJob.class);
+
+                        @Scheduled(fixedDelay = 60000)
+                        public void sweep() {
+                            process(nextLocker());
+                        }
+
+                        void process(String lockerCode) {
+                            try (var mdc = MDC.putCloseable("lockerCode", lockerCode)) {
+                                rotate(lockerCode);
+                                relabel(lockerCode);
+                                inspect(lockerCode);
+                            }
+                        }
+
+                        void rotate(String lockerCode) {
+                            String slot = lockerCode.toUpperCase();
+                            MDC.put("lockerCode", slot);
+                            try {
+                                log.info("Locker slot rotated");
+                            } finally {
+                                MDC.remove("lockerCode");
+                            }
+                        }
+
+                        void relabel(String lockerCode) {
+                            MDC.put("lockerCode", lockerCode.strip());
+                            log.info("Locker relabelled");
+                            MDC.remove("lockerCode");
+                        }
+
+                        void inspect(String lockerCode) {
+                            try {
+                                MDC.put("lockerCode", "L-" + lockerCode);
+                                log.info("Locker inspected");
+                            } finally {
+                                MDC.remove("lockerCode");
+                            }
+                        }
+
+                        private String nextLocker() {
+                            return "L1";
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("LockerStore.java"), """
+                    package com.example.e2e.locker;
+
+                    import java.util.HashSet;
+                    import java.util.Set;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class LockerStore {
+                        private final Set<String> open = new HashSet<>();
+
+                        public void open(String lockerCode) {
+                            open.add(lockerCode);
+                        }
+
+                        public void close(String lockerCode) {
+                            open.remove(lockerCode);
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("LockerTidier.java"), """
+                    package com.example.e2e.locker;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class LockerTidier {
+                        private static final Logger log = LoggerFactory.getLogger(LockerTidier.class);
+
+                        public void tidy(String lockerCode) {
+                            MDC.put("lockerCode", lockerCode.trim());
+                            try {
+                                log.info("Locker tidied");
+                            } finally {
+                                MDC.remove("lockerCode");
+                            }
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("LockerController.java"), """
+                    package com.example.e2e.locker;
+
+                    import org.slf4j.MDC;
+                    import org.springframework.web.bind.annotation.PathVariable;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    public class LockerController {
+                        private final LockerStore store;
+                        private final LockerTidier tidier;
+
+                        public LockerController(LockerStore store, LockerTidier tidier) {
+                            this.store = store;
+                            this.tidier = tidier;
+                        }
+
+                        @PostMapping("/lockers/{lockerCode}/tidy")
+                        public void tidy(@PathVariable String lockerCode) {
+                            tidier.tidy(lockerCode);
+                        }
+
+                        @PostMapping("/lockers/{lockerCode}/open")
+                        public void open(@PathVariable String lockerCode) {
+                            store.open(lockerCode);
+                        }
+
+                        @PostMapping("/lockers/{lockerCode}/close")
+                        public void close(@PathVariable String lockerCode) {
+                            MDC.put("lockerCode", lockerCode);
+                            try {
+                                store.close(lockerCode);
+                            } finally {
+                                MDC.remove("lockerCode");
+                            }
+                        }
+
+                        @PostMapping("/lockers/{lockerCode}/reopen")
+                        public void reopen(@PathVariable String lockerCode) {
+                            try (var mdc = MDC.putCloseable("lockerCode", lockerCode)) {
+                                store.open(lockerCode);
+                            }
+                        }
+
+                        @PostMapping("/lockers/{lockerCode}/swap")
+                        public void swap(@PathVariable String lockerCode, String otherCode) {
+                            store.close(lockerCode);
+                            MDC.put("lockerCode", otherCode);
+                            try {
+                                store.open(otherCode);
+                            } finally {
+                                MDC.remove("lockerCode");
+                            }
+                        }
+                    }
+                    """);
+        });
+        // the started lines of the controller are written and applied: each lands inside the MDC scope its method opens with
+        Path fills = app.resolve(".logast/fills.json");
+        String f = Files.readString(fills);
+        String filled = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*\"_MSG\" : \"Entry log for [^\"]*\",\\s*"
+                + "\"_where\" : \"src/main/java/com/example/e2e/locker/LockerController)").matcher(f).replaceAll("\"MSG\" : \"Locker change started\",$1");
+        assertThat(filled).as("fills.json asks for the controller's started lines").isNotEqualTo(f);
+        Files.writeString(fills, filled);
+        String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        String trace = Files.readString(app.resolve(".logast/apply-trace.txt"));
+        assertThat(trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "")
+                .as("pass 2 applies nothing:\n" + trace).doesNotContain("applying");
+        String fourth = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(third + fourth).doesNotContain("CHECK FAILED");
+        assertThat(fourth).as("a further apply changes nothing").contains("applied (0):").contains("files (0):");
+        Files.writeString(app.resolve("OUTPUT.txt"), Files.readString(app.resolve("OUTPUT.txt"))
+                + "\n=== after writing the controller's started lines\n" + third);
+        compile(app);
+        Map<String, String> actual = files(app);
+        String controller = actual.get("src/main/java/com/example/e2e/locker/LockerController.java");
+        assertThat(controller).as("#12: the started line is inside the scope the method opens with")
+                .contains("try (var mdc = MdcScope.of(\"lockerCode\", lockerCode)) {\n            log.info(\"Locker change started\");")
+                .doesNotContain("{\n        log.info(\"Locker change started\");\n        try (var mdc");
+        golden(EXPECTED.resolveSibling("expected-mdc-placement"), actual);
+    }
+
+    /**
      * Lombok not on logast's classpath (missing from a copied classpath; the service still compiles with it): @Slf4j
      * loggers do not resolve. Their log calls are recognised by name, so rules see the lines they add (they used to add
      * them again on every pass), new loggers are still @Slf4j (the sources import it), apply converges in one run and

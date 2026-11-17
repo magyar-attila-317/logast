@@ -1,0 +1,16 @@
+diff --git a/src/main/java/com/example/e2e/locker/LockerController.java b/src/main/java/com/example/e2e/locker/LockerController.java
+index da0d0b3..0805fb8 100644
+--- a/src/main/java/com/example/e2e/locker/LockerController.java
++++ b/src/main/java/com/example/e2e/locker/LockerController.java
+@@ -26,7 +26,10 @@ 
+ 
+     @PostMapping("/lockers/{lockerCode}/open")
+     public void open(@PathVariable String lockerCode) {
+-        store.open(lockerCode);
++        try (var mdc = MdcScope.of("lockerCode", lockerCode)) {
++            log.info("Locker change started");
++            store.open(lockerCode);
++        }
+     }
+ 
+     @PostMapping("/lockers/{lockerCode}/close")
