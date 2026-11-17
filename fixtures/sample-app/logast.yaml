@@ -31,6 +31,11 @@ areas:
 levels:
   noInfoInLoops: true
 packs: [logging, tracing, metrics, resilience, errors, audit]
+metrics:
+  tags:
+    outcome:
+      aliases: [result, success, succeeded]
+      values: [success, failure]   # METRIC_TAG_VALUE
 logging:
   keyStyle: dotted               # the fixture tests the dotted spelling; camel is the default
   protectedMessages: ["^ALERT:"]

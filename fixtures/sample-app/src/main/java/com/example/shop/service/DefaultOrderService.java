@@ -9,6 +9,7 @@ import com.example.shop.repository.OrderRepository;
 import com.example.shop.web.CreateOrderRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -48,11 +49,14 @@ public class DefaultOrderService implements OrderService {
 
     @Override
     public void cancel(String orderId) {
-        repository.find(orderId).ifPresent(order -> {
-            paymentClient.refund(orderId);
-            repository.delete(orderId);
-            log.info("Cancelled order {}", orderId); // expect: LOG_FORMAT
-        });
+        // the only caller (OrderController.cancel) has order.id in MDC already: a second owner of the key
+        try (var scope = MDC.putCloseable("order.id", orderId)) { // expect: MDC_NESTED_KEY
+            repository.find(orderId).ifPresent(order -> {
+                paymentClient.refund(orderId);
+                repository.delete(orderId);
+                log.info("Cancelled order {}", orderId); // expect: LOG_FORMAT // expect-not: GLOSSARY_VIOLATION
+            });
+        }
     }
 
     private void validateLine(OrderLine line) {

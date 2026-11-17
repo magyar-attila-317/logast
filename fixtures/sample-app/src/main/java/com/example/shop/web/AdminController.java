@@ -25,7 +25,7 @@ public class AdminController {
     }
 
     @PostMapping("/customers/{customerId}/reset")
-    public void resetCustomer(@PathVariable String customerId) { // expect: MISSING_DOMAIN_MDC
+    public void resetCustomer(@PathVariable String customerId) { // expect: MISSING_DOMAIN_MDC // expect-not: AUDIT_MISSING
         auditTrail.record("customer.reset", customerId); // expect: AUDIT_RECORD_INCOMPLETE
     }
 

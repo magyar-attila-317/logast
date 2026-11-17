@@ -29,7 +29,7 @@ public class PaymentClient {
         try {
             gateway.refund(orderId);
         } catch (IllegalStateException e) {
-            log.warn("Refund failed for order {}", orderId); // expect: LOST_THROWABLE, LOG_FORMAT
+            log.warn("Refund failed for order {}", orderId); // expect: LOST_THROWABLE, LOG_FORMAT // expect-not: AREA_MDC_MISSING
         }
     }
 }

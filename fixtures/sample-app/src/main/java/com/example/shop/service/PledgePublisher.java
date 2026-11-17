@@ -26,7 +26,7 @@ public class PledgePublisher {
     }
 
     public void reserve(String orderId) {
-        try (var ignored = MDC.putCloseable("order.id", orderId)) {
+        try (var ignored = MDC.putCloseable("order.id", orderId)) { // expect-not: MDC_KEY_ALIAS, MDC_NESTED_KEY, MDC_CLEAR
             log.atInfo().addKeyValue("order.id", orderId).log("Pledge reserved"); // expect: LOG_KEY_VALUE_IN_MDC, METRIC_OUTCOME_UNMEASURED
         }
     }

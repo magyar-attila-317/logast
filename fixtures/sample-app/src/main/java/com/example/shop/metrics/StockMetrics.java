@@ -16,7 +16,7 @@ public class StockMetrics {
 
     public StockMetrics(MeterRegistry registry) {
         this.registry = registry;
-        this.pending = registry.gauge("stock.pending", new AtomicInteger());   // kept in a field: fine
+        this.pending = registry.gauge("stock.pending", new AtomicInteger());   // kept in a field: fine // expect-not: METRIC_GAUGE_WEAK_REF
     }
 
     public void reserved(String channel) {
@@ -30,8 +30,12 @@ public class StockMetrics {
 
     public void restocked(List<String> skus) {
         for (String sku : skus) {
-            registry.counter("stock.restocked", "result", "ok").increment(); // expect: METRIC_REGISTERED_PER_CALL, METRIC_TAG_KEY
+            registry.counter("stock.restocked", "result", "ok").increment(); // expect: METRIC_REGISTERED_PER_CALL, METRIC_TAG_KEY, METRIC_TAG_VALUE
         }
+    }
+
+    public void restockFailed() {
+        registry.counter("stock.restock.failed", "outcome", "failure").increment(); // expect-not: METRIC_TAG_VALUE
     }
 
     public void trackQueue() {

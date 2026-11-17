@@ -12,7 +12,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class ApiErrors {
 
     @ExceptionHandler(Exception.class)
-    public ProblemDetail unexpected(Exception e) {
+    public ProblemDetail unexpected(Exception e) { // expect-not: CLIENT_ERROR_AS_SERVER_ERROR
         return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage()); // expect: ERROR_DETAILS_EXPOSED
     }
 

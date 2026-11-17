@@ -12,8 +12,8 @@ public class OrderMetrics {
     }
 
     public void placed(String orderId, String channel) {
-        registry.counter("purchasesPlaced", // expect: METRIC_NAMING
+        registry.counter("purchasesPlaced", // expect: METRIC_NAMING // expect-not: METRIC_REGISTERED_PER_CALL
                 "orderId", orderId, // expect: METRIC_HIGH_CARDINALITY_TAG
-                "channel", channel).increment();
+                "channel", channel).increment(); // expect-not: METRIC_HIGH_CARDINALITY_TAG
     }
 }

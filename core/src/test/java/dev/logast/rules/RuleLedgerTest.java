@@ -1,0 +1,385 @@
+package dev.logast.rules;
+
+import dev.logast.Analysis;
+import dev.logast.Fixtures;
+import dev.logast.Traffic;
+import dev.logast.orders.WorkOrder;
+import dev.logast.parse.ParsedProject;
+import dev.logast.parse.ProjectParser;
+import dev.logast.policy.Policy;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.function.BiConsumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * #58 a + b: every rule id is tested both ways, and switching it off changes a result.
+ *
+ * <p><b>Firing case</b>: the rule is reported in one of the {@link #corpora() corpora} (core scans of parsed projects,
+ * plus {@code logast verify} on captured events for the RUNTIME_* rules), or appears in an e2e snapshot
+ * ({@code FINDINGS.txt}, the applied ids in {@code OUTPUT.txt}, {@code .logast/apply-trace.txt}).
+ *
+ * <p><b>Must-not-fire case</b>, the smallest version that still means something:
+ * <ul>
+ *   <li>the rule's <em>own fix</em> is a shape it must not fire on: an AUTO order of the fixture (RoundTripTest applies
+ *       them all and requires that only report-only orders remain), or an order applied in an e2e snapshot (the run
+ *       rescans it: no {@code CHECK FAILED}, pass 2 and a second apply apply nothing);</li>
+ *   <li>for report-only rules, which have no fix: a near miss in the fixture marked {@code // expect-not: RULE} on the
+ *       line the rule would report if it fired; checked here;</li>
+ *   <li>or a named unit test that asserts the rule stays silent on a near miss ({@link #SILENT_IN_UNIT_TEST}).</li>
+ * </ul>
+ * A dedicated negative fixture per rule is #58 f (negative corpus); rules still without any are in
+ * {@link #NO_MUST_NOT_FIRE_CASE}.
+ *
+ * <p><b>Knock-out</b>: each rule reported in a corpus is switched off via the policy ({@code rules: {X: {enabled: false}}})
+ * and the corpus rescanned: no order of the rule may remain and the result must differ. Rescans only rebuild the
+ * analysis of an already parsed project (no per-rule e2e run). Rules that cannot be knocked out this way are in
+ * {@link #NO_KNOCKOUT}.
+ *
+ * <p>Every allow-list entry names the issue that tracks it, and an entry that is no longer needed fails the test.
+ */
+class RuleLedgerTest {
+    private static final Path REPO = Fixtures.root().toAbsolutePath().getParent().getParent();
+    private static final Path E2E = REPO.resolve("e2e");
+    private static final Pattern EXPECT_NOT = Pattern.compile("// expect-not: ([A-Z_, ]+)");
+    private static final Pattern ISSUE = Pattern.compile("#\\d+");
+
+    /** Rules with no firing case anywhere. */
+    static final Map<String, String> NO_FIRING_CASE = Map.of(
+            Rules.AUDIT_SECURITY_EVENTS, "#58: needs Spring Security on the classpath; the fixture's classpath is e2e's "
+                    + "too, so adding it would change every e2e scenario");
+
+    /** Unit tests (Class#method) that assert the rule stays silent on a near miss. */
+    static final Map<String, String> SILENT_IN_UNIT_TEST = Map.of(
+            Rules.LOG_VOLUME, "VolumeTest#volumeNeedsProvidedTrafficAndUsesTheBudget",   // no traffic, below budget
+            Rules.LOG_IN_LOOP, "LoopSizeTest#infoPerItemDependsOnTheLoopSize",            // declared small, fixed loops
+            Rules.RUNTIME_TRACE_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss",
+            Rules.RUNTIME_MDC_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss",
+            Rules.RUNTIME_NULL_VALUE, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss");
+
+    /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
+    static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus(
+            Rules.AUDIT_FAILURES_UNRECORDED, Rules.AUDIT_RECORD_INCOMPLETE, Rules.AUDIT_SECURITY_EVENTS,
+            Rules.BLOCKING_WAIT_UNBOUNDED, Rules.CATCH_ALL_DEFAULT, Rules.DATA_CHANGES_UNAUDITED,
+            Rules.KAFKA_NO_ERROR_HANDLER, Rules.LOG_HELPER, Rules.METRIC_DIRECT_REGISTRY, Rules.METRIC_TAG_KEYS_MISMATCH,
+            Rules.PROBLEM_DETAILS_DISABLED, Rules.REMOTE_CALL_IN_TRANSACTION, Rules.ROW_BY_ROW_WRITE,
+            Rules.SCHEDULED_WITHOUT_LOCK, Rules.UNBOUNDED_EXECUTOR);
+
+    /** Rules the core knock-out cannot test: where they fire instead, or why switching them off changes nothing. */
+    static final Map<String, String> NO_KNOCKOUT = Map.of(
+            Rules.AUDIT_SECURITY_EVENTS, "#58: fires nowhere (see NO_FIRING_CASE)",
+            Rules.BUSINESS_EVENT_TIMESTAMP, "#58: fires in its own e2e scenario (expected-business-timestamp); no corpus has the shape",
+            Rules.MESSAGE_SUGGESTED, "#58: fires on the // logast:wording marker an apply leaves behind (e2e snapshots)",
+            Rules.METRIC_CATALOG, "#58: fires once metric decisions are applied (e2e expected-decided)",
+            Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)",
+            Rules.MANUAL_TRACE_MDC, "#58: switched off, the MDC_NOT_CLOSEABLE rewrite of the same put still drops the trace "
+                    + "key and lists it under 'also fixes' (MdcRules), so the scan does not change",
+            Rules.MDC_KEY_ALIAS, "#58: switched off, the MDC_NOT_CLOSEABLE rewrite of the same put still renames the key "
+                    + "and lists it under 'also fixes' (MdcRules), so the scan does not change");
+
+    private static Map<String, String> negativeCorpus(String... rules) {
+        Map<String, String> out = new TreeMap<>();
+        for (String r : rules) {
+            out.put(r, "#58 f (negative corpus): report-only, no near miss marked yet");
+        }
+        return out;
+    }
+
+    // ---- corpora ----------------------------------------------------------------------------------------------------
+
+    /** Captured log events of a test (as in RuntimeVerifierTest): context lost on another thread, a null value. */
+    private static final List<RuntimeVerifier.Event> EVENTS = List.of(
+            new RuntimeVerifier.Event("[engine:junit-jupiter]/[class:com.x.FlowTest]/[method:flow()]", "main",
+                    "Sending confirmation for order {}", "Sending confirmation for order o-1",
+                    "com.example.shop.notification.NotificationService", 25, Map.of("traceId", "abc", "order.id", "o-1")),
+            new RuntimeVerifier.Event("[engine:junit-jupiter]/[class:com.x.FlowTest]/[method:flow()]", "pool-1",
+                    "Sending mail to {}", "Sending mail to null", "com.example.shop.notification.Mailer", 12, Map.of()));
+
+    /**
+     * A parsed project plus the policy and traffic it is scanned with (or the captured events it is verified against);
+     * a rescan only rebuilds the analysis.
+     */
+    record Corpus(String name, ParsedProject project, Policy policy, Traffic traffic, List<RuntimeVerifier.Event> events) {
+        List<WorkOrder> orders(Policy p) {
+            Analysis a = Analysis.of(project, p).withTraffic(traffic);
+            return events == null ? Rules.scan(a).orders() : RuntimeVerifier.verify(a, events).orders();
+        }
+
+        List<WorkOrder> orders() {
+            return orders(policy);
+        }
+    }
+
+    private static List<Corpus> corpora;
+
+    static synchronized List<Corpus> corpora() {
+        if (corpora == null) {
+            ParsedProject fixture = Fixtures.analysis().project;
+            Policy policy = Fixtures.policy();
+            Path before = E2E.resolve("before");
+            Policy e2ePolicy;
+            try {
+                e2ePolicy = Policy.resolve(before, null);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            corpora = List.of(
+                    new Corpus("fixture", fixture, policy, Traffic.none(), null),
+                    // LOG_VOLUME needs real rates (as in VolumeTest)
+                    new Corpus("fixture with traffic", fixture, policy,
+                            Traffic.of(Map.of("POST /orders", 500_000d), "ledger"), null),
+                    // LOG_IN_LOOP: the fixture's policy lowers info in loops to debug instead (as in VolumeTest)
+                    new Corpus("fixture, info in loops allowed", fixture,
+                            policy.withLevels(new Policy.Levels(null, null, false, null, null)), Traffic.none(), null),
+                    new Corpus("fixture, verified against captured events", fixture, policy, Traffic.none(), EVENTS),
+                    // the e2e input, read-only and without Lombok: only used to see which rules fire and switch off
+                    new Corpus("e2e/before", new ProjectParser().parse(before, Fixtures.classpath()), e2ePolicy,
+                            Traffic.none(), null));
+        }
+        return corpora;
+    }
+
+    // ---- the tests --------------------------------------------------------------------------------------------------
+
+    @Test
+    void everyRuleHasAFiringAndAMustNotFireCase() throws IOException {
+        Map<String, Set<String>> firing = new TreeMap<>();
+        Map<String, Set<String>> mustNotFire = new TreeMap<>();
+        BiConsumer<String, String> fires = (rule, where) -> firing.computeIfAbsent(rule, k -> new TreeSet<>()).add(where);
+        BiConsumer<String, String> silent = (rule, where) -> mustNotFire.computeIfAbsent(rule, k -> new TreeSet<>()).add(where);
+        List<String> problems = new ArrayList<>();
+
+        for (Corpus c : corpora()) {
+            List<WorkOrder> orders = c.orders();
+            mentioned(orders).forEach(rule -> fires.accept(rule, c.name()));
+            if (c.name().equals("fixture")) {
+                orders.stream().filter(o -> !o.reportOnly() && !o.edits().isEmpty())
+                        .forEach(o -> silent.accept(o.rule(), "its fix, rescanned by RoundTripTest"));
+                checkNearMisses(orders, silent, problems);
+            }
+        }
+        snapshots(fires, silent);
+        for (Map.Entry<String, String> e : SILENT_IN_UNIT_TEST.entrySet()) {
+            String[] test = e.getValue().split("#");
+            Path src = REPO.resolve("core/src/test/java/dev/logast/" + test[0] + ".java");
+            if (Files.exists(src) && Files.readString(src).contains("void " + test[1] + "(")) {
+                silent.accept(e.getKey(), e.getValue());
+            } else {
+                problems.add("SILENT_IN_UNIT_TEST: no test " + e.getValue());
+            }
+        }
+
+        Set<String> all = ruleIds();
+        checkAllowList("NO_FIRING_CASE", NO_FIRING_CASE, firing.keySet(), all, problems);
+        checkAllowList("NO_MUST_NOT_FIRE_CASE", NO_MUST_NOT_FIRE_CASE, mustNotFire.keySet(), all, problems);
+        for (String rule : all) {
+            if (!firing.containsKey(rule) && !NO_FIRING_CASE.containsKey(rule)) {
+                problems.add(rule + ": no firing case (no corpus or e2e snapshot reports it)");
+            }
+            if (!mustNotFire.containsKey(rule) && !NO_MUST_NOT_FIRE_CASE.containsKey(rule)) {
+                problems.add(rule + ": no must-not-fire case (no applied fix, no // expect-not: near miss in the fixture, "
+                        + "no unit test in SILENT_IN_UNIT_TEST)");
+            }
+        }
+        System.out.println("rule ledger, firing: " + firing);
+        System.out.println("rule ledger, must not fire: " + mustNotFire);
+        assertThat(problems).as("rule ledger (#58 a); see the class comment for what counts").isEmpty();
+    }
+
+    @Test
+    void switchingOffAnyRuleChangesTheScan() {
+        Map<String, String> knockedOut = new TreeMap<>();    // rule → corpus where switching it off changed the result
+        Map<String, String> failed = new TreeMap<>();        // rule → why it did not (last corpus tried)
+        for (Corpus c : corpora()) {
+            List<WorkOrder> base = c.orders();
+            Set<String> baseline = fingerprint(base);
+            for (String rule : mentioned(base)) {
+                if (knockedOut.containsKey(rule)) {
+                    continue;   // one corpus is enough
+                }
+                List<WorkOrder> off = c.orders(disable(c.policy(), rule));
+                if (off.stream().anyMatch(o -> o.rule().equals(rule))) {
+                    failed.put(rule, c.name() + ": still reported with the rule switched off");
+                } else if (fingerprint(off).equals(baseline)) {
+                    failed.put(rule, c.name() + ": switching it off changes nothing");
+                } else {
+                    knockedOut.put(rule, c.name());
+                    failed.remove(rule);
+                }
+            }
+        }
+        List<String> problems = new ArrayList<>();
+        Set<String> all = ruleIds();
+        checkAllowList("NO_KNOCKOUT", NO_KNOCKOUT, knockedOut.keySet(), all, problems);
+        for (String rule : all) {
+            if (!knockedOut.containsKey(rule) && !NO_KNOCKOUT.containsKey(rule)) {
+                problems.add(rule + ": " + failed.getOrDefault(rule, "fires in no corpus, so switching it off was never tested"));
+            }
+        }
+        System.out.println("knock-out: " + knockedOut);
+        assertThat(problems).as("knock-out (#58 b)").isEmpty();
+    }
+
+    // ---- evidence ---------------------------------------------------------------------------------------------------
+
+    /** Every rule an order reports: its own, the ones it also fixes, the ones at its locations. */
+    static Set<String> mentioned(List<WorkOrder> orders) {
+        Set<String> out = new TreeSet<>();
+        for (WorkOrder o : orders) {
+            out.add(o.rule());
+            out.addAll(o.fixes());
+            o.locations().forEach(l -> out.add(l.rule()));
+        }
+        return out;
+    }
+
+    /** What an e2e snapshot would show of a scan: ids, rules, positions, what each order fixes and its edits. */
+    static Set<String> fingerprint(List<WorkOrder> orders) {
+        Set<String> out = new TreeSet<>();
+        for (WorkOrder o : orders) {
+            out.add(o.id() + " " + o.rule() + " " + o.file() + ":" + o.line() + " " + new TreeSet<>(o.fixes()) + " "
+                    + o.locations() + " " + o.edits() + " " + o.title());
+        }
+        return out;
+    }
+
+    static Policy disable(Policy p, String rule) {
+        Map<String, Policy.RuleConfig> rules = new HashMap<>(p.rules());
+        rules.put(rule, new Policy.RuleConfig(false, null));
+        return new Policy(p.parents(), p.glossary(), p.mdc(), p.pii(), p.entrypoints(), p.logging(), p.support(), rules,
+                p.vocabulary(), p.areas(), p.phrasing(), p.levels(), p.packs(), p.overrides(), p.verify(), p.metrics(),
+                p.resilience(), p.audit(), p.reporting());
+    }
+
+    /** {@code // expect-not: RULE} lines of the fixture: the rule must not report that line. */
+    private static void checkNearMisses(List<WorkOrder> orders, BiConsumer<String, String> silent, List<String> problems)
+            throws IOException {
+        Set<String> found = new HashSet<>();
+        for (WorkOrder o : orders) {
+            found.add(o.file() + ":" + o.line() + " " + o.rule());
+            o.fixes().forEach(f -> found.add(o.file() + ":" + o.line() + " " + f));
+            o.locations().forEach(l -> found.add(l.file() + ":" + l.line() + " " + l.rule()));
+        }
+        Path root = Fixtures.root();
+        Set<String> all = ruleIds();
+        try (Stream<Path> files = Files.walk(root.resolve("src/main/java"))) {
+            for (Path p : files.filter(f -> f.toString().endsWith(".java")).sorted().toList()) {
+                List<String> lines = Files.readAllLines(p);
+                String rel = root.relativize(p).toString().replace('\\', '/');
+                for (int i = 0; i < lines.size(); i++) {
+                    Matcher m = EXPECT_NOT.matcher(lines.get(i));
+                    if (!m.find()) {
+                        continue;
+                    }
+                    for (String rule : m.group(1).split(",")) {
+                        rule = rule.trim();
+                        String at = rel + ":" + (i + 1);
+                        if (!all.contains(rule)) {
+                            problems.add(at + ": // expect-not: names an unknown rule " + rule);
+                        } else if (found.contains(at + " " + rule)) {
+                            problems.add(at + ": " + rule + " fires on a line marked // expect-not");
+                        } else {
+                            silent.accept(rule, "near miss " + at);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static final Pattern FINDING = Pattern.compile("^[A-Z]{3}-[0-9a-f]{6}\\S*\\s+\\S+\\s+(?:AUTO|NEEDS TEXT|REPORT-ONLY)\\s+([A-Z_]+)\\s");
+    private static final Pattern ALSO_FIXES = Pattern.compile("^\\s+also fixes: ([A-Z_]+)\\s");
+    private static final Pattern TRACED = Pattern.compile("([A-Z][A-Z_]+) [A-Z]{3}-[0-9a-f]{6}");
+    private static final Pattern ID = Pattern.compile("\\b([A-Z]{3})-[0-9a-f]{6}\\b");
+
+    /** e2e snapshots, each compared file by file by E2eGoldenTest: what they report and what they applied. */
+    private static void snapshots(BiConsumer<String, String> fires, BiConsumer<String, String> silent) throws IOException {
+        Map<String, String> ruleOfPrefix = new HashMap<>();
+        OrderBuilder.PREFIX.forEach((rule, prefix) -> assertThat(ruleOfPrefix.put(prefix, rule)).as("prefix " + prefix).isNull());
+        List<Path> dirs;
+        try (Stream<Path> s = Files.list(E2E)) {
+            dirs = s.filter(d -> d.getFileName().toString().startsWith("expected")).sorted().toList();
+        }
+        assertThat(dirs).as("e2e snapshots under " + E2E).isNotEmpty();
+        for (Path dir : dirs) {
+            String name = "e2e " + dir.getFileName();
+            for (String file : List.of("FINDINGS.txt", "OUTPUT.txt", ".logast/apply-trace.txt")) {
+                Path f = dir.resolve(file);
+                if (!Files.exists(f)) {
+                    continue;
+                }
+                for (String line : Files.readAllLines(f)) {
+                    Matcher m = FINDING.matcher(line);
+                    if (m.find()) {
+                        fires.accept(m.group(1), name + "/" + file);
+                    }
+                    m = ALSO_FIXES.matcher(line);
+                    if (m.find()) {
+                        fires.accept(m.group(1), name + "/" + file);
+                    }
+                    if (line.contains("applying [") || line.contains("rescan: new [")) {
+                        boolean applied = line.contains("applying [");
+                        for (m = TRACED.matcher(line); m.find(); ) {
+                            fires.accept(m.group(1), name + "/" + file);
+                            if (applied) {
+                                silent.accept(m.group(1), "its fix, applied and rescanned in " + name);
+                            }
+                        }
+                    }
+                    if (line.startsWith("applied (")) {
+                        for (m = ID.matcher(line); m.find(); ) {
+                            String rule = ruleOfPrefix.get(m.group(1));
+                            if (rule != null) {
+                                fires.accept(rule, name + "/" + file);
+                                silent.accept(rule, "its fix, applied and rescanned in " + name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- helpers ----------------------------------------------------------------------------------------------------
+
+    /** The rule ids: every String constant of {@link Rules}, which must match {@link Rules#all()}. */
+    static Set<String> ruleIds() {
+        Set<String> ids = new TreeSet<>();
+        for (Field f : Rules.class.getFields()) {
+            if (Modifier.isStatic(f.getModifiers()) && f.getType() == String.class) {
+                try {
+                    ids.add((String) f.get(null));
+                } catch (IllegalAccessException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
+        }
+        assertThat(ids).as("Rules constants vs Rules.all()").isEqualTo(Rules.all());
+        return ids;
+    }
+
+    private static void checkAllowList(String name, Map<String, String> list, Set<String> covered, Set<String> all,
+                                       List<String> problems) {
+        list.forEach((rule, reason) -> {
+            if (!all.contains(rule)) {
+                problems.add(name + ": unknown rule " + rule);
+            } else if (covered.contains(rule)) {
+                problems.add(name + ": " + rule + " is covered now, remove it from the list");
+            }
+            if (!ISSUE.matcher(reason).find()) {
+                problems.add(name + ": the entry for " + rule + " names no issue");
+            }
+        });
+    }
+}
