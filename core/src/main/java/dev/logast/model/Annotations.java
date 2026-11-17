@@ -24,6 +24,11 @@ public final class Annotations {
 
     /** Value of attribute {@code name} (or the implicit {@code value}) as source-level string, if it is a literal. */
     public static Optional<String> stringAttribute(J.Annotation a, String... names) {
+        return attribute(a, names).flatMap(Annotations::literal);
+    }
+
+    /** The expression of the first attribute named {@code names} (or the implicit {@code value}) that is given. */
+    public static Optional<Expression> attribute(J.Annotation a, String... names) {
         List<Expression> args = a.getArguments();
         if (args == null) {
             return Optional.empty();
@@ -32,11 +37,11 @@ public final class Annotations {
             if (arg instanceof J.Assignment as && as.getVariable() instanceof J.Identifier id) {
                 for (String n : names) {
                     if (id.getSimpleName().equals(n)) {
-                        return literal(as.getAssignment());
+                        return Optional.of(as.getAssignment());
                     }
                 }
-            } else if (!(arg instanceof J.Assignment) && List.of(names).contains("value")) {
-                return literal(arg);
+            } else if (!(arg instanceof J.Assignment) && !(arg instanceof J.Empty) && List.of(names).contains("value")) {
+                return Optional.of(arg);
             }
         }
         return Optional.empty();

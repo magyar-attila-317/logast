@@ -1260,6 +1260,119 @@ class E2eGoldenTest {
     }
 
     /**
+     * #51: API-first controllers. The request mappings sit on an interface the controller implements, the class-level
+     * {@code @RequestMapping} too, and the paths come from {@code static final String} constants and their
+     * concatenation: Spring finds mapping annotations through the type hierarchy, so these are HTTP entrypoints with
+     * their real paths (traffic.yaml, audit.actions.http, the entry MDC). A non-controller implementing the same
+     * interface stays no endpoint. Every file must equal e2e/expected-mapped-interface.
+     */
+    @Test
+    void seesRequestMappingsOnInterfacesAndConstantPaths() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replace("vocabulary:\n", """
+                    audit:
+                      actions:
+                        - http: "POST /lockers/*/open"
+                    vocabulary:
+                      locker:
+                        mdc:
+                          key: lockerId
+                          sources:
+                            params: [lockerId]
+                    """));
+            Path dir = app.resolve("src/main/java/com/example/e2e/locker");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("LockerPaths.java"), """
+                    package com.example.e2e.locker;
+
+                    public final class LockerPaths {
+                        public static final String BASE = "/lockers";
+                        public static final String LOCKER = "/{lockerId}";
+                        public static final String OPEN = LOCKER + "/open";
+
+                        private LockerPaths() {
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("LockerApi.java"), """
+                    package com.example.e2e.locker;
+
+                    import org.springframework.web.bind.annotation.GetMapping;
+                    import org.springframework.web.bind.annotation.PathVariable;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RequestMapping;
+
+                    @RequestMapping(LockerPaths.BASE)
+                    public interface LockerApi {
+                        @GetMapping(LockerPaths.LOCKER)
+                        String status(@PathVariable("lockerId") String lockerId);
+
+                        @PostMapping(path = LockerPaths.OPEN)
+                        String open(@PathVariable("lockerId") String lockerId);
+                    }
+                    """);
+            Files.writeString(dir.resolve("LockerController.java"), """
+                    package com.example.e2e.locker;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.web.bind.annotation.GetMapping;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    public class LockerController implements LockerApi {
+                        private static final Logger log = LoggerFactory.getLogger(LockerController.class);
+
+                        @Override
+                        public String status(String lockerId) {
+                            log.debug("Locker status requested");
+                            return "closed";
+                        }
+
+                        @Override
+                        public String open(String lockerId) {
+                            log.debug("Locker opened");
+                            return "open";
+                        }
+
+                        @GetMapping("/" + "free")
+                        public int free() {
+                            return 3;
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("LockerStub.java"), """
+                    package com.example.e2e.locker;
+
+                    import org.springframework.stereotype.Component;
+
+                    /** Implements the mapped interface without being a controller (a client stub): no endpoint. */
+                    @Component
+                    public class LockerStub implements LockerApi {
+                        @Override
+                        public String status(String lockerId) {
+                            return "unknown";
+                        }
+
+                        @Override
+                        public String open(String lockerId) {
+                            return "unknown";
+                        }
+                    }
+                    """);
+        });
+
+        String traffic = actual.get(".logast/traffic.yaml");
+        assertThat(traffic).as("a class that is not a controller serves no mapping").doesNotContain("LockerStub")
+                .as("the mapped interface methods are entrypoints, with the paths their constants spell")
+                .contains("\"GET /lockers/{lockerId}\":").contains("\"POST /lockers/{lockerId}/open\":")
+                .as("the interface's class-level mapping applies to the controller's own mapping")
+                .contains("\"GET /lockers/free\":");
+        golden(EXPECTED.resolveSibling("expected-mapped-interface"), actual);
+    }
+
+    /**
      * #53: a fix logs through the logger in scope: an inherited or enclosing SLF4J logger, or Lombok's field under the
      * name lombok.config gives it. A class logging through another API (Lombok's @Log4j2, a java.util.logging field)
      * gets no SLF4J edits, and the result is the same with and without Lombok on logast's classpath.

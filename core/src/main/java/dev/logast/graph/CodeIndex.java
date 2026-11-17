@@ -137,6 +137,50 @@ public final class CodeIndex {
         return candidates.size() == 1 ? candidates.getFirst() : null;
     }
 
+    /**
+     * Source supertypes of {@code c}, in the order Spring searches a type hierarchy for annotations: the interfaces
+     * (with their own super-interfaces) first, then the superclass and its hierarchy (#51).
+     */
+    public List<ClassInfo> sourceSupertypes(ClassInfo c) {
+        List<ClassInfo> out = new ArrayList<>();
+        supertypes(c.type(), new HashSet<>(Set.of(c.fqn())), out);
+        return out;
+    }
+
+    private void supertypes(JavaType.FullyQualified t, Set<String> seen, List<ClassInfo> out) {
+        if (t == null) {
+            return;
+        }
+        List<JavaType.FullyQualified> parents = new ArrayList<>(t.getInterfaces());
+        if (t.getSupertype() != null) {
+            parents.add(t.getSupertype());
+        }
+        for (JavaType.FullyQualified parent : parents) {
+            if (seen.add(parent.getFullyQualifiedName())) {
+                ClassInfo source = classes.get(parent.getFullyQualifiedName());
+                if (source != null) {
+                    out.add(source);
+                }
+                supertypes(parent, seen, out);
+            }
+        }
+    }
+
+    /** The declarations in source supertypes that {@code m} overrides, nearest first (#51: mappings on an interface). */
+    public List<MethodInfo> overridden(MethodInfo m) {
+        if (m.type().hasFlags(Flag.Static) || m.type().hasFlags(Flag.Private) || "<constructor>".equals(m.type().getName())) {
+            return List.of();
+        }
+        List<MethodInfo> out = new ArrayList<>();
+        for (ClassInfo parent : sourceSupertypes(m.owner())) {
+            MethodInfo o = find(parent.fqn(), m.type());
+            if (o != null && o != m) {
+                out.add(o);
+            }
+        }
+        return out;
+    }
+
     public Collection<MethodInfo> methods() {
         return methods.values();
     }

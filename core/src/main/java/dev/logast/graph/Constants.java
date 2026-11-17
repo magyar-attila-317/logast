@@ -14,6 +14,26 @@ public final class Constants {
 
     /** {@code "orderId"}, {@code ORDER_ID}, {@code MdcKeys.ORDER_ID} → the string; null when not a known constant. */
     public static String string(CodeIndex index, Expression e) {
+        return value(index, e, false);
+    }
+
+    /**
+     * Like {@link #string}, and also {@code "a" + B} concatenations and parentheses, through constants defined that way
+     * (#51: {@code @GetMapping(Paths.BASE + "/{id}")}).
+     */
+    public static String concatenated(CodeIndex index, Expression e) {
+        return value(index, e, true);
+    }
+
+    private static String value(CodeIndex index, Expression e, boolean concat) {
+        if (concat && e instanceof J.Parentheses<?> p && p.getTree() instanceof Expression inner) {
+            return value(index, inner, true);
+        }
+        if (concat && e instanceof J.Binary b && b.getOperator() == J.Binary.Type.Addition) {
+            String left = value(index, b.getLeft(), true);
+            String right = left == null ? null : value(index, b.getRight(), true);
+            return right == null ? null : left + right;
+        }
         if (e instanceof J.Literal l) {
             return l.getValue() instanceof String s ? s : null;
         }
@@ -30,7 +50,7 @@ public final class Constants {
             if (s instanceof J.VariableDeclarations vd) {
                 for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
                     if (v.getSimpleName().equals(field.getName()) && v.getInitializer() != null) {
-                        return v.getInitializer() == e ? null : string(index, v.getInitializer());
+                        return v.getInitializer() == e ? null : value(index, v.getInitializer(), concat);
                     }
                 }
             }
