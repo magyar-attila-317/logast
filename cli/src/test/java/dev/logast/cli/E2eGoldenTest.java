@@ -782,8 +782,8 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-boot3-conflict"), actual);
     }
 
-    @Test
-    void springBoot4UsesOpenTelemetryStarter() throws IOException {
+    /** The scenario's classpath without the OpenTelemetry starter and what it brings: logast has to add it. */
+    private Path classpathWithoutOtelStarter() throws IOException {
         Path classpath = tmp.resolve("classpath-without-otel-starter.txt");
         Files.write(classpath, Files.readAllLines(Path.of(CLASSPATH)).stream()
                 .filter(p -> {
@@ -794,6 +794,12 @@ class E2eGoldenTest {
                             && !name.startsWith("opentelemetry-exporter-otlp-");
                 })
                 .toList());
+        return classpath;
+    }
+
+    @Test
+    void springBoot4UsesOpenTelemetryStarter() throws IOException {
+        Path classpath = classpathWithoutOtelStarter();
         Map<String, String> actual = migrate(tmp.resolve("app"), classpath.toString(), app -> {
             Path build = app.resolve("build.gradle.kts");
             String text = Files.readString(build);
@@ -809,6 +815,49 @@ class E2eGoldenTest {
                 .doesNotContain("micrometer-tracing-bridge-otel");
         assertThat(build.split("spring-boot-starter-opentelemetry", -1)).hasSize(2);
         golden(EXPECTED.resolveSibling("expected-boot4"), actual);
+    }
+
+    /**
+     * #80: the dependencies live in a script the build file applies (Groovy, apply from: 'gradle/dependencies.gradle').
+     * The OpenTelemetry starter goes into that script's dependencies block, in its DSL; what it already declares is
+     * seen there and not added again, and the build file stays as it is.
+     */
+    @Test
+    void dependenciesGoIntoTheScriptTheBuildFileApplies() throws IOException {
+        Path classpath = classpathWithoutOtelStarter();
+        String buildGradle = """
+                plugins {
+                    id 'java'
+                    id 'org.springframework.boot' version '4.1.2'
+                }
+
+                repositories { mavenCentral() }
+
+                apply from: 'gradle/dependencies.gradle'
+                """;
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath.toString(), app -> {
+            Files.delete(app.resolve("build.gradle.kts"));
+            Files.writeString(app.resolve("build.gradle"), buildGradle);
+            Files.createDirectories(app.resolve("gradle"));
+            Files.writeString(app.resolve("gradle/dependencies.gradle"), """
+                    dependencies {
+                        implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.2')
+                        implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+                        implementation 'org.springframework:spring-jdbc'
+                        implementation 'io.micrometer:micrometer-observation'
+                        implementation 'io.micrometer:context-propagation'
+                    }
+                    """);
+        });
+
+        assertThat(actual.get("build.gradle")).as("the build file has no dependencies block: left as is").isEqualTo(buildGradle);
+        String dependencies = actual.get("gradle/dependencies.gradle");
+        assertThat(dependencies).contains("    implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'\n")
+                .doesNotContain("micrometer-tracing-bridge-otel");
+        assertThat(dependencies.split("spring-boot-starter-opentelemetry", -1)).hasSize(2);
+        assertThat(dependencies.split("micrometer-observation", -1)).as("declared in the applied script: not added again").hasSize(2);
+        assertThat(dependencies.split("context-propagation", -1)).hasSize(2);
+        golden(EXPECTED.resolveSibling("expected-applied-dependencies"), actual);
     }
 
     @Test
