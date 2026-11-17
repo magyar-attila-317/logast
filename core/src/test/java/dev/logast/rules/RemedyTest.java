@@ -394,9 +394,7 @@ class RemedyTest {
                 + "    public static Executor wrap(Executor delegate) {\n        return delegate;\n    }\n}\n";
         fires(Rules.ASYNC_CONTEXT_LOSS, Map.of(java("RefreshController"), controller.formatted("")));
         gone(Rules.ASYNC_CONTEXT_LOSS, "a Spring TaskExecutor bean", Map.of(java("RefreshController"), controller.formatted(", tasks")));
-        stillFires(Rules.ASYNC_CONTEXT_LOSS, "ContextExecutors.wrap(executor)", "#57: the note names ContextExecutors.wrap(executor) "
-                        + "first, but only a Spring TaskExecutor / TaskScheduler argument counts (FactsExtractor.asyncApiManaged)",
-                Map.of(java("RefreshController"), controller.formatted(", ContextExecutors.wrap(pool)"), java("ContextExecutors"), wrap));
+        gone(Rules.ASYNC_CONTEXT_LOSS, "ContextExecutors.wrap(executor)", Map.of(java("RefreshController"), controller.formatted(", ContextExecutors.wrap(pool)"), java("ContextExecutors"), wrap));
     }
 
     // ---- AUDIT_LOG_MIXED -------------------------------------------------------------------------------------------
@@ -442,10 +440,11 @@ class RemedyTest {
                 }
                 """);
         fires(Rules.AUDIT_LOG_MIXED, before);
-        stillFires(Rules.AUDIT_LOG_MIXED, "the records on their own logger", "#57: the note says to give the records their own "
-                        + "logger and keep the class logger for the diagnostics, but the rule counts every log line of the class, "
-                        + "whichever logger writes it",
-                with(before, java("AuditLog"), auditLog.formatted(
-                        "    private static final Logger AUDIT = LoggerFactory.getLogger(\"audit\");\n", "AUDIT")));
+        String auditLogger = "    private static final Logger AUDIT = LoggerFactory.getLogger(\"audit\");\n";
+        gone(Rules.AUDIT_LOG_MIXED, "the records on their own logger", with(before, java("AuditLog"),
+                auditLog.formatted(auditLogger, "AUDIT")));
+        // near miss: the diagnostics moved to the audit logger with the records, so they leave the application log
+        fires(Rules.AUDIT_LOG_MIXED, with(before, java("AuditLog"),
+                auditLog.formatted(auditLogger, "AUDIT").replace("log.warn", "AUDIT.warn")));
     }
 }

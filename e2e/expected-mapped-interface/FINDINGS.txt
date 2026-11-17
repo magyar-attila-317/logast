@@ -8,22 +8,22 @@ ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e
   CompletableFuture.runAsync runs on another thread without MDC/trace context
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
-  done when: its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
+  done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 ASY-e82926  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:18  QuoteController.quote
   CompletableFuture.supplyAsync runs on another thread without MDC/trace context
   path: GET /quotes/{productId} → QuoteController.quote
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
-  done when: its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
+  done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 ASY-0537b2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:19  QuoteController.quote
   CompletableFuture.supplyAsync runs on another thread without MDC/trace context
   path: GET /quotes/{productId} → QuoteController.quote
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
-  done when: its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
+  done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 ASY-535b95  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:27  QuoteController.refresh
   CompletableFuture.runAsync runs on another thread without MDC/trace context
   path: GET /quotes/{productId}/refresh → QuoteController.refresh
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
-  done when: its last argument is a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
+  done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
 DBT-225aab  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/resources/application.yml:1
   Transactions without a timeout: spring.transaction.default-timeout has no default, so a transaction waiting on a lock or a slow statement holds its connection indefinitely
   why: @Transactional methods exist and no Spring configuration file sets spring.transaction.default-timeout
@@ -157,6 +157,7 @@ BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/exam
 ALM-f2e935  low  REPORT-ONLY  AUDIT_LOG_MIXED  src/main/java/com/example/e2e/audit/AuditLog.java:8
   AuditLog writes audit records and diagnostics through one logger: routed apart, the diagnostics would leave the application log; mixed, the records do
   note: Give the records their own logger (private static final Logger AUDIT = LoggerFactory.getLogger("audit")) and keep the class logger for the diagnostics: checkCapacity (WARN).
+  done when: its records are written through a logger named "audit" and its diagnostics through the class logger
 SUG-bc8896  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23  PledgeCleanupJob.cleanup
   Generated wording "Pledge cleanup started": say it in domain terms
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup

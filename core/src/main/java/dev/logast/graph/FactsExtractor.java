@@ -510,7 +510,7 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         String name = mt.getName();
         if (owner.equals("java.util.concurrent.CompletableFuture") && name.endsWith("Async")) {
             List<Expression> args = args(mi);
-            return !args.isEmpty() && isSpringExecutor(args.getLast().getType());
+            return !args.isEmpty() && (isSpringExecutor(args.getLast().getType()) || contextExecutor(args.getLast()));
         }
         // Thread.startVirtualThread(r), Thread.ofVirtual().start(r), Thread.ofPlatform().unstarted(r)
         if (owner.startsWith("java.lang.Thread") && Set.of("startVirtualThread", "start", "unstarted").contains(name)
@@ -530,7 +530,7 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         if (EXECUTOR_METHODS.contains(name) && (TypeUtils.isAssignableTo("java.util.concurrent.Executor", mt.getDeclaringType())
                 || TypeUtils.isAssignableTo("org.springframework.scheduling.TaskScheduler", mt.getDeclaringType()))) {
             JavaType receiver = mi.getSelect() == null ? null : mi.getSelect().getType();
-            return isSpringExecutor(receiver);
+            return isSpringExecutor(receiver) || contextExecutor(mi.getSelect());
         }
         return null;
     }
@@ -544,6 +544,19 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
             sel = s.getSelect();
         }
         return false;
+    }
+
+    /**
+     * {@code ContextExecutors.wrap(executor)} from logging-support: tasks run with the submitter's MDC and trace context
+     * (#84). Matched by name: right after the starter is added the classpath file is often stale.
+     */
+    private static boolean contextExecutor(Expression e) {
+        if (!(e instanceof J.MethodInvocation w) || !w.getSimpleName().equals("wrap")) {
+            return false;
+        }
+        String owner = w.getSelect() instanceof J.Identifier id ? id.getSimpleName()
+                : w.getSelect() instanceof J.FieldAccess fa ? fa.getSimpleName() : null;
+        return "ContextExecutors".equals(owner);
     }
 
     private static boolean isSpringExecutor(JavaType t) {
