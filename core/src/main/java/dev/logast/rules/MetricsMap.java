@@ -83,8 +83,6 @@ public final class MetricsMap {
         return out;
     }
 
-    static final String RULE_IGNORE = "logast:ignore";
-
     private static final java.util.Map<String, String> EXPORTERS = new LinkedHashMap<>();
 
     static {
@@ -231,8 +229,11 @@ public final class MetricsMap {
         return new Map(exporters, note, identity, measured, unmeasuredEps, repositories, meters, outcomes, gaps);
     }
 
-    /** An Outcomes.count/tag right after the log line, or an ignore comment for this rule on it or above it. */
+    /** An Outcomes.count/tag right after the log line, or an ignore comment for this rule on it, above it or for the file. */
     private static boolean countedOrSkipped(MethodInfo m, LogCall lc, Set<String> catalogs) {
+        if (Suppressions.fileIgnores(m.file().text()).contains(Rules.METRIC_OUTCOME_UNMEASURED)) {
+            return true;
+        }
         int line = Pos.line(lc.call());
         // the counting line goes after the whole statement (a chained call can run on for lines): look up to its end
         org.openrewrite.java.tree.J stmt = CoverageRules.enclosingStatement(m, lc.call());
@@ -249,12 +250,8 @@ public final class MetricsMap {
                     || catalogs.stream().anyMatch(c -> code.startsWith(c + ".") && code.contains("(")))) {
                 return true;
             }
-            int i = t.indexOf(RULE_IGNORE);
-            if (i >= 0 && l <= last) {
-                String rest = t.substring(i + RULE_IGNORE.length()).trim();
-                if (rest.isEmpty() || rest.contains(Rules.METRIC_OUTCOME_UNMEASURED)) {
-                    return true;
-                }
+            if (l <= last && Suppressions.lineIgnores(t, Rules.METRIC_OUTCOME_UNMEASURED)) {
+                return true;
             }
         }
         return false;

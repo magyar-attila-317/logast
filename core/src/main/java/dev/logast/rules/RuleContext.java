@@ -34,6 +34,8 @@ public final class RuleContext {
     /** Entrypoints that ENTRYPOINT_SILENT gives a "started" line. */
     final Set<String> silentPlanned = new HashSet<>();
     private LifecyclePlan lifecycle;
+    /** File → rules its {@code logast:ignore-file} comments silence. */
+    private final Map<String, Set<String>> fileIgnores = new HashMap<>();
 
     /** Who owns which lifecycle line of every flow (built after the entrypoint rules, which plan wrappers and start lines). */
     public LifecyclePlan lifecycle() {
@@ -223,18 +225,15 @@ public final class RuleContext {
         return ScopeResolver.varsAt(m, offset);
     }
 
-    /** {@code // logast:ignore} or {@code // logast:ignore RULE} on the line or the line above. */
+    /**
+     * {@code // logast:ignore} or {@code // logast:ignore RULE} on the line or the line above, or
+     * {@code // logast:ignore-file RULE} anywhere in the file (see {@link Suppressions}).
+     */
     public boolean ignored(SourceFileInfo f, int line, String rule) {
-        for (String l : List.of(f.lineText(line), line > 1 ? f.lineText(line - 1) : "")) {
-            int i = l.indexOf("logast:ignore");
-            if (i >= 0) {
-                String rest = l.substring(i + "logast:ignore".length()).trim();
-                if (rest.isEmpty() || rest.contains(rule)) {
-                    return true;
-                }
-            }
+        if (fileIgnores.computeIfAbsent(f.relPath(), k -> Suppressions.fileIgnores(f.text())).contains(rule)) {
+            return true;
         }
-        return false;
+        return Suppressions.lineIgnores(f.lineText(line), rule) || line > 1 && Suppressions.lineIgnores(f.lineText(line - 1), rule);
     }
 
     public void dependOnStarter(OrderBuilder b) {

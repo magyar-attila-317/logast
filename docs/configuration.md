@@ -241,7 +241,8 @@ rules:
 
 `logast rules` lists every rule and its pack. The log-coverage rules (JOB_OUTCOME_MISSING, SKIP_UNLOGGED,
 STATE_CHANGE_UNLOGGED, BATCH_SUMMARY_MISSING, DB_OUTCOME_UNLOGGED) add log lines; switch off the ones a service does not want. A single finding is silenced in code with
-`// logast:ignore RULE_NAME` on the line or the line above.
+`// logast:ignore RULE_NAME` on the line or the line above (rule ids match exactly; list several separated by
+spaces or commas), and in a whole Java file with `// logast:ignore-file RULE_NAME`.
 
 ---
 
