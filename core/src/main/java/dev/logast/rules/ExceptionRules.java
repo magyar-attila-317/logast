@@ -59,7 +59,9 @@ final class ExceptionRules {
         b.context(ctx.context(m, open + 1, "try " + tryBody + " catch (" + c.typeNames() + " " + c.param + ") "
                 + Text.oneLine(f.slice(open, close + 1), 80), "MSG"));
         if (logger.name() == null) {
-            b.suggestion("Log or rethrow " + c.param + "; " + m.owner().simpleName() + " cannot get a logger field automatically.");
+            b.suggestion("Log or rethrow " + c.param + "; " + m.owner().simpleName() + (logger.otherApi() != null
+                    ? " logs through " + logger.otherApi() + ", not SLF4J: logast adds no lines there."
+                    : " cannot get a logger field automatically."));
             return;
         }
 

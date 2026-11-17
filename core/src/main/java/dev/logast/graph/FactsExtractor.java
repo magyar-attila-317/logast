@@ -28,6 +28,8 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
     /** Product of the bounds of the enclosing loops; -1 once any of them is unbounded. */
     private final Deque<Integer> loopBounds = new ArrayDeque<>();
     private J.ClassDeclaration owner;
+    private dev.logast.model.ClassInfo ownerInfo;
+    private LoggerScope loggers;
     /** Per-element lambdas: collection forEach and stream pipeline stages (not Optional.map, not computeIfAbsent). */
     private static final Set<String> PER_ELEMENT = Set.of("forEach", "forEachOrdered", "map", "flatMap", "filter",
             "peek", "mapToObj", "mapToInt", "mapToLong", "anyMatch", "allMatch", "noneMatch");
@@ -36,12 +38,14 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         this.file = file;
     }
 
-    static MethodFacts extract(MethodInfo m) {
+    static MethodFacts extract(MethodInfo m, LoggerScope loggers) {
         MethodFacts facts = new MethodFacts();
         if (m.decl().getBody() != null) {
             Cursor parent = new Cursor(new Cursor(null, Cursor.ROOT_VALUE), m.decl());
             FactsExtractor fx = new FactsExtractor(m.file().relPath());
             fx.owner = m.owner().decl();
+            fx.ownerInfo = m.owner();
+            fx.loggers = loggers;
             fx.visit(m.decl().getBody(), facts, parent);
         }
         return facts;
@@ -344,7 +348,17 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         if (supportMdc(mi, f)) {
             return mi;
         }
-        if ((mt == null || mt.getDeclaringType() instanceof JavaType.Unknown) && loggerByName(mi)) {
+        LoggerScope.Logger byName = mt == null || mt.getDeclaringType() instanceof JavaType.Unknown ? loggerByName(mi) : null;
+        if (byName != null && !byName.slf4j()) {
+            // a logger of another API whose type did not resolve (Lombok's @Log4j2 without Lombok): no SLF4J line, but
+            // it does take the caught exception, as it does when the type resolves
+            CatchInfo c = catchStack.peek();
+            if (c != null && args(mi).stream().anyMatch(x -> x instanceof J.Identifier i && i.getSimpleName().equals(c.param))) {
+                c.passesException = true;
+            }
+            return mi;
+        }
+        if (byName != null && LEVELS.containsKey(mi.getSimpleName()) && !args(mi).isEmpty()) {
             // the logger's type did not resolve (Lombok's @Slf4j without Lombok on the classpath): still a log line, or
             // rules that add lines would not see them and add them again
             List<Expression> args = args(mi);
@@ -549,32 +563,16 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         return null;
     }
 
-    private static final Set<String> LOGGER_ANNOTATIONS = Set.of("Slf4j", "XSlf4j", "CommonsLog", "Log4j2", "Log", "Flogger");
-
     /**
-     * {@code log.info(…)} on a logger whose type did not resolve: the receiver is a plain name, the method a level, and
-     * the class declares it as a logger (a Lombok logger annotation, or a field of that name typed Logger).
+     * The logger a call like {@code log.info(…)} is made on, when its receiver is a plain name naming a logger in scope:
+     * for calls whose type did not resolve (Lombok's loggers without Lombok on the classpath). Only an SLF4J one makes
+     * a log line (#53: a @Log4j2 logger does not, with or without Lombok).
      */
-    private boolean loggerByName(J.MethodInvocation mi) {
-        if (!(mi.getSelect() instanceof J.Identifier id) || !LEVELS.containsKey(mi.getSimpleName()) || args(mi).isEmpty()) {
-            return false;
+    private LoggerScope.Logger loggerByName(J.MethodInvocation mi) {
+        if (!(mi.getSelect() instanceof J.Identifier id) || ownerInfo == null || loggers == null) {
+            return null;
         }
-        J.ClassDeclaration cd = owner;   // facts are extracted per method: the class comes with it
-        if (cd == null) {
-            return false;
-        }
-        boolean annotated = cd.getLeadingAnnotations().stream().anyMatch(a -> LOGGER_ANNOTATIONS.contains(a.getSimpleName()));
-        if (annotated && id.getSimpleName().equals("log")) {
-            return true;
-        }
-        for (Statement s : cd.getBody().getStatements()) {
-            if (s instanceof J.VariableDeclarations vd && vd.getTypeExpression() != null
-                    && vd.getTypeExpression().printTrimmed().endsWith("Logger")
-                    && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(id.getSimpleName()))) {
-                return true;
-            }
-        }
-        return false;
+        return loggers.named(ownerInfo, id.getSimpleName());
     }
 
     static List<Expression> args(J.MethodInvocation mi) {

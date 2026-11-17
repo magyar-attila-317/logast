@@ -1,0 +1,8 @@
+scan: 67 orders
+== pass 1
+lines round 1: applying [SWALLOWED_EXCEPTION SWA-544230 src/main/java/com/example/e2e/loggers/CleanupJob.java:8, SWALLOWED_EXCEPTION SWA-8234d6 src/main/java/com/example/e2e/loggers/Dispatcher.java:13, SWALLOWED_EXCEPTION SWA-a3814f src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java:11]
+  rescan: new [METRIC_OUTCOME_UNMEASURED OUM-8c76ae src/main/java/com/example/e2e/loggers/CleanupJob.java:9, METRIC_OUTCOME_UNMEASURED OUM-cd3f84 src/main/java/com/example/e2e/loggers/Dispatcher.java:14, METRIC_OUTCOME_UNMEASURED OUM-682bc2 src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java:12]
+reports round 1: applying [METRIC_OUTCOME_UNMEASURED OUM-682bc2 src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java:12, METRIC_OUTCOME_UNMEASURED OUM-8c76ae src/main/java/com/example/e2e/loggers/CleanupJob.java:9, METRIC_OUTCOME_UNMEASURED OUM-cd3f84 src/main/java/com/example/e2e/loggers/Dispatcher.java:14]
+  rescan: new [METRIC_CATALOG MCA-0786d9 src/main/java/com/example/e2e/loggers/CleanupJob.java:12]
+reports round 2: applying [METRIC_CATALOG MCA-0786d9 src/main/java/com/example/e2e/loggers/CleanupJob.java:12]
+== pass 2

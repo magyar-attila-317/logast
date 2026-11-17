@@ -242,9 +242,12 @@ public final class RuleContext {
         }
     }
 
-    /** How to get a logger into {@code owner}: the existing one, Lombok's @Slf4j when Lombok is there, or a field. */
+    /**
+     * How to get a logger into {@code owner}: the SLF4J logger in scope (own, inherited or enclosing), none when the
+     * class logs through another API, else Lombok's @Slf4j when Lombok is there, or a field.
+     */
     JavaEdits.LoggerPlan logger(dev.logast.model.ClassInfo owner) {
-        return JavaEdits.logger(owner, policy.logging().loggerName(), lombokLoggers());
+        return JavaEdits.logger(owner, a.index.loggers().nearest(owner), policy.logging().loggerName(), lombokLoggers());
     }
 
     /**

@@ -35,14 +35,14 @@ class LombokLoggerTest {
         Analysis a = Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null));
         var owner = a.index.classes().stream().filter(c -> c.simpleName().equals("PledgeRepository")).findFirst().orElseThrow();
 
-        JavaEdits.LoggerPlan plan = JavaEdits.logger(owner, "log", true);
+        JavaEdits.LoggerPlan plan = JavaEdits.logger(owner, null, "log", true);
         assertThat(plan.name()).isEqualTo("log");
         String result = apply(original, plan.edits());
         assertThat(result).contains("import lombok.extern.slf4j.Slf4j;", "/** Pledges. */\n@Slf4j\n@Repository\npublic class PledgeRepository {")
                 .doesNotContain("LoggerFactory");
 
         // a custom logger name is not what @Slf4j generates: keep the field
-        assertThat(apply(original, JavaEdits.logger(owner, "logger", true).edits())).contains("private static final Logger logger");
+        assertThat(apply(original, JavaEdits.logger(owner, null, "logger", true).edits())).contains("private static final Logger logger");
     }
 
     private static String apply(String text, List<Edit> edits) {

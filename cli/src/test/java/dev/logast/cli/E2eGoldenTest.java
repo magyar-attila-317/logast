@@ -890,6 +890,159 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-exceptions-not-thrown-with-new"), actual);
     }
 
+    /**
+     * #53: a fix logs through the logger in scope: an inherited or enclosing SLF4J logger, or Lombok's field under the
+     * name lombok.config gives it. A class logging through another API (Lombok's @Log4j2, a java.util.logging field)
+     * gets no SLF4J edits, and the result is the same with and without Lombok on logast's classpath.
+     */
+    @Test
+    void fixesUseTheLoggerInScopeAndLeaveOtherLoggingApisAlone() throws IOException {
+        IoAction prepare = app -> {
+            Path pkg = app.resolve("src/main/java/com/example/e2e/loggers");
+            Files.createDirectories(pkg.resolve("renamed"));
+            Files.writeString(pkg.resolve("BaseJob.java"), """
+                    package com.example.e2e.loggers;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    abstract class BaseJob {
+                        protected final Logger log = LoggerFactory.getLogger(getClass());
+
+                        abstract void run(Runnable step);
+                    }
+                    """);
+            Files.writeString(pkg.resolve("CleanupJob.java"), """
+                    package com.example.e2e.loggers;
+
+                    class CleanupJob extends BaseJob {
+                        @Override
+                        void run(Runnable step) {
+                            try {
+                                step.run();
+                            } catch (IllegalStateException e) {
+                            }
+                        }
+                    }
+                    """);
+            Files.writeString(pkg.resolve("Dispatcher.java"), """
+                    package com.example.e2e.loggers;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    class Dispatcher {
+                        private static final Logger LOGGER = LoggerFactory.getLogger(Dispatcher.class);
+
+                        class Worker {
+                            void run(Runnable step) {
+                                try {
+                                    step.run();
+                                } catch (IllegalStateException e) {
+                                }
+                            }
+                        }
+                    }
+                    """);
+            Files.writeString(pkg.resolve("ArchiveJob.java"), """
+                    package com.example.e2e.loggers;
+
+                    import lombok.extern.log4j.Log4j2;
+
+                    @Log4j2
+                    class ArchiveJob {
+                        void run(Runnable step) {
+                            try {
+                                step.run();
+                            } catch (IllegalStateException e) {
+                                log.warn("Archive step failed", e);
+                            }
+                        }
+
+                        void retry(Runnable step) {
+                            try {
+                                step.run();
+                            } catch (IllegalArgumentException e) {
+                            }
+                        }
+                    }
+                    """);
+            Files.writeString(pkg.resolve("LegacyJob.java"), """
+                    package com.example.e2e.loggers;
+
+                    import java.util.logging.Logger;
+
+                    class LegacyJob {
+                        private static final Logger log = Logger.getLogger(LegacyJob.class.getName());
+
+                        void run(Runnable step) {
+                            try {
+                                step.run();
+                            } catch (IllegalStateException e) {
+                            }
+                        }
+                    }
+                    """);
+            Files.writeString(pkg.resolve("renamed/lombok.config"), "lombok.log.fieldName = LOG\n");
+            Files.writeString(pkg.resolve("renamed/PurgeJob.java"), """
+                    package com.example.e2e.loggers.renamed;
+
+                    import lombok.extern.slf4j.Slf4j;
+
+                    @Slf4j
+                    class PurgeJob {
+                        void run(Runnable step) {
+                            LOG.debug("Purge started");
+                            try {
+                                step.run();
+                            } catch (IllegalStateException e) {
+                            }
+                        }
+                    }
+                    """);
+        };
+        Map<String, String> actual = migrateAndFillLoggerTexts(tmp.resolve("app"), CLASSPATH, prepare);
+
+        String dir = "src/main/java/com/example/e2e/loggers/";
+        assertThat(actual.get(dir + "CleanupJob.java")).as("the inherited logger").contains("log.warn(")
+                .doesNotContain("Slf4j").doesNotContain("LoggerFactory");
+        assertThat(actual.get(dir + "Dispatcher.java")).as("the enclosing class's logger").contains("LOGGER.warn(")
+                .doesNotContain("Slf4j").containsOnlyOnce("LoggerFactory.getLogger");
+        assertThat(actual.get(dir + "renamed/PurgeJob.java")).as("lombok.log.fieldName").contains("LOG.warn(")
+                .doesNotContain(" log.");
+        assertThat(actual.get(dir + "ArchiveJob.java")).as("a Log4j2 class gets no SLF4J edit")
+                .doesNotContain("Slf4j").doesNotContain("org.slf4j").containsOnlyOnce("log.warn(");
+        assertThat(actual.get(dir + "LegacyJob.java")).as("a java.util.logging class gets no SLF4J edit")
+                .doesNotContain("Slf4j").doesNotContain("org.slf4j").doesNotContain("log.warn(");
+        golden(EXPECTED.resolveSibling("expected-logger-in-scope"), actual);
+
+        // the same without Lombok on logast's classpath (the service still compiles with it)
+        List<String> cp = Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.contains("lombok")).toList();
+        Path cpFile = tmp.resolve("classpath-nolombok.txt");
+        Files.write(cpFile, cp);
+        Map<String, String> withoutLombok = new TreeMap<>(migrateAndFillLoggerTexts(tmp.resolve("nolombok"), cpFile.toString(), prepare));
+        withoutLombok.put("OUTPUT.txt", withoutLombok.get("OUTPUT.txt").lines().filter(l -> !l.contains("recognised by name only"))
+                .collect(java.util.stream.Collectors.joining("\n", "", "\n")));
+        assertSameFiles(actual, withoutLombok);
+    }
+
+    /** migrate, then write the texts of the swallowed-exception fixes in the loggers package and apply them. */
+    private Map<String, String> migrateAndFillLoggerTexts(Path app, String classpath, IoAction prepare) throws IOException {
+        migrate(app, classpath, prepare);
+        Path fills = app.resolve(".logast/fills.json");
+        String f = Files.readString(fills);
+        String filled = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*\"_MSG\" : \"(?:[^\"\\\\]|\\\\.)*\",\\s*"
+                + "\"_where\" : \"src/main/java/com/example/e2e/loggers/)").matcher(f).replaceAll("\"MSG\" : \"Step failed\",$1");
+        assertThat(filled).as("fills.json has texts for the loggers package").isNotEqualTo(f);
+        Files.writeString(fills, filled);
+        String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
+        assertThat(third).doesNotContain("CHECK FAILED");
+        Files.writeString(app.resolve("OUTPUT.txt"), Files.readString(app.resolve("OUTPUT.txt"))
+                + "\n=== after writing the texts of the loggers package\n" + third);
+        compile(app);
+        return files(app);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);
