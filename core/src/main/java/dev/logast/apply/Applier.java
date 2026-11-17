@@ -81,6 +81,7 @@ public final class Applier {
     }
 
     private CompileCheck compile;
+    private boolean lombokWarned;
 
     /** Type-check every round's changed files against this classpath (#44); without it only the syntax is checked. */
     public Applier compileWith(List<Path> classpath) {
@@ -522,6 +523,11 @@ public final class Applier {
                     }
                 });
                 compile.newErrors(work, java).forEach((f, err) -> broken.put(f, "does not compile: " + err));
+                if (compile.lombokProblem() != null && !lombokWarned) {
+                    lombokWarned = true;   // #81: say once why Lombok's loggers are not compile-checked
+                    progress.accept("Lombok is on the classpath but does not run in logast's compile check, so lines "
+                            + "using Lombok loggers are not compile-checked (javac: " + compile.lombokProblem() + ")");
+                }
             }
             if (broken.isEmpty()) {
                 write(work, out);

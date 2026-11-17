@@ -48,6 +48,50 @@ public final class CompileCheck {
                 && p.toString().endsWith(".jar")).findFirst().orElse(null);
     }
 
+    private Boolean lombokWorks;   // probed once (#81)
+    private String lombokProblem;
+
+    /** Why Lombok on the classpath is not trusted in this gate (#81), or null; known after the first check. */
+    public String lombokProblem() {
+        return lombokProblem;
+    }
+
+    /**
+     * Whether Lombok actually runs here (#81): a jar named lombok on the classpath is not proof. A tiny {@code @Slf4j}
+     * class is compiled once with the gate's options; if its {@code log} does not resolve, Lombok's loggers are treated
+     * as when Lombok is absent, and {@link #lombokProblem()} says what javac reported.
+     */
+    private boolean lombokWorks() {
+        if (lombok == null) {
+            return false;
+        }
+        if (lombokWorks == null) {
+            String probe = "@lombok.extern.slf4j.Slf4j class LogastLombokProbe { void m() { log.info(\"probe\"); } }";
+            JavaFileObject unit = new SimpleJavaFileObject(URI.create("string:///LogastLombokProbe.java"), JavaFileObject.Kind.SOURCE) {
+                @Override
+                public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+                    return probe;
+                }
+            };
+            DiagnosticCollector<JavaFileObject> diags = new DiagnosticCollector<>();
+            try (StandardJavaFileManager fm = javac.getStandardFileManager(diags, Locale.ROOT, StandardCharsets.UTF_8)) {
+                List<String> options = new ArrayList<>(List.of("-implicit:none", "-nowarn", "-Xlint:none", "-XDsuppressNotes",
+                        "-proc:full", "-processorpath", lombok.toString()));
+                String cp = String.join(java.io.File.pathSeparator, classpath.stream().map(Path::toString).toList());
+                if (!cp.isEmpty()) {
+                    options.addAll(List.of("-classpath", cp));
+                }
+                ((JavacTask) javac.getTask(new StringWriter(), fm, diags, options, null, List.of(unit))).analyze();
+                lombokProblem = diags.getDiagnostics().stream().filter(d -> d.getKind() == Diagnostic.Kind.ERROR)
+                        .map(d -> d.getMessage(Locale.ROOT).replaceAll("\\s+", " ").strip()).findFirst().orElse(null);
+            } catch (IOException | RuntimeException e) {
+                lombokProblem = "javac failed with Lombok: " + e;
+            }
+            lombokWorks = lombokProblem == null;
+        }
+        return lombokWorks;
+    }
+
     /** False when logast runs on a JRE without a compiler: the check is skipped. */
     public boolean available() {
         return javac != null;
@@ -143,7 +187,7 @@ public final class CompileCheck {
                 continue;   // an error in a file read from the source path: not ours
             }
             String message = d.getMessage(Locale.ROOT).replaceAll("\\s+", " ").strip();
-            if (lombok == null && lombokLogger(texts.get(file), message) || environmental(d.getCode(), message)) {
+            if (!lombokWorks() && lombokLogger(texts.get(file), message) || environmental(d.getCode(), message)) {
                 continue;
             }
             out.computeIfAbsent(file, k -> new HashSet<>()).add(d.getCode() + ": " + message);

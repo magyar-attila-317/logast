@@ -115,7 +115,45 @@ class CompileCheckTest {
         Map<String, String> errors = new CompileCheck(classpath).newErrors(work, Map.of("src/main/java/a/D.java", wrongName));
         assertThat(errors).as("Lombok's default name where lombok.config renames the field").containsKey("src/main/java/a/D.java");
         assertThat(errors.get("src/main/java/a/D.java")).contains("variable log");
-        assertThat(new CompileCheck(classpath).newErrors(work, Map.of("src/main/java/a/D.java", configuredName)))
+        CompileCheck check = new CompileCheck(classpath);
+        assertThat(check.newErrors(work, Map.of("src/main/java/a/D.java", configuredName)))
                 .as("the name lombok.config gives").isEmpty();
+        assertThat(check.lombokProblem()).as("a working Lombok is trusted (#81)").isNull();
+    }
+
+    /**
+     * #81: a Lombok jar on the classpath that does not work inside the gate. {@code @Slf4j} then creates no
+     * {@code log}, so the first log line a fix adds must not count as a new error; the gate says so once.
+     */
+    @Test
+    void lombokThatDoesNotRunInTheGateIsNotTrusted() throws IOException {
+        Path broken = work.resolve("lombok-0.jar");
+        try (var jar = new java.util.jar.JarOutputStream(Files.newOutputStream(broken))) {
+            jar.putNextEntry(new java.util.jar.JarEntry("META-INF/MANIFEST.MF"));
+            jar.write("Manifest-Version: 1.0\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            jar.closeEntry();
+        }
+        List<Path> classpath = new java.util.ArrayList<>(List.of(broken));
+        java.util.Arrays.stream(System.getProperty("logast.test.lombok").split(java.io.File.pathSeparator)).map(Path::of)
+                .filter(p -> !p.getFileName().toString().startsWith("lombok")).forEach(classpath::add);
+        String before = """
+                package a;
+
+                @lombok.extern.slf4j.Slf4j
+                class F {
+                    void m(Runnable step) {
+                        try {
+                            step.run();
+                        } catch (IllegalStateException e) {
+                        }
+                    }
+                }
+                """;
+        write("src/main/java/a/F.java", before);
+        String logged = before.replace("catch (IllegalStateException e) {\n", "catch (IllegalStateException e) {\n log.warn(\"Step failed\", e);\n");
+        CompileCheck check = new CompileCheck(classpath);
+        assertThat(check.newErrors(work, Map.of("src/main/java/a/F.java", logged)))
+                .as("Lombok does not run in the gate: the logger it would create is no new error").isEmpty();
+        assertThat(check.lombokProblem()).as("the gate says why it does not trust Lombok").isNotNull();
     }
 }
