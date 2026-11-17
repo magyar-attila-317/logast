@@ -294,6 +294,14 @@ final class MdcRules {
         }
     }
 
+    /**
+     * A rewrite folds another rule's fix in (drops a trace key, renames an alias, lists it under "also fixes") only when
+     * that rule is enabled and not suppressed on the line: a switched-off rule edits nothing (#75).
+     */
+    private boolean folds(SourceFileInfo f, int line, String rule) {
+        return ctx.enabled(rule) && !ctx.ignored(f, line, rule);
+    }
+
     /** @return the replaced range, or null when no edit was produced */
     private int[] notCloseable(MethodInfo m, MdcOp op, List<MdcOp> ambientOps, Set<MdcOp> coveredAmbient, int ordinal) {
         SourceFileInfo f = m.file();
@@ -370,16 +378,20 @@ final class MdcRules {
             b.severity("high");
         }
         if (mode.equals("clear") || mode.equals("try") && ((J.Try) stmts.get(j)).getFinally().getStatements().stream().anyMatch(fs -> isMdc(fs, "clear", null))) {
-            b.fix(Rules.MDC_CLEAR);
-            handledClears.add(mode.equals("clear") ? (J.MethodInvocation) stmts.get(j)
-                    : (J.MethodInvocation) ((J.Try) stmts.get(j)).getFinally().getStatements().stream().filter(fs -> isMdc(fs, "clear", null)).findFirst().orElseThrow());
+            J.MethodInvocation clear = mode.equals("clear") ? (J.MethodInvocation) stmts.get(j)
+                    : (J.MethodInvocation) ((J.Try) stmts.get(j)).getFinally().getStatements().stream().filter(fs -> isMdc(fs, "clear", null)).findFirst().orElseThrow();
+            if (folds(f, Pos.line(clear), Rules.MDC_CLEAR)) {
+                b.fix(Rules.MDC_CLEAR);
+            }
+            handledClears.add(clear);
         }
 
         int regionEnd = mode.equals("leak") ? stmts.size() : j;
         List<int[]> cuts = new ArrayList<>();
         for (MdcOp a : ambientOps) {
             int s = Pos.start(a.call());
-            if (s > Pos.start(op.call()) && within(stmts, after, regionEnd, a.call(), mode.equals("try") ? stmts.get(j) : null)) {
+            if (s > Pos.start(op.call()) && within(stmts, after, regionEnd, a.call(), mode.equals("try") ? stmts.get(j) : null)
+                    && folds(f, Pos.line(a.call()), Rules.MANUAL_TRACE_MDC)) {
                 cuts.add(JavaEdits.statementLines(text, a.call()));
                 coveredAmbient.add(a);
                 if (a.kind() == MdcOp.Kind.PUT) {
@@ -437,12 +449,12 @@ final class MdcRules {
         for (J.MethodInvocation put : group) {
             String key = keyOf.get(put);
             boolean literal = put.getArguments().getFirst() instanceof J.Literal;
-            String canonical = literal ? ctx.policy.canonicalMdcKey(key) : null;
+            String canonical = literal && folds(f, Pos.line(put), Rules.MDC_KEY_ALIAS) ? ctx.policy.canonicalMdcKey(key) : null;
             if (canonical != null) {
                 b.fix(Rules.MDC_KEY_ALIAS);
             }
             String effective = canonical != null ? canonical : key;
-            if (sameValueAlreadyInMdc(m, effective, put.getArguments().get(1))) {
+            if (folds(f, Pos.line(put), Rules.MDC_NESTED_KEY) && sameValueAlreadyInMdc(m, effective, put.getArguments().get(1))) {
                 b.fix(Rules.MDC_NESTED_KEY);
                 continue;
             }
@@ -494,10 +506,19 @@ final class MdcRules {
         boolean finallyOnlyMdc = t.getFinally().getStatements().stream()
                 .allMatch(fs -> isMdc(fs, "clear", null) || isMdc(fs, "remove", null));
         int[] inner = JavaEdits.blockInner(text, t.getBody());
-        if (puts.isEmpty() || otherMdcWrites || !finallyOnlyMdc || !t.getCatches().isEmpty() || t.getResources() != null
+        // the rewrite drops the try's trace-key puts and removes: only when MANUAL_TRACE_MDC may delete them
+        boolean keptTraceKeys = ambientOps.stream().anyMatch(o -> Pos.start(o.call()) > Pos.start(t) && Pos.start(o.call()) < Pos.end(t)
+                && !folds(f, Pos.line(o.call()), Rules.MANUAL_TRACE_MDC));
+        J.MethodInvocation clear = (J.MethodInvocation) t.getFinally().getStatements().stream()
+                .filter(fs -> isMdc(fs, "clear", null)).findFirst().orElse(null);
+        boolean foldsClear = clear != null && folds(f, Pos.line(clear), Rules.MDC_CLEAR);
+        if (puts.isEmpty() || otherMdcWrites || keptTraceKeys || !finallyOnlyMdc || !t.getCatches().isEmpty() || t.getResources() != null
                 || inner == null) {
             if (clears) {
-                b.severity("high").fix(Rules.MDC_CLEAR);
+                b.severity("high");
+            }
+            if (foldsClear) {
+                b.fix(Rules.MDC_CLEAR);
             }
             b.suggestion("Replace the puts with try (var mdc = MdcScope.of(k1, v1, k2, v2 ...)) and drop the finally cleanup"
                     + (otherMdcWrites ? "; the block also writes computed MDC keys, scope those explicitly too" : "")
@@ -514,9 +535,10 @@ final class MdcRules {
                 ambientOps.stream().filter(o -> o.call() == put).forEach(coveredAmbient::add);
                 continue;
             }
-            String canonical = literal ? ctx.policy.canonicalMdcKey(key) : null;   // a constant keeps its name; rename it at its declaration
+            // a constant keeps its name; rename it at its declaration
+            String canonical = literal && folds(f, Pos.line(put), Rules.MDC_KEY_ALIAS) ? ctx.policy.canonicalMdcKey(key) : null;
             String effective = canonical != null ? canonical : key;
-            if (sameValueAlreadyInMdc(m, effective, put.getArguments().get(1))) {
+            if (folds(f, Pos.line(put), Rules.MDC_NESTED_KEY) && sameValueAlreadyInMdc(m, effective, put.getArguments().get(1))) {
                 b.fix(Rules.MDC_NESTED_KEY);
                 if (!ctx.a.paths.mdcAtEntry(m).contains(effective)) {
                     // only planned: the entrypoint fixes that add it must be applied first
@@ -546,7 +568,7 @@ final class MdcRules {
         int from = Text.lineStart(text, Pos.start(t));
         int to = Text.nextLine(text, Pos.end(t) - 1);
         b.severity(clears ? "high" : "low");
-        if (clears) {
+        if (foldsClear) {
             b.fix(Rules.MDC_CLEAR);
         }
         b.edit(Edit.replace(f.relPath(), from, to, replacement));
