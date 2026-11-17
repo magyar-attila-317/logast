@@ -1102,6 +1102,44 @@ class E2eGoldenTest {
     }
 
     /**
+     * #13: an argument with no letter or digit ("()", "-", '(') has no name to derive a key from. The empty key wrote
+     * "[binCode={}, ={}]" (logged as "[binCode=B1, =()]"), which is not house format, so every apply prepended "[=]".
+     */
+    @Test
+    void punctuationArgumentGetsANamedSuffixKey() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path source = app.resolve("src/main/java/com/example/e2e/review/BinChecker.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.review;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    class BinChecker {
+                        private static final Logger log = LoggerFactory.getLogger(BinChecker.class);
+
+                        void check(String binCode) {
+                            log.info("Bin checked {} {}", binCode, "()");
+                        }
+
+                        void empty(char marker) {
+                            log.info("Bin emptied: {}", '-');
+                        }
+                    }
+                    """);
+        });
+
+        String source = actual.get("src/main/java/com/example/e2e/review/BinChecker.java");
+        assertThat(source)
+                .contains("log.info(\"Bin checked [binCode={}, value={}]\", binCode, \"()\");\n")
+                .contains("log.info(\"Bin emptied [value={}]\", '-');\n")
+                .doesNotContain("[=").doesNotContain(", ={}");
+        assertThat(actual.get("FINDINGS.txt")).doesNotContain("[=").doesNotContain(", ={}");
+        golden(EXPECTED.resolveSibling("expected-punctuation-argument"), actual);
+    }
+
+    /**
      * #54: a project whose files end their lines with CRLF (written on Windows) gives the LF result with CRLF: edits
      * keep the file's line ending and the lines they insert use it too, so no file ends up with mixed line endings.
      */
