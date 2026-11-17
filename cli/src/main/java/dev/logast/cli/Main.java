@@ -137,6 +137,8 @@ public final class Main {
 
             Path baselineFile = baseline == null || baseline.isEmpty() ? root().resolve(".logast/baseline.json") : Path.of(baseline);
             if (updateBaseline) {
+                // what was not analysed is not in the baseline: a later complete scan reports it all as new (#55)
+                r.stats().gaps().forEach(g -> Out.warn("analysis incomplete: " + g + "; the baseline does not cover it"));
                 dev.logast.orders.Baseline.of(r).write(baselineFile);
                 Out.step("baseline", r.orders().size() + " findings recorded in " + baselineFile + "; CI now fails only on new ones");
                 return 0;
