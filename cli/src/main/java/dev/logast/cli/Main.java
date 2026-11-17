@@ -372,7 +372,8 @@ public final class Main {
                 next.add(new String[]{"logast apply . " + (auto ? "--auto " : "") + (fills != null ? "--fills " + fills + " " : "") + "--write",
                         "make these " + r.applied().size() + " changes"});
             }
-            if (write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith("build.gradle") || fn.endsWith("build.gradle.kts"))) {
+            if (write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith(".gradle") || fn.endsWith(".gradle.kts"))) {
+                // a build file, or a script it applies (gradle/dependencies.gradle, #80)
                 // dependencies changed: refresh the classpath right away, so the next scan sees the new types
                 Main.Classpath.Result cpr;
                 try (Out.Progress p = new Out.Progress("dependencies changed: running Gradle to refresh the classpath")) {

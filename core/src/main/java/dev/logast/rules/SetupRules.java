@@ -24,7 +24,6 @@ import java.util.regex.Pattern;
 
 /** Project-level checks: build dependencies, logback configuration, structured logging properties. */
 public final class SetupRules {
-    private static final Pattern DEPENDENCIES = Pattern.compile("(?m)^dependencies\\s*\\{[^\\n]*$");
     private static final Pattern BOOT_PLUGIN_VERSION = Pattern.compile(
             "\\bid\\s*(?:\\(\\s*)?[\\\"']org\\.springframework\\.boot[\\\"']\\s*\\)?\\s*version\\s*[\\\"']([^\\\"']+)[\\\"']");
     private static final Pattern BOOT_PLUGIN_CLASSPATH_VERSION = Pattern.compile(
@@ -71,14 +70,15 @@ public final class SetupRules {
     // ---- dependencies ------------------------------------------------------------------------
 
     private void dependencies(Path buildFile) {
-        String text = read(buildFile);
-        boolean kts = buildFile.toString().endsWith(".kts");
+        // the dependencies may live in a script the build file applies (apply from: 'gradle/dependencies.gradle', #80)
+        BuildScripts scripts = BuildScripts.of(root, buildFile);
+        String text = scripts.text();
         String rel = rel(buildFile);
 
         String support = ctx.policy.support().coordinates();
         if (ctx.policy.support().vendor()) {
             if (!ctx.a.supportStarterPresent && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
-                vendor(rel, text, kts);
+                vendor(scripts);
             } else if (ctx.a.supportStarterPresent && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
                 updateVendored();
             }
@@ -88,11 +88,11 @@ public final class SetupRules {
                     .title("Add the logging-support starter (" + support + ")")
                     .suggestion("Provides ObservedContext, MdcScope, ContextExecutors, MDC/trace propagation for @Async "
                             + "and Spring executors, batch trace bootstrap (TRACEPARENT / TRACE_ID) and ECS JSON log defaults.");
-            Edit e = dependencyInsert(rel, text, kts, support);
+            BuildScripts.Insert e = scripts.insert(support);
             if (e == null) {
-                b.suggestion(b.suggestion + " No top-level dependencies {} block found: add it manually.");
+                b.suggestion(b.suggestion + " No top-level dependencies {} block found: add it manually." + scripts.unresolvedNote());
             } else {
-                b.edit(e).line = lineOf(text, e.start());
+                b.edit(e.edit()).at(e.file(), e.line());
             }
             asyncLocations(b);
             ctx.supportOrderId = b.id();
@@ -118,11 +118,11 @@ public final class SetupRules {
                         ? "Add Spring Boot 3 Micrometer OpenTelemetry tracing dependencies"
                         : "Add " + BOOT4_OTEL_STARTER + " (tracing + trace/span ids in logs)";
                 OrderBuilder b = ctx.order(Rules.SETUP_OTEL_STARTER, "otel|" + rel).at(rel, 1).title(title);
-                Edit e = dependencyInsert(rel, text, kts, missing);
+                BuildScripts.Insert e = scripts.insert(missing);
                 if (e == null) {
-                    b.suggestion("No top-level dependencies {} block found: add them manually.");
+                    b.suggestion("No top-level dependencies {} block found: add them manually." + scripts.unresolvedNote());
                 } else {
-                    b.edit(e).line = lineOf(text, e.start());
+                    b.edit(e.edit()).at(e.file(), e.line());
                 }
             } else if (coordinates.isEmpty()) {
                 ctx.order(Rules.SETUP_OTEL_STARTER, "otel|" + rel).at(rel, 1)
@@ -183,7 +183,7 @@ public final class SetupRules {
     }
     private static final Pattern AUTO_CONFIGURATION = Pattern.compile("@AutoConfiguration(\\([^)]*\\))?", Pattern.DOTALL);
 
-    private void vendor(String buildRel, String buildText, boolean kts) {
+    private void vendor(BuildScripts scripts) {
         String pkg = ctx.a.supportPackage;
         Path javaRoot = ctx.a.index.classes().stream().map(c -> sourceRoot(c.file().absPath())).filter(Objects::nonNull)
                 .findFirst().orElse(root.resolve("src/main/java"));
@@ -226,8 +226,9 @@ public final class SetupRules {
         // the copied code needs these; Spring Boot's BOM manages the versions
         for (var dep : Map.of("io.micrometer.observation.Observation", "io.micrometer:micrometer-observation",
                 "io.micrometer.context.ContextSnapshotFactory", "io.micrometer:context-propagation").entrySet()) {
-            if (!ctx.a.project.probe().hasClass(dep.getKey()) && !buildText.contains(dep.getValue())) {
-                b.edit(dependencyInsert(buildRel, buildText, kts, dep.getValue()));
+            if (!ctx.a.project.probe().hasClass(dep.getKey()) && !scripts.text().contains(dep.getValue())) {
+                BuildScripts.Insert e = scripts.insert(dep.getValue());
+                b.edit(e == null ? null : e.edit());
             }
         }
         asyncLocations(b);
@@ -330,26 +331,6 @@ public final class SetupRules {
         return null;
     }
 
-    static Edit dependencyInsert(String rel, String text, boolean kts, String coordinates) {
-        return dependencyInsert(rel, text, kts, List.of(coordinates));
-    }
-
-    private static Edit dependencyInsert(String rel, String text, boolean kts, List<String> coordinates) {
-        Matcher m = DEPENDENCIES.matcher(text);
-        if (!m.find()) {
-            return null;
-        }
-        int at = Text.nextLine(text, m.end());
-        String indent = Text.blank(text, at, Text.lineEnd(text, at)) ? "    " : Text.indentAt(text, at);
-        if (indent.isEmpty()) {
-            indent = "    ";
-        }
-        String indentation = indent;
-        String lines = coordinates.stream().map(coordinate -> indentation + (kts ? "implementation(\"" + coordinate + "\")"
-                : "implementation '" + coordinate + "'")).collect(java.util.stream.Collectors.joining("\n"));
-        return Edit.insert(rel, at, lines + "\n");
-    }
-
     /** Spring Boot 3 uses Micrometer's OTel bridge; the dedicated starter is for Boot 4+. */
     private int springBootMajor(Path buildFile) {
         for (Path dir = buildFile.getParent(); dir != null && dir.startsWith(root); dir = dir.getParent()) {
@@ -358,7 +339,7 @@ public final class SetupRules {
                 if (!Files.isRegularFile(candidate)) {
                     continue;
                 }
-                int major = bootMajorFromBuild(read(candidate));
+                int major = bootMajorFromBuild(BuildScripts.of(root, candidate).text());
                 if (major > 0) {
                     return major;
                 }

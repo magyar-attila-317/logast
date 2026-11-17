@@ -227,10 +227,10 @@ final class TracingRules {
         if (!autoConfigured) {
             Path build = buildFile(f);
             if (build != null) {
-                String buildText = SetupRules.read(build);
-                String rel = ctx.a.project.root().relativize(build).toString().replace('\\', '/');
-                addStarter = buildText.contains(starter.substring(starter.indexOf(':') + 1)) ? null
-                        : SetupRules.dependencyInsert(rel, buildText, build.toString().endsWith(".kts"), starter);
+                BuildScripts scripts = BuildScripts.of(ctx.a.project.root(), build);   // with its apply from scripts (#80)
+                BuildScripts.Insert insert = scripts.text().contains(starter.substring(starter.indexOf(':') + 1)) ? null
+                        : scripts.insert(starter);
+                addStarter = insert == null ? null : insert.edit();
             }
         }
         if (hit[1] == null || !(constructorOfBean || beanMethod) || !autoConfigured && addStarter == null) {
