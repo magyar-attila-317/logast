@@ -13,7 +13,7 @@ index 9323dd0..23435dc 100644
    config:
 diff --git a/src/main/java/com/example/e2e/job/JobMetrics.java b/src/main/java/com/example/e2e/job/JobMetrics.java
 new file mode 100644
-index 0000000..0ccb055
+index 0000000..d1c5ddc
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/job/JobMetrics.java
 @@ -0,0 +1,35 @@ 
@@ -122,7 +122,7 @@ index fd83167..c5a3469 100644
                  .run(() -> {
                      log.info("Publishing started");
 diff --git a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
-index 0819a35..94d9e4a 100644
+index 8e05f57..28908c9 100644
 --- a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
 +++ b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
 @@ -15,7 +15,7 @@ 
@@ -213,7 +213,7 @@ index 5f70c44..8537b6b 100644
          }
          orders.forEach(payments::charge);
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 7bf2b77..86da61d 100644
+index 4f47def..8e84b9d 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
 @@ -12,5 +12,6 @@ 
@@ -224,7 +224,7 @@ index 7bf2b77..86da61d 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
-index a656908..a777948 100644
+index 64835f7..6948134 100644
 --- a/src/main/java/com/example/e2e/job/PreloadJob.java
 +++ b/src/main/java/com/example/e2e/job/PreloadJob.java
 @@ -14,5 +14,6 @@ 
@@ -247,7 +247,7 @@ index 436af48..b9f74c9 100644
  
      public int countUse(String pledgeId) {
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index 1e94776..97bc73b 100644
+index 35ea6d0..2fdcf6e 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -14,5 +14,6 @@ 
