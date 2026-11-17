@@ -1,0 +1,163 @@
+{
+  "_readme" : "One entry per outcome the logs report and no metric counts. Set \"count\" to \"counter\" (Outcomes.count(name, outcome): a counter name{outcome=...}), \"tag\" (Outcomes.tag(outcome) on the timer already running; only where _tag says available) or \"skip\" (a // logast:ignore comment). Edit \"name\" and \"outcome\" freely (lower case, dots). Where the line logs a number (_amounts), \"amount\" names one to count too: \"as\": \"total\" (a counter name.<amount> grows by it) or \"per-run\" (each value one sample of a distribution summary name.<amount>); empty \"as\" takes metrics.amounts from logast.yaml. Leave \"amount\" empty to count how often only. Then: logast apply . --auto. `logast metrics . --format json` has the context.",
+  "OUM-03f513" : {
+    "count" : "",
+    "name" : "coupon.usage",
+    "outcome" : "saved",
+    "amount" : "",
+    "as" : "",
+    "_amounts" : [ "uses" ],
+    "_event" : "saved",
+    "_message" : "INFO \"Coupon usage saved\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponRepository.java:33 CouponRepository.countUse",
+    "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/use\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/{couponId}/use" ],
+    "_tag" : "available"
+  },
+  "OUM-027987" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "sent",
+    "_event" : "sent",
+    "_message" : "INFO \"Coupon sent\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponSender.java:14 CouponSender.send",
+    "_frequency" : "unknown: no rate for \"POST /coupons/redeem\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/redeem", "http POST /coupons/{couponId}/publish" ],
+    "_tag" : "available"
+  },
+  "OUM-773d35" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "published",
+    "_event" : "published",
+    "_message" : "INFO \"Coupon published\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:44 CouponService.publish",
+    "_frequency" : "unknown: no rate for \"POST /coupons/{couponId}/publish\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/{couponId}/publish" ],
+    "_tag" : "available"
+  },
+  "OUM-4809f0" : {
+    "count" : "",
+    "name" : "coupon.redemption",
+    "outcome" : "completed",
+    "_event" : "completed",
+    "_message" : "INFO \"Coupon redemption completed\"",
+    "_where" : "src/main/java/com/example/e2e/coupon/CouponService.java:51 CouponService.redeem",
+    "_frequency" : "unknown: no rate for \"POST /coupons/redeem\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /coupons/redeem" ],
+    "_tag" : "available"
+  },
+  "OUM-49d3bd" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "audited",
+    "_event" : "audited",
+    "_message" : "INFO \"Coupon audited\"",
+    "_where" : "src/main/java/com/example/e2e/edge/Audited.java:11 Audited.audit",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-3c3200" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "archived",
+    "_event" : "archived",
+    "_message" : "INFO \"Coupon archived\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:45 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-bb1ac8" : {
+    "count" : "",
+    "name" : "edge.flow.async.work",
+    "outcome" : "failed",
+    "_event" : "failed",
+    "_message" : "ERROR \"Edge flow async work failed\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-be530b" : {
+    "count" : "",
+    "name" : "coupon",
+    "outcome" : "parsed",
+    "_event" : "parsed",
+    "_message" : "INFO \"Coupon parsed\"",
+    "_where" : "src/main/java/com/example/e2e/edge/EdgeFlow.java:51 EdgeFlow.process",
+    "_frequency" : "low",
+    "_paths" : [ "scheduled @Scheduled EdgeJob.run" ],
+    "_tag" : "available"
+  },
+  "OUM-4284aa" : {
+    "count" : "",
+    "name" : "coupon.lookup",
+    "outcome" : "failed",
+    "_event" : "failed",
+    "_message" : "WARN \"Coupon lookup failed\"",
+    "_where" : "src/main/java/com/example/e2e/messaging/ReactiveCouponLookup.java:17 ReactiveCouponLookup.find",
+    "_frequency" : "unknown: no entrypoint is known to reach it",
+    "_paths" : [ ],
+    "_tag" : "not available here (no observation known to run)"
+  },
+  "OUM-0f37ab" : {
+    "count" : "",
+    "name" : "order.confirmation",
+    "outcome" : "sent",
+    "_event" : "sent",
+    "_message" : "INFO \"Order confirmation sent\"",
+    "_where" : "src/main/java/com/example/e2e/order/OrderNotifications.java:17 OrderNotifications.onPlaced",
+    "_frequency" : "unknown: no rate for \"POST /orders\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /orders" ],
+    "_tag" : "available"
+  },
+  "OUM-d691d7" : {
+    "count" : "",
+    "name" : "order",
+    "outcome" : "placed",
+    "_event" : "placed",
+    "_message" : "INFO \"Order placed\"",
+    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:37 OrderService.place",
+    "_frequency" : "unknown: no rate for \"POST /orders\" in .logast/traffic.yaml",
+    "_paths" : [ "http POST /orders" ],
+    "_tag" : "available"
+  },
+  "OUM-00f4c0" : {
+    "count" : "",
+    "name" : "orders",
+    "outcome" : "shipped",
+    "amount" : "",
+    "as" : "",
+    "_amounts" : [ "items" ],
+    "_event" : "shipped",
+    "_message" : "INFO \"Orders shipped\"",
+    "_where" : "src/main/java/com/example/e2e/order/OrderService.java:48 OrderService.ship",
+    "_frequency" : "unknown: no entrypoint is known to reach it",
+    "_paths" : [ ],
+    "_tag" : "not available here (no observation known to run)"
+  },
+  "OUM-7df60f" : {
+    "count" : "",
+    "name" : "bin",
+    "outcome" : "checked",
+    "_event" : "checked",
+    "_message" : "INFO \"Bin checked\"",
+    "_where" : "src/main/java/com/example/e2e/review/BinChecker.java:10 BinChecker.check",
+    "_frequency" : "unknown: no entrypoint is known to reach it",
+    "_paths" : [ ],
+    "_tag" : "not available here (no observation known to run)"
+  },
+  "OUM-e7540a" : {
+    "count" : "",
+    "name" : "bin",
+    "outcome" : "emptied",
+    "_event" : "emptied",
+    "_message" : "INFO \"Bin emptied\"",
+    "_where" : "src/main/java/com/example/e2e/review/BinChecker.java:14 BinChecker.empty",
+    "_frequency" : "unknown: no entrypoint is known to reach it",
+    "_paths" : [ ],
+    "_tag" : "not available here (no observation known to run)"
+  }
+}

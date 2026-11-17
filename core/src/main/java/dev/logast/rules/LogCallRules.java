@@ -364,6 +364,11 @@ final class LogCallRules {
             } else {
                 String raw0 = given != null ? given : DomainValues.derivedKey(e);
                 key = styled(raw0 == null ? Text.camel(src(f, e)) : raw0);
+                // #13: an argument without a letter or digit ("()", "-", '(') has no name to derive; an empty key wrote
+                // "[={}]", which logs "[=()]" and is not house format, so every apply prepended another "[=]"
+                if (key.isEmpty()) {
+                    key = styled("value");
+                }
             }
             // the same recognition as REPEATED_LOG_VALUE: a vocabulary source, an alias, or the [key={}] name it is logged
             // under; otherwise a value put into MDC there would stay in the message here
