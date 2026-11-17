@@ -8,6 +8,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.function.ToIntFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -15,8 +16,9 @@ import java.util.stream.Stream;
 
 /**
  * Collects a first-draft vocabulary from what the code already says: MDC keys, {@code [k=v]} / {@code k={}} keys in
- * log messages and id-like variable names ({@code orderId}, {@code tableUuid}). Variants of one identifier
- * ({@code orderId, order_id, order.id}) become one term with a canonical key and aliases, so the user only reorganises.
+ * log messages and id-like variable names ({@code orderId}, {@code tableUuid}). It only collects: every key becomes a term of
+ * its own, spelled as in the code. Merging spellings, renaming terms to business words and dropping technical keys is
+ * the user's call; the output says which keys look alike, in comments, and shows how with a short example (#86).
  * Text-based on purpose: it needs no classpath and runs in a second.
  */
 public final class VocabularyHarvest {
@@ -35,6 +37,9 @@ public final class VocabularyHarvest {
     private static final Set<String> SKIP_DIRS = Set.of("build", "out", "target", ".gradle", ".git", ".logast", "node_modules", "test");
     private static final Set<String> NOT_A_KEY = Set.of("id", "uuid", "key", "value", "name", "type", "e", "ex", "error",
             "http", "https", "url", "uri", "path");
+    /** Plain scalars YAML reads as booleans or null. */
+    private static final Set<String> YAML_WORDS = Set.of("y", "n", "yes", "no", "on", "off", "true", "false", "null");
+    private static final String VOCABULARY_GUIDE = "https://github.com/magyar-attila-317/logast/blob/main/docs/vocabulary.md";
 
     /** One spelling of a key and where it was seen. */
     public static final class Usage {
@@ -46,9 +51,16 @@ public final class VocabularyHarvest {
         }
     }
 
-    /** A business term: its canonical MDC key and the other spellings found. */
-    public record Term(String name, String key, List<String> aliases, List<String> params, int mdc, int log, int declared,
-                       int files, String similarTo, List<String> roles) {
+    /**
+     * One key exactly as the code writes it; it becomes a term of the same name. Organising is left to the user:
+     * {@code sameAs} and {@code kindOf} are only hints, written as comments.
+     *
+     * @param sameAs other keys that spell the same identifier ({@code orderId, order_id, orderUuid}); an id and a
+     *               number ({@code supplierId, supplierNumber}) never do
+     * @param kindOf a key this one is a role of ({@code openedByUserId} → {@code userId}), or null
+     */
+    public record Term(String key, List<String> params, int mdc, int log, int declared, int files, List<String> sameAs,
+                       String kindOf) {
         boolean used() {
             return mdc > 0 || log > 0;
         }
@@ -69,14 +81,14 @@ public final class VocabularyHarvest {
     }
 
     /**
-     * @param known      merged policy (company layers): spellings it already maps are left out
+     * @param known      merged policy (company layers): keys and terms it already has are left out
      * @param minDeclared declared-only identifiers (never logged, never in MDC) need this many declarations
      */
     public static Result run(Path root, Policy known, int minDeclared) {
         return run(root, known, known == null ? KeyStyle.CAMEL : known.logging().style(), minDeclared);
     }
 
-    /** @param style spelling of the canonical keys ({@code logging.keyStyle}) */
+    /** @param style {@code logging.keyStyle}, named in the comment on value keys spelled more than one way */
     public static Result run(Path root, Policy known, KeyStyle style, int minDeclared) {
         Map<String, Usage> usages = new TreeMap<>();
         List<Path> files = javaFiles(root);
@@ -109,70 +121,55 @@ public final class VocabularyHarvest {
         }
         usages.keySet().removeIf(k -> AMBIENT.contains(k.toLowerCase(Locale.ROOT)) || NOT_A_KEY.contains(k.toLowerCase(Locale.ROOT)));
 
+        Set<String> knownKeys = new TreeSet<>();
         Set<String> knownSpellings = new HashSet<>();
         Set<String> knownTerms = new HashSet<>();
         if (known != null) {
+            knownKeys.addAll(known.mdcRegistry().keySet());
             knownSpellings.addAll(known.mdcAliases().keySet());
-            knownSpellings.addAll(known.mdcRegistry().keySet());
+            knownSpellings.addAll(knownKeys);
             knownTerms.addAll(known.terms());
         }
 
-        Map<String, Map<String, Usage>> byTerm = new TreeMap<>();
+        // one term per key, as written: nothing is grouped, renamed or restyled
+        Map<String, Usage> ids = new TreeMap<>();
         Map<String, Map<String, Integer>> values = new TreeMap<>();
         usages.forEach((key, u) -> {
             boolean identifier = u.mdc > 0 || ID_SUFFIX.matcher(key).find();
             if (identifier) {
-                byTerm.computeIfAbsent(term(key), t -> new TreeMap<>()).put(key, u);
+                if (!knownSpellings.contains(key) && !knownTerms.contains(key) && (u.mdc > 0 || u.log > 0 || u.declared >= minDeclared)) {
+                    ids.put(key, u);
+                }
             } else if (u.log > 0) {
                 values.computeIfAbsent(dotted(key), t -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER)).merge(key, u.log, Integer::sum);
             }
         });
 
-        List<Term> terms = new ArrayList<>();
-        byTerm.forEach((name, spellings) -> {
-            int mdc = sum(spellings, x -> x.mdc), log = sum(spellings, x -> x.log), declared = sum(spellings, x -> x.declared);
-            if (mdc == 0 && log == 0 && declared < minDeclared) {
-                return;
-            }
-            boolean idLike = spellings.keySet().stream().anyMatch(k -> ID_SUFFIX.matcher(k).find());
-            KeyStyle ks = style == KeyStyle.KEEP ? KeyStyle.CAMEL : style;
-            // the most used spelling, in the configured style ("order.id" → "orderId" for camel)
-            String top = spellings.keySet().stream().max(Comparator.comparingInt(k -> spellings.get(k).total())).orElseThrow();
-            String key = idLike && !ID_SUFFIX.matcher(top).find() ? ks.apply(name + ".id")
-                    : style == KeyStyle.KEEP ? top : ks.apply(top.matches("(?i).*uuid$") ? name + ".id" : top);
-            List<String> aliases = spellings.keySet().stream().filter(k -> !k.equals(key) && !knownSpellings.contains(k))
-                    .sorted(Comparator.comparingInt((String k) -> -spellings.get(k).total()).thenComparing(k -> k)).toList();
-            if (knownSpellings.contains(key) && aliases.isEmpty() || knownTerms.contains(name) && aliases.isEmpty()) {
-                return;
-            }
-            List<String> params = spellings.entrySet().stream()
-                    .filter(e -> e.getKey().matches("[a-z][A-Za-z0-9]*") && e.getValue().declared > 0)
-                    .map(Map.Entry::getKey).toList();
-            Set<String> inFiles = new TreeSet<>();
-            spellings.values().forEach(x -> inFiles.addAll(x.files));
-            terms.add(new Term(name, key, aliases, params, mdc, log, declared, inFiles.size(), null, List.of()));
-        });
+        // hints only: spellings of one identifier, and roles ("openedByUserId" is a kind of "userId"); the policy's keys count too
+        ToIntFunction<String> weight = k -> ids.containsKey(k) ? ids.get(k).mdc * 10 + ids.get(k).log * 3 + ids.get(k).declared : -1;
+        Comparator<String> byWeight = Comparator.comparingInt((String k) -> -weight.applyAsInt(k)).thenComparing(k -> k);
+        Map<String, List<String>> byIdentity = new HashMap<>();
+        Stream.concat(ids.keySet().stream(), knownKeys.stream()).distinct()
+                .forEach(k -> byIdentity.computeIfAbsent(identity(k), i -> new ArrayList<>()).add(k));
+        byIdentity.values().forEach(l -> l.sort(byWeight));
 
-        // compounds: "opened.by.user" is a role of "user" (another field, not an alias); "orders" is probably "order"
-        Set<String> names = terms.stream().map(Term::name).collect(Collectors.toSet());
-        names.addAll(knownTerms);
-        Map<String, List<String>> rolesOf = new TreeMap<>();
-        List<Term> kept = new ArrayList<>();
-        for (Term t : terms) {
-            String base = baseTerm(t.name(), names);
-            String singular = t.name().endsWith("s") ? t.name().substring(0, t.name().length() - 1) : null;
-            if (base != null && t.mdc() == 0 && t.log() < 2) {
-                rolesOf.computeIfAbsent(base, b -> new ArrayList<>()).addAll(t.aliases().isEmpty() ? List.of(t.key()) : t.aliases());
-                continue;
+        List<Term> all = new ArrayList<>();
+        ids.forEach((key, u) -> {
+            String identity = identity(key);
+            String kind = identity.substring(identity.indexOf('#'));
+            List<String> sameAs = byIdentity.get(identity).stream().filter(k -> !k.equals(key)).toList();
+            String kindOf = null;
+            String[] words = identity.substring(0, identity.indexOf('#')).split("\\.");
+            for (int i = 1; i < words.length && kindOf == null; i++) {      // the longest known ending wins
+                List<String> base = byIdentity.get(String.join(".", Arrays.copyOfRange(words, i, words.length)) + kind);
+                kindOf = base == null ? null : base.getFirst();
             }
-            kept.add(new Term(t.name(), t.key(), t.aliases(), t.params(), t.mdc(), t.log(), t.declared(), t.files(),
-                    base != null ? base : singular != null && names.contains(singular) ? singular : null, List.of()));
-        }
-        List<Term> withRoles = kept.stream().map(t -> new Term(t.name(), t.key(), t.aliases(), t.params(), t.mdc(), t.log(),
-                t.declared(), t.files(), t.similarTo(), rolesOf.getOrDefault(t.name(), List.of()).stream().sorted().toList())).toList();
-        Comparator<Term> weight = Comparator.comparingInt((Term t) -> -(t.mdc() * 10 + t.log() * 3 + t.declared())).thenComparing(Term::name);
-        List<Term> used = withRoles.stream().filter(Term::used).sorted(weight).toList();
-        List<Term> unused = withRoles.stream().filter(t -> !t.used()).sorted(weight).toList();
+            List<String> params = key.matches("[a-z][A-Za-z0-9]*") && u.declared > 0 ? List.of(key) : List.of();
+            all.add(new Term(key, params, u.mdc, u.log, u.declared, u.files.size(), sameAs, kindOf));
+        });
+        all.sort(Comparator.comparing(Term::key, byWeight));
+        List<Term> used = all.stream().filter(Term::used).toList();
+        List<Term> unused = all.stream().filter(t -> !t.used()).toList();
 
         List<ValueKey> valueKeys = values.entrySet().stream().map(e -> new ValueKey(e.getKey(), e.getValue())).toList();
         return new Result(used, unused, valueKeys, files.size(), style);
@@ -211,48 +208,42 @@ public final class VocabularyHarvest {
         return votes.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
     }
 
-    /** The {@code vocabulary:} block (plus commented value keys), ready to paste into or append to a policy. */
+    /** The {@code vocabulary:} block (plus commented hints), ready to paste into or append to a policy. */
     public static String yaml(Result r) {
         StringBuilder sb = new StringBuilder();
         sb.append("# Harvested from ").append(r.filesScanned()).append(" source files: MDC keys, [k=v] keys in log messages and")
-                .append(" id-like variables.\n# Counts: mdc / log / declared, files. Rename terms, merge duplicates (move a spelling into")
-                .append(" `mdc.aliases`),\n# drop what is not a business concept, and add banned words to `aliases`.\n");
+                .append(" id-like variables,\n# one term per key, written as in the code. Counts: mdc / log / declared, files.")
+                .append(" \"same value as\" and\n# \"a kind of\" are only hints: nothing is merged or renamed until you edit it.\n");
         if (r.terms().isEmpty()) {
             sb.append("# (nothing found)\n");
             return sb.toString();
         }
+        sb.append("""
+                #
+                # How to organise it (%s):
+                # a term is the business word, its mdc.key the key every log line carries.
+                #   order:                             # renamed from orderId: name the term with the business word
+                #     aliases: [purchase]              # banned words: "purchase" in a message becomes "order"
+                #     mdc: { key: orderId, aliases: [order_id, orderUuid] }  # same value: its other spellings merged
+                #   supplier:                          # supplierId and supplierNumber are two values: two terms
+                #     mdc: { key: supplierId }
+                #   supplierNumber:
+                #     mdc: { key: supplierNumber }
+                #   approver:                          # a role: another field of the same kind as userId,
+                #     mdc: { key: approverUserId }     # so its own term, never an alias of it
+                # Delete the keys that are not business terms (technical ones like retryCount).
+                """.formatted(VOCABULARY_GUIDE));
         sb.append("vocabulary:\n");
-        int width = r.terms().stream().mapToInt(t -> yamlKey(t.name()).length()).max().orElse(10) + 4;
+        int width = r.terms().stream().mapToInt(t -> yamlKey(t.key()).length()).max().orElse(10) + 4;
         for (Term t : r.terms()) {
-            String head = "  " + yamlKey(t.name()) + ":";
-            sb.append(head).append(" ".repeat(Math.max(1, width - head.length())))
-                    .append("# ").append(t.mdc()).append(" / ").append(t.log()).append(" / ").append(t.declared())
-                    .append(", ").append(t.files()).append(t.files() == 1 ? " file" : " files");
-            if (t.similarTo() != null) {
-                sb.append(t.name().contains(".") ? "  <- a kind of \"" : "  <- same as \"").append(t.similarTo()).append("\"?");
-            }
-            if (!t.roles().isEmpty()) {
-                sb.append("\n    # roles in the code (other fields, not aliases): ")
-                        .append(String.join(", ", t.roles().stream().limit(12).toList()))
-                        .append(t.roles().size() > 12 ? ", +" + (t.roles().size() - 12) : "");
-            }
-            sb.append("\n    mdc: { key: ").append(t.key());
-            if (!t.aliases().isEmpty()) {
-                sb.append(", aliases: [").append(String.join(", ", t.aliases())).append("]");
-            }
-            if (!t.params().isEmpty()) {
-                sb.append(", sources: { params: [").append(String.join(", ", t.params())).append("] }");
-            }
-            sb.append(" }\n");
+            String head = "  " + yamlKey(t.key()) + ":";
+            sb.append(head).append(" ".repeat(Math.max(1, width - head.length()))).append("# ").append(counts(t))
+                    .append("\n    mdc: ").append(mdc(t)).append('\n');
         }
         if (!r.unused().isEmpty()) {
-            sb.append("\n# Identifiers declared in the code that no log or MDC uses yet (declarations); add the ones that matter:\n");
-            r.unused().stream().limit(60).forEach(t -> sb.append("#   ").append(t.name()).append(": ")
-                    .append(String.join(", ", t.aliases().isEmpty() ? List.of(t.key()) : t.aliases()))
-                    .append(" (").append(t.declared()).append(")")
-                    .append(t.roles().isEmpty() ? "" : "; roles: " + String.join(", ", t.roles().stream().limit(6).toList())
-                            + (t.roles().size() > 6 ? ", +" + (t.roles().size() - 6) : ""))
-                    .append('\n'));
+            sb.append("\n# Identifiers declared in the code that no log or MDC uses yet; remove the \"#\" to add one:\n");
+            r.unused().stream().limit(60).forEach(t -> sb.append("#  ").append(yamlKey(t.key())).append(": { mdc: ").append(mdc(t))
+                    .append(" }   # ").append(counts(t)).append('\n'));
             if (r.unused().size() > 60) {
                 sb.append("#   … ").append(r.unused().size() - 60).append(" more (`logast vocabulary --min-declared` raises the bar)\n");
             }
@@ -268,37 +259,41 @@ public final class VocabularyHarvest {
         return sb.toString();
     }
 
-    /** {@code orderId, order_id, order.id, orderUuid → order}; {@code job.name → job}; {@code activeShiftId → active.shift}. */
-    public static String term(String key) {
-        if (key.contains(".")) {
-            return key.substring(0, key.indexOf('.')).toLowerCase(Locale.ROOT);
+    private static String counts(Term t) {
+        String s = t.mdc() + " / " + t.log() + " / " + t.declared() + ", " + t.files() + (t.files() == 1 ? " file" : " files");
+        if (!t.sameAs().isEmpty()) {
+            s += "; same value as " + String.join(", ", t.sameAs().stream().limit(6).toList())
+                    + (t.sameAs().size() > 6 ? ", +" + (t.sameAs().size() - 6) : "") + "?";
         }
-        String base = ID_SUFFIX.matcher(key).replaceFirst("");
-        return dotted(base.isEmpty() ? key : base);
+        return t.kindOf() == null ? s : s + "; a kind of " + t.kindOf() + "?";
+    }
+
+    private static String mdc(Term t) {
+        return "{ key: " + yamlKey(t.key())
+                + (t.params().isEmpty() ? "" : ", sources: { params: [" + String.join(", ", t.params()) + "] }") + " }";
+    }
+
+    /**
+     * The identifier a key names, for the "same value as" hint: {@code orderId, order_id, order.id, ORDER_ID, orderUuid}
+     * → {@code order#id}; {@code supplierNumber, supplier_no} → {@code supplier#number}, never the same as an id. A key
+     * without such a suffix ({@code tenant}) counts as an id.
+     */
+    static String identity(String key) {
+        String words = dotted(key);
+        int dot = words.lastIndexOf('.');
+        String last = words.substring(dot + 1);
+        boolean number = last.equals("number") || last.equals("no");
+        boolean suffix = dot > 0 && (number || last.equals("id") || last.equals("uuid"));
+        return (suffix ? words.substring(0, dot) : words) + (number ? "#number" : "#id");
     }
 
     static String dotted(String key) {
         return key.replaceAll("([a-z0-9])([A-Z])", "$1.$2").replaceAll("[_\\-]+", ".").toLowerCase(Locale.ROOT);
     }
 
-    /** "opened.by.user" → "user", "order.item" → "item" when that is a term; longest known suffix wins. */
-    private static String baseTerm(String name, Set<String> names) {
-        String[] parts = name.split("\\.");
-        for (int i = 1; i < parts.length; i++) {
-            String suffix = String.join(".", Arrays.copyOfRange(parts, i, parts.length));
-            if (names.contains(suffix)) {
-                return suffix;
-            }
-        }
-        return null;
-    }
-
-    private static String yamlKey(String term) {
-        return term.matches("[a-z][a-z0-9_]*") ? term : "\"" + term + "\"";
-    }
-
-    private static int sum(Map<String, Usage> m, java.util.function.ToIntFunction<Usage> f) {
-        return m.values().stream().mapToInt(f).sum();
+    /** The key as written; quoted only when YAML would read it as something else. */
+    private static String yamlKey(String key) {
+        return key.matches("[A-Za-z][\\w.\\-]*") && !YAML_WORDS.contains(key.toLowerCase(Locale.ROOT)) ? key : "\"" + key + "\"";
     }
 
     private static Usage use(Map<String, Usage> usages, String key, String file) {

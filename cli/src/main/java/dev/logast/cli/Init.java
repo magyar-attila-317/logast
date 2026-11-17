@@ -73,7 +73,7 @@ final class Init implements Callable<Integer> {
             Out.step("logast.yaml", "your settings: which checks run, key style " + style
                     + (keyStyle != null ? "" : detected != null ? " (what the code uses most)" : " (default)")
                     + ", log format " + (logFormat != null ? logFormat + " (what the service already uses)" : "ecs (default)") + ", and "
-                    + h.terms().size() + " business terms found in the code (review them)");
+                    + h.terms().size() + " keys found in the code, one term each (organise them)");
         }
 
         List<String> added = ServiceSetup.updateGitignore(r);
@@ -138,7 +138,7 @@ final class Init implements Callable<Integer> {
         }
         // the whole flow, in order: the files to fill in only exist after the first apply (their entries belong to the
         // code apply writes), and the second apply runs on top of the migrated code
-        next.add(new String[]{"open logast.yaml", "rename/merge the business terms; the comments explain every setting"});
+        next.add(new String[]{"open logast.yaml", "organise the found terms as its example shows; the comments explain every setting"});
         next.add(new String[]{"logast apply . --auto --write", "changes the code and creates .logast/fills.json and .logast/metrics.json "
                 + "(without --write: a preview)"});
         next.add(new String[]{"fill in .logast/fills.json and .logast/metrics.json", "the texts and metric decisions only a person knows"});

@@ -15,60 +15,110 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ServiceSetupTest {
     @Test
-    void termFromKey() {
-        assertThat(VocabularyHarvest.term("orderId")).isEqualTo("order");
-        assertThat(VocabularyHarvest.term("order_uuid")).isEqualTo("order");
-        assertThat(VocabularyHarvest.term("order.id")).isEqualTo("order");
-        assertThat(VocabularyHarvest.term("activeShiftId")).isEqualTo("active.shift");
-        assertThat(VocabularyHarvest.term("tenant")).isEqualTo("tenant");
+    void identityForTheSameValueHint() {
+        assertThat(VocabularyHarvest.identity("orderId")).isEqualTo("order#id");
+        assertThat(VocabularyHarvest.identity("order_uuid")).isEqualTo("order#id");
+        assertThat(VocabularyHarvest.identity("order.id")).isEqualTo("order#id");
+        assertThat(VocabularyHarvest.identity("ORDER_ID")).isEqualTo("order#id");
+        assertThat(VocabularyHarvest.identity("activeShiftId")).isEqualTo("active.shift#id");
+        assertThat(VocabularyHarvest.identity("tenant")).isEqualTo("tenant#id");
+        assertThat(VocabularyHarvest.identity("supplierNumber")).isEqualTo("supplier#number");
+        assertThat(VocabularyHarvest.identity("supplier_no")).isEqualTo("supplier#number");
     }
 
+    /** #86: the harvest only collects. One active term per key as the code spells it; grouping is a hint, never applied. */
     @Test
-    void harvestsFromMdcLogKeysAndDeclarations(@TempDir Path dir) throws Exception {
+    void harvestsOneTermPerKeyAsWrittenAndOnlyHintsAtGroups(@TempDir Path dir) throws Exception {
         Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
         Files.writeString(src.resolve("A.java"), """
                 class A {
-                    void a(String orderId, String tableId, long amountCents) {
+                    void a(String orderId, String tableId, long amountCents, String userId, String openedByUserId) {
                         MDC.put("orderId", orderId);
+                        MDC.put("acmeWeek", week);
                         try (var s = MdcScope.of("tenant.id", t, "shiftId", s)) { }
-                        log.info("Order placed [order.id={}, table.id={}, amount.cents={}]", orderId, tableId, amountCents);
+                        log.info("Order placed [order.id={}, table_id={}, amount.cents={}]", orderId, tableId, amountCents);
                         log.warn("Payment failed, orderUuid=" + orderId + " amountCents={}", amountCents);
+                        log.info("Delivery booked [supplierId={}, supplierNumber={}]", supplierId, supplierNumber);
+                        log.info("Table opened [userId={}, openedByUserId={}]", userId, openedByUserId);
                         log.info("Shift {} closed", shift(activeShiftId));
                     }
                     void b(String tableId) {} void c(String tableId) {}
                     void d(String deviceId) {}
                 }""");
         VocabularyHarvest.Result r = VocabularyHarvest.run(dir, null, dev.logast.policy.KeyStyle.DOTTED, 3);
-        var byName = new java.util.HashMap<String, VocabularyHarvest.Term>();
-        r.terms().forEach(t -> byName.put(t.name(), t));
-        assertThat(byName.get("order").key()).isEqualTo("order.id");
-        assertThat(byName.get("order").aliases()).containsExactlyInAnyOrder("orderId", "orderUuid");
-        assertThat(byName.get("order").params()).containsExactly("orderId");
-        assertThat(byName.get("tenant").key()).isEqualTo("tenant.id");
-        assertThat(byName.get("shift").key()).isEqualTo("shift.id");
-        assertThat(byName.get("table").aliases()).containsExactly("tableId");
-        assertThat(byName).doesNotContainKey("device");                     // declared once, never logged
+        var byKey = new java.util.HashMap<String, VocabularyHarvest.Term>();
+        r.terms().forEach(t -> byKey.put(t.key(), t));
+        assertThat(byKey).containsOnlyKeys("orderId", "acmeWeek", "tenant.id", "shiftId", "order.id", "table_id", "orderUuid",
+                "supplierId", "supplierNumber", "userId", "openedByUserId");
+        assertThat(byKey.get("orderId").sameAs()).containsExactly("order.id", "orderUuid");
+        assertThat(byKey.get("orderId").params()).containsExactly("orderId");
+        assertThat(byKey.get("acmeWeek").sameAs()).isEmpty();
+        assertThat(byKey.get("supplierId").sameAs()).as("an id and a number are never the same").isEmpty();
+        assertThat(byKey.get("supplierNumber").sameAs()).isEmpty();
+        assertThat(byKey.get("openedByUserId").kindOf()).isEqualTo("userId");
+        assertThat(byKey.get("openedByUserId").sameAs()).isEmpty();
+        assertThat(byKey.get("table_id").sameAs()).containsExactly("tableId");     // declared-only keys count for hints
+        assertThat(r.unused()).extracting(VocabularyHarvest.Term::key).containsExactly("tableId");
+        assertThat(r.unused().getFirst().sameAs()).containsExactly("table_id");
+        assertThat(byKey).doesNotContainKey("deviceId");                      // declared once, never logged
         assertThat(r.valueKeys()).anySatisfy(v -> assertThat(v.spellings()).containsKeys("amount.cents", "amountCents"));
 
-        // a policy that already maps orderId and defines tenant leaves those out
-        Files.writeString(dir.resolve("logast.yaml"), """
-                vocabulary:
-                  order: { mdc: { key: order.id, aliases: [orderId, orderUuid] } }
-                  tenant: { mdc: { key: tenant.id } }
-                """);
-        var known = dev.logast.policy.Policy.resolve(dir, null);
-        var names = VocabularyHarvest.run(dir, known, 3).terms().stream().map(VocabularyHarvest.Term::name).toList();
-        assertThat(names).doesNotContain("order", "tenant").contains("table", "shift");
-
         String yaml = VocabularyHarvest.yaml(r);
+        assertThat(yaml).contains("""
+                  acmeWeek:""").contains("""
+                    mdc: { key: acmeWeek }
+                """).contains("""
+                    mdc: { key: orderId, sources: { params: [orderId] } }
+                """).contains("""
+                    mdc: { key: tenant.id }
+                """).containsPattern("(?m)^  orderUuid: +# 0 / 1 / 0, 1 file; same value as orderId, order.id\\?$")
+                .containsPattern("(?m)^  openedByUserId: +# 0 / 1 / 1, 1 file; a kind of userId\\?$")
+                .containsPattern("(?m)^  supplierNumber: +# 0 / 1 / 0, 1 file$")
+                .contains("#  tableId: { mdc: { key: tableId, sources: { params: [tableId] } } }   # 0 / 0 / 3, 1 file; same value as table_id?")
+                .doesNotContain("aliases: [orderUuid").doesNotContain("\"acme");
         Files.writeString(dir.resolve("logast.yaml"), yaml);
-        assertThat(dev.logast.policy.Policy.resolve(dir, null).terms()).contains("order", "table", "tenant");
+        Policy loaded = Policy.resolve(dir, null);
+        assertThat(loaded.warnings()).as("the generated file loads cleanly").isEmpty();
+        assertThat(loaded.terms()).containsAll(byKey.keySet()).doesNotContain("order", "supplier", "acme.week", "tableId");
+
+        // the same file, uncommented, still loads: every hint and every unused line is valid YAML once the "#" is gone
+        Files.writeString(dir.resolve("logast.yaml"), yaml.replaceAll("(?m)^#  (\\w+: \\{ mdc)", "  $1"));
+        assertThat(Policy.resolve(dir, null).terms()).contains("tableId");
+
+        // a policy that already has a key or term leaves it out
+        Files.writeString(dir.resolve("logast.yaml"), """
+                logging: { keyStyle: camel }
+                vocabulary:
+                  order: { mdc: { key: orderId, aliases: [orderUuid] } }
+                  tenant.id: { }
+                """);
+        var known = Policy.resolve(dir, null);
+        var again = VocabularyHarvest.run(dir, known, 3).terms();
+        assertThat(again).extracting(VocabularyHarvest.Term::key).doesNotContain("orderId", "orderUuid", "tenant.id").contains("order.id", "shiftId");
+        assertThat(again).filteredOn(t -> t.key().equals("order.id")).singleElement()
+                .satisfies(t -> assertThat(t.sameAs()).as("the policy's key counts for the hint").containsExactly("orderId"));
+    }
+
+    @Test
+    void quotesKeysOnlyWhenYamlNeedsIt(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("A.java"), """
+                class A {
+                    void a() {
+                        MDC.put("on", x);
+                        MDC.put("Order-Id", y);
+                    }
+                }""");
+        String yaml = VocabularyHarvest.yaml(VocabularyHarvest.run(dir, null, 3));
+        assertThat(yaml).contains("  \"on\":").contains("key: \"on\" }").contains("  Order-Id:").contains("key: Order-Id }");
+        Files.writeString(dir.resolve("logast.yaml"), yaml);
+        assertThat(Policy.resolve(dir, null).terms()).contains("on", "Order-Id");
     }
 
     @Test
     void suggestsVocabularyFromFixture() {
-        var names = VocabularyHarvest.run(Fixtures.root(), null, 3).terms().stream().map(VocabularyHarvest.Term::name).toList();
-        assertThat(names).contains("tenant", "order");
+        var keys = VocabularyHarvest.run(Fixtures.root(), null, 3).terms().stream().map(VocabularyHarvest.Term::key).toList();
+        assertThat(keys).isNotEmpty();
     }
 
     @Test
@@ -130,8 +180,7 @@ class ServiceSetupTest {
         Files.writeString(dir.resolve("logast.yaml"), "logging: { keyStyle: camel }\n");
         var policy = dev.logast.policy.Policy.resolve(dir, null);
         var order = VocabularyHarvest.run(dir, policy, 3).terms().getFirst();
-        assertThat(order.key()).isEqualTo("orderId");
-        assertThat(order.aliases()).containsExactly("order.id");
+        assertThat(order.key()).as("as written, not restyled (#86)").isEqualTo("order.id");
         assertThat(policy.canonicalMdcKey("job.name")).isEqualTo("jobName");
         assertThat(policy.canonicalMdcKey("traceId")).isNull();
         assertThat(policy.canonicalMdcKey("jobName")).isNull();

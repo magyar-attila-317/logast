@@ -117,7 +117,7 @@ $ logast init --key-style camel
 logast init  /home/me/my-service
 Sets up this service once. Re-running keeps what you already edited.
 
-  ✓ logast.yaml             your settings: which checks run, key style, and 36 business terms found in the code (review them)
+  ✓ logast.yaml             your settings: which checks run, key style, and 36 keys found in the code, one term each (organise them)
   ✓ .gitignore              ignores .logast/, but keeps baseline.json, traffic.yaml and README.md shared
   ✓ .logast/README.md       explains every file in .logast/ and which ones go into git
   ✓ .logast/classpath-*.txt 263 jars and class folders (8.1s): lets logast understand types
@@ -125,7 +125,7 @@ Sets up this service once. Re-running keeps what you already edited.
   · .logast/baseline.json   not recorded (add --baseline, or later `logast scan . --update-baseline`)
 
 Next steps
-  1. open logast.yaml                 rename/merge the business terms; the comments explain every setting
+  1. open logast.yaml                 organise the found terms as its example shows; the comments explain every setting
   2. logast scan . --format summary   what logast would change, per rule
   3. logast apply . --auto            preview the automatic fixes (add --write to change files)
 ```
@@ -162,24 +162,30 @@ The file explains itself: every setting has a comment, and optional ones are the
 full list, with defaults, is in **[docs/configuration.md](docs/configuration.md)**. `logast policy .` shows the final
 settings after all layers are merged.
 
-**The vocabulary starts from your code.** `init` (and `logast vocabulary .` at any time) collects every identifier the
-service already uses: MDC keys, `[k=v]` / `k={}` keys in log messages, and id-like variables. Spellings of one
-identifier become one term (`orderId`, `order_id`, `orderUuid` → `order`, key `order.id`), so you only reorganise:
+**The vocabulary starts from your code.** `init` (and `logast vocabulary .` at any time) collects every identifier key the
+service already uses: MDC keys, `[k=v]` / `k={}` keys in log messages, and id-like variables. It only collects: each key
+becomes a term of its own, spelled exactly as in the code, and nothing is merged, renamed or restyled until you edit it.
+Keys that look alike get a hint in a comment:
 
 ```yaml
 vocabulary:
-  tenant:                # 1 / 25 / 283, 126 files            <- mdc / log / declared counts
-    # roles in the code (other fields, not aliases): hostTenantId, jwtTenantId, requestedTenantId
-    mdc: { key: tenant.id, aliases: [tenantId, tenant_id, tenantUuid], sources: { params: [tenantId, tenantUuid] } }
-  "actor.user":          # 0 / 10 / 27, 23 files  <- a kind of "user"?
-    mdc: { key: actor.user.id, aliases: [actorUserId], sources: { params: [actorUserId] } }
+  orderId:          # 1 / 25 / 283, 126 files            <- mdc / log / declared counts
+    mdc: { key: orderId, sources: { params: [orderId] } }
+  order_id:         # 0 / 4 / 0, 3 files; same value as orderId?
+    mdc: { key: order_id }
+  supplierNumber:   # 0 / 6 / 0, 2 files                 <- an id and a number are never "the same value"
+    mdc: { key: supplierNumber }
+  openedByUserId:   # 0 / 10 / 27, 23 files; a kind of userId?
+    mdc: { key: openedByUserId, sources: { params: [openedByUserId] } }
 
-# Identifiers declared in the code that no log or MDC uses yet (declarations); add the ones that matter:
-#   approver: approverUuid, approverId (90)
+# Identifiers declared in the code that no log or MDC uses yet; remove the "#" to add one:
+#  approverUuid: { mdc: { key: approverUuid, sources: { params: [approverUuid] } } }   # 0 / 0 / 90, 31 files
 ```
 
-Rename terms, merge the ones flagged `a kind of` / `same as` when they are one concept, drop what isn't a business
-term, and add banned words as `aliases`. With a company layer in `extends:`, only what it doesn't cover is listed.
+A short example at the top of the block shows how to organise it: rename a term to the business word (`orderId` →
+`order`), move other spellings of the same value into its `mdc.aliases`, keep an id and a number as two terms, keep a
+role (`openedByUserId`) as its own term rather than an alias, delete technical keys, and add banned words as `aliases`.
+With a company layer in `extends:`, only what it doesn't cover is listed.
 
 A minimal `logast.yaml` that builds on a company layer:
 

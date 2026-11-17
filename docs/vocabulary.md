@@ -8,9 +8,38 @@ in your company, not in logast, and teams can extend or (visibly) override it.
 ## Start from the code
 
 Don't write the vocabulary from scratch: `logast vocabulary <root>` harvests it (MDC keys, `[k=v]` keys in log
-messages, id-like variables), grouped per term with counts, roles (`approvedByUserId` is a role of `user`, another
-field, not an alias) and hints for likely duplicates. `logast init` writes the same harvest into a new `logast.yaml`.
-Re-run it after editing: it lists only what the policy doesn't cover yet.
+messages, id-like variables), and `logast init` writes the same harvest into a new `logast.yaml`. The harvest only
+collects. Every key becomes an active term of its own, named and spelled exactly as in the code
+(`acmeWeek: { mdc: { key: acmeWeek } }`), with its counts (mdc / log / declared, files). Nothing is merged, renamed or
+converted to `logging.keyStyle`: without edits every key stays its own term. Grouping is up to you; the harvest only
+hints in comments:
+
+- `same value as order_id?`: spellings of one identifier (`orderId`, `order_id`, `order.id`, `orderUuid`). An id
+  and a number (`supplierId`, `supplierNumber`) are never hinted as the same.
+- `a kind of userId?`: a role (`openedByUserId`), when that key exists too.
+- Identifiers that are only declared, never logged, are listed commented out; remove the `#` to add one.
+
+Organising it looks like this:
+
+```yaml
+vocabulary:
+  order:                     # the business word; was the harvested term orderId
+    aliases: [purchase]      # banned words: "purchase" in a message is rewritten to "order"
+    mdc:
+      key: orderId           # the key logs carry
+      aliases: [order_id, orderUuid]   # the same value spelled differently: merged into this term
+  supplier:                  # supplierId and supplierNumber are two different values: two terms
+    mdc: { key: supplierId }
+  supplierNumber:
+    mdc: { key: supplierNumber }
+  user:
+    mdc: { key: userId }
+  approver:                  # a role: another field of the same kind as userId, not an alias of it
+    mdc: { key: approverUserId }
+```
+
+Delete the keys that are not business terms (technical ones such as `retryCount`). Re-run `logast vocabulary` after
+editing: it lists only what the policy doesn't cover yet.
 
 ## Layers
 
