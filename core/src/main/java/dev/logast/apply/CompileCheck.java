@@ -178,6 +178,14 @@ public final class CompileCheck {
             return out;   // javac itself failed: no verdict, the round goes on as before
         }
         Set<String> flat = new HashSet<>();
+        if (System.getenv("LOGAST_DEBUG_COMPILE") != null) {
+            // #81: everything javac said about this compile, unfiltered, to find why a gate verdict differs from the build
+            System.err.println("[compile check] " + texts.keySet() + " lombok=" + lombok + " lombokWorks=" + lombokWorks());
+            for (Diagnostic<? extends JavaFileObject> d : diags.getDiagnostics()) {
+                System.err.println("[compile check]   " + d.getKind() + " " + (d.getSource() == null ? "-" : d.getSource().toUri())
+                        + ":" + d.getLineNumber() + " " + d.getCode() + " " + d.getMessage(Locale.ROOT).replaceAll("\\s+", " "));
+            }
+        }
         for (Diagnostic<? extends JavaFileObject> d : diags.getDiagnostics()) {
             if (d.getKind() != Diagnostic.Kind.ERROR || d.getSource() == null) {
                 continue;
