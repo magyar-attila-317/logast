@@ -69,41 +69,50 @@ dependencies {
     e2eLombok("org.projectlombok:lombok")
 }
 
-// e2e golden test: `./gradlew :cli:test -Pe2e.update` rewrites e2e/expected after an intended behaviour change
-tasks.test {
-    inputs.files(e2eLombok)
-    systemProperty("logast.e2e.lombok", e2eLombok.asPath)
+// e2e golden test (#73): slow (each scenario copies, applies, rescans and compiles the sample service), so it runs in
+// its own tasks. Locally: `./gradlew :cli:e2e --tests "*Name*"` for the scenarios a change touches; the full matrix
+// (`e2e` on JDK 25, `e2eJdk21`) runs on CI or with -Pe2e. `./gradlew :cli:e2e -Pe2e.update` rewrites e2e/expected
+// after an intended behaviour change.
+val e2eGolden = "dev.logast.cli.E2eGoldenTest"
+
+fun Test.e2eSetup() {
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform()
+    filter { includeTestsMatching(e2eGolden) }
     dependsOn(":fixtures:sample-app:writeClasspath")
+    inputs.files(e2eLombok)
+    inputs.dir(rootProject.file("e2e"))
+    systemProperty("logast.e2e.lombok", e2eLombok.asPath)
     systemProperty("logast.e2e.before", rootProject.file("e2e/before").absolutePath)
     systemProperty("logast.e2e.expected", rootProject.file("e2e/expected").absolutePath)
     systemProperty("logast.e2e.classpath", project(":fixtures:sample-app").layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
     systemProperty("logast.e2e.update", providers.gradleProperty("e2e.update").isPresent.toString())
-    inputs.dir(rootProject.file("e2e"))
     maxHeapSize = "2g"
+}
+
+tasks.test {
+    useJUnitPlatform()
+    filter { excludeTestsMatching(e2eGolden) }
+}
+
+val e2e by tasks.registering(Test::class) {
+    description = "E2eGoldenTest on the build JDK (25): every file of the result against e2e/expected"
+    e2eSetup()
 }
 
 // The same golden e2e test on the oldest Java logast supports: javac's type attribution differs between versions
 // (JDK 21 drops the signature of a call that passes a value of an unresolved type), and the result must not.
 val e2eJdk21 by tasks.registering(Test::class) {
     description = "E2eGoldenTest on Java 21: the same e2e/expected files"
-    group = "verification"
-    testClassesDirs = sourceSets.test.get().output.classesDirs
-    classpath = sourceSets.test.get().runtimeClasspath
+    e2eSetup()
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
-    useJUnitPlatform()
-    filter { includeTestsMatching("dev.logast.cli.E2eGoldenTest") }
-    dependsOn(":fixtures:sample-app:writeClasspath")
-    inputs.files(e2eLombok)
-    inputs.dir(rootProject.file("e2e"))
-    systemProperty("logast.e2e.lombok", e2eLombok.asPath)
-    systemProperty("logast.e2e.before", rootProject.file("e2e/before").absolutePath)
-    systemProperty("logast.e2e.expected", rootProject.file("e2e/expected").absolutePath)
-    systemProperty("logast.e2e.classpath", project(":fixtures:sample-app").layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
-    systemProperty("logast.e2e.update", providers.gradleProperty("e2e.update").isPresent.toString())
-    maxHeapSize = "2g"
 }
-tasks.check { dependsOn(e2eJdk21) }
+
+if (providers.gradleProperty("e2e").isPresent || providers.environmentVariable("CI").isPresent) {
+    tasks.check { dependsOn(e2e, e2eJdk21) }
+}
 
 // test-capture is a JUnit listener for *services'* tests (it needs logback); keep it out of logast's own tests
 configurations.testRuntimeClasspath { exclude(group = rootProject.group.toString(), module = "test-capture") }

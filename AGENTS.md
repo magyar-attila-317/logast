@@ -21,14 +21,17 @@ on real services; the background is in issue #7.
 - Switch the change off once and check that its test fails. A test that passes without the fix proves nothing.
 - Every scenario must keep its properties: one pass (pass 2 of the first apply applies nothing), a second apply changes
   nothing, no `CHECK FAILED`, and the result compiles. Do not weaken these assertions to make a change pass.
-- Run the e2e tests under the environments they cover: JDK 21 (`e2eJdk21`) and 25, with and without Lombok, with class
-  folders on the classpath. Results must be identical.
-- `./gradlew :cli:test -Pe2e.update` rewrites the snapshots: review `git diff e2e/` before keeping them, and say in the
-  commit why the expected output changed.
+- The e2e scenarios run in their own tasks (#73): `./gradlew :cli:e2e` (JDK 25) and `:cli:e2eJdk21`, each with and
+  without Lombok and with class folders on the classpath. Results must be identical. Locally, run the scenarios your
+  change touches (`./gradlew :cli:e2e --tests "*Name*"`); CI runs the full matrix on every push.
+- `./gradlew :cli:e2e -Pe2e.update` rewrites the snapshots (add `--tests` to limit it): review `git diff e2e/` before
+  keeping them, and say in the commit why the expected output changed. A change of shared code (rule output, ids,
+  report text) can touch every scenario: then update and run all of them (`./gradlew build -Pe2e`).
 
 ## Before pushing
-- `./gradlew build` must pass, and in a clean checkout of HEAD plus the staged changes too (an ignored file once kept a
-  snapshot out of git).
+- `./gradlew build` (unit tests, a few seconds) and the targeted e2e scenarios must pass. CI builds every push from a
+  clean checkout with the full e2e matrix (an ignored file once kept a snapshot out of git): check its result after
+  pushing (`gh run watch`) and fix a red build first.
 - Don't filter build output so much that compile errors disappear.
 
 ## How to investigate

@@ -1,0 +1,50 @@
+# Unit build and the full e2e matrix (#73): every push and PR is built from a clean checkout.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            21
+            25
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build and unit tests
+        run: ./gradlew build -x :cli:e2e -x :cli:e2eJdk21 --console=plain
+
+  e2e:
+    name: e2e (${{ matrix.task }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [e2e, e2eJdk21]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            21
+            25
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Golden e2e scenarios
+        run: ./gradlew :cli:${{ matrix.task }} --console=plain
+      - name: Test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-${{ matrix.task }}
+          path: cli/build/reports/tests/${{ matrix.task }}
