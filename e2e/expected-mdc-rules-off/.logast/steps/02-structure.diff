@@ -45,6 +45,28 @@ index 4be0fa1..d5cf243 100644
      }
  
      @RabbitListener(queues = "pledge-returns")
+diff --git a/src/main/java/com/example/e2e/job/BaseRunJob.java b/src/main/java/com/example/e2e/job/BaseRunJob.java
+index ec88d62..d6b4bf1 100644
+--- a/src/main/java/com/example/e2e/job/BaseRunJob.java
++++ b/src/main/java/com/example/e2e/job/BaseRunJob.java
+@@ -1,7 +1,7 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.orchardlib.Week;
+-import org.slf4j.MDC;
+ 
+ /** A job base that puts its own context key (outside the vocabulary) into MDC around the abstract step. */
+ public abstract class BaseRunJob extends SettlementJob {
+@@ -9,7 +9,7 @@
+     protected void doExecute() {
+         String runCode = resolveRunCode();
+         Week week = Week.current();
+-        try (var mdc = MDC.putCloseable("runCode", runCode)) {
++        try (var mdc = MdcScope.of("runCode", runCode)) {
+             doRun(runCode, week);   // a value of a library type logast cannot see: the call must still resolve
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/parcel/ParcelTracker.java b/src/main/java/com/example/e2e/parcel/ParcelTracker.java
 index cca8a50..2414ab5 100644
 --- a/src/main/java/com/example/e2e/parcel/ParcelTracker.java

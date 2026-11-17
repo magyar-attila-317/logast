@@ -1,7 +1,7 @@
 package com.example.e2e.job;
 
+import com.example.e2e.logging.MdcScope;
 import org.orchardlib.Week;
-import org.slf4j.MDC;
 
 /** A job base that puts its own context key (outside the vocabulary) into MDC around the abstract step. */
 public abstract class BaseRunJob extends SettlementJob {
@@ -9,7 +9,7 @@ public abstract class BaseRunJob extends SettlementJob {
     protected void doExecute() {
         String runCode = resolveRunCode();
         Week week = Week.current();
-        try (var mdc = MDC.putCloseable("runCode", runCode)) {
+        try (var mdc = MdcScope.of("runCode", runCode)) {
             doRun(runCode, week);   // a value of a library type logast cannot see: the call must still resolve
         }
     }

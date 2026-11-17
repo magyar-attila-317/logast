@@ -305,6 +305,97 @@ class E2eGoldenTest {
     }
 
     /**
+     * #11: {@code try (var mdc = MDC.putCloseable(k, v))} removes the key on close, so a nested scope of the same key
+     * wipes the outer value. It becomes {@code MdcScope.of(k, v)} (restores), with the alias renamed and a key the
+     * caller already scopes unwrapped (MDC_NESTED_KEY); a putCloseable outside try-with-resources stays a report.
+     * Every file must equal e2e/expected-mdc-put-closeable.
+     */
+    @Test
+    void mdcPutCloseableBecomesMdcScope() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replace("vocabulary:\n", """
+                    vocabulary:
+                      shelf:
+                        mdc:
+                          key: shelfCode
+                          aliases: [shelfRef]
+                          sources:
+                            params: [shelfCode]
+                    """));
+            Path source = app.resolve("src/main/java/com/example/e2e/shelf/ShelfScanJob.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.shelf;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+                    import org.springframework.scheduling.annotation.Scheduled;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class ShelfScanJob {
+                        private static final Logger log = LoggerFactory.getLogger(ShelfScanJob.class);
+
+                        @Scheduled(fixedDelay = 60000)
+                        public void scan() {
+                            String shelfCode = nextShelf();
+                            try (var mdc = MDC.putCloseable("shelfCode", shelfCode)) {
+                                count(shelfCode);
+                            }
+                        }
+
+                        void count(String shelfCode) {
+                            try (MDC.MDCCloseable again = MDC.putCloseable("shelfCode", shelfCode)) {
+                                log.info("Shelf count started");
+                            }
+                        }
+
+                        void step(String scanStep) {
+                            try (var mdc = MDC.putCloseable("scanStep", scanStep)) {
+                                log.info("Scan step started");
+                            }
+                        }
+
+                        void phases() {
+                            try (MDC.MDCCloseable outer = MDC.putCloseable("scanPhase", "outer")) {
+                                try (MDC.MDCCloseable inner = MDC.putCloseable("scanPhase", "inner")) {
+                                    log.info("Inner phase started");
+                                }
+                                log.info("Outer phase completed");
+                            }
+                        }
+
+                        void label(String shelfRef) {
+                            try (MDC.MDCCloseable c = MDC.putCloseable("shelfRef", shelfRef)) {
+                                log.info("Shelf labelling started");
+                            }
+                        }
+
+                        void loose(String shelfRef) {
+                            MDC.putCloseable("shelfRef", shelfRef);
+                            log.info("Loose scan started");
+                        }
+
+                        private String nextShelf() {
+                            return "S1";
+                        }
+                    }
+                    """);
+        });
+
+        String job = actual.get("src/main/java/com/example/e2e/shelf/ShelfScanJob.java");
+        assertThat(job).as("scoped putCloseable restores instead of removing")
+                .contains("MdcScope.of(\"scanStep\", scanStep)")
+                .contains("MdcScope.of(\"scanPhase\", \"outer\")").contains("MdcScope.of(\"scanPhase\", \"inner\")")
+                .as("the alias is renamed").contains("MdcScope.of(\"shelfCode\", shelfRef)")
+                .as("only the bare putCloseable is left, its alias renamed").containsOnlyOnce("MDC.putCloseable(")
+                .contains("MDC.putCloseable(\"shelfCode\", shelfRef);");
+        golden(EXPECTED.resolveSibling("expected-mdc-put-closeable"), actual);
+    }
+
+    /**
      * Lombok not on logast's classpath (missing from a copied classpath; the service still compiles with it): @Slf4j
      * loggers do not resolve. Their log calls are recognised by name, so rules see the lines they add (they used to add
      * them again on every pass), new loggers are still @Slf4j (the sources import it), apply converges in one run and
