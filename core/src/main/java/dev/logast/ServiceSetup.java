@@ -48,7 +48,7 @@ public final class ServiceSetup {
                     })
                     .forEach(p -> {
                         try {
-                            all.append(java.nio.file.Files.readString(p)).append('\n');
+                            all.append(dev.logast.parse.SourceText.read(p)).append('\n');
                         } catch (java.io.IOException | java.io.UncheckedIOException ignored) {
                             // unreadable file: not evidence either way
                         }
@@ -212,7 +212,7 @@ public final class ServiceSetup {
     /** Appends the logast entries missing from {@code <root>/.gitignore}; returns the ones added. */
     public static List<String> updateGitignore(Path root) throws IOException {
         Path file = root.resolve(".gitignore");
-        String text = Files.exists(file) ? Files.readString(file) : "";
+        String text = Files.exists(file) ? dev.logast.parse.SourceText.read(file) : "";
         Set<String> present = new HashSet<>(text.lines().map(String::strip).toList());
         if (present.contains(".logast/") || present.contains(".logast")) {
             // a blanket ignore would hide the shared files: replace it
@@ -229,7 +229,7 @@ public final class ServiceSetup {
             }
             sb.append("\n# logast: machine-specific classpath and scan output; baseline and traffic are shared\n");
             missing.forEach(l -> sb.append(l).append('\n'));
-            Files.writeString(file, sb.toString());
+            dev.logast.parse.SourceText.write(file, sb.toString());
         }
         return missing;
     }

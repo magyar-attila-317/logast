@@ -75,6 +75,8 @@ class E2eGoldenTest {
 
     @TempDir
     Path tmp;
+    /** The charset javac reads the migrated sources in ({@code options.encoding} of the service). */
+    private String sourceEncoding = "UTF-8";
 
     @Test
     void migrationMatchesTheGoldenSnapshot() throws IOException {
@@ -726,6 +728,78 @@ class E2eGoldenTest {
     }
 
     /**
+     * #54: a project whose files end their lines with CRLF (written on Windows) gives the LF result with CRLF: edits
+     * keep the file's line ending and the lines they insert use it too, so no file ends up with mixed line endings.
+     */
+    @Test
+    void crlfFilesKeepTheirLineEndings() throws IOException {
+        List<String> before = new ArrayList<>();
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            try (Stream<Path> s = Files.walk(app)) {
+                for (Path p : s.filter(Files::isRegularFile).toList()) {
+                    before.add(app.relativize(p).toString().replace('\\', '/'));
+                    Files.writeString(p, Files.readString(p).replace("\n", "\r\n"));
+                }
+            }
+        });
+        assertThat(before).hasSizeGreaterThan(40);
+        for (String rel : before) {
+            if (actual.containsKey(rel)) {   // logast's own support classes are not compared
+                assertThat(actual.get(rel)).as(rel + " ends every line with CRLF").doesNotContainPattern("[^\r]\n");
+            }
+        }
+        Map<String, String> lf = new TreeMap<>();
+        actual.forEach((k, v) -> lf.put(k, v.replace("\r\n", "\n")));
+        assertSameFiles(files(EXPECTED), lf);
+    }
+
+    /**
+     * #54: a file is read in its charset and written back in it. A Java file in ISO-8859-1 (an older service with
+     * {@code options.encoding = "ISO-8859-1"}) is edited, and every byte outside the edits stays as it was (0xF5 is "õ"
+     * in Latin-1 and "ő" in Latin-2: either way it survives); an application.yml with a UTF-8 BOM is edited and keeps
+     * its one BOM. Every file must equal e2e/expected-encodings.
+     */
+    @Test
+    void filesKeepTheirEncoding() throws IOException {
+        String legacy = "src/main/java/com/example/e2e/legacy/PriceListImport.java";
+        String comment = "        // Preisliste übernehmen: Größe, café, õ (ISO-8859-1)\n";
+        sourceEncoding = "ISO-8859-1";
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path source = app.resolve(legacy);
+            Files.createDirectories(source.getParent());
+            Files.write(source, ("""
+                    package com.example.e2e.legacy;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.stereotype.Component;
+
+                    /** Imports price lists (Übersicht). */
+                    @Component
+                    public class PriceListImport {
+                        private static final Logger log = LoggerFactory.getLogger(PriceListImport.class);
+
+                        public void load(String listId) {
+                    """ + comment + """
+                            log.info("Liste importée: " + listId);
+                        }
+                    }
+                    """).getBytes(StandardCharsets.ISO_8859_1));
+            Path yml = app.resolve("src/main/resources/application.yml");
+            Files.writeString(yml, "﻿" + Files.readString(yml));
+        });
+        byte[] bytes = Files.readAllBytes(tmp.resolve("app").resolve(legacy));
+        assertThat(utf8(bytes)).as("still ISO-8859-1").isNull();
+        assertThat(new String(bytes, StandardCharsets.ISO_8859_1)).as("the comment byte for byte, the edit in ISO-8859-1")
+                .contains("/** Imports price lists (Übersicht). */\n").contains(comment)
+                .contains("Liste importée").doesNotContain("\" + listId");
+        String yml = utf8(Files.readAllBytes(tmp.resolve("app/src/main/resources/application.yml")));
+        assertThat(yml).as("edited, with its one BOM at the start")
+                .startsWith("﻿spring:").containsOnlyOnce("﻿").contains("observation-enabled: true");
+        golden(EXPECTED.resolveSibling("expected-encodings"), actual);
+    }
+
+    /**
      * #52: exceptions that do not come from {@code throw new X(…)} on the throw line. {@code orElseThrow} with a lambda
      * or a constructor reference and a factory method ({@code throw Errors.expired(id)}) still reach the client as a
      * 500 (UNMAPPED_EXCEPTION); a factory called in a catch without the caught exception drops its cause (CAUSE_DROPPED).
@@ -1062,7 +1136,7 @@ class E2eGoldenTest {
                 + "\n=== the same again (what one run left behind)\n" + second);
         // every finding left, with its text, location and path: report-only rules only show here (OUTPUT counts them)
         Files.writeString(app.resolve("FINDINGS.txt"), run(app, "scan", app.toString(), "--classpath-file", classpath));
-        compile(app);
+        compile(app, sourceEncoding);
         return files(app);
     }
 
@@ -1486,10 +1560,25 @@ class E2eGoldenTest {
                         || rel.startsWith("src/main/java/com/example/e2e/logging/")) {
                     continue;
                 }
-                out.put(rel, Files.readString(p));
+                out.put(rel, text(Files.readAllBytes(p)));
             }
         }
         return out;
+    }
+
+    /** UTF-8 text, or null when the bytes are not UTF-8. */
+    private static String utf8(byte[] b) {
+        try {
+            return StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(b)).toString();
+        } catch (java.nio.charset.CharacterCodingException e) {
+            return null;
+        }
+    }
+
+    /** UTF-8 text, or ISO-8859-1 for a file that is not UTF-8 (a legacy source): what it says, byte for byte. */
+    private static String text(byte[] b) {
+        String s = utf8(b);
+        return s != null ? s : new String(b, StandardCharsets.ISO_8859_1);
     }
 
     /** The first differing lines of a file, enough to see what changed. */
@@ -1510,13 +1599,17 @@ class E2eGoldenTest {
     }
 
     private static void compile(Path root) throws IOException {
+        compile(root, "UTF-8");
+    }
+
+    private static void compile(Path root, String encoding) throws IOException {
         List<String> sources;
         try (Stream<Path> s = Files.walk(root.resolve("src/main/java"))) {
             sources = s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).toList();
         }
         List<String> cp = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList());
         cp.add(PLATFORM.toString());
-        List<String> args = new ArrayList<>(List.of("-d", root.resolve("out").toString(), "-proc:full",
+        List<String> args = new ArrayList<>(List.of("-encoding", encoding, "-d", root.resolve("out").toString(), "-proc:full",
                 "-processorpath", LOMBOK, "-cp", String.join(java.io.File.pathSeparator, cp)));
         args.addAll(sources);
         JavaCompiler javac = ToolProvider.getSystemJavaCompiler();

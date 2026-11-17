@@ -149,7 +149,7 @@ public final class CompactFormat {
             if (!Files.exists(p) || e.start() == e.end()) {
                 return "";
             }
-            String t = Files.readString(p);
+            String t = dev.logast.parse.SourceText.read(p);
             return e.end() <= t.length() ? t.substring(e.start(), e.end()) : "";
         } catch (IOException ex) {
             return "";

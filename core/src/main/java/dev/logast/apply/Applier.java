@@ -449,7 +449,7 @@ public final class Applier {
                     out.put(entry.getKey(), text);
                     continue;
                 }
-                String before = Files.readString(p);
+                String before = dev.logast.parse.SourceText.read(p);
                 StringBuilder sb = new StringBuilder(before);
                 List<Edit> sorted = new ArrayList<>(fileEdits.stream().filter(e -> !e.merge()).toList());
                 // descending start; at equal start apply ranges before inserts so inserted text lands in front
@@ -490,7 +490,7 @@ public final class Applier {
                     Files.deleteIfExists(p);
                 } else {
                     Files.createDirectories(p.getParent());
-                    Files.writeString(p, e.getValue());
+                    dev.logast.parse.SourceText.write(p, e.getValue());   // in the file's charset and line ending
                 }
             }
         } catch (IOException ex) {
@@ -641,16 +641,9 @@ public final class Applier {
         }
     }
 
-    /** UTF-8 text, or null for binary content (fonts, PDFs, images in resources). */
+    /** The text logast works on, or null for binary content (fonts, PDFs, images in resources). */
     private static String text(byte[] b) {
-        if (b == null) {
-            return null;
-        }
-        try {
-            return java.nio.charset.StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(b)).toString();
-        } catch (java.nio.charset.CharacterCodingException e) {
-            return null;
-        }
+        return dev.logast.parse.SourceText.textOrNull(b);
     }
 
     private static void copyBack(Path root, Path work, List<String> changed) {
@@ -665,14 +658,6 @@ public final class Applier {
                     Files.deleteIfExists(dst);
                 }
             }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    private static String read(Path p) {
-        try {
-            return Files.exists(p) ? Files.readString(p) : null;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

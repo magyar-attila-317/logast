@@ -39,7 +39,7 @@ public final class SpringProperties {
                 continue;
             }
             try {
-                String text = Files.readString(p);
+                String text = dev.logast.parse.SourceText.read(p);
                 if (name.endsWith(".properties")) {
                     for (String doc : text.split("(?m)^[#!]---\\s*$")) {
                         Properties props = new Properties();
@@ -106,7 +106,7 @@ public final class SpringProperties {
         }
         boolean found = sources.stream().anyMatch(p -> {
             try {
-                return Files.readString(p).contains("@SpringBootApplication");
+                return dev.logast.parse.SourceText.read(p).contains("@SpringBootApplication");
             } catch (IOException | RuntimeException e) {
                 return false;
             }

@@ -101,7 +101,7 @@ public final class FindingComments {
             String reconciled = removeStaleMarkers(updated.toString(), activeIds);
             if (!reconciled.equals(original)) {
                 try {
-                    Files.writeString(root.resolve(rel), reconciled);
+                    dev.logast.parse.SourceText.write(root.resolve(rel), reconciled);
                 } catch (IOException ex) {
                     throw new UncheckedIOException(ex);
                 }

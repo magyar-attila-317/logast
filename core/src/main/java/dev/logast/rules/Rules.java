@@ -642,7 +642,7 @@ public final class Rules {
 
     static String fingerprint(Path p) {
         try {
-            return Files.exists(p) ? Hashing.sha256(Files.readString(p)) : "absent";
+            return Files.exists(p) ? Hashing.sha256(dev.logast.parse.SourceText.read(p)) : "absent";
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

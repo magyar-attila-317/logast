@@ -900,10 +900,6 @@ public final class SetupRules {
     }
 
     static String read(Path p) {
-        try {
-            return Files.readString(p);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        return dev.logast.parse.SourceText.readUnchecked(p);
     }
 }

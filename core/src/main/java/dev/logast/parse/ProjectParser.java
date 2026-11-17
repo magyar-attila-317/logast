@@ -89,7 +89,9 @@ public final class ProjectParser {
                 .classpath(classpath)
                 .logCompilationWarningsAndErrors(false)
                 .build()
-                .parse(slice, absRoot, ctx)
+                // the text logast works on (#54: any charset, CRLF as LF), so the tree prints exactly that text
+                .parseInputs(slice.stream().map(p -> new org.openrewrite.Parser.Input(p, () -> new java.io.ByteArrayInputStream(
+                        read(p).getBytes(java.nio.charset.StandardCharsets.UTF_8)))).toList(), absRoot, ctx)
                 .toList();
     }
 
@@ -157,11 +159,7 @@ public final class ProjectParser {
     }
 
     private static String read(Path p) {
-        try {
-            return Files.readString(p);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        return SourceText.readUnchecked(p);
     }
 
     public static List<Path> readClasspathFile(Path file) {

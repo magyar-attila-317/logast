@@ -62,7 +62,7 @@ public final class CompileCheck {
             Path p = work.resolve(f);
             try {
                 if (Files.exists(p)) {
-                    before.put(f, Files.readString(p));
+                    before.put(f, dev.logast.parse.SourceText.read(p));
                 }
             } catch (IOException e) {
                 return out;
