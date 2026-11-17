@@ -735,6 +735,21 @@ class E2eGoldenTest {
         assertThat(scan).as("include-message changes the response body: a decision, reported").contains("ERROR_DETAILS_EXPOSED")
                 .contains("Decide on include-message").doesNotContain("Sets include-stacktrace");
 
+        // #74: a later unconditional .properties document wins at runtime: the fix goes there, not into the first one
+        Path later = tmp.resolve("props-later");
+        copy(BEFORE, later);
+        Path laterProps = later.resolve("src/main/resources/application.properties");
+        Files.writeString(laterProps, "spring.application.name=sample\n#---\nserver.error.include-stacktrace=always\n#---\n"
+                + "spring.config.activate.on-profile=dev\nserver.error.include-stacktrace=always\n");
+        run(later, "apply", later.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(Files.readString(laterProps)).as("changed in the later document that sets it; profile document untouched")
+                .isEqualTo("spring.application.name=sample\n#---\nserver.error.include-stacktrace=never\n#---\n"
+                        + "spring.config.activate.on-profile=dev\nserver.error.include-stacktrace=always\n");
+        run(later, "apply", later.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(Files.readString(laterProps)).as("a second apply changes nothing").contains("include-stacktrace=never\n#---")
+                .doesNotContain("sample\nserver.error");
+        assertThat(run(later, "scan", later.toString(), "--classpath-file", CLASSPATH)).doesNotContain("Sets include-stacktrace");
+
         // a value set only for one profile is not the service's value
         Path profile = tmp.resolve("profile");
         copy(BEFORE, profile);
