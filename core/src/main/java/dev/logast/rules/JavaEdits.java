@@ -68,11 +68,18 @@ public final class JavaEdits {
     /**
      * @param edits    empty when the logger already exists
      * @param name     null when no SLF4J logger can be added (interface/enum, or the class logs through another API)
-     * @param otherApi the other logging API the class uses (no SLF4J edits there), else null
+     * @param otherApi  the other logging API the class uses (no SLF4J edits there), else null
+     * @param qualified the logger named so that a local variable or parameter called like it cannot hide it
+     *                  ({@code Owner.log}, {@code this.log}), null when it cannot be named that way (#83)
      */
-    public record LoggerPlan(String name, List<Edit> edits, String otherApi) {
+    public record LoggerPlan(String name, List<Edit> edits, String otherApi, String qualified) {
         public LoggerPlan(String name, List<Edit> edits) {
-            this(name, edits, null);
+            this(name, edits, null, null);
+        }
+
+        /** This plan with {@code name} replaced by the qualified name (null: no logger can be named here). */
+        LoggerPlan qualify() {
+            return new LoggerPlan(qualified, qualified == null ? List.of() : edits, otherApi, qualified);
         }
     }
 
@@ -83,7 +90,8 @@ public final class JavaEdits {
      */
     public static LoggerPlan logger(ClassInfo owner, LoggerScope.Logger inScope, String preferredName, boolean lombok) {
         if (inScope != null) {
-            return inScope.slf4j() ? new LoggerPlan(inScope.name(), List.of()) : new LoggerPlan(null, List.of(), inScope.api());
+            return inScope.slf4j() ? new LoggerPlan(inScope.name(), List.of(), null, inScope.qualified())
+                    : new LoggerPlan(null, List.of(), inScope.api(), null);
         }
         J.ClassDeclaration.Kind.Type kind = owner.decl().getKind();
         if (kind == J.ClassDeclaration.Kind.Type.Interface || kind == J.ClassDeclaration.Kind.Type.Enum
@@ -99,7 +107,7 @@ public final class JavaEdits {
             List<Edit> edits = new ArrayList<>();
             edits.add(Edit.insert(f.relPath(), at, "@Slf4j\n" + indent));
             edits.addAll(imports(f, "lombok.extern.slf4j.Slf4j"));
-            return new LoggerPlan(lombokName, edits);
+            return new LoggerPlan(lombokName, edits, null, owner.simpleName() + "." + lombokName);
         }
         int brace = Pos.start(owner.decl().getBody());
         if (brace < 0 || text.charAt(brace) != '{' || !Text.blank(text, brace + 1, Text.lineEnd(text, brace))) {
@@ -113,7 +121,7 @@ public final class JavaEdits {
         List<Edit> edits = new ArrayList<>();
         edits.add(Edit.insert(f.relPath(), at, field));
         edits.addAll(imports(f, "org.slf4j.Logger", "org.slf4j.LoggerFactory"));
-        return new LoggerPlan(preferredName, edits);
+        return new LoggerPlan(preferredName, edits, null, owner.simpleName() + "." + preferredName);
     }
 
     /** End offset of a statement including its ';' (when it directly follows). */

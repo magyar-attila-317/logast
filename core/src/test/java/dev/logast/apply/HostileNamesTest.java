@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * left, both must compile, no order may be rejected, and the results must be the same modulo the renaming (a generated
  * name that had to step aside gets a number: {@code result2}).
  *
- * <p>A local named {@code log} is a known gap ({@link #aLocalNamedLogHidesTheGeneratedLogger}).
+ * <p>A local named {@code log} is {@link #aLocalNamedLogDoesNotHideTheGeneratedLogger} (#83).
  *
  * <p>Catch parameters named {@code _} (Java 22+) are E2eGoldenTest#unnamedCatchParametersAreNotPassedOn (#44): an
  * unnamed exception cannot be passed on, so its result differs from a named one by design.
@@ -174,21 +174,24 @@ class HostileNamesTest {
     }
 
     /**
-     * Known gap (#58 d): a local {@code log} that is not a logger, in a method where an outcome log line is inserted.
-     * The line is written as {@code log.info(..)}, and the local hides the logger field logast adds. The compile gate
-     * (#44) rejects the order, so the code stays as it was, but the file's other outcome logs are rejected with it.
-     * When this test fails because nothing is rejected, add {@code journal → log} to {@link #NAMES} and delete it.
+     * #83: a local {@code log} that is not a logger, in a method where an outcome log line is inserted, would hide the
+     * logger field logast adds. The lines in that method name the field qualified ({@code ParcelStore.log}); the
+     * method without the local keeps the plain name. Both outcome logs are applied (none rejected by the compile gate)
+     * and the result compiles.
      */
     @Test
-    void aLocalNamedLogHidesTheGeneratedLogger() throws IOException {
-        Map<String, String> rejected = new TreeMap<>();
+    void aLocalNamedLogDoesNotHideTheGeneratedLogger() throws IOException {
+        Map<String, String> neutral = migrate("log-neutral", Map.of("ParcelStore", SOURCES.get("ParcelStore")), null);
         Map<String, String> hostile = migrate("log-local", Map.of("ParcelStore",
-                SOURCES.get("ParcelStore").replaceAll("\\bjournal\\b", "log")), rejected);
-        assertThat(rejected).as("#58 d: still the known clash, rejected by the compile gate").isNotEmpty()
-                .allSatisfy((id, why) -> assertThat(why).contains("variable log of type java.lang.StringBuilder"));
-        assertThat(hostile.get("ParcelStore")).as("the rejected orders left the file alone").doesNotContain("log.info(")
-                .doesNotContain("log.debug(");
+                SOURCES.get("ParcelStore").replaceAll("\\bjournal\\b", "log")), null);
         assertThat(compileErrors(tmp.resolve("log-local"))).isEmpty();
+        String close = hostile.get("ParcelStore").substring(hostile.get("ParcelStore").indexOf("int close("),
+                hostile.get("ParcelStore").indexOf("open()"));
+        assertThat(close).as("the outcome log next to the local is qualified").contains("ParcelStore.log.info(")
+                .doesNotContainPattern("(?<![.\\w])log\\.info\\(");
+        assertThat(hostile.get("ParcelStore").replace("ParcelStore.log.info(", "log.info("))
+                .as("otherwise the same as with a neutral name")
+                .isEqualTo(neutral.get("ParcelStore").replaceAll("\\bjournal\\b", "log"));
     }
 
     private static String rename(String text) {

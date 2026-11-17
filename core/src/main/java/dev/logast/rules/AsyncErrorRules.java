@@ -88,7 +88,7 @@ final class AsyncErrorRules {
                 .about(f.relPath(), mi)
                 .doneWhen("the result is no longer a statement of its own: assigned, returned, or handled in the chain "
                         + "(exceptionally, handle, whenComplete, get, join)");
-        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
         if (!completable || logger.name() == null) {
             b.suggestion("Use execute(…) for fire-and-forget work (an uncaught exception is then logged), or keep the Future "
                     + "and check it (get with a timeout).");

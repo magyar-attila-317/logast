@@ -251,6 +251,31 @@ public final class RuleContext {
     }
 
     /**
+     * The logger for lines written into {@code m}: as {@link #logger(dev.logast.model.ClassInfo)}, but when a parameter
+     * or local variable anywhere in {@code m} is named like the logger, the name is qualified ({@code Owner.log},
+     * {@code this.log}), as the variable would hide the field where a line lands in its scope (#83). Without a
+     * qualified name the plan has no logger, so the rules report without editing.
+     */
+    JavaEdits.LoggerPlan logger(MethodInfo m) {
+        JavaEdits.LoggerPlan plan = logger(m.owner());
+        return plan.name() != null && declares(m, plan.name()) ? plan.qualify() : plan;
+    }
+
+    /** A parameter, local, catch or lambda parameter of {@code m} (nested classes included) is named {@code name}. */
+    private static boolean declares(MethodInfo m, String name) {
+        boolean[] found = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public org.openrewrite.java.tree.J.VariableDeclarations.NamedVariable visitVariable(
+                    org.openrewrite.java.tree.J.VariableDeclarations.NamedVariable v, Integer p) {
+                found[0] |= v.getSimpleName().equals(name);
+                return super.visitVariable(v, p);
+            }
+        }.visit(m.decl(), 0);
+        return found[0];
+    }
+
+    /**
      * Returns a Mono, Flux or other Reactive Streams publisher: the method assembles a pipeline that runs later, on
      * other threads, so a scope or wrapper around its body ends before the work starts.
      */

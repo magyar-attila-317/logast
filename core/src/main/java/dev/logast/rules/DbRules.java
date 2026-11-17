@@ -149,7 +149,7 @@ final class DbRules {
         if (value == null) {
             return; // a stream: counting it would consume it
         }
-        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
         if (logger.name() == null) {
             return;
         }

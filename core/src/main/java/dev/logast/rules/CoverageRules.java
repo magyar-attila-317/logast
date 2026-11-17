@@ -218,7 +218,7 @@ final class CoverageRules {
         String text = f.text();
         J.Block block = innermost(m.decl().getBody());
         int[] inner = JavaEdits.blockInner(text, block);
-        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
         if (inner == null || logger.name() == null || block.getStatements().isEmpty()) {
             return;
         }
@@ -417,7 +417,7 @@ final class CoverageRules {
                 return super.visitIf(i, p);
             }
         }.visit(m.decl().getBody(), 0);
-        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
         int n = 0;
         for (J.If i : found) {
             boolean logged = m.facts().logs.stream().anyMatch(l -> Pos.start(l.call()) >= Pos.start(i.getThenPart())
@@ -491,7 +491,7 @@ final class CoverageRules {
         if (logged || !ctx.enabled(Rules.STATE_CHANGE_UNLOGGED) || ctx.ignored(m.file(), line, Rules.STATE_CHANGE_UNLOGGED)) {
             return;
         }
-        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
         J stmt = enclosingStatement(m, mi);
         if (logger.name() == null || stmt == null) {
             return;
@@ -592,7 +592,7 @@ final class CoverageRules {
                 return l;   // the outer loop is the batch; inner loops are its details
             }
         }.visit(m.decl().getBody(), 0);
-        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
         int n = 0;
         for (J.ForEachLoop loop : found) {
             Expression it = loop.getControl().getIterable();

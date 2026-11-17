@@ -46,7 +46,7 @@ final class FamilyRules {
             return;
         }
         int[] inner = JavaEdits.blockInner(text, m.decl().getBody());
-        JavaEdits.LoggerPlan logger = ctx.logger(m.owner());
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
         if (inner == null || logger.name() == null) {
             return;
         }

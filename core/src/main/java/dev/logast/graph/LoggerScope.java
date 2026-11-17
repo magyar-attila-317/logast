@@ -27,12 +27,26 @@ import java.util.Set;
  */
 public final class LoggerScope {
     /**
-     * @param name the field name code uses
-     * @param api  null for SLF4J, else the other API ("Log4j2", "java.util.logging", …)
+     * @param name      the field name code uses
+     * @param api       null for SLF4J, else the other API ("Log4j2", "java.util.logging", …)
+     * @param isStatic  a static field (Lombok's loggers are)
+     * @param qualified the field named so that a local variable or parameter of the same name cannot hide it (#83):
+     *                  {@code Owner.log} for a static field, {@code this.log} / {@code Outer.this.log} for an instance
+     *                  field; null when there is no such name (an anonymous class)
      */
-    public record Logger(String name, String api) {
+    public record Logger(String name, String api, boolean isStatic, String qualified) {
+        Logger(String name, String api, boolean isStatic) {
+            this(name, api, isStatic, null);
+        }
+
         public boolean slf4j() {
             return api == null;
+        }
+
+        /** Qualified by {@code type}, the class it is seen through; {@code own}: the class whose code names it. */
+        Logger qualifiedBy(String type, boolean own) {
+            String q = isStatic ? type : own ? "this" : type.isEmpty() ? "" : type + ".this";
+            return new Logger(name, api, isStatic, q.isEmpty() ? null : q + "." + name);
         }
     }
 
@@ -75,7 +89,9 @@ public final class LoggerScope {
             boolean staticOnly = false;
             JavaType.FullyQualified t = owner.type();
             Set<String> seen = new HashSet<>();
+            boolean own = true;
             while (t != null && seen.add(t.getFullyQualifiedName())) {
+                int from = out.size();
                 ClassInfo c = index.clazz(t.getFullyQualifiedName());
                 if (c != null) {
                     own(c, staticOnly, out);
@@ -86,6 +102,11 @@ public final class LoggerScope {
                 for (JavaType.FullyQualified i : t.getInterfaces()) {
                     inherited(i, staticOnly, owner, seen, out);   // interface constants
                 }
+                String type = c != null ? c.simpleName() : simpleName(t);
+                for (int i = from; i < out.size(); i++) {
+                    out.set(i, out.get(i).qualifiedBy(type, own));
+                }
+                own = false;
                 staticOnly |= c == null ? t.hasFlags(Flag.Static) : isStatic(c.decl());
                 t = t.getOwningClass();
             }
@@ -112,7 +133,7 @@ public final class LoggerScope {
         for (J.Annotation a : c.decl().getLeadingAnnotations()) {
             for (Map.Entry<String, String> e : LOMBOK.entrySet()) {
                 if (Annotations.is(a, e.getKey())) {
-                    out.add(new Logger(lombokFieldName(c.file().absPath()), e.getValue().isEmpty() ? null : e.getValue()));
+                    out.add(new Logger(lombokFieldName(c.file().absPath()), e.getValue().isEmpty() ? null : e.getValue(), true));
                 }
             }
         }
@@ -137,7 +158,7 @@ public final class LoggerScope {
             }
             String api = api(vd.getType(), vd.getTypeExpression().printTrimmed());
             if (api != null) {
-                vd.getVariables().forEach(v -> out.add(new Logger(v.getSimpleName(), api.isEmpty() ? null : api)));
+                vd.getVariables().forEach(v -> out.add(new Logger(v.getSimpleName(), api.isEmpty() ? null : api, isStatic)));
             }
         }
         return out;
@@ -151,7 +172,7 @@ public final class LoggerScope {
             }
             String api = api(v.getType(), null);
             if (api != null) {
-                out.add(new Logger(v.getName(), api.isEmpty() ? null : api));
+                out.add(new Logger(v.getName(), api.isEmpty() ? null : api, v.hasFlags(Flag.Static)));
             }
         }
     }
@@ -167,6 +188,11 @@ public final class LoggerScope {
         }
         // the type did not resolve: a field typed ...Logger counts as SLF4J, as log calls on it are recognised by name
         return printed != null && printed.endsWith("Logger") ? "" : null;
+    }
+
+    private static String simpleName(JavaType.FullyQualified t) {
+        String fqn = t.getFullyQualifiedName();
+        return fqn.substring(Math.max(fqn.lastIndexOf('.'), fqn.lastIndexOf('$')) + 1);
     }
 
     private static boolean isStatic(J.ClassDeclaration decl) {
