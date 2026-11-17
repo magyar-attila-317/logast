@@ -55,4 +55,55 @@ class ImportFixerTest {
         String src = "package com.shop.logging;\n\nclass C {\n    void c() { try (var m = MdcScope.of(\"a\", 1)) { } }\n}\n";
         assertThat(ImportFixer.fix(src, SUPPORT)).doesNotContain("import com.shop.logging.MdcScope;");
     }
+
+    /**
+     * #77: an edit removes a file's only import (the catalog moves its Outcomes call to a same-package class): the
+     * blank line that set the import apart goes with it.
+     */
+    @Test
+    void removingTheLastImportLeavesOneBlankLineAfterPackage() {
+        String before = """
+                package com.shop.jobs;
+
+                import com.shop.logging.Outcomes;
+
+                class CleanupJob {
+                    void run() {
+                        Outcomes.count("cleanup", "failed");
+                    }
+                }
+                """;
+        String after = """
+                package com.shop.jobs;
+
+
+                class CleanupJob {
+                    void run() {
+                        JobsMetrics.cleanupFailed();
+                    }
+                }
+                """;
+        assertThat(ImportFixer.fix(before, after, SUPPORT)).isEqualTo("""
+                package com.shop.jobs;
+
+                class CleanupJob {
+                    void run() {
+                        JobsMetrics.cleanupFailed();
+                    }
+                }
+                """);
+    }
+
+    @Test
+    void theFixerRemovingTheLastImportLeavesOneBlankLine() {
+        String src = "package com.shop.x;\n\nimport org.slf4j.MDC;\n\nclass D {\n}\n";
+        assertThat(ImportFixer.fix(src, SUPPORT)).isEqualTo("package com.shop.x;\n\nclass D {\n}\n");
+    }
+
+    @Test
+    void blankLinesOfAFileWithoutImportsStayAsTheyAre() {
+        String src = "package com.shop.x;\n\n\nclass E {\n    void e() { JobsMetrics.cleanupFailed(); }\n}\n";
+        String after = src.replace("void e()", "void f()");
+        assertThat(ImportFixer.fix(src, after, SUPPORT)).isEqualTo(after);
+    }
 }

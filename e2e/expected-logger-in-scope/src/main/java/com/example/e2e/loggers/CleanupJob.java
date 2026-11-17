@@ -1,6 +1,5 @@
 package com.example.e2e.loggers;
 
-
 class CleanupJob extends BaseJob {
     @Override
     void run(Runnable step) {
