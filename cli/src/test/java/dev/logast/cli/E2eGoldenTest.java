@@ -544,6 +544,78 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-inline-named-placeholder"), actual);
     }
 
+    /** #61: an ignore names rules exactly (METRIC_TAG_KEY is a prefix of METRIC_TAG_KEYS_MISMATCH); ignore-file covers a file. */
+    @Test
+    void suppressesOnlyTheRulesAnIgnoreNames() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml) + "metrics:\n  tags:\n    outcome: { aliases: [result] }\n");
+            Path dir = app.resolve("src/main/java/com/example/e2e/suppress");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("ParcelCounters.java"), """
+                    package com.example.e2e.suppress;
+
+                    import io.micrometer.core.instrument.MeterRegistry;
+
+                    class ParcelCounters {
+                        private final MeterRegistry registry;
+
+                        ParcelCounters(MeterRegistry registry) {
+                            this.registry = registry;
+                        }
+
+                        void shipped() {
+                            // logast:ignore METRIC_TAG_KEYS_MISMATCH
+                            registry.counter("parcel.shipped", "result", "ok").increment();
+                        }
+
+                        void returned() {
+                            registry.counter("parcel.returned", "result", "ok").increment(); // logast:ignore METRIC_TAG_KEY
+                        }
+
+                        void held() {
+                            // logast:ignore METRIC_REGISTERED_PER_CALL, METRIC_TAG_KEY -- the tag is read by an old dashboard
+                            registry.counter("parcel.held", "result", "ok").increment();
+                        }
+
+                        void lost() {
+                            // logast:ignore
+                            registry.counter("parcel.lost", "result", "ok").increment();
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("ParcelGauges.java"), """
+                    package com.example.e2e.suppress;
+
+                    // logast:ignore-file METRIC_TAG_KEY
+
+                    import io.micrometer.core.instrument.MeterRegistry;
+
+                    class ParcelGauges {
+                        private final MeterRegistry registry;
+
+                        ParcelGauges(MeterRegistry registry) {
+                            this.registry = registry;
+                        }
+
+                        void sorted() {
+                            registry.counter("parcel.sorted", "result", "ok").increment();
+                        }
+                    }
+                    """);
+        });
+
+        String counters = actual.get("src/main/java/com/example/e2e/suppress/ParcelCounters.java");
+        // the ignore names another rule: the tag key is still renamed
+        assertThat(counters).contains("registry.counter(\"parcel.shipped\", \"outcome\", \"ok\")")
+                .contains("registry.counter(\"parcel.returned\", \"result\", \"ok\")")
+                .contains("registry.counter(\"parcel.held\", \"result\", \"ok\")")
+                .contains("registry.counter(\"parcel.lost\", \"result\", \"ok\")");
+        assertThat(actual.get("src/main/java/com/example/e2e/suppress/ParcelGauges.java"))
+                .contains("registry.counter(\"parcel.sorted\", \"result\", \"ok\")");
+        golden(EXPECTED.resolveSibling("expected-suppressions"), actual);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);

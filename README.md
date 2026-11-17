@@ -774,7 +774,9 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
 | runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
 
-Suppress a single finding with `// logast:ignore RULE` on the line or the line above. Tune or disable rules in the
+Suppress a single finding with `// logast:ignore RULE` on the line or the line above (several rules: `RULE_A, RULE_B`;
+rule ids match exactly, a bare `// logast:ignore` silences every rule there), or a rule for a whole Java file with
+`// logast:ignore-file RULE`. Tune or disable rules in the
 policy (`rules: { LOG_FORMAT: { severity: low } }`, `{ enabled: false }`).
 
 ## The runtime starter
