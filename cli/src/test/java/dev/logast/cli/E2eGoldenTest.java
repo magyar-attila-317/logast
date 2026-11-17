@@ -376,6 +376,8 @@ class E2eGoldenTest {
             boot3 = boot3.replace("spring-boot-starter-webmvc", "spring-boot-starter-web")
                     .replace("dependencies {", "repositories { mavenCentral() }\n\ndependencies {\n"
                             + "    implementation(platform(\"org.springframework.boot:spring-boot-dependencies:3.5.7\"))");
+            // a non-OpenTelemetry agent: once the OTel dependencies are added, it must not read as the OTel Java agent
+            boot3 += "\ntasks.withType<Test>().configureEach { jvmArgs(\"-javaagent:/libs/mockito-core.jar\") }\n";
             Files.writeString(build, boot3);
         });
 
@@ -387,6 +389,7 @@ class E2eGoldenTest {
         assertThat(build.split("spring-boot-starter-actuator", -1)).hasSize(2);
         assertThat(build.split("micrometer-tracing-bridge-otel", -1)).hasSize(2);
         assertThat(build.split("opentelemetry-exporter-otlp", -1)).hasSize(2);
+        assertThat(actual.get("FINDINGS.txt")).doesNotContain("Java agent");
         golden(EXPECTED.resolveSibling("expected-boot3"), actual);
     }
 
@@ -602,6 +605,11 @@ class E2eGoldenTest {
                 .startsWith("server.error.include-stacktrace=never\nserver.error.include-message=always\n#---\n")
                 .endsWith("spring.config.activate.on-profile=dev\nserver.error.include-stacktrace=always\n");
         assertThat(Files.readString(app.resolve("src/main/resources/application.yml"))).doesNotContain("include-stacktrace");
+        String settledProps = Files.readString(props);
+        String settledYml = Files.readString(app.resolve("src/main/resources/application.yml"));
+        run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(Files.readString(props)).as("a second apply changes nothing").isEqualTo(settledProps);
+        assertThat(Files.readString(app.resolve("src/main/resources/application.yml"))).isEqualTo(settledYml);
         String scan = run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
         assertThat(scan).as("include-message changes the response body: a decision, reported").contains("ERROR_DETAILS_EXPOSED")
                 .contains("Decide on include-message").doesNotContain("Sets include-stacktrace");
