@@ -18,17 +18,10 @@ index dcb213f..dcbb642 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/loggers/CleanupJob.java b/src/main/java/com/example/e2e/loggers/CleanupJob.java
-index 89f2a09..50fa8f7 100644
+index 89f2a09..6984f63 100644
 --- a/src/main/java/com/example/e2e/loggers/CleanupJob.java
 +++ b/src/main/java/com/example/e2e/loggers/CleanupJob.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.loggers;
- 
-+
- class CleanupJob extends BaseJob {
-     @Override
-     void run(Runnable step) {
-@@ -7,6 +8,7 @@
+@@ -7,6 +7,7 @@ 
              step.run();
          } catch (IllegalStateException e) {
              log.warn("Step failed", e);

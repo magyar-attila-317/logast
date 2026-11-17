@@ -463,7 +463,7 @@ public final class Applier {
                     after = after.isBlank() ? m.text() : mergeInto(after, m);
                 }
                 if (p.toString().endsWith(".java")) {
-                    after = ImportFixer.fix(after, ImportFixer.learn(edits.stream().map(Edit::text).toList()));
+                    after = ImportFixer.fix(before, after, ImportFixer.learn(edits.stream().map(Edit::text).toList()));
                 }
                 if (p.toString().endsWith(".java") && !ProjectParser.parsesCleanly(work, work.relativize(p), after)) {
                     broken.put(entry.getKey(), "does not parse");

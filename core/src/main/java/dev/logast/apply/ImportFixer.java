@@ -16,6 +16,7 @@ final class ImportFixer {
             "LoggerFactory", "org.slf4j.LoggerFactory");
     private static final Pattern IMPORT = Pattern.compile("(?m)^import\\s+(static\\s+)?([\\w.]+)(\\.\\*)?\\s*;[^\\n]*\\n?");
     private static final Pattern PACKAGE = Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;");
+    private static final Pattern BLANK_LINES = Pattern.compile("(?:[ \\t]*\\n)+");
 
     private ImportFixer() {
     }
@@ -34,6 +35,36 @@ final class ImportFixer {
     }
 
     static String fix(String text, Map<String, String> support) {
+        return fix(text, text, support);
+    }
+
+    /**
+     * @param before the file before this round's edits: when it had imports and the result has none (an edit or this
+     *               fixer removed the last one), the blank line that set the import block apart goes too (#77)
+     */
+    static String fix(String before, String text, Map<String, String> support) {
+        String fixed = fixImports(text, support);
+        return IMPORT.matcher(before).find() && !IMPORT.matcher(fixed).find() ? closeImportGap(fixed) : fixed;
+    }
+
+    /** One blank line between the package line and what follows it, none at the top of a file without a package. */
+    static String closeImportGap(String text) {
+        Matcher pm = PACKAGE.matcher(text);
+        if (!pm.find()) {
+            return text.replaceFirst("^(?:[ \\t]*\\n)+", "");
+        }
+        int eol = text.indexOf('\n', pm.end());
+        if (eol < 0) {
+            return text;
+        }
+        Matcher blank = BLANK_LINES.matcher(text).region(eol + 1, text.length());
+        if (!blank.lookingAt() || blank.group().chars().filter(c -> c == '\n').count() < 2) {
+            return text;
+        }
+        return text.substring(0, eol + 1) + "\n" + text.substring(blank.end());
+    }
+
+    private static String fixImports(String text, Map<String, String> support) {
         Map<String, String> known = new LinkedHashMap<>(FIXED);
         known.putAll(support);
         Matcher pm = PACKAGE.matcher(text);
