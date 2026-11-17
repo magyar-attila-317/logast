@@ -754,6 +754,28 @@ class E2eGoldenTest {
     }
 
     /**
+     * A key defined in a later unconditional document of application.yml (#47): Spring applies the documents top to
+     * bottom, so the fix must change it there; written into the first document it has no effect and the finding stays.
+     * The profile document after it keeps its own value. Every file must equal e2e/expected-config-later-document.
+     */
+    @Test
+    void configFixLandsInTheDocumentThatDefinesTheKey() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("src/main/resources/application.yml");
+            Files.writeString(yml, Files.readString(yml) + "---\nserver:\n  error:\n    include-stacktrace: always\n"
+                    + "---\nspring:\n  config:\n    activate:\n      on-profile: dev\nserver:\n  error:\n    include-stacktrace: always\n");
+        });
+        String yml = actual.get("src/main/resources/application.yml");
+        String[] docs = yml.split("(?m)^---\\s*$");
+        assertThat(docs).hasSize(3);
+        assertThat(docs[0]).as("not in the first document, where a later one would override it").doesNotContain("include-stacktrace");
+        assertThat(docs[1]).as("changed in the document Spring uses").contains("include-stacktrace: never").doesNotContain("always");
+        assertThat(docs[2]).as("the profile document keeps its value").contains("include-stacktrace: always");
+        assertThat(actual.get("FINDINGS.txt")).doesNotContain("Sets include-stacktrace");
+        golden(EXPECTED.resolveSibling("expected-config-later-document"), actual);
+    }
+
+    /**
      * Java 22+ unnamed catch parameters (#44): {@code catch (X _)} cannot be passed on as a cause or logged, so neither
      * fix may write {@code _} into the code. Needs JDK 22+ to compile.
      */

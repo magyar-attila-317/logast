@@ -580,15 +580,39 @@ public final class SetupRules {
     public static String mergeYaml(String existing, String snippet, boolean overwrite) {
         existing = dropEmptyKeys(existing, keyPaths(snippet));
         Yaml.Documents docs = (Yaml.Documents) new YamlParser().parse(existing).findFirst().orElseThrow();
-        Yaml.Document doc = docs.getDocuments().getFirst();
+        int target = targetDocument(docs, ServiceYaml.flatYaml(snippet).keySet(), overwrite);
+        Yaml.Document doc = docs.getDocuments().get(target);
         Yaml incoming = ((Yaml.Documents) new YamlParser().parse(snippet).findFirst().orElseThrow())
                 .getDocuments().getFirst().getBlock();
         Yaml merged = new MergeYamlVisitor<Integer>(doc.getBlock(), incoming, !overwrite, null, null, null)
                 .visitNonNull(doc.getBlock(), 0, new Cursor(new Cursor(new Cursor(null, Cursor.ROOT_VALUE), docs), doc));
         List<Yaml.Document> all = new ArrayList<>(docs.getDocuments());
-        all.set(0, doc.withBlock((Yaml.Block) merged));
+        all.set(target, doc.withBlock((Yaml.Block) merged));
         String out = dropCopiedComments(existing, docs.withDocuments(all).printAll());
         return out.endsWith("\n") ? out : out + "\n";
+    }
+
+    /**
+     * The document a merge goes into (#47). Spring applies the documents of a file top to bottom, a later one overriding
+     * an earlier one, and a document with {@code spring.config.activate.*} only for its profile or platform. A changed
+     * value ({@code overwrite}) goes into the last unconditional document that defines one of the keys, so it is the one
+     * Spring uses; anything else into the first unconditional document. Source: Spring Boot reference, "Externalized
+     * Configuration", Working With Multi-Document Files (docs.spring.io/spring-boot/reference/features/external-config.html).
+     */
+    private static int targetDocument(Yaml.Documents docs, Set<String> keys, boolean overwrite) {
+        int first = -1;
+        int defining = -1;
+        for (int i = 0; i < docs.getDocuments().size(); i++) {
+            Set<String> defined = keyPaths(docs.withDocuments(List.of(docs.getDocuments().get(i))).printAll());
+            if (defined.stream().anyMatch(k -> k.startsWith("spring.config.activate."))) {
+                continue;
+            }
+            first = first < 0 ? i : first;
+            if (overwrite && keys.stream().anyMatch(defined::contains)) {
+                defining = i;
+            }
+        }
+        return defining >= 0 ? defining : Math.max(first, 0);
     }
 
     /**
