@@ -82,4 +82,40 @@ class CompileCheckTest {
         String after = "package a;\nclass C { String n() { return Helper.name(); } }\n";
         assertThat(new CompileCheck(List.of()).newErrors(work, Map.of("src/main/java/a/C.java", after))).isEmpty();
     }
+
+    /**
+     * #76: Lombok runs with the project's lombok.config, so a fix that logs through Lombok's default name where the
+     * config renames the field is a new error, and the configured name is none. (A lower-case name: an unresolved
+     * capitalised name like LOG reads as an unknown class and counts as environmental.)
+     */
+    @Test
+    void lombokRunsWithTheProjectsLombokConfig() throws IOException {
+        List<Path> classpath = java.util.Arrays.stream(System.getProperty("logast.test.lombok").split(java.io.File.pathSeparator))
+                .map(Path::of).toList();
+        write("src/main/java/a/lombok.config", "lombok.log.fieldName = logger\n");
+        String before = """
+                package a;
+
+                import lombok.extern.slf4j.Slf4j;
+
+                @Slf4j
+                class D {
+                    void m(Runnable step) {
+                        try {
+                            step.run();
+                        } catch (IllegalStateException e) {
+                        }
+                    }
+                }
+                """;
+        write("src/main/java/a/D.java", before);
+        String wrongName = before.replace("catch (IllegalStateException e) {\n", "catch (IllegalStateException e) {\n log.warn(\"Step failed\", e);\n");
+        String configuredName = wrongName.replace("log.warn", "logger.warn");
+
+        Map<String, String> errors = new CompileCheck(classpath).newErrors(work, Map.of("src/main/java/a/D.java", wrongName));
+        assertThat(errors).as("Lombok's default name where lombok.config renames the field").containsKey("src/main/java/a/D.java");
+        assertThat(errors.get("src/main/java/a/D.java")).contains("variable log");
+        assertThat(new CompileCheck(classpath).newErrors(work, Map.of("src/main/java/a/D.java", configuredName)))
+                .as("the name lombok.config gives").isEmpty();
+    }
 }
