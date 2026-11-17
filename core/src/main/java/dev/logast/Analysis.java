@@ -186,5 +186,21 @@ public final class Analysis {
         public boolean coverageComplete() {
             return files >= discoveredFiles && parseErrors.isEmpty();
         }
+
+        /**
+         * Why the findings may be incomplete: files not analysed, no classpath. A CI gate must not pass on such a scan,
+         * since a broken analysis finds less (#55). Empty when the analysis is complete.
+         */
+        public List<String> gaps() {
+            List<String> gaps = new ArrayList<>();
+            if (!coverageComplete()) {
+                gaps.add(Math.max(discoveredFiles - files, parseErrors.size()) + " of " + discoveredFiles + " source files not analysed ("
+                        + String.join("; ", parseErrors.stream().limit(5).toList()) + (parseErrors.size() > 5 ? "; …" : "") + ")");
+            }
+            if (noClasspath) {
+                gaps.add("no classpath, library types unresolved (run `logast classpath .`)");
+            }
+            return gaps;
+        }
     }
 }

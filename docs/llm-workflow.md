@@ -66,8 +66,9 @@ Handle follow-ups in the next round.
   `--limit 20` keep the output small.
 - `explain <root>` lists the entrypoints. `explain <root> --entrypoint "POST /orders"` shows the
   call tree with log/MDC/async markers and order ids.
-- `scan --fail-on high` exits with 2 when there are findings, for CI. Add `--baseline` (after a one-off
-  `--update-baseline`) so only new findings count.
+- `scan --fail-on high` exits with 2 when there are findings, for CI, and with 4 when the analysis is
+  incomplete (files not parsed, no classpath). Add `--baseline` (after a one-off `--update-baseline`) so only
+  new findings count; a known finding that grew (one more unlocked `@Scheduled` job, say) counts as new.
 - `--pack logging|tracing|metrics` limits a run to one concern.
 - `// logast:ignore RULE` on a line (or the line above) suppresses a finding. Use it only when
   the user agrees.
