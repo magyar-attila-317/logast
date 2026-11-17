@@ -24,7 +24,9 @@ import java.util.regex.Pattern;
  *       denied access.</li>
  * </ul>
  * An emitter is a call listed in {@code audit.emitters} ({@code com.x.AuditService} or {@code com.x.ActivityLogger#log});
- * with none listed, any call on a type named *Audit* or passing an *Audit* argument (an AuditAction enum value).
+ * with none listed, a call that passes something to a type whose own name says *Audit* (not a builder's step), or
+ * passes a value whose own type is named *Audit* (an AuditAction enum value), or publishes an event whose type
+ * hierarchy is. An entity extending {@code AbstractAuditable} handed to {@code repository.save} is no audit record (#50).
  */
 final class AuditRules {
     private static final Set<String> SECURITY_EVENTS = Set.of(
@@ -135,14 +137,17 @@ final class AuditRules {
             new JavaIsoVisitor<Integer>() {
                 @Override
                 public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
-                    J.MethodInvocation r = super.visitMethodInvocation(mi, p);   // arguments first: they run before the call
                     if (emitter(mi)) {
+                        // its own arguments (principal.getName(), order.getId()) are part of the record, not work (#50)
                         if (inCatchOrFinally()) {
                             found[0] = true;
                         } else if (work[0]) {
                             auditAfterWork[0] = true;
                         }
-                    } else if (!logger(mi) && !support(mi)) {
+                        return mi;
+                    }
+                    J.MethodInvocation r = super.visitMethodInvocation(mi, p);   // arguments first: they run before the call
+                    if (!logger(mi) && !support(mi)) {
                         work[0] = true;
                     }
                     return r;
@@ -361,19 +366,39 @@ final class AuditRules {
 
     // ---- who and what in every record ------------------------------------------------------------
 
-    private static final java.util.regex.Pattern ACTOR = java.util.regex.Pattern.compile(
-            "(?i).*(principal|actor|user(name|id)?|currentuser|authentication|operator|initiator|performedby)$");
+    /** A name the actor goes by: only a fallback for a plain value whose origin says nothing (#50). */
+    private static final String ACTOR = "(?i).*(principal|actor|user(name|id)?|currentuser|authentication|operator|initiator|performedby)";
+    /** A name the record's id goes by: {@code id}, {@code couponId}, {@code getKey()}; not {@code paid} or {@code valid}. */
+    private static final String TARGET = "(id|ids|key|code|number|uuid)|.*(Id|ID|Ids|IDs|Key|Code|Number|Uuid|UUID)";
     private static final List<String> ACTOR_TYPES = List.of("java.security.Principal",
-            "org.springframework.security.core.Authentication", "org.springframework.security.core.userdetails.UserDetails");
+            "org.springframework.security.core.Authentication", "org.springframework.security.core.userdetails.UserDetails",
+            "org.springframework.security.core.AuthenticatedPrincipal", "org.springframework.security.oauth2.jwt.Jwt");
+    private static final String AUTHENTICATION_PRINCIPAL =
+            "org.springframework.security.core.annotation.AuthenticationPrincipal";
+    /** Parameters whose value the client sends: whoever it names is who the client claims to be. */
+    private static final List<String> CLIENT_INPUT = List.of("org.springframework.web.bind.annotation.RequestHeader",
+            "org.springframework.web.bind.annotation.RequestParam", "org.springframework.web.bind.annotation.RequestBody",
+            "org.springframework.web.bind.annotation.PathVariable", "org.springframework.web.bind.annotation.CookieValue",
+            "org.springframework.web.bind.annotation.RequestPart", "org.springframework.web.bind.annotation.ModelAttribute");
+    /** Entrypoints with no user behind them: a job, a batch step, a message, startup. */
+    private static final Set<Entrypoint.Kind> NO_USER = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
+            Entrypoint.Kind.MAIN, Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT);
+
+    /** Audit methods (in the code) that read the security context themselves. */
+    private final Set<String> selfActor = new HashSet<>();
 
     /**
      * AUDIT_RECORD_INCOMPLETE (report): an audit call without the acting user or without the id of the record acted on.
-     * A record that does not say who did it, or to what, proves nothing. The actor counts as present when an argument
-     * comes from the security context (or is named like one: userId, actor, principal), or when the audit method reads
-     * the security context itself; the target when an argument is a vocabulary id or named like one (…Id).
+     * A record that does not say who did it, or to what, proves nothing. The parts of a record built in the call
+     * ({@code new AuditEntry(…)}, a builder chain) count as its arguments. The actor counts as present when a value
+     * comes from the security context: followed back through locals and callers to a {@code Principal},
+     * {@code Authentication} or {@code @AuthenticationPrincipal} value, a call on one, {@code SecurityContextHolder}, or
+     * a method that reads it; or when the audit method reads it itself. A name like {@code userId} only counts for a
+     * plain value (a string, a number) whose origin says nothing, e.g. a field or a library call: the fallback where
+     * types and origin cannot tell. A value the client sends (a header, a parameter) gets its own finding. Paths that
+     * only jobs, batches and messages reach have no user to record.
      */
     private void incompleteRecords() {
-        Set<String> selfActor = new HashSet<>();   // audit methods (in the code) that read the security context themselves
         for (MethodInfo m : ctx.a.index.methods()) {
             if (m.decl().getBody() != null && readsSecurityContext(m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody())))) {
                 selfActor.add(m.key());
@@ -387,7 +412,7 @@ final class AuditRules {
                 @Override
                 public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
                     if (emitter(mi) && mi.getMethodType() != null) {
-                        check(m, mi, selfActor);
+                        check(m, mi);
                     }
                     return super.visitMethodInvocation(mi, p);
                 }
@@ -395,11 +420,28 @@ final class AuditRules {
         }
     }
 
-    private void check(MethodInfo m, J.MethodInvocation mi, Set<String> selfActor) {
-        List<Expression> args = mi.getArguments().stream().filter(a -> !(a instanceof J.Empty)).toList();
-        boolean actor = args.stream().anyMatch(a -> actorValue(a))
-                || ctx.a.index.resolve(mi.getMethodType()).stream().anyMatch(t -> selfActor.contains(t.key()));
-        boolean target = args.stream().anyMatch(a -> ctx.domain.keyOf(a).isPresent() || named(a, "(?i).*(id|ids|key|code|number)$"));
+    private void check(MethodInfo m, J.MethodInvocation mi) {
+        List<Expression> args = new ArrayList<>();
+        mi.getArguments().forEach(a -> parts(a, args));
+        J.Annotation client = null;
+        boolean actor = ctx.a.index.resolve(mi.getMethodType()).stream().anyMatch(t -> selfActor.contains(t.key())) || noUser(m);
+        for (Expression a : args) {
+            if (actor) {
+                break;
+            }
+            Origin o = origin(a, m, 2);
+            if (o.security()) {
+                actor = true;
+            } else if (plain(a.getType()) && named(a, ACTOR)) {
+                if (o.client() == null) {
+                    actor = true;   // named like the actor, nothing known about where it comes from: taken at its word
+                } else {
+                    client = o.client();
+                }
+            }
+        }
+        boolean target = args.stream().anyMatch(a -> ctx.domain.keyOf(a).isPresent()
+                || named(a, TARGET) && a.getType() != JavaType.Primitive.Boolean);
         if (actor && target) {
             return;
         }
@@ -407,20 +449,109 @@ final class AuditRules {
         if (ctx.ignored(m.file(), line, Rules.AUDIT_RECORD_INCOMPLETE)) {
             return;
         }
+        String record = "The audit record " + mi.getSimpleName() + "(…) in " + m.label();
+        if (!actor && client != null) {
+            ctx.orderNth(Rules.AUDIT_RECORD_INCOMPLETE, m, line, "audit-record")
+                    .title(record + " takes the acting user from the request (" + client.printTrimmed()
+                            + "): the client can name anyone" + (target ? "" : ", and it does not say to which record"))
+                    .suggestion("Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication "
+                            + "parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate "
+                            + "field. " + (!target ? "Pass the id of the record acted on. " : "") + "A record without them proves nothing.");
+            return;
+        }
         String missing = !actor && !target ? "who did it and to which record" : !actor ? "who did it" : "to which record";
         ctx.orderNth(Rules.AUDIT_RECORD_INCOMPLETE, m, line, "audit-record")
-                .title("The audit record " + mi.getSimpleName() + "(…) in " + m.label() + " does not say " + missing)
+                .title(record + " does not say " + missing)
                 .suggestion((!actor ? "Pass the acting user (from the security context: SecurityContextHolder / the "
                         + "authenticated principal), or let the audit method read it itself. " : "")
                         + (!target ? "Pass the id of the record acted on. " : "")
                         + "A record without them proves nothing.");
     }
 
-    private boolean actorValue(Expression a) {
-        if (ACTOR_TYPES.stream().anyMatch(t -> TypeUtils.isAssignableTo(t, a.getType()))) {
+    /** The argument, and the parts of a record built in it: constructor arguments, a builder chain's arguments. */
+    private static void parts(Expression a, List<Expression> out) {
+        Expression v = ValueTrace.unwrap(a);
+        if (v instanceof J.Empty) {
+            return;
+        }
+        out.add(v);
+        if (v instanceof J.NewClass nc && nc.getArguments() != null) {
+            nc.getArguments().forEach(x -> parts(x, out));
+        } else if (v instanceof J.MethodInvocation call && builtByBuilder(call)) {
+            for (Expression e = call; e instanceof J.MethodInvocation step; e = step.getSelect()) {
+                step.getArguments().forEach(x -> parts(x, out));
+            }
+        }
+    }
+
+    private static boolean builtByBuilder(J.MethodInvocation call) {
+        for (Expression e = call; e instanceof J.MethodInvocation step; e = step.getSelect()) {
+            if (step.getMethodType() != null && builderStep(step.getMethodType())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Only jobs, batches or messages reach the method: there is no user to record. */
+    private boolean noUser(MethodInfo m) {
+        List<Entrypoint> eps = ctx.a.paths.entrypointsReaching(m);
+        return !eps.isEmpty() && eps.stream().allMatch(ep -> NO_USER.contains(ep.kind()));
+    }
+
+    /** Where a value comes from, as far as it tells who acts: the security context, or the client (and how). */
+    private record Origin(boolean security, J.Annotation client) {
+        static final Origin NONE = new Origin(false, null);
+    }
+
+    private Origin origin(Expression e, MethodInfo m, int depth) {
+        J.Annotation client = null;
+        for (ValueTrace.Source s : ctx.values().sources(e, m)) {
+            Origin o = sourceOrigin(s, depth);
+            if (o.security()) {
+                return o;
+            }
+            client = client != null ? client : o.client();
+        }
+        return new Origin(false, client);
+    }
+
+    private Origin sourceOrigin(ValueTrace.Source s, int depth) {
+        Expression v = s.value();
+        if (actorType(v.getType()) || readsSecurityContext(v.printTrimmed())) {
+            return new Origin(true, null);
+        }
+        if (s.param() != null) {
+            if (actorType(s.param().getType()) || s.param().getLeadingAnnotations().stream()
+                    .anyMatch(a -> dev.logast.model.Annotations.is(a, AUTHENTICATION_PRINCIPAL))) {
+                return new Origin(true, null);
+            }
+            return s.param().getLeadingAnnotations().stream()
+                    .filter(a -> CLIENT_INPUT.stream().anyMatch(c -> dev.logast.model.Annotations.is(a, c)))
+                    .findFirst().map(a -> new Origin(false, a)).orElse(Origin.NONE);
+        }
+        if (v instanceof J.MethodInvocation call && call.getMethodType() != null
+                && ctx.a.index.resolve(call.getMethodType()).stream().anyMatch(t -> selfActor.contains(t.key()))) {
+            return new Origin(true, null);   // currentUserId(): a method that reads the security context
+        }
+        Expression receiver = v instanceof J.MethodInvocation call ? call.getSelect() : v instanceof J.FieldAccess fa ? fa.getTarget() : null;
+        if (receiver != null && depth > 0) {
+            return origin(receiver, s.in(), depth - 1);   // principal.getName(), request.userId()
+        }
+        return Origin.NONE;
+    }
+
+    private static boolean actorType(JavaType t) {
+        return t != null && ACTOR_TYPES.stream().anyMatch(a -> TypeUtils.isAssignableTo(a, t));
+    }
+
+    /** A string, a number, a UUID or an unresolved type: a domain object named {@code user} is not the acting user. */
+    private static boolean plain(JavaType t) {
+        if (t == null || t instanceof JavaType.Unknown || t instanceof JavaType.Primitive) {
             return true;
         }
-        return readsSecurityContext(a.printTrimmed()) || named(a, ACTOR.pattern());
+        JavaType.FullyQualified fq = TypeUtils.asFullyQualified(t);
+        return fq == null || fq.getFullyQualifiedName().startsWith("java.lang.") || fq.getFullyQualifiedName().equals("java.util.UUID");
     }
 
     private static boolean readsSecurityContext(String code) {
@@ -431,7 +562,7 @@ final class AuditRules {
     private static boolean named(Expression a, String regex) {
         String name = a instanceof J.Identifier id ? id.getSimpleName()
                 : a instanceof J.FieldAccess fa ? fa.getSimpleName()
-                : a instanceof J.MethodInvocation call ? call.getSimpleName().replaceFirst("^get", "") : null;
+                : a instanceof J.MethodInvocation call ? call.getSimpleName().replaceFirst("^get(?=[A-Z])", "") : null;
         return name != null && name.matches(regex);
     }
 
@@ -506,19 +637,43 @@ final class AuditRules {
                     ? e.equals(owner + "#" + mt.getName())
                     : e.equals(owner) || TypeUtils.isAssignableTo(e, mt.getDeclaringType()));
         }
-        String simple = owner.substring(owner.lastIndexOf('.') + 1);
-        if (simple.contains("Audit") && !simple.contains("Logger")) {
-            return true;
-        }
         if (owner.equals("org.springframework.boot.actuate.audit.AuditEventRepository")) {
             return true;
         }
-        for (Expression arg : mi.getArguments()) {
-            if (auditType(TypeUtils.asFullyQualified(arg.getType()), new HashSet<>())) {
-                return true;   // an AuditAction value, or an event implementing AuditableDomainEvent
+        if (builderStep(mt) || logger(mi)) {
+            return false;   // AuditEntry.builder().actor(…): a part of one record, not a record (#50)
+        }
+        List<Expression> args = mi.getArguments().stream().filter(a -> !(a instanceof J.Empty)).toList();
+        String simple = ownName(owner);
+        if (simple.contains("Audit") && !simple.contains("Logger") && !args.isEmpty()) {
+            return true;   // a call that passes something to an audit type; entry.getActor() or build() records nothing
+        }
+        boolean publish = mt.getName().startsWith("publish");
+        for (Expression arg : args) {
+            JavaType.FullyQualified t = TypeUtils.asFullyQualified(arg.getType());
+            if (t == null) {
+                continue;
+            }
+            // an AuditAction value or an AuditEvent handed to a non-JDK call; an event published whose type implements
+            // AuditableDomainEvent. Not an entity whose superclass is AbstractAuditable: repository.save(order) (#50)
+            if (ownName(t.getFullyQualifiedName()).contains("Audit") && !owner.startsWith("java.")
+                    || publish && auditType(t, new HashSet<>())) {
+                return true;
             }
         }
         return false;
+    }
+
+    /** A builder's setter, its build() or the builder() factory: returns a *Builder or the declaring type itself. */
+    private static boolean builderStep(JavaType.Method mt) {
+        JavaType.FullyQualified ret = TypeUtils.asFullyQualified(mt.getReturnType());
+        return ret != null && (ownName(ret.getFullyQualifiedName()).endsWith("Builder")
+                || ret.getFullyQualifiedName().equals(mt.getDeclaringType().getFullyQualifiedName()));
+    }
+
+    /** The type's own simple name, also for a nested class ({@code AuditEntry$Builder} is a Builder). */
+    private static String ownName(String fqn) {
+        return fqn.substring(Math.max(fqn.lastIndexOf('.'), fqn.lastIndexOf('$')) + 1);
     }
 
     /** The type, a supertype or an interface is named *Audit*. */

@@ -8,7 +8,7 @@ Next steps
   3. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   5. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  6. logast scan . --format summary                      29 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
+  6. logast scan . --format summary                      30 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 3, …); each says what to decide
   7. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)
@@ -21,7 +21,7 @@ Next steps
   2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      29 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
+  5. logast scan . --format summary                      30 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 3, …); each says what to decide
   6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 
 === after writing the texts and adding a line above them
@@ -34,5 +34,5 @@ Next steps
   3. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   5. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  6. logast scan . --format summary                      29 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 2, …); each says what to decide
+  6. logast scan . --format summary                      30 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 3, …); each says what to decide
   7. logast verify .                                     build and run the tests with log capture: does the result really log what it should?

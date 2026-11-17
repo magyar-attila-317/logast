@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.security.Principal;
 import java.util.concurrent.ExecutionException;
 
 /** Admin actions: one audited, one not; a blocking wait on a request thread. */
@@ -27,6 +28,15 @@ public class AdminController {
     @PostMapping("/customers/{customerId}/reset")
     public void resetCustomer(@PathVariable String customerId) { // expect: MISSING_DOMAIN_MDC // expect-not: AUDIT_MISSING
         auditTrail.record("customer.reset", customerId); // expect: AUDIT_RECORD_INCOMPLETE
+    }
+
+    /** #50: the attempt recorded first, the actor read from the principal: complete, and failures recorded too. */
+    @PostMapping("/customers/{customerId}/unlock")
+    public void unlockCustomer(@PathVariable String customerId, Principal principal) { // expect: MISSING_DOMAIN_MDC, ENTRYPOINT_SILENT // expect-not: AUDIT_FAILURES_UNRECORDED
+        auditTrail.record("customer.unlock", customerId, principal.getName()); // expect-not: AUDIT_RECORD_INCOMPLETE
+        if (customerId.isBlank()) {
+            throw new OrderNotFoundException(customerId);
+        }
     }
 
     @DeleteMapping("/sessions/{sessionId}")

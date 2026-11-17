@@ -70,7 +70,7 @@ class RuleLedgerTest {
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus(
-            Rules.AUDIT_FAILURES_UNRECORDED, Rules.AUDIT_RECORD_INCOMPLETE, Rules.AUDIT_SECURITY_EVENTS,
+            Rules.AUDIT_SECURITY_EVENTS,
             Rules.BLOCKING_WAIT_UNBOUNDED, Rules.CATCH_ALL_DEFAULT, Rules.DATA_CHANGES_UNAUDITED,
             Rules.KAFKA_NO_ERROR_HANDLER, Rules.LOG_HELPER, Rules.METRIC_DIRECT_REGISTRY, Rules.METRIC_TAG_KEYS_MISMATCH,
             Rules.PROBLEM_DETAILS_DISABLED, Rules.REMOTE_CALL_IN_TRANSACTION, Rules.ROW_BY_ROW_WRITE,

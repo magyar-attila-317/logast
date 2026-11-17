@@ -1,0 +1,40 @@
+# Calls per day for each entrypoint, from production (e.g. Prometheus:
+#   sum by (method, uri) (increase(http_server_requests_seconds_count[1d])) ).
+# Leave a value empty when you don't know it: logast never estimates traffic.
+# Regenerate with `logast traffic <root>`: filled-in values are kept, new entrypoints are added.
+entrypoints:
+  # http
+  "DELETE /boxes/{boxId}":     # http, BoxController.remove
+  "DELETE /boxes/{boxId}/contents":     # http, BoxController.empty
+  "DELETE /coupons/{couponId}":     # http, CouponController.delete
+  "GET /audit/settings":     # http, AuditController.settings
+  "GET /coupons":     # http, CouponController.open
+  "GET /coupons/{couponId}/details":     # http, CouponDetailsController.details
+  "GET /quotes/{productId}":     # http, QuoteController.quote
+  "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
+  "POST /admin/coupons/{couponId}/revoke":     # http, CouponController.revoke
+  "POST /boxes/{boxId}/close":     # http, BoxController.close
+  "POST /boxes/{boxId}/handover":     # http, BoxController.handover
+  "POST /boxes/{boxId}/label":     # http, BoxController.label
+  "POST /boxes/{boxId}/lock":     # http, BoxController.lock
+  "POST /boxes/{boxId}/open":     # http, BoxController.open
+  "POST /boxes/{boxId}/pay":     # http, BoxController.pay
+  "POST /coupons/redeem":     # http, CouponController.redeem
+  "POST /coupons/{couponId}/hold":     # http, CouponDetailsController.hold
+  "POST /coupons/{couponId}/publish":     # http, CouponController.publish
+  "POST /coupons/{couponId}/use":     # http, CouponController.use
+  "POST /orders":     # http, CouponController.place
+  # scheduled
+  "@Scheduled CouponCleanupJob.cleanup":     # scheduled, CouponCleanupJob.cleanup
+  "@Scheduled CouponReloadJob.run":     # scheduled, CouponReloadJob.run
+  "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
+  # kafka
+  "@KafkaListener coupon-batches":     # kafka, CouponMessages.onBatch
+  "@KafkaListener orders":     # kafka, OrderEvents.onOrder
+  # jms
+  "@JmsListener coupon-audits":     # jms, CouponMessages.onAudit
+  # rabbit
+  "@RabbitListener coupon-returns":     # rabbit, CouponMessages.onReturn
+  # in-process event listeners: their rate follows whoever publishes the event (fill only if you know it)
+  "@EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)":     # event, SettlementJobExecutor.onReady
+  "@TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)":     # event, OrderNotifications.onCommitted

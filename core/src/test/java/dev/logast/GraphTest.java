@@ -47,6 +47,7 @@ class GraphTest {
                 "GET /orders/{orderId}/lines",
                 "GET /reports/daily",
                 "POST /admin/customers/{customerId}/reset",
+                "POST /admin/customers/{customerId}/unlock",
                 "POST /orders",
                 "batch SettlementJob.run",
                 "websocket KitchenSocket.handleTextMessage");
