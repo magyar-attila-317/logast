@@ -51,6 +51,19 @@ public final class CompileCheck {
     private Boolean lombokWorks;   // probed once (#81)
     private String lombokProblem;
 
+    /** Why this gate gave no verdict or does not trust Lombok (#81), or null; known after the first check. */
+    public String problem() {
+        return tooNew != null ? tooNew : lombokProblem;
+    }
+
+    /**
+     * Set once javac reports class files newer than the JDK logast runs on (#81): such a compile cannot be trusted
+     * (on a real service Lombok's loggers went missing in every file), so the gate gives no verdict from then on.
+     */
+    private String tooNew;
+    private static final java.util.regex.Pattern WRONG_VERSION = java.util.regex.Pattern.compile(
+            "class file has wrong version (\\d+)\\.\\d+, should be (\\d+)\\.\\d+");
+
     /** Why Lombok on the classpath is not trusted in this gate (#81), or null; known after the first check. */
     public String lombokProblem() {
         return lombokProblem;
@@ -103,7 +116,7 @@ public final class CompileCheck {
      */
     public Map<String, String> newErrors(Path work, Map<String, String> after) {
         Map<String, String> out = new LinkedHashMap<>();
-        if (javac == null || after.isEmpty()) {
+        if (javac == null || after.isEmpty() || tooNew != null) {
             return out;
         }
         Map<String, String> before = new LinkedHashMap<>();
@@ -185,6 +198,17 @@ public final class CompileCheck {
                 System.err.println("[compile check]   " + d.getKind() + " " + (d.getSource() == null ? "-" : d.getSource().toUri())
                         + ":" + d.getLineNumber() + " " + d.getCode() + " " + d.getMessage(Locale.ROOT).replaceAll("\\s+", " "));
             }
+        }
+        for (Diagnostic<? extends JavaFileObject> d : diags.getDiagnostics()) {
+            java.util.regex.Matcher v = WRONG_VERSION.matcher(d.getMessage(Locale.ROOT));
+            if (d.getKind() == Diagnostic.Kind.ERROR && v.find() && tooNew == null) {
+                tooNew = "the classpath has classes for a newer Java (Java " + (Integer.parseInt(v.group(1)) - 44)
+                        + ") than logast runs on (Java " + Runtime.version().feature() + "): run logast on Java "
+                        + (Integer.parseInt(v.group(1)) - 44) + " or newer";
+            }
+        }
+        if (tooNew != null) {
+            return new HashMap<>();   // no verdict: the round goes on as if there were no compiler
         }
         for (Diagnostic<? extends JavaFileObject> d : diags.getDiagnostics()) {
             if (d.getKind() != Diagnostic.Kind.ERROR || d.getSource() == null) {
