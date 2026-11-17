@@ -10,6 +10,14 @@ public final class Sarif {
     }
 
     public static Map<String, Object> of(List<WorkOrder> orders) {
+        return of(orders, List.of());
+    }
+
+    /**
+     * @param gaps why the analysis is incomplete ({@code Analysis.Stats.gaps()}): the run is then marked not successful,
+     *             each gap a tool notification, so a consumer can tell "no findings" from "not analysed" (#55)
+     */
+    public static Map<String, Object> of(List<WorkOrder> orders, List<String> gaps) {
         Set<String> ruleIds = new TreeSet<>();
         orders.forEach(o -> ruleIds.addAll(o.fixes()));
         List<Map<String, Object>> rules = ruleIds.stream().map(r -> Map.<String, Object>of(
@@ -45,6 +53,10 @@ public final class Sarif {
                         "tool", Map.of("driver", Map.of("name", "logast", "informationUri", "https://example.invalid/logast",
                                 "rules", rules)),
                         "originalUriBaseIds", Map.of("SRCROOT", Map.of("uri", "file:///")),
+                        "invocations", List.of(Map.of(
+                                "executionSuccessful", gaps.isEmpty(),
+                                "toolExecutionNotifications", gaps.stream().map(g -> Map.of(
+                                        "level", "warning", "message", Map.of("text", "analysis incomplete: " + g))).toList())),
                         "results", results)));
     }
 

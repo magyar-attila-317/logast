@@ -93,7 +93,8 @@ public final class Main {
         Integer limit;
         @Option(names = "--out", description = "Full JSON output (default: <root>/.logast/orders.json)")
         Path out;
-        @Option(names = "--fail-on", description = "Exit with 2 when an order of this severity or higher exists (CI)")
+        @Option(names = "--fail-on", description = "Exit with 2 when an order of this severity or higher exists (CI); "
+                + "with 4 when the analysis is incomplete (files not parsed, no classpath)")
         String failOn;
         @Option(names = "--baseline", description = "Only report orders not in this baseline (default file: <root>/.logast/baseline.json)",
                 arity = "0..1", fallbackValue = "")
@@ -148,6 +149,11 @@ public final class Main {
                     return 3;
                 }
                 dev.logast.orders.Baseline b = dev.logast.orders.Baseline.read(baselineFile);
+                String running = dev.logast.orders.Baseline.currentVersion();
+                if (b.version() != null && !b.version().equals(running)) {
+                    Out.warn("baseline recorded by logast " + b.version() + ", this is " + running
+                            + ": order ids may differ; re-record it with --update-baseline if findings show up as new");
+                }
                 candidates = b.newOnly(candidates);
                 scope += " new vs baseline (" + b.fixed(r.orders()).size() + " baseline findings fixed since)";
             }
@@ -164,9 +170,13 @@ public final class Main {
             if (!scope.isEmpty()) {
                 Out.progress("scope:" + scope + ": " + shown.size() + " of " + r.orders().size() + " orders");
             }
+            List<String> gaps = r.stats().gaps();
+            if (!gaps.isEmpty() && failOn == null && !format.equals("compact") && !format.equals("summary")) {
+                gaps.forEach(g -> Out.warn("analysis incomplete: " + g)); // machine formats print no header of their own
+            }
             switch (format) {
                 case "json" -> System.out.println(OrderJson.MAPPER.writeValueAsString(shown));
-                case "sarif" -> System.out.println(OrderJson.MAPPER.writeValueAsString(dev.logast.orders.Sarif.of(shown)));
+                case "sarif" -> System.out.println(OrderJson.MAPPER.writeValueAsString(dev.logast.orders.Sarif.of(shown, gaps)));
                 case "fills-template" -> System.out.println(OrderJson.MAPPER.writeValueAsString(FillsTemplate.of(shown)));
                 case "summary" -> {
                     if (!r.stats().coverageComplete()) {
@@ -200,6 +210,12 @@ public final class Main {
                 if (!next.isEmpty()) {
                     Out.next(next);
                 }
+            }
+            if (failOn != null && !gaps.isEmpty()) {
+                // a broken analysis finds less: it must not turn a CI gate green (#55)
+                gaps.forEach(g -> Out.warn("analysis incomplete: " + g));
+                Out.warn("--fail-on: exit 4, the findings above cannot be trusted to be complete");
+                return 4;
             }
             if (failOn != null && shown.stream().anyMatch(o -> CompactFormat.atLeast(o, failOn))) {
                 return 2;

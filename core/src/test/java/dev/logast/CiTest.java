@@ -4,11 +4,14 @@ import dev.logast.orders.Baseline;
 import dev.logast.orders.ScanResult;
 import dev.logast.orders.Sarif;
 import dev.logast.orders.WorkOrder;
+import dev.logast.policy.Policy;
 import dev.logast.rules.Rules;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +32,54 @@ class CiTest {
         assertThat(b.newOnly(r.orders())).isEmpty();
         List<WorkOrder> fewer = r.orders().subList(1, r.orders().size());
         assertThat(b.fixed(fewer)).containsExactly(r.orders().getFirst().id());
+    }
+
+    /**
+     * An aggregated finding keeps one id however many places it covers (SCHEDULED_WITHOUT_LOCK lists every unlocked job
+     * under "scheduled-lock"): a second unlocked job added after the baseline must still count as new (#55).
+     */
+    @Test
+    void baselineSeesAnAggregatedFindingGrow() throws IOException {
+        Path app = tmp.resolve("app");
+        Path pkg = app.resolve("src/main/java/demo");
+        Files.createDirectories(pkg);
+        Files.writeString(app.resolve("logast.yaml"), "packs: [resilience]\n");
+        Files.writeString(pkg.resolve("Jobs.java"), jobs("nightly"));
+        ScanResult before = scan(app);
+        assertThat(before.orders()).anySatisfy(o -> assertThat(o.rule()).isEqualTo("SCHEDULED_WITHOUT_LOCK"));
+        Path file = tmp.resolve("baseline.json");
+        Baseline.of(before).write(file);
+        Baseline b = Baseline.read(file);
+
+        Files.writeString(pkg.resolve("Jobs.java"), "// moved down\n\n" + jobs("nightly")); // same finding, other line
+        assertThat(b.newOnly(scan(app).orders())).isEmpty();
+
+        Files.writeString(pkg.resolve("Jobs.java"), jobs("nightly", "hourly"));
+        assertThat(b.newOnly(scan(app).orders())).extracting(WorkOrder::rule).contains("SCHEDULED_WITHOUT_LOCK");
+
+        Files.writeString(pkg.resolve("Jobs.java"), jobs("nightly"));
+        Files.writeString(pkg.resolve("MoreJobs.java"), jobs("weekly").replace("class Jobs", "class MoreJobs"));
+        assertThat(b.newOnly(scan(app).orders())).extracting(WorkOrder::rule).contains("SCHEDULED_WITHOUT_LOCK");
+    }
+
+    private static String jobs(String... names) {
+        StringBuilder sb = new StringBuilder("""
+                package demo;
+
+                import org.springframework.scheduling.annotation.Scheduled;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                class Jobs {
+                """);
+        for (String n : names) {
+            sb.append("    @Scheduled(fixedRate = 60000)\n    void ").append(n).append("() {\n    }\n\n");
+        }
+        return sb.append("}\n").toString();
+    }
+
+    private static ScanResult scan(Path app) throws IOException {
+        return Rules.scan(Analysis.run(app, Fixtures.classpath(), Policy.resolve(app, null)));
     }
 
     @Test

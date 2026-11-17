@@ -543,6 +543,10 @@ logast scan . --baseline --fail-on high --format summary         # only findings
 logast scan . --since origin/main --format sarif > logast.sarif  # changed lines only, as PR annotations
 ```
 
+`--fail-on` exits with 2 on findings and with 4 when the analysis is incomplete (files that did not parse,
+no classpath): a broken analysis finds less and must not pass. Against a baseline, a known finding that covers
+more places than when it was recorded (a second unlocked `@Scheduled` job) counts as new.
+
 A complete GitHub Actions job is in [`examples/github-actions.yml`](examples/github-actions.yml).
 
 ### 8. Metrics (opt-in pack)
