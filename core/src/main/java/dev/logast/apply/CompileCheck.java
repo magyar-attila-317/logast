@@ -31,16 +31,21 @@ import java.util.stream.Stream;
  * variable, an import that shadows another type, a call that does not exist.
  *
  * <p>Errors are compared as kinds (file, error code, message without line numbers), not counted: more uses of a symbol
- * that was already unresolved are no new error. Lombok runs when it is on the classpath. Types and packages javac
- * cannot find at all are left out (a partial classpath), and so is a Lombok logger without Lombok.
+ * that was already unresolved are no new error. Lombok runs when it is on the classpath, with the project's lombok.config
+ * (#76): each text is compiled under its own path in {@code work}, where Lombok looks for the config. Types and packages
+ * javac cannot find at all are left out (a partial classpath), and so is a Lombok logger without Lombok.
  */
 public final class CompileCheck {
     private final List<Path> classpath;
     private final JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
     private final Map<String, Set<String>> cache = new HashMap<>();   // text hash -> errors, for the "before" side
+    private final Path lombok;   // the Lombok jar javac runs as annotation processor, else null
 
     public CompileCheck(List<Path> classpath) {
         this.classpath = List.copyOf(classpath);
+        // Lombok generates the loggers (@Slf4j) and accessors the fixes use: run it when it is on the classpath
+        this.lombok = classpath.stream().filter(p -> p.getFileName() != null && p.getFileName().toString().startsWith("lombok")
+                && p.toString().endsWith(".jar")).findFirst().orElse(null);
     }
 
     /** False when logast runs on a JRE without a compiler: the check is skipped. */
@@ -96,7 +101,8 @@ public final class CompileCheck {
         List<JavaFileObject> units = new ArrayList<>();
         Map<URI, String> fileOf = new HashMap<>();
         for (var e : texts.entrySet()) {
-            URI uri = URI.create("string:///" + e.getKey().replace('\\', '/'));
+            // the file's real location: Lombok reads lombok.config from its folder upward (#76)
+            URI uri = work.resolve(e.getKey()).toAbsolutePath().normalize().toUri();
             fileOf.put(uri, e.getKey());
             units.add(new SimpleJavaFileObject(uri, JavaFileObject.Kind.SOURCE) {
                 @Override
@@ -109,9 +115,6 @@ public final class CompileCheck {
         try (StandardJavaFileManager fm = javac.getStandardFileManager(diags, Locale.ROOT, StandardCharsets.UTF_8)) {
             List<String> options = new ArrayList<>(List.of("-implicit:none", "-nowarn", "-Xlint:none", "-XDsuppressNotes",
                     "-Xmaxerrs", "100000"));
-            // Lombok generates the loggers (@Slf4j) and accessors the fixes use: run it when it is on the classpath
-            Path lombok = classpath.stream().filter(p -> p.getFileName() != null && p.getFileName().toString().startsWith("lombok")
-                    && p.toString().endsWith(".jar")).findFirst().orElse(null);
             if (lombok != null) {
                 options.addAll(List.of("-proc:full", "-processorpath", lombok.toString()));
             } else {
@@ -140,7 +143,7 @@ public final class CompileCheck {
                 continue;   // an error in a file read from the source path: not ours
             }
             String message = d.getMessage(Locale.ROOT).replaceAll("\\s+", " ").strip();
-            if (lombokLogger(texts.get(file), message) || environmental(d.getCode(), message)) {
+            if (lombok == null && lombokLogger(texts.get(file), message) || environmental(d.getCode(), message)) {
                 continue;
             }
             out.computeIfAbsent(file, k -> new HashSet<>()).add(d.getCode() + ": " + message);

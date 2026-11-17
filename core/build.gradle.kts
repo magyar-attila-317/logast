@@ -15,12 +15,22 @@ dependencies {
     testRuntimeOnly(libs.junit.launcher)
 }
 
+// Lombok for CompileCheckTest only: the compile gate runs it as annotation processor (#76)
+val testLombok by configurations.creating
+dependencies {
+    testLombok(platform(libs.spring.boot.bom))
+    testLombok("org.projectlombok:lombok")
+    testLombok("org.slf4j:slf4j-api")   // the type of the logger @Slf4j generates
+}
+
 val fixture = project(":fixtures:sample-app")
 
 tasks.test {
     useJUnitPlatform()
     dependsOn(":fixtures:sample-app:writeClasspath", ":logging-support:classes")
     systemProperty("logast.support.classes", project(":logging-support").layout.buildDirectory.dir("classes/java/main").get().asFile.absolutePath)
+    inputs.files(testLombok)
+    systemProperty("logast.test.lombok", testLombok.asPath)
     systemProperty("logast.fixture.root", fixture.projectDir.absolutePath)
     systemProperty("logast.fixture.classpath", fixture.layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
     // RuleLedgerTest reads e2e/before and the e2e snapshots, and the fixture's sources
