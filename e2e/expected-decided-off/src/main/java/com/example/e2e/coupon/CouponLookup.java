@@ -20,7 +20,7 @@ public class CouponLookup {
         try {
             return load(couponId);
         } catch (IllegalStateException e) {
-            log.warn("Coupon lookup failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-02f9e9
+            log.warn("Coupon lookup failed", e);
             Outcomes.count("coupon.lookup", "failed");
             throw new CouponMissing(couponId, e);
         }

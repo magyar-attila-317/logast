@@ -41,7 +41,7 @@ public class CouponService {
         log.info("Publishing coupon");
         sender.send(couponId);
         repository.close(couponId);
-        log.info("Coupon published"); // logast: METRIC_OUTCOME_UNMEASURED OUM-773d35
+        log.info("Coupon published");
         CouponMetrics.couponPublished();
     }
 
@@ -49,7 +49,7 @@ public class CouponService {
         try (var mdc = MdcScope.of("couponId", request.code())) {
             log.info("Coupon redemption started");
             sender.send(request.code());
-            log.info("Coupon redemption completed [tableId={}]", request.tableId()); // logast: METRIC_OUTCOME_UNMEASURED OUM-4809f0
+            log.info("Coupon redemption completed [tableId={}]", request.tableId());
             CouponMetrics.couponRedemptionCompleted();
         }
     }

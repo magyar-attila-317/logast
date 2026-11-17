@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 21163d9..b278a97 100644
+index 5f70c44..4c9fbeb 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
 @@ -1,6 +1,7 @@ 
@@ -13,24 +13,24 @@ index 21163d9..b278a97 100644
 @@ -35,15 +36,18 @@
          payments.charge(order);
          events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
-         log.info("Order placed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-d691d7
+         log.info("Order placed");
 +        BusinessMetrics.orderPlaced();
      }
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
      public void ship(java.util.List<Order> orders, int batchNumber) {
          if (orders.isEmpty()) {
-             log.info("Order shipment skipped"); // logast: METRIC_OUTCOME_UNMEASURED OUM-164f3d
+             log.info("Order shipment skipped");
 +            BusinessMetrics.orderShipmentSkipped();
              return;
          }
          orders.forEach(payments::charge);
-         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber); // logast: METRIC_OUTCOME_UNMEASURED OUM-00f4c0
+         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
 +        BusinessMetrics.ordersShipped(orders.size());
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponSender.java b/src/main/java/com/example/e2e/coupon/CouponSender.java
-index ee5dce1..6e53907 100644
+index c2e743a..2c92597 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponSender.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponSender.java
 @@ -1,6 +1,7 @@ 
@@ -44,7 +44,7 @@ index ee5dce1..6e53907 100644
 @@ -12,6 +13,7 @@
      public void send(String couponId) {
          log.debug("Sending coupon to the channel");
-         log.info("Coupon sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-027987
+         log.info("Coupon sent");
 +        BusinessMetrics.couponSent();
      }
  
@@ -52,13 +52,13 @@ index ee5dce1..6e53907 100644
 @@ -22,6 +24,7 @@
                  return true;
              } catch (IllegalStateException e) {
-                 log.warn("Coupon resend failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-e22a2d
+                 log.warn("Coupon resend failed", e);
 +                BusinessMetrics.couponResendFailed();
                  return false;
              }
          }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponLookup.java b/src/main/java/com/example/e2e/coupon/CouponLookup.java
-index 8c7fefd..fa91916 100644
+index e2c3a76..e72e5be 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponLookup.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponLookup.java
 @@ -1,5 +1,6 @@ 
@@ -71,7 +71,7 @@ index 8c7fefd..fa91916 100644
 @@ -20,6 +21,7 @@
              return load(couponId);
          } catch (IllegalStateException e) {
-             log.warn("Coupon lookup failed", e); // logast: METRIC_OUTCOME_UNMEASURED OUM-02f9e9
+             log.warn("Coupon lookup failed", e);
 +            BusinessMetrics.couponLookupFailed();
              throw new CouponMissing(couponId, e);
          }
@@ -103,7 +103,7 @@ index 436af48..fbc26af 100644
      }
  
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index d2011b2..6052e24 100644
+index 9d7cd6b..0a0932b 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -4,6 +4,7 @@ 
@@ -117,34 +117,34 @@ index d2011b2..6052e24 100644
 @@ -49,8 +50,10 @@
                              }
                          });
-                 log.info("Coupon parsed"); // a transformed value; logast: METRIC_OUTCOME_UNMEASURED OUM-be530b
+                 log.info("Coupon parsed"); // a transformed value
 +                BusinessMetrics.couponParsed();
                  new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
-                 log.info("Edge processing completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-0d4ba2
+                 log.info("Edge processing completed");
 +                BusinessMetrics.edgeProcessingCompleted();
              }
          }
      }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 5a1089d..909c1fc 100644
+index 1ac7248..b7c76b2 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -16,6 +16,7 @@ 
      @EventListener
      public void onPlaced(OrderPlaced event) {
-         log.info("Order confirmation sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-0f37ab
+         log.info("Order confirmation sent");
 +        BusinessMetrics.orderConfirmationSent();
          log.debug("Confirmation amount [amountCents={}]", event.amountCents());
      }
  
 diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
-index c001cc9..7072bbc 100644
+index 22de9a8..9fd81d2 100644
 --- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
 @@ -30,6 +30,7 @@ 
          try (var mdc = MdcScope.of("couponId", couponId)) {
              log.info("Coupon return received");
-             log.info("Coupon messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-21d0c8
+             log.info("Coupon sweep completed");
 +            BusinessMetrics.couponMessagesCompleted();
          }
      }
@@ -152,13 +152,13 @@ index c001cc9..7072bbc 100644
 @@ -38,6 +39,7 @@
          try (var mdc = MdcScope.of("couponId", couponId)) {
              log.info("Coupon audit received");
-             log.info("Coupon messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-620a15
+             log.info("Coupon sweep completed");
 +            BusinessMetrics.couponMessagesCompleted();
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 8601c0e..baa2131 100644
+index 4ba5455..9e30425 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
 @@ -1,5 +1,6 @@ 
@@ -170,13 +170,13 @@ index 8601c0e..baa2131 100644
  import org.springframework.stereotype.Component;
 @@ -12,5 +13,6 @@
      protected void doExecute() {
-         log.info("Export job started"); // logast:wording
-         log.info("Export job completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-392e74
+         log.info("Coupon sweep started");
+         log.info("Coupon sweep completed");
 +        BusinessMetrics.exportJobCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponService.java b/src/main/java/com/example/e2e/coupon/CouponService.java
-index 089a1a9..a15ad25 100644
+index 28ad1c7..be65742 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponService.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponService.java
 @@ -2,6 +2,7 @@ 
@@ -190,7 +190,7 @@ index 089a1a9..a15ad25 100644
 @@ -42,6 +43,7 @@
          sender.send(couponId);
          repository.close(couponId);
-         log.info("Coupon published"); // logast: METRIC_OUTCOME_UNMEASURED OUM-773d35
+         log.info("Coupon published");
 +        BusinessMetrics.couponPublished();
      }
  
@@ -198,13 +198,13 @@ index 089a1a9..a15ad25 100644
 @@ -49,6 +51,7 @@
              log.info("Coupon redemption started");
              sender.send(request.code());
-             log.info("Coupon redemption completed [tableId={}]", request.tableId()); // logast: METRIC_OUTCOME_UNMEASURED OUM-4809f0
+             log.info("Coupon redemption completed [tableId={}]", request.tableId());
 +            BusinessMetrics.couponRedemptionCompleted();
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
-index db53d34..9f56cee 100644
+index c6871f8..4e700ea 100644
 --- a/src/main/java/com/example/e2e/edge/Audited.java
 +++ b/src/main/java/com/example/e2e/edge/Audited.java
 @@ -1,5 +1,6 @@ 
@@ -217,12 +217,12 @@ index db53d34..9f56cee 100644
 @@ -9,5 +10,6 @@
  
      default void audit(String couponId) {
-         AUDIT_LOG.info("Coupon audited"); // logast: METRIC_OUTCOME_UNMEASURED OUM-49d3bd
+         AUDIT_LOG.info("Coupon audited");
 +        BusinessMetrics.couponAudited();
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
-index 943962e..7f18bf6 100644
+index a656908..95be15a 100644
 --- a/src/main/java/com/example/e2e/job/PreloadJob.java
 +++ b/src/main/java/com/example/e2e/job/PreloadJob.java
 @@ -1,5 +1,6 @@ 
@@ -235,12 +235,12 @@ index 943962e..7f18bf6 100644
 @@ -14,5 +15,6 @@
      protected void doExecute() {
          log.info("Preload export started");
-         log.info("Preload export completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-553423
+         log.info("Preload export completed");
 +        BusinessMetrics.preloadExportCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
-index 497f151..7d7cd31 100644
+index ff68e86..6e7a5a9 100644
 --- a/src/main/java/com/example/e2e/job/CalculationJob.java
 +++ b/src/main/java/com/example/e2e/job/CalculationJob.java
 @@ -1,5 +1,6 @@ 
@@ -253,7 +253,7 @@ index 497f151..7d7cd31 100644
 @@ -14,5 +15,6 @@
      protected void doExecute() {
          log.info("Coupon sweep started");
-         log.info("Calculation completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-9f157d
+         log.info("Calculation completed");
 +        BusinessMetrics.calculationCompleted();
      }
  }

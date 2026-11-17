@@ -35,19 +35,19 @@ public class OrderService {
         log.info("Placing order");
         payments.charge(order);
         events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
-        log.info("Order placed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-d691d7
+        log.info("Order placed");
         BusinessMetrics.orderPlaced();
     }
 
     /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
     public void ship(java.util.List<Order> orders, int batchNumber) {
         if (orders.isEmpty()) {
-            log.info("Order shipment skipped"); // logast: METRIC_OUTCOME_UNMEASURED OUM-164f3d
+            log.info("Order shipment skipped");
             BusinessMetrics.orderShipmentSkipped();
             return;
         }
         orders.forEach(payments::charge);
-        log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber); // logast: METRIC_OUTCOME_UNMEASURED OUM-00f4c0
+        log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
         BusinessMetrics.ordersShipped(orders.size());
     }
 }

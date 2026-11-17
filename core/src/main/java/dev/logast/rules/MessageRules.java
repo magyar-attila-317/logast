@@ -71,7 +71,7 @@ final class MessageRules {
                 if (!(lc.template() instanceof J.Literal l) || !(l.getValue() instanceof String raw)) {
                     continue;
                 }
-                if (ctx.enabled(Rules.BUSINESS_EVENT_TIMESTAMP) && removeBusinessEventTimestamp(m, lc, raw, n++)) {
+                if (ctx.enabled(Rules.BUSINESS_EVENT_TIMESTAMP) && removeBusinessEventTimestamp(m, lc, raw)) {
                     continue;
                 }
                 if (ctx.enabled(Rules.MESSAGE_VAGUE)) {
@@ -84,7 +84,7 @@ final class MessageRules {
         }
     }
 
-    private boolean removeBusinessEventTimestamp(MethodInfo m, LogCall lc, String raw, int ordinal) {
+    private boolean removeBusinessEventTimestamp(MethodInfo m, LogCall lc, String raw) {
         String message = MessageTemplate.stripPlaceholders(raw);
         String event = ctx.phrasing.eventOf(message);
         String subject = event == null ? null : ctx.phrasing.subjectOf(message);
@@ -113,7 +113,7 @@ final class MessageRules {
                 }
             }
             String replacement = Text.javaString(fixed) + String.join("", remaining.stream().map(a -> ", " + a).toList());
-            OrderBuilder b = ctx.order(Rules.BUSINESS_EVENT_TIMESTAMP, m, Pos.line(lc.call()), "timestamp" + ordinal)
+            OrderBuilder b = ctx.orderNth(Rules.BUSINESS_EVENT_TIMESTAMP, m, Pos.line(lc.call()), "timestamp")
                     .title("Business event message repeats the log timestamp")
                     .suggestion("The logging event already records when this happened; keep only timestamps that carry business meaning.")
                     .context(ctx.context(m, start, Text.oneLine(lc.call().printTrimmed(), 160), null));

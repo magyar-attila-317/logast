@@ -13,7 +13,7 @@ public class CalculationJob extends SettlementJob {
     @Override
     protected void doExecute() {
         log.info("Coupon sweep started");
-        log.info("Calculation completed"); // logast: METRIC_OUTCOME_UNMEASURED OUM-9f157d
+        log.info("Calculation completed");
         JobMetrics.calculationCompleted();
     }
 }

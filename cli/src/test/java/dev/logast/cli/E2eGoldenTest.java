@@ -487,6 +487,8 @@ class E2eGoldenTest {
         Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
             Path source = app.resolve("src/main/java/com/example/e2e/review/ReviewMarkers.java");
             Files.createDirectories(source.getParent());
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml) + "reporting:\n  sourceComments: true\n");   // off by default (#72)
             Files.writeString(source, """
                     package com.example.e2e.review;
 
@@ -525,17 +527,17 @@ class E2eGoldenTest {
                     class ScheduleCanceller {
                         private static final Logger log = LoggerFactory.getLogger(ScheduleCanceller.class);
 
-                        void cancel(String dealId) {
-                            log.info("No schedules found for given dealId: {}. There was nothhing to cancel.", dealId);
+                        void cancel(String orderId) {
+                            log.info("No schedules found for given orderId: {}. There was nothing to cancel.", orderId);
                         }
                     }
                     """);
         });
 
         String source = actual.get("src/main/java/com/example/e2e/review/ScheduleCanceller.java");
-        assertThat(source).contains("log.info(\"No schedules found for given dealId: {}. There was nothhing to cancel.\", dealId); // logast: LOG_FORMAT ");
-        assertThat(actual.get(".logast/fills.json")).contains("FMT-").contains("dealId");
-        assertThat(actual.get("FINDINGS.txt")).contains("No schedules found for given dealId");
+        assertThat(source).contains("log.info(\"No schedules found for given orderId: {}. There was nothing to cancel.\", orderId);\n").doesNotContain("// logast:");
+        assertThat(actual.get(".logast/fills.json")).contains("FMT-").contains("orderId");
+        assertThat(actual.get("FINDINGS.txt")).contains("No schedules found for given orderId");
         golden(EXPECTED.resolveSibling("expected-inline-named-placeholder"), actual);
     }
 

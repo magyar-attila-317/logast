@@ -29,7 +29,7 @@ public class CouponMessages {
     public void onReturn(String couponId) {
         try (var mdc = MdcScope.of("couponId", couponId)) {
             log.info("Coupon return received");
-            log.info("Coupon messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-21d0c8
+            log.info("Coupon sweep completed");
             Outcomes.count("coupon.messages", "completed");
         }
     }
@@ -38,7 +38,7 @@ public class CouponMessages {
     public void onAudit(String couponId) {
         try (var mdc = MdcScope.of("couponId", couponId)) {
             log.info("Coupon audit received");
-            log.info("Coupon messages completed"); // logast:wording; logast: METRIC_OUTCOME_UNMEASURED OUM-620a15
+            log.info("Coupon sweep completed");
             Outcomes.count("coupon.messages", "completed");
         }
     }
