@@ -616,6 +616,55 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-suppressions"), actual);
     }
 
+    /** #69: a collection logged next to its own size is not rewritten to a second count, it is reported for rewording. */
+    @Test
+    void reportsCollectionWhoseSizeIsAlreadyLogged() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path source = app.resolve("src/main/java/com/example/e2e/review/KeyRegistry.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.review;
+
+                    import java.util.ArrayList;
+                    import java.util.List;
+                    import java.util.Set;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    class KeyRegistry {
+                        private static final Logger log = LoggerFactory.getLogger(KeyRegistry.class);
+                        private final List<String> items = new ArrayList<>();
+
+                        List<String> getItems() {
+                            return items;
+                        }
+
+                        void register(Set<String> existingKeys) {
+                            log.warn("{} keys have an entity already associated with them: {}", existingKeys.size(), existingKeys);
+                        }
+
+                        void flush() {
+                            log.info("Flushing {} pending items: {}", getItems().size(), getItems());
+                        }
+                    }
+                    """);
+        });
+
+        String source = actual.get("src/main/java/com/example/e2e/review/KeyRegistry.java");
+        assertThat(source)
+                .contains("log.warn(\"{} keys have an entity already associated with them: {}\", existingKeys.size(), existingKeys);\n")
+                .contains("log.info(\"Flushing {} pending items: {}\", getItems().size(), getItems());\n")
+                .doesNotContain("existingKeys.size(), existingKeys.size()")
+                .doesNotContain("getItems().size(), getItems().size()");
+        assertThat(actual.get("FINDINGS.txt"))
+                .contains("keys have an entity already associated with them")
+                .contains("already logs its size (existingKeys.size())")
+                .contains("Call: log.warn(\"{} keys have an entity already associated with them: {}\", existingKeys.size(), existingKeys)")
+                .contains("already logs its size (getItems().size())");
+        golden(EXPECTED.resolveSibling("expected-collection-size-logged"), actual);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);
