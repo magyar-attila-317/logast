@@ -16,7 +16,8 @@ import java.util.*;
 
 /**
  * MDC_NOT_CLOSEABLE: every {@code MDC.put} becomes {@code try (var mdc = MdcScope.of(k, v)) {...}} covering the
- * statements up to its matching remove (sibling statement or finally of a following try) or to the block end.
+ * statements up to its matching remove (sibling statement or finally of a following try) or to the block end; a
+ * {@code try (var mdc = MDC.putCloseable(k, v))} resource becomes {@code MdcScope.of(k, v)} (restores instead of removing).
  * MANUAL_TRACE_MDC: put/remove of trace keys that OpenTelemetry already maintains are deleted.
  */
 final class MdcRules {
@@ -162,7 +163,10 @@ final class MdcRules {
         return found[0];
     }
 
-    /** The try-with-resources whose only resource is this single-key MdcScope, without catch or finally; else null. */
+    /**
+     * The try-with-resources whose only resource is this single-key MdcScope (or MDC.putCloseable), without catch or
+     * finally; else null.
+     */
     private static J.Try scopeTry(MethodInfo m, MdcOp op) {
         J.Try[] found = new J.Try[1];
         new org.openrewrite.java.JavaIsoVisitor<Integer>() {
@@ -170,7 +174,8 @@ final class MdcRules {
             public J.Try visitTry(J.Try t, Integer p) {
                 if (t.getResources() != null && t.getResources().size() == 1 && t.getCatches().isEmpty() && t.getFinally() == null
                         && Pos.start(t) <= Pos.start(op.call()) && Pos.end(op.call()) <= Pos.start(t.getBody())   // in the try header
-                        && op.call().getSimpleName().equals("of") && op.call().getArguments().size() == 2) {
+                        && (op.call().getSimpleName().equals("of") || op.call().getSimpleName().equals("putCloseable"))
+                        && op.call().getArguments().size() == 2) {
                     found[0] = t;
                 }
                 return super.visitTry(t, p);
@@ -217,6 +222,9 @@ final class MdcRules {
                     String text = m.file().text();
                     String body = Text.dedent(text.substring(inner[0], inner[1]), Text.indentUnit(text));
                     b.edit(Edit.replace(m.file().relPath(), lines[0], lines[1], body));
+                    if (!(text.substring(0, lines[0]) + text.substring(lines[1])).contains("MDC.")) {
+                        b.edit(removeImport(m.file(), "org.slf4j.MDC"));   // the unwrapped scope was MDC.putCloseable
+                    }
                     b.suggestion("Unwraps the scope: " + op.key() + " is in MDC on every path into " + m.label()
                             + " already. If the value really differs, keep it under a distinct key (e.g. source." + op.key() + ").");
                 } else {
@@ -251,6 +259,23 @@ final class MdcRules {
                     continue;
                 }
                 int[] region = notCloseable(m, op, ambientOps, coveredAmbient, ordinal++);
+                if (region != null) {
+                    claimed.add(region);
+                }
+            }
+            int n = 0;
+            for (MdcOp op : m.facts().mdc) {
+                if (op.kind() != MdcOp.Kind.PUT_CLOSEABLE || !op.call().getSimpleName().equals("putCloseable")
+                        || op.call().getArguments().size() != 2 || op.key() != null && ambient.contains(op.key())) {
+                    continue;
+                }
+                int line = Pos.line(op.call());
+                int start = Pos.start(op.call());
+                if (claimed.stream().anyMatch(r -> r[0] <= start && start < r[1]) || ctx.ignored(f, line, Rules.MDC_NOT_CLOSEABLE)
+                        || op.key() != null && folds(f, line, Rules.MDC_NESTED_KEY) && ctx.a.paths.mdcAtEntry(m).contains(op.key())) {
+                    continue;   // a key the caller already scopes: MDC_NESTED_KEY unwraps the scope instead
+                }
+                int[] region = putCloseable(m, op, n++);
                 if (region != null) {
                     claimed.add(region);
                 }
@@ -473,6 +498,101 @@ final class MdcRules {
             b.edit(removeImport(f, "org.slf4j.MDC"));
         }
         return new int[]{pLines[0], replaceEnd};
+    }
+
+    /**
+     * {@code try (var mdc = MDC.putCloseable(k, v)) {...}}: closing removes the key instead of restoring the value it
+     * had, so a nested scope of the same key wipes the outer one (#11). Resource is rewritten to {@code MdcScope.of(k, v)}
+     * (the alias renamed when MDC_KEY_ALIAS is on); a putCloseable that is not the initializer of an otherwise unused
+     * try-with-resources variable is reported.
+     * @return the call's range (claimed against the other MDC rewrites), or null when only reported
+     */
+    private int[] putCloseable(MethodInfo m, MdcOp op, int ordinal) {
+        SourceFileInfo f = m.file();
+        String text = f.text();
+        J.MethodInvocation call = op.call();
+        int line = Pos.line(call);
+        String what = "MDC.putCloseable(" + (op.key() != null ? "\"" + op.key() + "\"" : src(f, call.getArguments().getFirst())) + ")";
+        OrderBuilder b = ctx.order(Rules.MDC_NOT_CLOSEABLE, m, line, "closeable" + ordinal)
+                .context(ctx.context(m, Pos.start(call), Text.oneLine(call.printTrimmed(), 160), null));
+        int[] range = {Pos.start(call), Pos.end(call)};
+        J.VariableDeclarations resource = op.inResource() ? resourceOf(m, call) : null;
+        if (resource == null || referenced(m, resource.getVariables().getFirst().getSimpleName(), resource)) {
+            b.severity(op.block() != null ? "high" : "low")
+                    .title(what + (op.block() != null ? " leaks: its MDCCloseable is never closed"
+                            : " outside a try-with-resources header: closing it removes the key instead of restoring the previous value"))
+                    .suggestion("Use try (var mdc = MdcScope.of(k, v)) { ... } around the work it describes: it restores what the "
+                            + "caller had set.");
+            return null;   // nothing rewritten: MDC_KEY_ALIAS may still rename the key
+        }
+        b.title(what + " removes the key on close, so an outer value of it is lost: use MdcScope (restores the previous value)");
+        Expression keyArg = call.getArguments().getFirst();
+        String canonical = keyArg instanceof J.Literal && folds(f, line, Rules.MDC_KEY_ALIAS) ? ctx.policy.canonicalMdcKey(op.key()) : null;
+        if (canonical != null) {
+            b.fix(Rules.MDC_KEY_ALIAS);
+        }
+        b.edit(Edit.replace(f.relPath(), range[0], range[1], "MdcScope.of(" + (canonical != null ? "\"" + canonical + "\"" : src(f, keyArg))
+                + ", " + src(f, call.getArguments().get(1)) + ")"));
+        String rest = text.substring(0, range[0]) + text.substring(range[1]);
+        J type = resource.getTypeExpression();
+        if (type != null && !f.slice(Pos.start(type), Pos.end(type)).equals("var")) {
+            int ts = Pos.start(type);
+            int te = Pos.end(type);
+            b.edit(Edit.replace(f.relPath(), ts, te, "MdcScope"));
+            rest = text.substring(0, ts) + text.substring(te, range[0]) + text.substring(range[1]);
+        }
+        b.edits(JavaEdits.imports(f, ctx.support("MdcScope")));
+        if (!rest.contains("MDC.")) {
+            b.edit(removeImport(f, "org.slf4j.MDC"));
+        }
+        ctx.dependOnStarter(b);
+        return range;
+    }
+
+    /** The try-with-resources variable {@code call} directly initializes, or null. */
+    private static J.VariableDeclarations resourceOf(MethodInfo m, J.MethodInvocation call) {
+        J.VariableDeclarations[] found = new J.VariableDeclarations[1];
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Try visitTry(J.Try t, Integer p) {
+                for (J.Try.Resource r : t.getResources() == null ? List.<J.Try.Resource>of() : t.getResources()) {
+                    if (r.getVariableDeclarations() instanceof J.VariableDeclarations vd && vd.getVariables().size() == 1
+                            && vd.getVariables().getFirst().getInitializer() == call) {
+                        found[0] = vd;
+                    }
+                }
+                return super.visitTry(t, p);
+            }
+        }.visit(m.decl(), 0);
+        return found[0];
+    }
+
+    /** {@code name} is used somewhere in the method besides its declaration (an explicit close, passed on, ...). */
+    private static boolean referenced(MethodInfo m, String name, J.VariableDeclarations decl) {
+        boolean[] used = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.VariableDeclarations visitVariableDeclarations(J.VariableDeclarations vd, Integer p) {
+                return vd == decl ? vd : super.visitVariableDeclarations(vd, p);
+            }
+
+            @Override
+            public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable v, Integer p) {
+                if (v.getInitializer() != null) {
+                    visit(v.getInitializer(), p);   // another declaration's name is not a use
+                }
+                return v;
+            }
+
+            @Override
+            public J.Identifier visitIdentifier(J.Identifier id, Integer p) {
+                if (id.getSimpleName().equals(name) && id.getFieldType() != null) {
+                    used[0] = true;
+                }
+                return id;
+            }
+        }.visit(m.decl(), 0);
+        return used[0];
     }
 
     /**
