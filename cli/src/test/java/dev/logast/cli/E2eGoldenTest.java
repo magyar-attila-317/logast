@@ -1140,6 +1140,168 @@ class E2eGoldenTest {
     }
 
     /**
+     * #64: resolver beans put the value they resolve into MDC while they are created (constructor, @PostConstruct) and a
+     * job started at startup (CommandLineRunner, ApplicationReadyEvent) resolves the same value again and puts it itself.
+     * The startup writes stick to the startup thread: the context belongs at the job, with the values of that run.
+     */
+    @Test
+    void resolverContextMovesToTheJob() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replace("vocabulary:\n", """
+                    vocabulary:
+                      country:
+                        mdc:
+                          key: countryCode
+                          sources:
+                            params: [countryCode]
+                      week:
+                        mdc:
+                          key: targetWeek
+                          sources:
+                            params: [targetWeek]
+                    """));
+            Path dir = app.resolve("src/main/java/com/example/e2e/weekly");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("CountryCodeResolver.java"), """
+                    package com.example.e2e.weekly;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+                    import org.springframework.beans.factory.annotation.Value;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class CountryCodeResolver {
+                        private static final Logger log = LoggerFactory.getLogger(CountryCodeResolver.class);
+                        private final String countryCode;
+
+                        public CountryCodeResolver(@Value("${weekly.country:HU}") String countryCode) {
+                            this.countryCode = countryCode;
+                            MDC.put("countryCode", countryCode);
+                            log.info("Country code resolved [countryCode={}]", countryCode);
+                        }
+
+                        public String countryCode() {
+                            return countryCode;
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("TargetWeekResolver.java"), """
+                    package com.example.e2e.weekly;
+
+                    import jakarta.annotation.PostConstruct;
+                    import java.time.LocalDate;
+                    import java.time.temporal.IsoFields;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class TargetWeekResolver {
+                        private static final Logger log = LoggerFactory.getLogger(TargetWeekResolver.class);
+                        private String targetWeek;
+
+                        @PostConstruct
+                        void init() {
+                            targetWeek = String.valueOf(LocalDate.now().get(IsoFields.WEEK_OF_WEEK_BASED_YEAR));
+                            MDC.put("targetWeek", targetWeek);
+                            log.info("Target week resolved [targetWeek={}]", targetWeek);
+                        }
+
+                        public String forCountry(String countryCode) {
+                            log.info("Target week checked [countryCode={}]", countryCode);
+                            return targetWeek;
+                        }
+
+                        public String targetWeek() {
+                            return targetWeek;
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("WeeklyCloseRunner.java"), """
+                    package com.example.e2e.weekly;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+                    import org.springframework.boot.CommandLineRunner;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class WeeklyCloseRunner implements CommandLineRunner {
+                        private static final Logger log = LoggerFactory.getLogger(WeeklyCloseRunner.class);
+                        private final CountryCodeResolver countryCodeResolver;
+                        private final TargetWeekResolver targetWeekResolver;
+
+                        public WeeklyCloseRunner(CountryCodeResolver countryCodeResolver, TargetWeekResolver targetWeekResolver) {
+                            this.countryCodeResolver = countryCodeResolver;
+                            this.targetWeekResolver = targetWeekResolver;
+                        }
+
+                        @Override
+                        public void run(String... args) {
+                            MDC.put("countryCode", countryCodeResolver.countryCode());
+                            MDC.put("targetWeek", targetWeekResolver.targetWeek());
+                            log.info("Weekly close started");
+                            close();
+                            log.info("Weekly close completed");
+                            MDC.clear();
+                        }
+
+                        private void close() {
+                            log.debug("Weekly close rows written [week={}]", targetWeekResolver.forCountry(countryCodeResolver.countryCode()));
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("WeeklyReportStarter.java"), """
+                    package com.example.e2e.weekly;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+                    import org.springframework.boot.context.event.ApplicationReadyEvent;
+                    import org.springframework.context.event.EventListener;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class WeeklyReportStarter {
+                        private static final Logger log = LoggerFactory.getLogger(WeeklyReportStarter.class);
+                        private final TargetWeekResolver targetWeekResolver;
+
+                        public WeeklyReportStarter(TargetWeekResolver targetWeekResolver) {
+                            this.targetWeekResolver = targetWeekResolver;
+                        }
+
+                        @EventListener(ApplicationReadyEvent.class)
+                        public void onReady() {
+                            MDC.put("targetWeek", targetWeekResolver.targetWeek());
+                            try {
+                                log.info("Weekly report started");
+                            } finally {
+                                MDC.remove("targetWeek");
+                            }
+                        }
+                    }
+                    """);
+        });
+        String weekly = "src/main/java/com/example/e2e/weekly/";
+        assertThat(actual.get(weekly + "CountryCodeResolver.java") + actual.get(weekly + "TargetWeekResolver.java"))
+                .as("no MDC write is left in the resolvers: the startup thread keeps no context")
+                .doesNotContain("MDC").doesNotContain("MdcScope")
+                .as("their startup logs have no scope to carry the value: it stays in the line")
+                .contains("Country code resolved [countryCode={}]").contains("Target week resolved [targetWeek={}]");
+        assertThat(actual.get(weekly + "WeeklyCloseRunner.java")).as("the job scopes the values of its run")
+                .contains("try (var mdc = MdcScope.of(\"countryCode\", countryCodeResolver.countryCode(), \"targetWeek\", "
+                        + "targetWeekResolver.targetWeek())) {").doesNotContain("MDC.clear()");
+        assertThat(actual.get(weekly + "WeeklyReportStarter.java")).as("the startup hook scopes its own run")
+                .contains("try (var mdc = MdcScope.of(\"targetWeek\", targetWeekResolver.targetWeek())) {");
+        golden(EXPECTED.resolveSibling("expected-resolver-context"), actual);
+    }
+
+    /**
      * #54: a project whose files end their lines with CRLF (written on Windows) gives the LF result with CRLF: edits
      * keep the file's line ending and the lines they insert use it too, so no file ends up with mixed line endings.
      */
