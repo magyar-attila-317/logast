@@ -54,6 +54,7 @@ final class VolumeRules {
                             .suggestion("Reached from " + top + ". " + (lc.inLoop()
                                     ? "Log one summary line after the loop (count, ids in a [k=v]) and move the per-item line to DEBUG."
                                     : "Move it to DEBUG, log once per batch, or rate-limit it; keep INFO for state changes people act on."))
+                            .doneWhen("the line logs below INFO, or the traffic reaching it stays under the budget")
                             .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
                 } else if (lc.loopBound() == dev.logast.model.LogCall.UNKNOWN && lc.level() == Level.INFO
                         && lc.inCatch() == null // per-item failures are fine
@@ -65,6 +66,7 @@ final class VolumeRules {
                             .suggestion("If it is always small, add `// logast:loop-size 10` above the loop (any number up to "
                                     + ctx.policy.levels().boundedLoopMax() + " keeps INFO). If it can be large, add `// logast:loop-size large`: "
                                     + "the line becomes DEBUG with a summary after the loop. With .logast/traffic.yaml, LOG_VOLUME shows lines/day.")
+                            .doneWhen("the loop has a // logast:loop-size comment, or the line no longer logs at INFO")
                             .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
                 }
             }

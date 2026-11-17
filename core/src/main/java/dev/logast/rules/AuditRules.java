@@ -155,13 +155,22 @@ final class AuditRules {
                     return r;
                 }
 
+                private static Object enclosingTree(org.openrewrite.Cursor c) {
+                    for (org.openrewrite.Cursor p = c.getParent(); p != null; p = p.getParent()) {
+                        if (p.getValue() instanceof org.openrewrite.Tree t) {
+                            return t;
+                        }
+                    }
+                    return null;
+                }
+
                 private boolean inCatchOrFinally() {
                     for (org.openrewrite.Cursor c = getCursor(); c != null; c = c.getParent()) {
                         if (c.getValue() instanceof J.Try.Catch) {
                             return true;
                         }
-                        if (c.getValue() instanceof J.Block b && c.getParent() != null
-                                && c.getParent().getValue() instanceof J.Try t && t.getFinally() == b) {
+                        // the finally block's direct cursor parent is the JLeftPadded around it, not the J.Try (#85)
+                        if (c.getValue() instanceof J.Block b && enclosingTree(c) instanceof J.Try t && t.getFinally() == b) {
                             return true;
                         }
                     }

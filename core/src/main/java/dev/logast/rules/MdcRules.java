@@ -144,6 +144,7 @@ final class MdcRules {
                             + "context): later logs of the same flow lose their context")
                     .suggestion("Scope what this code sets with try (var mdc = MdcScope.of(..)) and drop the clear(); a thread "
                             + "hand-off restores the previous map (ContextPropagation) instead of clearing.")
+                    .doneWhen("this MDC.clear() is gone")
                     .context(ctx.context(m, Pos.start(op.call()), Text.oneLine(op.call().printTrimmed(), 160), null));
         }
     }

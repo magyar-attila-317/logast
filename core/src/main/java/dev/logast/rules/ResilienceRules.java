@@ -1,5 +1,6 @@
 package dev.logast.rules;
 
+import dev.logast.model.Annotations;
 import dev.logast.model.ClassInfo;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.MethodInfo;
@@ -467,11 +468,8 @@ final class ResilienceRules {
                 }
             }
         }
-        if (users.isEmpty()) {
-            return;
-        }
-        String[] first = users.getFirst();
-        if (!props.containsKey("spring.jdbc.template.query-timeout")) {
+        if (!users.isEmpty() && !props.containsKey("spring.jdbc.template.query-timeout")) {
+            String[] first = users.getFirst();
             String timeout = ctx.policy.resilience().dbQueryTimeout();
             OrderBuilder b = ctx.order(Rules.DB_NO_TIMEOUT, "jdbc-query-timeout").at(first[0], Integer.parseInt(first[1]))
                     .title("JdbcTemplate without a query timeout: Spring Boot sets none and the driver's default is usually none, "
@@ -482,18 +480,34 @@ final class ResilienceRules {
             ServiceYaml.merge(ctx, b, "spring:\n  jdbc:\n    template:\n      query-timeout: " + timeout + "\n");
             users.stream().skip(1).forEach(u -> b.location(u[0], Integer.parseInt(u[1]), Rules.DB_NO_TIMEOUT));
         }
-        boolean transactional = ctx.methods().stream().anyMatch(m -> m.hasAnnotation("org.springframework.transaction.annotation.Transactional")
-                || m.hasAnnotation("jakarta.transaction.Transactional"));
-        if (transactional && !props.containsKey("spring.transaction.default-timeout")) {
+        // not tied to a JdbcTemplate: a JPA-only service's transactions have no timeout either (#85)
+        List<MethodInfo> untimed = ctx.methods().stream().filter(m -> TRANSACTIONAL.stream().anyMatch(m::hasAnnotation))
+                .filter(m -> !transactionTimeout(m)).toList();
+        if (!untimed.isEmpty() && !props.containsKey("spring.transaction.default-timeout")) {
             ctx.order(Rules.DB_NO_TIMEOUT, "transaction-timeout").at(ServiceYaml.path(ctx), 1)
                     .title("Transactions without a timeout: spring.transaction.default-timeout has no default, so a transaction "
                             + "waiting on a lock or a slow statement holds its connection indefinitely")
                     .suggestion("Decide a default (spring.transaction.default-timeout) above the longest legitimate transaction, "
                             + "or set timeout = … on the @Transactional methods that need one. Not applied automatically: it "
                             + "applies to every @Transactional, batch jobs included.")
-                    .basis("@Transactional methods exist and no Spring configuration file sets spring.transaction.default-timeout")
-                    .doneWhen("spring.transaction.default-timeout is set in the Spring configuration");
+                    .basis("@Transactional methods without timeout = … exist (" + untimed.getFirst().label()
+                            + (untimed.size() > 1 ? " and " + (untimed.size() - 1) + " more" : "")
+                            + ") and no Spring configuration file sets spring.transaction.default-timeout")
+                    .doneWhen("spring.transaction.default-timeout is set in the Spring configuration, or every @Transactional "
+                            + "method (or its class) has a timeout");
         }
+    }
+
+    /**
+     * The method's Spring @Transactional (its own, else its class's) sets a timeout. jakarta.transaction.Transactional
+     * has no timeout attribute.
+     */
+    private static boolean transactionTimeout(MethodInfo m) {
+        J.Annotation a = m.decl().getLeadingAnnotations().stream().filter(x -> TRANSACTIONAL.stream().anyMatch(t -> Annotations.is(x, t)))
+                .findFirst().orElse(m.owner().decl().getLeadingAnnotations().stream()
+                        .filter(x -> TRANSACTIONAL.stream().anyMatch(t -> Annotations.is(x, t))).findFirst().orElse(null));
+        return a != null && Annotations.is(a, TRANSACTIONAL.getFirst()) && Annotations.attribute(a, "timeout", "timeoutString")
+                .map(e -> e.printTrimmed()).filter(t -> !t.equals("-1") && !t.endsWith("TIMEOUT_DEFAULT") && !t.equals("\"\"")).isPresent();
     }
 
     // ---- scheduled jobs on several instances ----------------------------------------------------
