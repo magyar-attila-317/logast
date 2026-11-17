@@ -749,7 +749,7 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 |---|---|
 | `logast init [svc]` | one-time setup: policy, .gitignore, classpath, traffic template (`--baseline` for CI) |
 | `logast why [svc] <key>` | why an MDC key is scoped where it is: every method that logs it, the decision (scope, covered, in MDC, no scope, lifted) and the reason |
-| `logast shape [svc]` | exports the code with its own names and words replaced (`.logast/shape/`, mapping back in `.logast/shape-mapping.txt`): the same findings without the content, to send a reproduction. Read it before sending |
+| `logast shape [svc]` | exports the code with its own names and words replaced (`.logast/shape/`, mapping back in `.logast/shape-mapping.txt`): the same findings without the content, to send a reproduction. Only known public libraries (Spring, SLF4J, Jakarta, ...) keep their names; any other library (a company one under its own group) is replaced like the code, unless named with `--public-group`. `kept-words.txt` lists every non-generic word that stayed. Read it before sending |
 | `logast metrics [svc]` | the metrics map: exporters, identity, metric per entrypoint, meters in code, outcomes not counted (`--format json`, `--format table` = meters only) |
 | `logast vocabulary [svc]` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |

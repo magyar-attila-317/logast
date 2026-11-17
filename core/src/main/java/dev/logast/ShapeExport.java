@@ -58,7 +58,64 @@ public final class ShapeExport {
             // and audit calls (a type or argument named *Audit*, when audit.emitters is empty)
             + "audit audited auditing auditable").split(" ")));
 
+    /**
+     * Groups and packages of public libraries (#59): their names stay in the export. Everything else on the classpath
+     * or in an import is treated as the company's own and replaced like the code, so a company library under a group
+     * of its own does not leave in clear. More with {@code --public-group}. A prefix ends at a dot: "org.slf4j" covers
+     * "org.slf4j.spi" but not "org.slf4jx".
+     */
+    static final List<String> PUBLIC_GROUPS = List.of(
+            // the JDK
+            "java", "javax", "jdk", "sun", "com.sun", "org.w3c", "org.xml", "org.ietf", "org.omg",
+            // frameworks, logging, observability
+            "jakarta", "org.springframework", "org.springdoc", "org.slf4j", "ch.qos.logback", "org.apache", "commons-io",
+            "commons-codec", "commons-logging", "commons-lang", "commons-collections", "commons-beanutils",
+            "commons-fileupload", "org.jboss", "org.hibernate", "org.glassfish", "org.eclipse", "io.micrometer",
+            "io.opentelemetry", "io.prometheus", "io.zipkin", "net.logstash", "co.elastic", "org.reactivestreams", "reactor",
+            "io.projectreactor", "io.netty", "io.undertow", "io.grpc", "io.vertx", "io.quarkus", "io.smallrye", "io.dropwizard",
+            "com.codahale", "lombok", "org.projectlombok", "org.mapstruct", "org.immutables", "org.aspectj", "kotlin",
+            "kotlinx", "org.jetbrains", "org.jspecify", "org.checkerframework", "org.osgi", "biz.aQute", "org.ow2",
+            "net.bytebuddy", "org.objenesis", "org.yaml", "org.json", "net.minidev", "com.jayway", "tools.jackson",
+            "com.fasterxml", "com.google", "com.github.benmanes", "io.vavr",
+            // clients, data, messaging, cloud
+            "com.squareup", "okhttp3", "retrofit2", "feign", "io.github.openfeign", "io.github.resilience4j",
+            "net.javacrumbs.shedlock", "com.zaxxer", "org.flywaydb", "org.liquibase", "liquibase", "org.postgresql",
+            "com.mysql", "org.mariadb", "com.h2database", "org.h2", "com.mongodb", "org.mongodb", "org.bson", "io.lettuce",
+            "redis.clients", "org.redisson", "org.elasticsearch", "org.opensearch", "org.jooq", "org.mybatis", "io.r2dbc",
+            "com.querydsl", "io.confluent", "org.quartz", "org.quartz-scheduler", "software.amazon", "com.amazonaws",
+            "com.azure", "com.microsoft", "io.fabric8", "io.kubernetes", "io.swagger", "org.openapitools", "com.nimbusds",
+            "io.jsonwebtoken", "com.auth0", "org.keycloak", "org.bouncycastle", "org.thymeleaf", "org.freemarker",
+            "org.attoparser", "org.unbescape", "org.latencyutils", "org.hdrhistogram",
+            // tests
+            "org.junit", "org.opentest4j", "org.apiguardian", "org.mockito", "org.assertj", "org.hamcrest",
+            "org.testcontainers", "org.awaitility", "org.wiremock", "com.github.tomakehurst", "org.skyscreamer",
+            "org.xmlunit",
+            "dev.logast");
+
+    /** A group, package or class name under one of the public groups (or one the person named public). */
+    public static boolean publicName(String name, Collection<String> extra) {
+        for (String g : PUBLIC_GROUPS) {
+            if (name.equals(g) || name.startsWith(g + ".")) {
+                return true;
+            }
+        }
+        for (String g : extra) {
+            if (name.equals(g) || name.startsWith(g + ".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private final Set<String> generic = new HashSet<>(BASE_GENERIC);
+    /** Words that say nothing about a company: the generic ones, before library names are added. */
+    private final Set<String> vocabulary = new HashSet<>();
+    /** Words that stayed as they are and are not in {@link #vocabulary}: listed for review (kept-words.txt). */
+    private final Set<String> kept = new TreeSet<>();
+    private final Set<String> publicGroups = new TreeSet<>();
+    /** Simple names of types imported from libraries that are not public, and variables of those types. */
+    private final Set<String> innerTypes = new HashSet<>();
+    private final Set<String> innerVars = new HashSet<>();
     private final Map<String, String> aliases = new LinkedHashMap<>();   // lower-case word -> alias
     private final Set<String> protectedNames = new HashSet<>();           // identifiers of public library symbols
     private final Set<String> own = new HashSet<>();
@@ -68,8 +125,20 @@ public final class ShapeExport {
     }
 
     public static Result write(Analysis a, Path out, Path mappingFile) throws IOException {
+        return write(a, out, mappingFile, List.of());
+    }
+
+    /** @param publicGroups further groups/packages whose names may stay (besides {@link #PUBLIC_GROUPS}) */
+    public static Result write(Analysis a, Path out, Path mappingFile, Collection<String> publicGroups) throws IOException {
         ShapeExport s = new ShapeExport();
+        publicGroups.stream().map(String::strip).map(g -> g.endsWith(".") ? g.substring(0, g.length() - 1) : g)
+                .filter(g -> !g.isEmpty()).forEach(s.publicGroups::add);
         return s.run(a, out, mappingFile);
+    }
+
+    /** A public library's name: under a public group, and not under the application's own prefix. */
+    private boolean isPublic(String name) {
+        return publicName(name, publicGroups) && (internalPrefix == null || !(name + ".").startsWith(internalPrefix));
     }
 
     private Result run(Analysis a, Path out, Path mappingFile) throws IOException {
@@ -91,6 +160,7 @@ public final class ShapeExport {
                 }
             }
         }
+        vocabulary.addAll(generic);
         for (SourceFileInfo f : a.project.files()) {
             collectOwnNames(f.cu());
         }
@@ -118,12 +188,16 @@ public final class ShapeExport {
             }
         }
         Files.writeString(out.resolve("libraries.txt"), libraries(a.project.classpath()));
+        Files.writeString(out.resolve("kept-words.txt"), "# words that stayed as they are (names of public libraries): "
+                + "check them before sending\n" + String.join("\n", kept) + (kept.isEmpty() ? "" : "\n"));
         Files.writeString(out.resolve("README.txt"), """
                 Made by `logast shape`: the code's structure with its own names and words replaced (qa, qb, ...).
-                Kept: generic programming words, public library names (Spring, SLF4J, Lombok, ...), annotations,
-                the structure of every class and method. Dropped: comments, resources, build files.
-                Read it before sending: anything that should not leave, delete or replace it. The mapping back
-                (shape-mapping.txt) is NOT in this folder and should stay with you.
+                Kept: generic programming words, names of known public libraries (Spring, SLF4J, Lombok, ...; more
+                with --public-group), annotations, the structure of every class and method. Other libraries are
+                replaced like the code. Dropped: comments, resources, build files.
+                Read it before sending: anything that should not leave, delete or replace it. kept-words.txt lists
+                every word that stayed and is not a generic one. The mapping back (shape-mapping.txt) is NOT in
+                this folder and should stay with you.
                 """);
         StringBuilder map = new StringBuilder("# alias -> original word (keep this file; it is not part of the export)\n");
         aliases.forEach((word, alias) -> map.append(alias).append(" = ").append(word).append('\n'));
@@ -181,6 +255,26 @@ public final class ShapeExport {
             }
 
             @Override
+            public J.Import visitImport(J.Import i, Integer p) {
+                String path = i.getQualid().printTrimmed().replaceAll("\\s+", "");
+                if (!i.getQualid().getSimpleName().equals("*") && innerImport(path)) {
+                    innerTypes.add(i.getQualid().getSimpleName());
+                }
+                return super.visitImport(i, p);
+            }
+
+            @Override
+            public J.VariableDeclarations visitVariableDeclarations(J.VariableDeclarations vd, Integer p) {
+                if (vd.getTypeExpression() != null) {
+                    String t = vd.getTypeExpression().printTrimmed().replaceAll("<.*|\\[.*|\\s+", "");
+                    if (innerTypes.contains(t) || t.contains(".") && innerImport(t)) {
+                        vd.getVariables().forEach(v -> innerVars.add(v.getSimpleName()));
+                    }
+                }
+                return super.visitVariableDeclarations(vd, p);
+            }
+
+            @Override
             public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable v, Integer p) {
                 String n = v.getSimpleName();
                 ownNames.add(n);
@@ -200,19 +294,36 @@ public final class ShapeExport {
     /** Own packages (of source classes), to tell own imports from library ones without type resolution. */
     private final Set<String> ownPackages = new HashSet<>();
 
-    /** An import of a public library: not own code, not under the company's prefix. Kept as written. */
+    /** An import of a public library: not own code, under a public group. Kept as written. */
     private boolean externalImport(String path) {
+        String owner = importOwner(path);
+        return !ownImport(owner) && isPublic(owner);
+    }
+
+    /** An import of a library that is not public (the company's own, or unknown): replaced like the code. */
+    private boolean innerImport(String path) {
+        String owner = importOwner(path);
+        return !ownImport(owner) && !isPublic(owner);
+    }
+
+    private static String importOwner(String path) {
         String p = path.replaceFirst("^static\\s+", "").strip();
-        if (internalPrefix != null && p.startsWith(internalPrefix)) {
-            return false;
-        }
-        String owner = p.endsWith(".*") ? p.substring(0, p.length() - 2) : p;
+        return p.endsWith(".*") ? p.substring(0, p.length() - 2) : p;
+    }
+
+    private boolean ownImport(String owner) {
         for (String pkg : ownPackages) {
             if (owner.equals(pkg) || owner.startsWith(pkg + ".")) {
-                return false;
+                return true;
             }
         }
-        return !own.contains(owner);
+        return own.contains(owner);
+    }
+
+    /** A call on a type (or a variable of a type) of a library that is not public: its name is not a public one. */
+    private boolean innerReceiver(J.MethodInvocation mi) {
+        return mi.getSelect() instanceof J.Identifier id && (innerTypes.contains(id.getSimpleName()) || innerVars.contains(id.getSimpleName()))
+                || mi.getSelect() instanceof J.FieldAccess fa && innerImport(fa.printTrimmed().replaceAll("\\s+", ""));
     }
 
     // ---- what must keep its name: symbols of public libraries ----
@@ -223,7 +334,7 @@ public final class ShapeExport {
             return false;
         }
         String fqn = fq.getFullyQualifiedName();
-        return !own.contains(fqn) && !own.contains(fqn.replace('$', '.')) && (internalPrefix == null || !fqn.startsWith(internalPrefix));
+        return !own.contains(fqn) && !own.contains(fqn.replace('$', '.')) && isPublic(fqn.replace('$', '.'));
     }
 
     private void protectType(JavaType t) {
@@ -254,7 +365,7 @@ public final class ShapeExport {
             @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
                 protectMethod(mi.getMethodType());
-                if (unresolved(mi.getMethodType()) && !ownNames.contains(mi.getSimpleName())) {
+                if (unresolved(mi.getMethodType()) && !ownNames.contains(mi.getSimpleName()) && !innerReceiver(mi)) {
                     guessedNames.add(mi.getSimpleName());   // ResponseEntity.ok().body(..) without the jar
                 }
                 return super.visitMethodInvocation(mi, p);
@@ -291,7 +402,7 @@ public final class ShapeExport {
             @Override
             public J.Annotation visitAnnotation(J.Annotation an, Integer p) {
                 String simple = an.getSimpleName();
-                boolean ownAnnotation = ownNames.contains(simple) && !library(an.getType());
+                boolean ownAnnotation = (ownNames.contains(simple) || innerTypes.contains(simple)) && !library(an.getType());
                 if (!ownAnnotation) {
                     guessedNames.add(simple);   // @PostMapping from a wildcard import, resolved or not
                 }
@@ -347,7 +458,12 @@ public final class ShapeExport {
 
     /** couponId → qaId, CouponValidators → QaValidators, COUPON_ID → QA_ID: every non-generic word, same alias everywhere. */
     String mapIdentifier(String id) {
-        if (KEYWORDS.contains(id) || protectedNames.contains(id)) {
+        if (KEYWORDS.contains(id)) {
+            return id;
+        }
+        if (protectedNames.contains(id)) {
+            words(id).stream().map(w -> w.toLowerCase(Locale.ROOT)).filter(w -> w.length() > 1 && !vocabulary.contains(w)
+                    && !Character.isDigit(w.charAt(0))).forEach(kept::add);
             return id;
         }
         StringBuilder sb = new StringBuilder();
@@ -358,6 +474,9 @@ public final class ShapeExport {
             String w = m.group();
             String lower = w.toLowerCase(Locale.ROOT);
             if (Character.isDigit(w.charAt(0)) || generic.contains(lower) || w.length() == 1) {
+                if (w.length() > 1 && !Character.isDigit(w.charAt(0)) && !vocabulary.contains(lower)) {
+                    kept.add(lower);
+                }
                 sb.append(w);
             } else {
                 // a past-tense ending stays (logast reads "X published" as an outcome): publish → qa, published → qaed
@@ -491,7 +610,7 @@ public final class ShapeExport {
     /**
      * Every library on the classpath, so the export can be analysed with the same one: group:artifact:version from
      * Gradle's cache or a Maven repository (~/.m2), else the jar's file name, listed apart so they are checked before
-     * sending. The company's own ones are mapped like the code; class folders are counted, not named.
+     * sending. Libraries outside the public groups are mapped like the code; class folders are counted, not named.
      */
     private String libraries(List<Path> classpath) {
         Set<String> coords = new TreeSet<>();
@@ -502,8 +621,7 @@ public final class ShapeExport {
             String coord = gradleCoordinate(s);
             coord = coord != null ? coord : mavenCoordinate(s);
             if (coord != null) {
-                boolean internal = internalPrefix != null && (coord.substring(0, coord.indexOf(':')) + ".").startsWith(internalPrefix);
-                coords.add(internal ? mapText(coord) : coord);
+                coords.add(isPublic(coord.substring(0, coord.indexOf(':'))) ? coord : mapText(coord));
             } else if (s.endsWith(".jar")) {
                 other.add(mapText(s.substring(s.lastIndexOf('/') + 1)));
             } else {

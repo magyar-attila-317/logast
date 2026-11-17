@@ -1771,12 +1771,13 @@ class E2eGoldenTest {
         try (var files = Files.walk(shape)) {
             for (Path f : files.filter(Files::isRegularFile).toList()) {
                 String text = Files.readString(f).toLowerCase(java.util.Locale.ROOT) + f;
-                for (String word : List.of("coupon", "agreement", "income", "funding", "sales", "redeem", "voucher")) {
+                // org.platformlib stands in for a company library under a group of its own (#59): not a public one
+                for (String word : List.of("coupon", "agreement", "income", "funding", "sales", "redeem", "voucher", "platformlib", "week")) {
                     assertThat(text).as(f + " still says " + word).doesNotContain(word);
                 }
             }
         }
-        compile(shape);
+        compile(shape, "UTF-8", platformAsExported(app.resolve(".logast/shape-mapping.txt")));
         java.util.function.Function<Path, List<String>> rules = root -> run(root, "scan", root.toString(), "--format", "summary",
                 "--classpath-file", CLASSPATH).lines().map(String::strip).filter(l -> l.matches("[A-Z_]+ +\\d+.*"))
                 .map(l -> l.replaceAll("^([A-Z_]+ +\\d+).*", "$1")).filter(l -> !l.startsWith("SETUP_SUPPORT_STARTER")).sorted().toList();
@@ -2011,12 +2012,58 @@ class E2eGoldenTest {
     }
 
     private static void compile(Path root, String encoding) throws IOException {
+        compile(root, encoding, PLATFORM);
+    }
+
+    /**
+     * e2e/platform as the receiver of a shape export rebuilds it: the company library (outside the public groups) with
+     * its words replaced as the export's mapping says, the public stand-ins as they are.
+     */
+    private static Path platformAsExported(Path mappingFile) throws IOException {
+        Map<String, String> alias = new HashMap<>();
+        for (String line : Files.readAllLines(mappingFile)) {
+            int eq = line.indexOf(" = ");
+            if (!line.startsWith("#") && eq > 0) {
+                alias.put(line.substring(eq + 3), line.substring(0, eq));
+            }
+        }
+        java.util.regex.Pattern word = java.util.regex.Pattern.compile("[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+");
+        java.util.function.UnaryOperator<String> mapId = id -> javax.lang.model.SourceVersion.isKeyword(id) || id.equals("record")
+                ? id : word.matcher(id).replaceAll(m -> {
+            String w = m.group();
+            String a = alias.get(w.toLowerCase(Locale.ROOT));
+            return a == null ? w : w.length() > 1 && w.equals(w.toUpperCase(Locale.ROOT)) ? a.toUpperCase(Locale.ROOT)
+                    : Character.isUpperCase(w.charAt(0)) ? Character.toUpperCase(a.charAt(0)) + a.substring(1) : a;
+        });
+        Path out = Files.createTempDirectory("logast-e2e-platform-shape");
+        List<String> args = new ArrayList<>(List.of("-d", out.resolve("classes").toString()));
+        try (Stream<Path> s = Files.walk(BEFORE.resolveSibling("platform"))) {
+            for (Path f : s.filter(p -> p.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(f).replaceAll("(?s)/\\*.*?\\*/", "");
+                String name = f.getFileName().toString().replace(".java", "");
+                java.util.regex.Matcher pkg = java.util.regex.Pattern.compile("package\\s+([\\w.]+)").matcher(text);
+                if (pkg.find() && !dev.logast.ShapeExport.publicName(pkg.group(1), List.of())) {
+                    text = java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]*").matcher(text).replaceAll(m -> mapId.apply(m.group()));
+                    name = mapId.apply(name);
+                }
+                Path dst = out.resolve("src").resolve(pkg.group(1)).resolve(name + ".java");
+                Files.createDirectories(dst.getParent());
+                Files.writeString(dst, text);
+                args.add(dst.toString());
+            }
+        }
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        assertThat(ToolProvider.getSystemJavaCompiler().run(null, null, err, args.toArray(String[]::new))).as(err.toString()).isZero();
+        return out.resolve("classes");
+    }
+
+    private static void compile(Path root, String encoding, Path platform) throws IOException {
         List<String> sources;
         try (Stream<Path> s = Files.walk(root.resolve("src/main/java"))) {
             sources = s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).toList();
         }
         List<String> cp = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList());
-        cp.add(PLATFORM.toString());
+        cp.add(platform.toString());
         List<String> args = new ArrayList<>(List.of("-encoding", encoding, "-d", root.resolve("out").toString(), "-proc:full",
                 "-processorpath", LOMBOK, "-cp", String.join(java.io.File.pathSeparator, cp)));
         args.addAll(sources);

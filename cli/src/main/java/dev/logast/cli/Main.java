@@ -603,6 +603,10 @@ public final class Main {
     @Command(name = "shape", description = "Export the code's shape with its own names and words replaced (to send a "
             + "reproduction without the content): <root>/.logast/shape/, mapping back in <root>/.logast/shape-mapping.txt")
     static class ShapeCmd extends Common implements Callable<Integer> {
+        @Option(names = "--public-group", split = ",", description = "A library group/package whose names may stay as they "
+                + "are, besides the known public ones (Spring, SLF4J, Jakarta, ...); every other library is replaced like the code")
+        List<String> publicGroups = new ArrayList<>();
+
         @Override
         public Integer call() throws IOException {
             List<Path> cp = classpath();
@@ -611,7 +615,8 @@ public final class Main {
                         + "Lombok and library calls connect your code");
             }
             Analysis a = Logast.analyse(root(), cp, policy());
-            var r = dev.logast.ShapeExport.write(a, root().resolve(".logast/shape"), root().resolve(".logast/shape-mapping.txt"));
+            var r = dev.logast.ShapeExport.write(a, root().resolve(".logast/shape"), root().resolve(".logast/shape-mapping.txt"),
+                    publicGroups);
             System.out.println("wrote " + r.files() + " files to " + root().relativize(r.dir()) + " (" + r.words() + " words replaced)");
             System.out.println("read it before sending it; the mapping back stays here: " + root().relativize(r.mapping()));
             return 0;
