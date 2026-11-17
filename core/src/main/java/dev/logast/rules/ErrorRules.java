@@ -286,13 +286,27 @@ final class ErrorRules {
 
                 @Override
                 public J.Throw visitThrow(J.Throw t, Integer p) {
-                    if (t.getException() instanceof J.NewClass nc && TypeUtils.asFullyQualified(nc.getType()) instanceof JavaType.FullyQualified x
+                    // the thrown expression's type: throw new X(…), a factory (throw Errors.notFound(id)) or a variable
+                    thrown(t.getException().getType(), t);
+                    return super.visitThrow(t, p);
+                }
+
+                @Override
+                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                    // optional.orElseThrow(() -> new X(id)) / orElseThrow(X::new): thrown by the call, not by a throw
+                    if (mi.getSimpleName().equals("orElseThrow") && mi.getArguments().size() == 1) {
+                        thrown(supplied(mi), mi);
+                    }
+                    return super.visitMethodInvocation(mi, p);
+                }
+
+                private void thrown(JavaType type, J at) {
+                    if (TypeUtils.asFullyQualified(type) instanceof JavaType.FullyQualified x
                             && ctx.a.index.clazz(x.getFullyQualifiedName()) != null && !caughtLocally(getCursor(), x)) {
                         types.put(x.getFullyQualifiedName(), x);
                         throwsByType.computeIfAbsent(x.getFullyQualifiedName(), k -> new ArrayList<>())
-                                .add(new String[]{m.file().relPath(), String.valueOf(Pos.line(t))});
+                                .add(new String[]{m.file().relPath(), String.valueOf(Pos.line(at))});
                     }
-                    return super.visitThrow(t, p);
                 }
             }.visit(m.decl().getBody(), 0, new Cursor(new Cursor(null, Cursor.ROOT_VALUE), m.decl()));
         }
@@ -317,6 +331,15 @@ final class ErrorRules {
         });
     }
 
+    /**
+     * The exception an {@code orElseThrow(supplier)} throws: javac infers its type parameter from the supplier (a lambda,
+     * {@code X::new}, a factory reference or a variable), and the attributed call declares it as thrown.
+     */
+    private static JavaType supplied(J.MethodInvocation mi) {
+        JavaType.Method mt = mi.getMethodType();
+        return mt != null && mt.getThrownExceptions().size() == 1 ? mt.getThrownExceptions().getFirst() : null;
+    }
+
     /** @ResponseStatus (on it or a supertype), a status-carrying exception type, or a specific handler. */
     private boolean mapped(JavaType.FullyQualified x) {
         for (JavaType.FullyQualified t = x; t != null; t = t.getSupertype()) {
@@ -336,10 +359,11 @@ final class ErrorRules {
                 && TypeUtils.isAssignableTo(t.getFullyQualifiedName(), x)));
     }
 
-    /** Thrown inside a try whose catch handles it right there. */
+    /** Thrown inside a try whose catch handles it right there (not from its catch or finally blocks: those propagate). */
     private static boolean caughtLocally(Cursor c, JavaType.FullyQualified x) {
-        for (Cursor p = c.getParent(); p != null; p = p.getParent()) {
-            if (p.getValue() instanceof J.Try t && p.getParent() != null) {
+        Object prev = c.getValue();
+        for (Cursor p = c.getParent(); p != null; prev = p.getValue() instanceof J ? p.getValue() : prev, p = p.getParent()) {
+            if (p.getValue() instanceof J.Try t && p.getParent() != null && (prev == t.getBody() || prev instanceof J.Try.Resource)) {
                 for (J.Try.Catch k : t.getCatches()) {
                     JavaType caught = k.getParameter().getTree().getType();
                     if (caught instanceof JavaType.MultiCatch mc ? mc.getThrowableTypes().stream()
