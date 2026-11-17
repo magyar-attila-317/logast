@@ -69,6 +69,15 @@ class ScanGateTest {
         assertThat(r.exit()).as(r.err()).isZero();
     }
 
+    /** A baseline recorded from an incomplete analysis hides what was not analysed: say so when recording it. */
+    @Test
+    void baselineFromAnIncompleteAnalysisIsFlagged() throws IOException {
+        Path app = project(true);
+        Run r = run("scan", app.toString(), "--update-baseline", "--classpath-file", classpathFile().toString());
+        assertThat(r.exit()).as(r.err()).isZero();
+        assertThat(r.err()).contains("analysis incomplete").contains("Broken.java").contains("baseline");
+    }
+
     @Test
     void unparsableFileFailsTheGateInEveryFormat() throws IOException {
         Path app = project(true);
