@@ -2,6 +2,8 @@ package dev.logast.rules;
 
 import dev.logast.Analysis;
 import dev.logast.Fixtures;
+import dev.logast.Traffic;
+import dev.logast.orders.WorkOrder;
 import dev.logast.policy.Policy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -10,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -30,8 +33,11 @@ class RemedyTest {
     Path dir;
     private int projects;
 
-    /** Writes a project (a logast.yaml with every pack unless the files bring their own) and returns the rules it reports. */
-    private Set<String> fired(Map<String, String> files) throws IOException {
+    /**
+     * Writes a project (a logast.yaml with every pack unless the files bring their own, and its .logast/traffic.yaml if
+     * the files bring one) and returns its orders.
+     */
+    private List<WorkOrder> scan(Map<String, String> files) throws IOException {
         Path root = Files.createDirectories(dir.resolve("p" + projects++));
         Map<String, String> all = new LinkedHashMap<>(Map.of("logast.yaml", PACKS,
                 "src/main/resources/application.yml", "spring:\n  application:\n    name: remedy\n"));
@@ -42,7 +48,12 @@ class RemedyTest {
             Files.writeString(p, f.getValue());
         }
         Policy policy = Policy.resolve(root, null);
-        return RuleLedgerTest.mentioned(Rules.scan(Analysis.run(root, Fixtures.classpath(), policy)).orders());
+        return Rules.scan(Analysis.run(root, Fixtures.classpath(), policy).withTraffic(Traffic.load(root, null))).orders();
+    }
+
+    /** The rules a project reports. */
+    private Set<String> fired(Map<String, String> files) throws IOException {
+        return RuleLedgerTest.mentioned(scan(files));
     }
 
     private static Map<String, String> with(Map<String, String> base, String... pathsAndTexts) {
@@ -66,6 +77,16 @@ class RemedyTest {
         assertThat(why).containsPattern("#\\d+");
         assertThat(fired(after)).as(rule + " still fires after the remedy (" + remedy + "): " + why
                 + ". If the rule recognises it now, make this a plain remedy").contains(rule);
+    }
+
+    /**
+     * A remedy after which logast makes the change itself (the done-when line says so): the report-only finding becomes
+     * an AUTO order of the same rule.
+     */
+    private void becomesAuto(String rule, String remedy, Map<String, String> after) throws IOException {
+        List<WorkOrder> orders = scan(after).stream().filter(o -> o.rule().equals(rule)).toList();
+        assertThat(orders).as(rule + " is no longer report-only after the remedy: " + remedy).isNotEmpty()
+                .noneMatch(WorkOrder::reportOnly);
     }
 
     private static String java(String name) {
@@ -446,5 +467,1092 @@ class RemedyTest {
         // near miss: the diagnostics moved to the audit logger with the records, so they leave the application log
         fires(Rules.AUDIT_LOG_MIXED, with(before, java("AuditLog"),
                 auditLog.formatted(auditLogger, "AUDIT").replace("log.warn", "AUDIT.warn")));
+    }
+
+    // ---- AUDIT_MISSING, AUDIT_FAILURES_UNRECORDED, AUDIT_RECORD_INCOMPLETE -----------------------------------------
+
+    /** A DELETE endpoint (an auditable action by default) with BODY as its body and PARAMS after the path variable. */
+    private static final String PARCEL_CONTROLLER = """
+            package x;
+
+            import java.security.Principal;
+            import org.springframework.web.bind.annotation.DeleteMapping;
+            import org.springframework.web.bind.annotation.PathVariable;
+            import org.springframework.web.bind.annotation.RestController;
+
+            @RestController
+            public class ParcelController {
+                private final ParcelStore store;
+                private final ParcelAudit audit;
+
+                public ParcelController(ParcelStore store, ParcelAudit audit) {
+                    this.store = store;
+                    this.audit = audit;
+                }
+
+                @DeleteMapping("/parcels/{parcelId}")
+                public void delete(@PathVariable String parcelIdPARAMS) {
+            BODY    }
+            }
+            """;
+
+    private static Map<String, String> parcelController(String params, String body, String audit) {
+        return Map.of(java("ParcelController"), PARCEL_CONTROLLER.replace("PARAMS", params).replace("BODY", body),
+                java("ParcelStore"), """
+                        package x;
+
+                        import java.util.Map;
+                        import java.util.concurrent.ConcurrentHashMap;
+                        import org.springframework.stereotype.Component;
+
+                        @Component
+                        public class ParcelStore {
+                            private final Map<String, String> parcels = new ConcurrentHashMap<>();
+
+                            public void remove(String parcelId) {
+                                parcels.remove(parcelId);
+                            }
+                        }
+                        """, java("ParcelAudit"), audit);
+    }
+
+    /** An audit class (named *Audit*) whose records go to a store, not to a log. */
+    private static final String PARCEL_AUDIT = """
+            package x;
+
+            import java.util.List;
+            import java.util.concurrent.CopyOnWriteArrayList;
+            import org.springframework.stereotype.Component;
+
+            @Component
+            public class ParcelAudit {
+                private final List<String> entries = new CopyOnWriteArrayList<>();
+
+                public void record(String action, String parcelId, String actor) {
+                    entries.add(actor + " " + action + " " + parcelId);
+                }
+
+                public void record(String action, String parcelId) {
+                    entries.add(action + " " + parcelId);
+                }
+            }
+            """;
+
+    @Test
+    void auditableActionRecordsAnAuditEvent() throws IOException {
+        fires(Rules.AUDIT_MISSING, parcelController("", "        store.remove(parcelId);\n", PARCEL_AUDIT));
+        gone(Rules.AUDIT_MISSING, "an audit event with actor and the affected id", parcelController(", Principal principal", """
+                        store.remove(parcelId);
+                        audit.record("parcel.delete", parcelId, principal.getName());
+                """, PARCEL_AUDIT));
+    }
+
+    @Test
+    void auditRecordsTheFailedAttemptToo() throws IOException {
+        fires(Rules.AUDIT_FAILURES_UNRECORDED, parcelController(", Principal principal", """
+                        store.remove(parcelId);
+                        audit.record("parcel.delete", parcelId, principal.getName());
+                """, PARCEL_AUDIT));
+        stillFires(Rules.AUDIT_FAILURES_UNRECORDED, "the audit call in a finally", "#58 c: an audit call in a finally block is not "
+                + "recognised (likely: the block's cursor parent is the JLeftPadded around it, not the J.Try)", parcelController(", Principal principal", """
+                        try {
+                            store.remove(parcelId);
+                        } finally {
+                            audit.record("parcel.delete", parcelId, principal.getName());
+                        }
+                """, PARCEL_AUDIT));
+        gone(Rules.AUDIT_FAILURES_UNRECORDED, "the audit call in a catch", parcelController(", Principal principal", """
+                        try {
+                            store.remove(parcelId);
+                        } catch (RuntimeException e) {
+                            audit.record("parcel.delete.failed", parcelId, principal.getName());
+                            throw e;
+                        }
+                        audit.record("parcel.delete", parcelId, principal.getName());
+                """, PARCEL_AUDIT));
+        gone(Rules.AUDIT_FAILURES_UNRECORDED, "the attempt recorded before the work", parcelController(", Principal principal", """
+                        audit.record("parcel.delete", parcelId, principal.getName());
+                        store.remove(parcelId);
+                """, PARCEL_AUDIT));
+    }
+
+    @Test
+    void auditRecordSaysWhoDidIt() throws IOException {
+        Map<String, String> before = parcelController("", """
+                        audit.record("parcel.delete", parcelId);
+                        store.remove(parcelId);
+                """, PARCEL_AUDIT);
+        fires(Rules.AUDIT_RECORD_INCOMPLETE, before);
+        gone(Rules.AUDIT_RECORD_INCOMPLETE, "the acting user from a Principal parameter", parcelController(", Principal principal", """
+                        audit.record("parcel.delete", parcelId, principal.getName());
+                        store.remove(parcelId);
+                """, PARCEL_AUDIT));
+        // Spring Security is not on the fixture's classpath: SecurityContextHolder stays unresolved, read by its name
+        gone(Rules.AUDIT_RECORD_INCOMPLETE, "the audit method reads the user itself", with(before, java("ParcelAudit"),
+                PARCEL_AUDIT.replace("""
+                                public void record(String action, String parcelId) {
+                                    entries.add(action + " " + parcelId);
+                                }
+                            """, """
+                                public void record(String action, String parcelId) {
+                                    String actor = org.springframework.security.core.context.SecurityContextHolder.getContext()
+                                            .getAuthentication().getName();
+                                    entries.add(actor + " " + action + " " + parcelId);
+                                }
+                            """)));
+    }
+
+    // ---- CATCH_ALL_DEFAULT -----------------------------------------------------------------------------------------
+
+    @Test
+    void catchAllNoLongerReturnsADefault() throws IOException {
+        String client = """
+                package x;
+
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class PointsClient {
+                    public long balance(String raw) {
+                        try {
+                            return Long.parseLong(raw);
+                        } catch (CAUGHT e) {
+                            HANDLED
+                        }
+                    }
+                }
+                """;
+        fires(Rules.CATCH_ALL_DEFAULT, Map.of(java("PointsClient"), client.replace("CAUGHT", "Exception").replace("HANDLED", "return 0L;")));
+        gone(Rules.CATCH_ALL_DEFAULT, "catch only what means \"nothing there\"", Map.of(java("PointsClient"),
+                client.replace("CAUGHT", "NumberFormatException").replace("HANDLED", "return 0L;")));
+        gone(Rules.CATCH_ALL_DEFAULT, "wrap it", Map.of(java("PointsClient"), client.replace("CAUGHT", "Exception")
+                .replace("HANDLED", "throw new IllegalStateException(\"Balance unreadable\", e);")));
+    }
+
+    // ---- CAUSE_DROPPED ---------------------------------------------------------------------------------------------
+
+    @Test
+    void newExceptionCarriesTheCause() throws IOException {
+        String verifier = """
+                package x;
+
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelVerifier {
+                    public void verify(String parcelId) {
+                        try {
+                            check(parcelId);
+                        } catch (IllegalStateException e) {
+                            THROW
+                        }
+                    }
+
+                    private void check(String parcelId) {
+                        if (parcelId.isBlank()) {
+                            throw new IllegalStateException("blank parcel id");
+                        }
+                    }
+                }
+                """;
+        String rejected = """
+                package x;
+
+                public class ParcelRejected extends RuntimeException {
+                    public ParcelRejected(String message) {
+                        super(message);
+                    }
+                CAUSE}
+                """;
+        fires(Rules.CAUSE_DROPPED, Map.of(java("ParcelVerifier"), verifier.replace("THROW", "throw new ParcelRejected(e.getMessage());"),
+                java("ParcelRejected"), rejected.replace("CAUSE", "")));
+        gone(Rules.CAUSE_DROPPED, "a constructor (…, Throwable cause), e passed to it", Map.of(java("ParcelVerifier"),
+                verifier.replace("THROW", "throw new ParcelRejected(e.getMessage(), e);"), java("ParcelRejected"), rejected.replace("CAUSE", """
+
+                            public ParcelRejected(String message, Throwable cause) {
+                                super(message, cause);
+                            }
+                        """)));
+        gone(Rules.CAUSE_DROPPED, "initCause(e) before the throw", Map.of(java("ParcelVerifier"), verifier.replace("THROW", """
+                ParcelRejected rejected = new ParcelRejected(e.getMessage());
+                            rejected.initCause(e);
+                            throw rejected;"""), java("ParcelRejected"), rejected.replace("CAUSE", "")));
+    }
+
+    // ---- CLIENT_ERROR_AS_SERVER_ERROR, ERROR_DETAILS_EXPOSED -------------------------------------------------------
+
+    private static final String API_ERRORS = """
+            package x;
+
+            import org.slf4j.Logger;
+            import org.slf4j.LoggerFactory;
+            import org.springframework.http.HttpStatus;
+            import org.springframework.http.ProblemDetail;
+            import org.springframework.http.ResponseEntity;
+            import org.springframework.web.bind.annotation.ExceptionHandler;
+            import org.springframework.web.bind.annotation.RestControllerAdvice;
+            import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+            @RestControllerAdvice
+            public class ApiErrors {
+                private static final Logger log = LoggerFactory.getLogger(ApiErrors.class);
+
+                @ExceptionHandler(Exception.class)
+                public ProblemDetail unexpected(Exception e) {
+            UNEXPECTED    }
+
+                @ExceptionHandler(NoResourceFoundException.class)
+                public ResponseEntity<String> missing(NoResourceFoundException e) {
+                    return ResponseEntity.status(HttpStatus.MISSING).body("not found");
+                }
+            }
+            """;
+    private static final String LEAKS = "        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());\n";
+    private static final String FIXED_TEXT = """
+                    log.error("Request failed", e);
+                    return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
+            """;
+
+    /** The advice with UNEXPECTED as the catch-all's body and MISSING as the not-found status, and an HTTP endpoint. */
+    private static Map<String, String> apiErrors(String unexpected, String missing) {
+        return Map.of(java("ApiErrors"), API_ERRORS.replace("UNEXPECTED", unexpected).replace("MISSING", missing),
+                java("ParcelController"), """
+                        package x;
+
+                        import org.springframework.web.bind.annotation.GetMapping;
+                        import org.springframework.web.bind.annotation.PathVariable;
+                        import org.springframework.web.bind.annotation.RestController;
+
+                        @RestController
+                        public class ParcelController {
+                            @GetMapping("/parcels/{parcelId}")
+                            public String parcel(@PathVariable String parcelId) {
+                                return parcelId;
+                            }
+                        }
+                        """);
+    }
+
+    @Test
+    void clientErrorAnswers4xx() throws IOException {
+        fires(Rules.CLIENT_ERROR_AS_SERVER_ERROR, apiErrors(FIXED_TEXT, "INTERNAL_SERVER_ERROR"));
+        gone(Rules.CLIENT_ERROR_AS_SERVER_ERROR, "answer 404", apiErrors(FIXED_TEXT, "NOT_FOUND"));
+    }
+
+    @Test
+    void unexpectedErrorAnswersAFixedText() throws IOException {
+        fires(Rules.ERROR_DETAILS_EXPOSED, apiErrors(LEAKS, "NOT_FOUND"));
+        gone(Rules.ERROR_DETAILS_EXPOSED, "a fixed text, the exception logged", apiErrors(FIXED_TEXT, "NOT_FOUND"));
+    }
+
+    // ---- UNMAPPED_EXCEPTION ----------------------------------------------------------------------------------------
+
+    @Test
+    void exceptionOnAnHttpPathGetsAStatus() throws IOException {
+        String locked = """
+                package x;
+
+                IMPORTS
+                ANNOTATIONpublic class ParcelLocked extends SUPER {
+                    public ParcelLocked(String parcelId) {
+                        super(ARGS"parcel locked: " + parcelId);
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(java("ParcelController"), """
+                package x;
+
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class ParcelController {
+                    @PostMapping("/parcels/{parcelId}/close")
+                    public void close(@PathVariable String parcelId) {
+                        if (parcelId.startsWith("L")) {
+                            throw new ParcelLocked(parcelId);
+                        }
+                    }
+                }
+                """, java("ParcelLocked"), locked.replace("IMPORTS", "").replace("ANNOTATION", "").replace("SUPER", "RuntimeException")
+                .replace("ARGS", ""));
+        fires(Rules.UNMAPPED_EXCEPTION, before);
+        gone(Rules.UNMAPPED_EXCEPTION, "@ResponseStatus(HttpStatus.CONFLICT) on the class", with(before, java("ParcelLocked"), locked
+                .replace("IMPORTS", "import org.springframework.http.HttpStatus;\nimport org.springframework.web.bind.annotation.ResponseStatus;\n")
+                .replace("ANNOTATION", "@ResponseStatus(HttpStatus.CONFLICT)\n").replace("SUPER", "RuntimeException").replace("ARGS", "")));
+        gone(Rules.UNMAPPED_EXCEPTION, "an @ExceptionHandler returning a ProblemDetail", with(before, java("ApiErrors"), """
+                package x;
+
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ProblemDetail;
+                import org.springframework.web.bind.annotation.ExceptionHandler;
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+                @RestControllerAdvice
+                public class ApiErrors {
+                    @ExceptionHandler(ParcelLocked.class)
+                    public ProblemDetail locked(ParcelLocked e) {
+                        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "parcel-locked");
+                    }
+                }
+                """));
+        gone(Rules.UNMAPPED_EXCEPTION, "it extends ResponseStatusException", with(before, java("ParcelLocked"), locked
+                .replace("IMPORTS", "import org.springframework.http.HttpStatus;\nimport org.springframework.web.server.ResponseStatusException;\n")
+                .replace("ANNOTATION", "").replace("SUPER", "ResponseStatusException").replace("ARGS", "HttpStatus.CONFLICT, ")));
+    }
+
+    // ---- DB_NO_TIMEOUT ---------------------------------------------------------------------------------------------
+
+    @Test
+    void transactionsWithATimeout() throws IOException {
+        String service = """
+                package x;
+
+                import org.springframework.jdbc.core.JdbcTemplate;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public class ParcelService {
+                    private final JdbcTemplate jdbc;
+
+                    public ParcelService(JdbcTemplate jdbc) {
+                        this.jdbc = jdbc;
+                    }
+
+                    @TRANSACTIONAL
+                    public void close(String parcelId) {
+                        jdbc.update("UPDATE parcel SET closed = TRUE WHERE id = ?", parcelId);
+                    }
+                }
+                """;
+        // the transaction timeout is only checked next to a JdbcTemplate; its query timeout (an AUTO order of the same
+        // rule) is set in both, so only the transaction finding differs
+        String config = """
+                spring:
+                  application:
+                    name: remedy
+                  jdbc:
+                    template:
+                      query-timeout: 30s
+                """;
+        Map<String, String> before = Map.of(java("ParcelService"), service.replace("TRANSACTIONAL", "Transactional"),
+                "src/main/resources/application.yml", config);
+        fires(Rules.DB_NO_TIMEOUT, before);
+        gone(Rules.DB_NO_TIMEOUT, "spring.transaction.default-timeout", with(before, "src/main/resources/application.yml",
+                config + "  transaction:\n    default-timeout: 30s\n"));
+        stillFires(Rules.DB_NO_TIMEOUT, "timeout = … on the @Transactional methods", "#58 c: the note offers it, the done-when line "
+                        + "and the rule only accept the property, even when every @Transactional method has its own timeout",
+                with(before, java("ParcelService"), service.replace("TRANSACTIONAL", "Transactional(timeout = 30)")));
+    }
+
+    // ---- HTTP_CLIENT_NO_TIMEOUT, HTTP_CLIENT_UNTRACED --------------------------------------------------------------
+
+    private static final String STOCK_CLIENT = """
+            package x;
+
+            import org.springframework.stereotype.Component;
+            import org.springframework.web.client.RestTemplate;
+            IMPORTS
+            @Component
+            public class StockClient {
+            MEMBERS
+                public String stock(String sku) {
+                    return rest.getForObject("http://stock-service/items/{sku}", String.class, sku);
+                }
+            }
+            """;
+
+    private static Map<String, String> stockClient(String imports, String members) {
+        return Map.of(java("StockClient"), STOCK_CLIENT.replace("IMPORTS", imports).replace("MEMBERS", members));
+    }
+
+    private static final Map<String, String> PLAIN_REST_TEMPLATE = stockClient("",
+            "    private final RestTemplate rest = new RestTemplate();\n");
+    private static final Map<String, String> BUILT_REST_TEMPLATE = stockClient("import org.springframework.boot.web.client.RestTemplateBuilder;\n", """
+                private final RestTemplate rest;
+
+                public StockClient(RestTemplateBuilder builder) {
+                    this.rest = builder.build();
+                }
+            """);
+
+    @Test
+    void httpClientFromTheInjectedBuilderOrWithTimeouts() throws IOException {
+        fires(Rules.HTTP_CLIENT_NO_TIMEOUT, PLAIN_REST_TEMPLATE);
+        gone(Rules.HTTP_CLIENT_NO_TIMEOUT, "built from the injected RestTemplateBuilder", BUILT_REST_TEMPLATE);
+        gone(Rules.HTTP_CLIENT_NO_TIMEOUT, "a requestFactory with connect and read timeouts", stockClient(
+                "import org.springframework.http.client.SimpleClientHttpRequestFactory;\n", """
+                            private final RestTemplate rest;
+
+                            public StockClient() {
+                                SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+                                factory.setConnectTimeout(2000);
+                                factory.setReadTimeout(5000);
+                                this.rest = new RestTemplate(factory);
+                            }
+                        """));
+    }
+
+    @Test
+    void httpClientFromTheInstrumentedBuilder() throws IOException {
+        fires(Rules.HTTP_CLIENT_UNTRACED, PLAIN_REST_TEMPLATE);
+        gone(Rules.HTTP_CLIENT_UNTRACED, "built in the constructor from the injected RestTemplateBuilder", BUILT_REST_TEMPLATE);
+    }
+
+    // ---- LOG_AND_RETHROW -------------------------------------------------------------------------------------------
+
+    @Test
+    void logAndRethrowOnceTheContextIsInMdc() throws IOException {
+        String dispatcher = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.slf4j.MDC;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelDispatcher {
+                    private static final Logger log = LoggerFactory.getLogger(ParcelDispatcher.class);
+
+                    public void dispatch(String parcelId) {
+                BODY    }
+
+                    private void send(String parcelId) {
+                        if (parcelId.isBlank()) {
+                            throw new IllegalStateException("blank parcel id");
+                        }
+                    }
+                }
+                """;
+        String logged = """
+                        try {
+                            send(parcelId);
+                        } catch (IllegalStateException e) {
+                            log.error("Parcel dispatch failed [parcelId={}]", parcelId, e);
+                            throw e;
+                        }
+                """;
+        String policy = PACKS + "mdc:\n  keys:\n    parcelId:\n      params: [parcelId]\n";
+        Map<String, String> before = Map.of("logast.yaml", policy, java("ParcelDispatcher"), dispatcher.replace("BODY", logged));
+        fires(Rules.LOG_AND_RETHROW, before);
+        assertThat(scan(before)).as("the parcelId it carries is not in MDC: report-only")
+                .anyMatch(o -> o.rule().equals(Rules.LOG_AND_RETHROW) && o.reportOnly() && o.doneWhen().startsWith("parcelId is in MDC here"));
+        gone(Rules.LOG_AND_RETHROW, "the line deleted", with(before, java("ParcelDispatcher"), dispatcher.replace("BODY", """
+                        send(parcelId);
+                """)));
+        Map<String, String> inMdc = with(before, java("ParcelDispatcher"), dispatcher.replace("BODY",
+                "        try (MDC.MDCCloseable scope = MDC.putCloseable(\"parcelId\", parcelId)) {\n" + logged.indent(4) + "        }\n"));
+        stillFires(Rules.LOG_AND_RETHROW, "parcelId put into MDC", "#58 c: the done-when line (\"parcelId is in MDC here, or the "
+                + "line is gone\") holds, but the finding stays report-only with a new condition (a caller path that logs it), "
+                + "which the first note did not mention", inMdc);
+        // with that condition met too, the finding is the caller's log line logging it again, which logast deletes itself
+        Map<String, String> loggedByCaller = with(inMdc, java("DispatchJob"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class DispatchJob {
+                    private static final Logger log = LoggerFactory.getLogger(DispatchJob.class);
+                    private final ParcelDispatcher dispatcher;
+
+                    public DispatchJob(ParcelDispatcher dispatcher) {
+                        this.dispatcher = dispatcher;
+                    }
+
+                    public void run(String parcelId) {
+                        try {
+                            dispatcher.dispatch(parcelId);
+                        } catch (IllegalStateException e) {
+                            log.warn("Parcel dispatch skipped [parcelId={}]", parcelId, e);
+                        }
+                    }
+                }
+                """);
+        gone(Rules.LOG_AND_RETHROW, "parcelId in MDC and a caller that logs the failure", loggedByCaller);
+        becomesAuto(Rules.EXCEPTION_LOGGED_TWICE, "parcelId in MDC and a caller that logs the failure", loggedByCaller);
+    }
+
+    // ---- LOG_HELPER ------------------------------------------------------------------------------------------------
+
+    @Test
+    void logHelperInlinedOrMasking() throws IOException {
+        String helper = """
+                package x;
+
+                import java.util.Collection;
+                import org.slf4j.Logger;
+
+                public final class LogSupport {
+                    private LogSupport() {
+                    }
+
+                    public static void logCollection(Logger log, String label, Collection<?> items) {
+                        log.debug("{} [count={}]", label, items.size());
+                    }
+                }
+                """;
+        String publisher = """
+                package x;
+
+                import java.util.List;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class ParcelPublisher {
+                    private static final Logger log = LoggerFactory.getLogger(ParcelPublisher.class);
+
+                    public void publish(List<String> parcelIds) {
+                        CALL
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(java("LogSupport"), helper,
+                java("ParcelPublisher"), publisher.replace("CALL", "LogSupport.logCollection(log, \"Parcels prepared\", parcelIds);"));
+        fires(Rules.LOG_HELPER, before);
+        gone(Rules.LOG_HELPER, "an explicit log statement at the call site", with(before, java("ParcelPublisher"),
+                publisher.replace("CALL", "log.debug(\"Parcels prepared [count={}]\", parcelIds.size());")));
+        gone(Rules.LOG_HELPER, "a helper that masks", with(before, java("LogSupport"), helper.replace("logCollection", "logMasked")
+                .replace("label, items.size()", "label, items.stream().map(i -> \"***\").toList()"), java("ParcelPublisher"),
+                publisher.replace("CALL", "LogSupport.logMasked(log, \"Parcels prepared\", parcelIds);")));
+    }
+
+    // ---- LOG_IN_LOOP, LOG_VOLUME -----------------------------------------------------------------------------------
+
+    @Test
+    void infoPerItemOfASmallLoop() throws IOException {
+        String exporter = """
+                package x;
+
+                import java.util.List;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ManifestExporter {
+                    private static final Logger log = LoggerFactory.getLogger(ManifestExporter.class);
+
+                    public void export(List<String> manifestIds) {
+                MARKER        for (String manifestId : manifestIds) {
+                            log.info("Manifest exported [manifestId={}]", manifestId);
+                        }
+                    }
+                }
+                """;
+        fires(Rules.LOG_IN_LOOP, Map.of(java("ManifestExporter"), exporter.replace("MARKER", "")));
+        gone(Rules.LOG_IN_LOOP, "// logast:loop-size 10", Map.of(java("ManifestExporter"),
+                exporter.replace("MARKER", "        // logast:loop-size 10\n")));
+    }
+
+    @Test
+    void highVolumeLineAtDebug() throws IOException {
+        String controller = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class TrackingController {
+                    private static final Logger log = LoggerFactory.getLogger(TrackingController.class);
+
+                    @PostMapping("/parcels/{parcelId}/ping")
+                    public void ping(@PathVariable String parcelId) {
+                        log.LEVEL("Tracking ping received [parcelId={}]", parcelId);
+                    }
+                }
+                """;
+        String traffic = "entrypoints:\n  \"POST /parcels/{parcelId}/ping\": 500000\n";
+        fires(Rules.LOG_VOLUME, Map.of(java("TrackingController"), controller.replace("LEVEL", "info"), ".logast/traffic.yaml", traffic));
+        gone(Rules.LOG_VOLUME, "moved to DEBUG", Map.of(java("TrackingController"), controller.replace("LEVEL", "debug"),
+                ".logast/traffic.yaml", traffic));
+    }
+
+    // ---- MDC_CLEAR -------------------------------------------------------------------------------------------------
+
+    @Test
+    void mdcScopedInsteadOfCleared() throws IOException {
+        String job = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.slf4j.MDC;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelSweeper {
+                    private static final Logger log = LoggerFactory.getLogger(ParcelSweeper.class);
+
+                    public void sweep(String parcelId) {
+                BODY    }
+                }
+                """;
+        fires(Rules.MDC_CLEAR, Map.of(java("ParcelSweeper"), job.replace("BODY", """
+                        MDC.put("parcelId", parcelId);
+                        log.info("Parcel swept");
+                        MDC.clear();
+                """)));
+        gone(Rules.MDC_CLEAR, "a scope, no clear()", Map.of(java("ParcelSweeper"), job.replace("BODY", """
+                        try (MDC.MDCCloseable scope = MDC.putCloseable("parcelId", parcelId)) {
+                            log.info("Parcel swept");
+                        }
+                """)));
+    }
+
+    // ---- MESSAGE_VAGUE ---------------------------------------------------------------------------------------------
+
+    @Test
+    void messageNamesTheOperationAndItsOutcome() throws IOException {
+        String publisher = """
+                package x;
+
+                import java.util.List;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class ParcelPublisher {
+                    private static final Logger log = LoggerFactory.getLogger(ParcelPublisher.class);
+
+                    public void publish(List<String> parcelIds) {
+                        LINE
+                    }
+                }
+                """;
+        fires(Rules.MESSAGE_VAGUE, Map.of(java("ParcelPublisher"), publisher.replace("LINE", "log.debug(\"Publishing parcels\");")));
+        gone(Rules.MESSAGE_VAGUE, "\"<Subject> completed\"", Map.of(java("ParcelPublisher"), publisher.replace("LINE",
+                "log.debug(\"Parcel publication completed [count={}]\", parcelIds.size());")));
+    }
+
+    // ---- METRIC_* --------------------------------------------------------------------------------------------------
+
+    private static final String METRICS_CLASS = """
+            package x;
+
+            import io.micrometer.core.instrument.Counter;
+            import io.micrometer.core.instrument.Gauge;
+            import io.micrometer.core.instrument.MeterRegistry;
+            import java.util.List;
+            import java.util.concurrent.atomic.AtomicInteger;
+            import org.springframework.stereotype.Component;
+
+            @Component
+            public class ParcelMetrics {
+                private final MeterRegistry registry;
+            FIELDS
+                public ParcelMetrics(MeterRegistry registry) {
+                    this.registry = registry;
+            INIT    }
+
+            METHODS}
+            """;
+
+    private static Map<String, String> metrics(String fields, String init, String methods) {
+        return Map.of(java("ParcelMetrics"), METRICS_CLASS.replace("FIELDS", fields).replace("INIT", init).replace("METHODS", methods));
+    }
+
+    @Test
+    void gaugeOnAStronglyHeldObject() throws IOException {
+        fires(Rules.METRIC_GAUGE_WEAK_REF, metrics("", "", """
+                    public void trackQueue() {
+                        AtomicInteger queue = new AtomicInteger();
+                        registry.gauge("parcel.queue", queue);
+                    }
+                """));
+        gone(Rules.METRIC_GAUGE_WEAK_REF, "the measured object kept in a field", metrics("    private final AtomicInteger queue;\n",
+                "        this.queue = registry.gauge(\"parcel.queue\", new AtomicInteger());\n", ""));
+        gone(Rules.METRIC_GAUGE_WEAK_REF, "Gauge.builder(..).strongReference(true)", metrics("", "", """
+                    public void trackQueue() {
+                        AtomicInteger queue = new AtomicInteger();
+                        Gauge.builder("parcel.queue", queue, AtomicInteger::get).strongReference(true).register(registry);
+                    }
+                """));
+    }
+
+    @Test
+    void metricTagWithoutAnId() throws IOException {
+        String policy = PACKS + "mdc:\n  keys:\n    parcelId:\n      params: [parcelId]\n";
+        fires(Rules.METRIC_HIGH_CARDINALITY_TAG, with(metrics("", "", """
+                    public void delivered(String parcelId, String channel) {
+                        registry.counter("parcel.delivered", "parcelId", parcelId, "channel", channel).increment();
+                    }
+                """), "logast.yaml", policy));
+        gone(Rules.METRIC_HIGH_CARDINALITY_TAG, "the id tag removed", with(metrics("", "", """
+                    public void delivered(String parcelId, String channel) {
+                        registry.counter("parcel.delivered", "channel", channel).increment();
+                    }
+                """), "logast.yaml", policy));
+    }
+
+    @Test
+    void meterCreatedOnce() throws IOException {
+        fires(Rules.METRIC_REGISTERED_PER_CALL, metrics("", "", """
+                    public void restocked(List<String> skus) {
+                        for (String sku : skus) {
+                            registry.counter("parcel.restocked").increment();
+                        }
+                    }
+                """));
+        gone(Rules.METRIC_REGISTERED_PER_CALL, "created once in the constructor, kept in a field", metrics(
+                "    private final Counter restocked;\n", "        this.restocked = registry.counter(\"parcel.restocked\");\n", """
+                            public void restocked(List<String> skus) {
+                                for (String sku : skus) {
+                                    restocked.increment();
+                                }
+                            }
+                        """));
+    }
+
+    @Test
+    void sameTagKeysEverywhere() throws IOException {
+        String failed = """
+                    public void reservationFailed(String channel, String reason) {
+                        Counter.builder("parcel.reserved").tag("channel", channel).tag("reason", reason).register(registry).increment();
+                    }
+                """;
+        fires(Rules.METRIC_TAG_KEYS_MISMATCH, metrics("", "", """
+                    public void reserved(String channel) {
+                        Counter.builder("parcel.reserved").tag("channel", channel).register(registry).increment();
+                    }
+
+                """ + failed));
+        gone(Rules.METRIC_TAG_KEYS_MISMATCH, "reason=\"none\" on the success counter", metrics("", "", """
+                    public void reserved(String channel) {
+                        Counter.builder("parcel.reserved").tag("channel", channel).tag("reason", "none").register(registry).increment();
+                    }
+
+                """ + failed));
+    }
+
+    @Test
+    void outcomeTagFromTheVocabulary() throws IOException {
+        String policy = PACKS + "metrics:\n  tags:\n    outcome:\n      values: [success, failure]\n";
+        fires(Rules.METRIC_TAG_VALUE, with(metrics("", "", """
+                    public void delivered() {
+                        registry.counter("parcel.delivered", "outcome", "ok").increment();
+                    }
+                """), "logast.yaml", policy));
+        gone(Rules.METRIC_TAG_VALUE, "one of [success, failure]", with(metrics("", "", """
+                    public void delivered() {
+                        registry.counter("parcel.delivered", "outcome", "success").increment();
+                    }
+                """), "logast.yaml", policy));
+    }
+
+    @Test
+    void entrypointTimedByItsObservation() throws IOException {
+        String controller = """
+                package x;
+
+                import io.micrometer.core.instrument.MeterRegistry;
+                import io.micrometer.core.instrument.Timer;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class ManifestController {
+                    private final MeterRegistry registry;
+
+                    public ManifestController(MeterRegistry registry) {
+                        this.registry = registry;
+                    }
+
+                    @GetMapping("/manifests/daily")
+                    public String daily() {
+                BODY    }
+                }
+                """;
+        fires(Rules.METRIC_DIRECT_REGISTRY, Map.of(java("ManifestController"), controller.replace("BODY", """
+                        Timer.Sample sample = Timer.start(registry);
+                        try {
+                            return "manifest";
+                        } finally {
+                            sample.stop(registry.timer("manifest.daily"));
+                        }
+                """)));
+        gone(Rules.METRIC_DIRECT_REGISTRY, "the hand-made timer dropped (http.server.requests times it)", Map.of(java("ManifestController"),
+                controller.replace("BODY", "        return \"manifest\";\n")));
+    }
+
+    @Test
+    void loggedOutcomeIsCounted() throws IOException {
+        String courier = """
+                package x;
+
+                import io.micrometer.core.instrument.Counter;
+                import io.micrometer.core.instrument.MeterRegistry;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class Courier {
+                    private static final Logger log = LoggerFactory.getLogger(Courier.class);
+                    private final MeterRegistry registry;
+
+                    public Courier(MeterRegistry registry) {
+                        this.registry = registry;
+                    }
+
+                    public void deliver(String parcelId) {
+                        log.info("Parcel delivered [parcelId={}]", parcelId);
+                COUNT    }
+                }
+                """;
+        fires(Rules.METRIC_OUTCOME_UNMEASURED, Map.of(java("Courier"), courier.replace("COUNT", "")));
+        gone(Rules.METRIC_OUTCOME_UNMEASURED, "a counter for the outcome", Map.of(java("Courier"), courier.replace("COUNT",
+                "        Counter.builder(\"parcel\").tag(\"outcome\", \"delivered\").register(registry).increment();\n")));
+        // the starter's Outcomes is not on the fixture's classpath: the call is recognised by its name
+        gone(Rules.METRIC_OUTCOME_UNMEASURED, "Outcomes.count(..) after the line", Map.of(java("Courier"), courier.replace("COUNT",
+                "        Outcomes.count(\"parcel\", \"delivered\");\n"), java("Outcomes"), """
+                package x;
+
+                public final class Outcomes {
+                    public static void count(String name, String outcome) {
+                    }
+                }
+                """));
+    }
+
+    // ---- ROW_BY_ROW_WRITE ------------------------------------------------------------------------------------------
+
+    @Test
+    void oneBatchWriteInsteadOfOnePerRow() throws IOException {
+        String job = """
+                package x;
+
+                import java.util.ArrayList;
+                import java.util.List;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelPurge {
+                    private final ParcelRepository repository;
+
+                    public ParcelPurge(ParcelRepository repository) {
+                        this.repository = repository;
+                    }
+
+                    public void purge() {
+                BODY    }
+                }
+                """;
+        String repository = """
+                package x;
+
+                import java.util.Collection;
+                import java.util.List;
+                import java.util.Map;
+                import java.util.concurrent.ConcurrentHashMap;
+                import org.springframework.stereotype.Repository;
+
+                @Repository
+                public class ParcelRepository {
+                    private final Map<String, String> parcels = new ConcurrentHashMap<>();
+
+                    public Collection<String> findAll() {
+                        return List.copyOf(parcels.keySet());
+                    }
+
+                    public void delete(String parcelId) {
+                        parcels.remove(parcelId);
+                    }
+
+                    public void deleteAll(Collection<String> parcelIds) {
+                        parcelIds.forEach(parcels::remove);
+                    }
+
+                    public void deleteEmpty() {
+                        parcels.values().removeIf(String::isEmpty);
+                    }
+                }
+                """;
+        fires(Rules.ROW_BY_ROW_WRITE, Map.of(java("ParcelPurge"), job.replace("BODY", """
+                        for (String parcelId : repository.findAll()) {
+                            if (parcelId.startsWith("E")) {
+                                repository.delete(parcelId);
+                            }
+                        }
+                """), java("ParcelRepository"), repository));
+        gone(Rules.ROW_BY_ROW_WRITE, "collected, then one batch write", Map.of(java("ParcelPurge"), job.replace("BODY", """
+                        List<String> empty = new ArrayList<>();
+                        for (String parcelId : repository.findAll()) {
+                            if (parcelId.startsWith("E")) {
+                                empty.add(parcelId);
+                            }
+                        }
+                        repository.deleteAll(empty);
+                """), java("ParcelRepository"), repository));
+        gone(Rules.ROW_BY_ROW_WRITE, "one bulk statement", Map.of(java("ParcelPurge"), job.replace("BODY", """
+                        repository.deleteEmpty();
+                """), java("ParcelRepository"), repository));
+    }
+
+    // ---- UNBOUNDED_EXECUTOR (Executors factory) --------------------------------------------------------------------
+
+    @Test
+    void handMadePoolWithABoundedQueue() throws IOException {
+        String jobs = """
+                package x;
+
+                import java.util.concurrent.ArrayBlockingQueue;
+                import java.util.concurrent.ExecutorService;
+                import java.util.concurrent.Executors;
+                import java.util.concurrent.ThreadPoolExecutor;
+                import java.util.concurrent.TimeUnit;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ManifestJobs {
+                    private final ExecutorService pool = POOL;
+
+                    public void start(Runnable job) {
+                        pool.execute(job);
+                    }
+                }
+                """;
+        fires(Rules.UNBOUNDED_EXECUTOR, Map.of(java("ManifestJobs"), jobs.replace("POOL", "Executors.newFixedThreadPool(4)")));
+        gone(Rules.UNBOUNDED_EXECUTOR, "new ThreadPoolExecutor(.., new ArrayBlockingQueue<>(capacity), CallerRunsPolicy)",
+                Map.of(java("ManifestJobs"), jobs.replace("POOL", "new ThreadPoolExecutor(4, 4, 60, TimeUnit.SECONDS,\n"
+                        + "            new ArrayBlockingQueue<>(100), new ThreadPoolExecutor.CallerRunsPolicy())")));
+    }
+
+    // ---- ASYNC_CONTEXT_LOSS (parallel stream), ASYNC_ERROR_LOST ----------------------------------------------------
+
+    @Test
+    void sequentialStreamKeepsTheContext() throws IOException {
+        String exporter = """
+                package x;
+
+                import java.util.List;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ManifestWriter {
+                    private static final Logger log = LoggerFactory.getLogger(ManifestWriter.class);
+
+                    public void write(List<String> manifestIds) {
+                        manifestIds.STREAM().forEach(this::writeOne);
+                    }
+
+                    private void writeOne(String manifestId) {
+                        log.debug("Manifest written");
+                    }
+                }
+                """;
+        fires(Rules.ASYNC_CONTEXT_LOSS, Map.of(java("ManifestWriter"), exporter.replace("STREAM", "parallelStream")));
+        gone(Rules.ASYNC_CONTEXT_LOSS, "a sequential stream", Map.of(java("ManifestWriter"), exporter.replace("STREAM", "stream")));
+    }
+
+    @Test
+    void submittedWorkKeepsItsFailure() throws IOException {
+        String sweeper = """
+                package x;
+
+                import java.util.concurrent.ExecutorService;
+                import java.util.concurrent.Future;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class CacheSweeper {
+                    private static final Logger log = LoggerFactory.getLogger(CacheSweeper.class);
+                    private final ExecutorService pool;
+
+                    public CacheSweeper(ExecutorService pool) {
+                        this.pool = pool;
+                    }
+
+                    public RESULT sweepLater() {
+                        CALL;
+                    }
+
+                    private void sweep() {
+                        log.debug("Cache sweep completed");
+                    }
+                }
+                """;
+        fires(Rules.ASYNC_ERROR_LOST, Map.of(java("CacheSweeper"), sweeper.replace("RESULT", "void").replace("CALL", "pool.submit(this::sweep)")));
+        gone(Rules.ASYNC_ERROR_LOST, "execute(…) for fire-and-forget work", Map.of(java("CacheSweeper"),
+                sweeper.replace("RESULT", "void").replace("CALL", "pool.execute(this::sweep)")));
+        gone(Rules.ASYNC_ERROR_LOST, "the Future kept (returned to the caller)", Map.of(java("CacheSweeper"),
+                sweeper.replace("RESULT", "Future<?>").replace("CALL", "return pool.submit(this::sweep)")));
+    }
+
+    // ---- AREA_MDC_MISSING ------------------------------------------------------------------------------------------
+
+    @Test
+    void areaKeySetWhereWorkEnters() throws IOException {
+        String policy = PACKS + """
+                areas:
+                  billing:
+                    packages: [x.billing]
+                    requiredMdc: [parcelId]
+                """;
+        String controller = """
+                package x;
+
+                import org.slf4j.MDC;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+                import x.billing.Biller;
+
+                @RestController
+                public class ParcelController {
+                    private final Biller biller;
+
+                    public ParcelController(Biller biller) {
+                        this.biller = biller;
+                    }
+
+                    @PostMapping("/parcels/{ref}/bill")
+                    public void bill(@PathVariable String ref) {
+                BODY    }
+                }
+                """;
+        Map<String, String> before = Map.of("logast.yaml", policy, java("ParcelController"),
+                controller.replace("BODY", "        biller.bill(ref, 100);\n"), "src/main/java/x/billing/Biller.java", """
+                        package x.billing;
+
+                        import org.slf4j.Logger;
+                        import org.slf4j.LoggerFactory;
+                        import org.springframework.stereotype.Component;
+
+                        @Component
+                        public class Biller {
+                            private static final Logger log = LoggerFactory.getLogger(Biller.class);
+
+                            public void bill(String ref, long amountCents) {
+                                charge(amountCents);
+                            }
+
+                            private void charge(long amountCents) {
+                                log.info("Charge completed [amountCents={}]", amountCents);
+                            }
+                        }
+                        """);
+        fires(Rules.AREA_MDC_MISSING, before);
+        gone(Rules.AREA_MDC_MISSING, "parcelId set once at the entrypoint", with(before, java("ParcelController"), controller.replace("BODY", """
+                        try (MDC.MDCCloseable scope = MDC.putCloseable("parcelId", ref)) {
+                            biller.bill(ref, 100);
+                        }
+                """)));
     }
 }
