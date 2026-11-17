@@ -8,9 +8,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ReportController {
     private final MeterRegistry registry;
+    private final Timer renderTimer;
 
+    /** #58 f: near miss, a timer registered once in the constructor, not per request. */
     public ReportController(MeterRegistry registry) {
         this.registry = registry;
+        this.renderTimer = registry.timer("report.render"); // expect-not: METRIC_DIRECT_REGISTRY
     }
 
     @GetMapping("/reports/daily")
