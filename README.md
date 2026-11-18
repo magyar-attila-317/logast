@@ -28,87 +28,7 @@ What a service gets out of it:
 **Works with** Spring Boot 3 and 4 services on Java 17+, built with Gradle, logging through SLF4J + Logback, tracing
 with Micrometer Tracing / OpenTelemetry. logast itself runs on Java 21+ (25 recommended).
 
-### What it changes, in code
-
-Shortened from the end-to-end test service (`e2e/before` → `e2e/expected`).
-
-The business id goes into MDC for the whole operation, and stops being repeated in every message:
-
-<table>
-<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
-<tr>
-<td>
-
-```java
-log.info("Coupon redemption started [couponId={}]",
-        request.code());
-sender.send(request.code());
-log.info("Coupon redemption completed [couponId={}, tableId={}]",
-        request.code(), request.tableId());
-```
-
-</td>
-<td>
-
-```java
-try (var mdc = MdcScope.of("couponId", request.code())) {
-    log.info("Coupon redemption started");
-    sender.send(request.code());
-    log.info("Coupon redemption completed [tableId={}]",
-            request.tableId());
-}
-```
-
-</td>
-</tr>
-</table>
-
-A failure keeps its cause, and the error line carries the order id from MDC:
-
-<table>
-<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
-<tr>
-<td>
-
-```java
-try {
-    gateway(order);
-} catch (IllegalStateException e) {
-    log.error("Charge failed for order {}", order.id(), e);
-    throw new PaymentException("charge failed", e);
-}
-// …
-} catch (IllegalStateException e) {
-    throw new PaymentException(
-        "refund failed: " + e.getMessage());
-}
-```
-
-</td>
-<td>
-
-```java
-try (var mdc = MdcScope.of("orderId", order.id())) {
-    try {
-        gateway(order);
-    } catch (IllegalStateException e) {
-        log.error("Charge failed for order", e);
-        throw new PaymentException("charge failed", e);
-    }
-}
-// …
-} catch (IllegalStateException e) {
-    throw new PaymentException(
-        "refund failed: " + e.getMessage(), e);
-}
-```
-
-</td>
-</tr>
-</table>
-
-What logast can't decide on its own (a vague message, an unmeasured outcome, a missing audit record) it reports, with
-what to decide and when it counts as done.
+**See it in code:** [docs/examples.md](docs/examples.md) shows before/after snippets for each pack.
 
 ---
 
@@ -310,6 +230,7 @@ Properties, modes and publishing it to your repository: [docs/starter.md](docs/s
 
 | page | what is in it |
 |---|---|
+| [docs/examples.md](docs/examples.md) | before/after code: what `logast apply` changes, per pack |
 | [docs/commands.md](docs/commands.md) | every command, its options and example output |
 | [docs/rules.md](docs/rules.md) | packs and rules: severity, what each finds, how it is fixed |
 | [docs/configuration.md](docs/configuration.md) | every `logast.yaml` setting |
