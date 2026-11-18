@@ -25,12 +25,35 @@ Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
 | RETRY_INACTIVE | high | `@Retryable` / `@ConcurrencyLimit` (Spring Framework 7) without `@EnableResilientMethods`, Spring Retry's `@Retryable` / `@CircuitBreaker` without `@EnableRetry`: the annotations are metadata only, the method runs once | AUTO: adds the enabling annotation to the `@SpringBootApplication` class (Spring Retry's only with AspectJ on the classpath); report otherwise |
 | RETRY_IN_TRANSACTION | medium | a `@Retryable` `@Transactional` method (Spring Framework 7 or Spring Retry) called from another class inside a transaction: it joins that transaction, so its retries run in one already marked rollback-only and the caller's commit fails. Not with `REQUIRES_NEW` / `NESTED` / `NOT_SUPPORTED` | report: retry the method that starts the transaction, or `REQUIRES_NEW` |
 | RETRY_SETTINGS_HARDCODED | low | `@Retryable` (Spring Framework 7 or Spring Retry) with its attempts and delays written into the annotation (literals or the library defaults): changing them needs a rebuild and a release | AUTO: the settings move into `application.yml` (`resilience.retry.*`), bound by a generated `RetrySettings` record, and the annotation reads them through placeholders. See [Retry settings](#retry-settings-in-configuration) |
+| RETRY_RECOMMENDED | low | a method whose outgoing HTTP calls (RestClient, RestTemplate, WebClient, HTTP interface, OpenFeign) are all idempotent (GET / HEAD / PUT / DELETE / OPTIONS), reached from an entrypoint along a path where nothing retries. Never for POST / PATCH / an unknown method. See [Where retry is recommended](#where-retry-is-recommended) | report: from a request at most one quick retry inside its timeout; from a job or consumer a retry with backoff, settings in `resilience.retry.defaults` |
+| NESTED_RETRY | medium | a retried method (`@Retryable`, Resilience4j `@Retry`) that calls, on the same thread through another bean (up to 5 calls deep), another retried method or a client with its own retry (`retryWhen`, `RetryTemplate`): every outer attempt runs all inner attempts | report: retry at one layer only |
 | ROW_BY_ROW_WRITE | medium | a loop over a query result that writes one row per item | report: a batch update / one set-based statement |
 | SHUTDOWN_NOT_GRACEFUL | medium | a web service with `server.shutdown: immediate` (graceful shutdown is Spring Boot's default); `spring.lifecycle.timeout-per-shutdown-phase` (30s when not set) shorter than an HTTP client read timeout, `spring.mvc.async.request-timeout` or `spring.transaction.default-timeout` the configuration sets: a rollout cuts that work off. Only with a `@SpringBootApplication` | report |
 | HEALTH_PROBE_MISCONFIGURED | medium | `management.endpoint.health.probes.enabled: false` (switches the liveness/readiness groups off, on Kubernetes too); a database, broker or other external system in the liveness group (every instance restarts while it is down). Only with a `@SpringBootApplication` | report |
 | READINESS_WITHOUT_DATABASE | low | a service with a database (JDBC, JPA, `@Transactional`) and Actuator whose readiness group does not include `db` (Spring Boot adds no checks to it). The Spring Boot reference calls it a judgement call: a shared database takes every instance out of service at once | report (low): include it, or switch the rule off for the service |
 | CACHE_UNBOUNDED | medium | `@EnableCaching` on Spring Boot's simple provider (no cache library, or `spring.cache.type: simple`: ConcurrentHashMaps that never evict), a `ConcurrentMapCacheManager` bean, Caffeine without `maximumSize` / `maximumWeight` | report |
 | BLOCKING_WAIT_UNBOUNDED | medium | `future.get()`, `join()`, `latch.await()` without timeout on a request/message path (`orTimeout(..)` in the chain, or an earlier bounded wait such as `allOf(a, b).get(5, SECONDS)` on the same futures, counts as one) | report |
+
+## Where retry is recommended
+
+A blanket "retry every external call" does harm: a repeated POST can book twice, retries at several layers multiply
+(3 × 3 = 9 calls), retries past the caller's timeout only add load, and a service mesh, HTTP client or message
+redelivery may already retry. So RETRY_RECOMMENDED is narrow:
+
+- **Only idempotent calls.** GET, HEAD, PUT, DELETE and OPTIONS. A method that also makes a POST / PATCH call, or a
+  call whose HTTP method logast cannot tell (`exchange(..)` with a `RequestEntity`, `@HttpExchange` without a method),
+  is not reported.
+- **Only where nothing retries yet.** The path from every entrypoint to the call is checked: `@Retryable` (Spring
+  Framework 7, Spring Retry), Spring Retry's `@CircuitBreaker`, Resilience4j `@Retry`, a `RetryTemplate` /
+  `RetryOperations` or Spring Cloud CircuitBreaker call, `retry` / `retryWhen` on the Mono/Flux, or a Feign `Retryer`
+  bean count as retry. Kafka and RabbitMQ listeners count too: their containers redeliver a failed message.
+- **Worded by caller.** From an HTTP request: at most one retry with a short backoff, inside the caller's timeout. From
+  a scheduled job, a batch or a message consumer: a retry with backoff, its settings in `resilience.retry.defaults`
+  (see below).
+
+**POST and PATCH (no finding).** A retry is safe only when the server can recognise a repeat: send an idempotency key
+(`Idempotency-Key` header) that the server stores with the result, or retry only failures where the request surely
+never arrived (connect refused / connect timeout), not read timeouts or 5xx responses.
 
 ## Retry settings in configuration
 

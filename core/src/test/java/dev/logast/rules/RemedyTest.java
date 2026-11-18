@@ -830,6 +830,75 @@ class RemedyTest {
         gone(Rules.CACHE_UNBOUNDED, "no @EnableCaching", with(before, java("ParcelApp"), PARCEL_APP));
     }
 
+    // ---- RETRY_RECOMMENDED, NESTED_RETRY (#105) --------------------------------------------------------------------
+
+    private static final String QUOTE_CLIENT = """
+            package x;
+
+            import org.springframework.resilience.annotation.Retryable;
+            import org.springframework.stereotype.Component;
+            import org.springframework.web.client.RestClient;
+
+            @Component
+            public class QuoteClient {
+                private final RestClient rest = RestClient.create("http://quotes");
+
+                RETRY
+                public String quote(String code) {
+                    return rest.VERB().uri("/quotes/{code}", code).retrieve().body(String.class);
+                }
+            }
+            """;
+    private static final String QUOTE_JOB = """
+            package x;
+
+            import org.springframework.resilience.annotation.Retryable;
+            import org.springframework.scheduling.annotation.Scheduled;
+            import org.springframework.stereotype.Component;
+
+            @Component
+            public class QuoteJob {
+                private final QuoteClient client;
+
+                public QuoteJob(QuoteClient client) {
+                    this.client = client;
+                }
+
+                RETRY
+                @Scheduled(fixedDelay = 60000)
+                public void refresh() {
+                    System.out.println(client.quote("EUR"));
+                }
+            }
+            """;
+
+    private static String quoteClient(String retry, String verb) {
+        return QUOTE_CLIENT.replace("RETRY", retry).replace("VERB", verb);
+    }
+
+    @Test
+    void idempotentCallRetriedOnItsPath() throws IOException {
+        Map<String, String> before = Map.of(java("QuoteClient"), quoteClient("", "get"), java("QuoteJob"), QUOTE_JOB.replace("RETRY", ""));
+        fires(Rules.RETRY_RECOMMENDED, before);
+        fires(Rules.RETRY_RECOMMENDED, with(before, "logast.yaml", "packs: [resilience]\n"));
+        gone(Rules.RETRY_RECOMMENDED, "@Retryable on the client method", with(before, java("QuoteClient"),
+                quoteClient("@Retryable(maxRetries = 2)", "get")));
+        gone(Rules.RETRY_RECOMMENDED, "@Retryable on the caller", with(before, java("QuoteJob"),
+                QUOTE_JOB.replace("RETRY", "@Retryable(maxRetries = 2)")));
+        gone(Rules.RETRY_RECOMMENDED, "not idempotent: a POST is never reported", with(before, java("QuoteClient"),
+                quoteClient("", "post")));
+    }
+
+    @Test
+    void retryAtOneLayerOnly() throws IOException {
+        Map<String, String> before = Map.of(java("QuoteClient"), quoteClient("@Retryable(maxRetries = 2)", "get"),
+                java("QuoteJob"), QUOTE_JOB.replace("RETRY", "@Retryable(maxRetries = 2)"));
+        fires(Rules.NESTED_RETRY, before);
+        fires(Rules.NESTED_RETRY, with(before, "logast.yaml", "packs: [resilience]\n"));
+        gone(Rules.NESTED_RETRY, "the outer retry removed", with(before, java("QuoteJob"), QUOTE_JOB.replace("RETRY", "")));
+        gone(Rules.NESTED_RETRY, "the inner retry removed", with(before, java("QuoteClient"), quoteClient("", "get")));
+    }
+
     // ---- RETRY_INACTIVE (#90) --------------------------------------------------------------------------------------
 
     @Test

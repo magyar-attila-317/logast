@@ -1,7 +1,7 @@
 logast · 82 files · 27 entrypoints · 89/222 methods reachable · 160 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 63.0% (jobs 9/9 · http 8/18)   (places that should log and do)
-79 orders: 0 AUTO, 25 NEEDS TEXT, 54 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+81 orders: 0 AUTO, 25 NEEDS TEXT, 56 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: coupon, order, agreement
 
 HTC-16196c  high  REPORT-ONLY  HTTP_CLIENT_UNTRACED  src/main/java/com/example/e2e/crate/CrateController.java:15
@@ -286,6 +286,18 @@ OUM-4809f0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
   "Coupon redemption completed" is logged but not counted (outcome=completed, frequency unknown: no rate for "POST /coupons/redeem" in .logast/traffic.yaml)
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("coupon.redemption", "completed")), "tag" (Outcomes.tag("completed") on the running timer) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
+RRC-199180  low  REPORT-ONLY  RETRY_RECOMMENDED  src/main/java/com/example/e2e/crate/CrateController.java:38  CrateController.label
+  CrateController.label makes an idempotent HTTP call that nothing retries, reached from GET /crates/{crateCode}/label (request): one dropped connection or 503 fails the request
+  path: GET /crates/{crateCode}/label → CrateController.label
+  why: only idempotent calls (GET / HEAD / PUT / DELETE / OPTIONS); no @Retryable, Resilience4j @Retry, RetryTemplate, retryWhen or Spring Cloud CircuitBreaker on the path, no Kafka / RabbitMQ redelivery
+  note: Retry it at most once, with a short backoff, inside the caller's timeout: @Retryable(maxRetries = 1, delay = 100) on CrateController.label (Spring Framework 7, needs @EnableResilientMethods; the next apply moves the settings into application.yml, under resilience.retry.usages when they differ from resilience.retry.defaults), or retryWhen(Retry.backoff(1, Duration.ofMillis(100))) on a WebClient. Skip it when a service mesh or gateway already retries.
+  done when: the method, or a method on every path to it from an entrypoint, retries (@Retryable, Resilience4j @Retry, RetryTemplate, retryWhen, Spring Cloud CircuitBreaker), or it makes a non-idempotent call
+RRC-4aa07b  low  REPORT-ONLY  RETRY_RECOMMENDED  src/main/java/com/example/e2e/crate/CrateController.java:43  CrateController.fallbackLabel
+  CrateController.fallbackLabel makes an idempotent HTTP call that nothing retries, reached from GET /crates/{crateCode}/fallback-label (request): one dropped connection or 503 fails the request
+  path: GET /crates/{crateCode}/fallback-label → CrateController.fallbackLabel
+  why: only idempotent calls (GET / HEAD / PUT / DELETE / OPTIONS); no @Retryable, Resilience4j @Retry, RetryTemplate, retryWhen or Spring Cloud CircuitBreaker on the path, no Kafka / RabbitMQ redelivery
+  note: Retry it at most once, with a short backoff, inside the caller's timeout: @Retryable(maxRetries = 1, delay = 100) on CrateController.fallbackLabel (Spring Framework 7, needs @EnableResilientMethods; the next apply moves the settings into application.yml, under resilience.retry.usages when they differ from resilience.retry.defaults), or retryWhen(Retry.backoff(1, Duration.ofMillis(100))) on a WebClient. Skip it when a service mesh or gateway already retries.
+  done when: the method, or a method on every path to it from an entrypoint, retries (@Retryable, Resilience4j @Retry, RetryTemplate, retryWhen, Spring Cloud CircuitBreaker), or it makes a non-idempotent call
 SUG-f2ede1  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/crate/CrateErrors.java:17  CrateErrors.unexpected
   Generated wording "Request failed unexpectedly": say it in domain terms
   - "Request failed unexpectedly"
@@ -448,7 +460,7 @@ Applied earlier: 102 changes in 55 files (git diff to review)
 Waiting on you — logast can't continue without these:
   25 log lines need wording        → write "MSG" in .logast/fills.json
   12 outcomes: count, tag or skip  → .logast/metrics.json
-  42 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
+  44 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 

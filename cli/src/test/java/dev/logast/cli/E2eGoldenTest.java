@@ -5971,6 +5971,190 @@ class E2eGoldenTest {
         assertThat(alone.get("FINDINGS.txt")).contains(expected);
     }
 
+    /** #105: the shapes of {@link #idempotentCallsWithoutRetryAndNestedRetriesAreReported()}. */
+    private static final IoAction RATE_RETRIES = app -> {
+        Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/rate"));
+        Files.writeString(dir.resolve("RateConfig.java"), """
+                package com.example.e2e.rate;
+
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.resilience.annotation.EnableResilientMethods;
+
+                @Configuration
+                @EnableResilientMethods
+                public class RateConfig {
+                }
+                """);
+        // current: a GET a scheduled job reaches; history: a GET a request reaches; margin: a GET with @Retryable;
+        // submit: a POST (a retry could book twice)
+        Files.writeString(dir.resolve("RateClient.java"), """
+                package com.example.e2e.rate;
+
+                import org.springframework.resilience.annotation.Retryable;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+
+                @Component
+                public class RateClient {
+                    private final RestClient rest;
+
+                    public RateClient(RestClient.Builder builder) {
+                        this.rest = builder.baseUrl("http://rates").build();
+                    }
+
+                    public String current(String code) {
+                        return rest.get().uri("/rates/{code}", code).retrieve().body(String.class);
+                    }
+
+                    public String history(String code) {
+                        return rest.get().uri("/rates/{code}/history", code).retrieve().body(String.class);
+                    }
+
+                    @Retryable(maxRetries = 2)
+                    public String margin(String code) {
+                        return rest.get().uri("/margins/{code}", code).retrieve().body(String.class);
+                    }
+
+                    public void submit(String code) {
+                        rest.post().uri("/quotes/{code}", code).retrieve().toBodilessEntity();
+                    }
+                }
+                """);
+        // a WebClient call with its own retry
+        Files.writeString(dir.resolve("RateFeed.java"), """
+                package com.example.e2e.rate;
+
+                import java.time.Duration;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.reactive.function.client.WebClient;
+                import reactor.util.retry.Retry;
+
+                @Component
+                public class RateFeed {
+                    private final WebClient client;
+
+                    public RateFeed(WebClient.Builder builder) {
+                        this.client = builder.baseUrl("http://feed").build();
+                    }
+
+                    public String latest(String code) {
+                        return client.get().uri("/latest/{code}", code).retrieve().bodyToMono(String.class)
+                                .retryWhen(Retry.backoff(2, Duration.ofMillis(200))).block();
+                    }
+                }
+                """);
+        // a retried method calling another retried method: the attempts multiply
+        Files.writeString(dir.resolve("RateLedger.java"), """
+                package com.example.e2e.rate;
+
+                import org.springframework.resilience.annotation.Retryable;
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class RateLedger {
+                    private final RateClient client;
+
+                    public RateLedger(RateClient client) {
+                        this.client = client;
+                    }
+
+                    @Retryable(maxRetries = 2)
+                    public String record(String code) {
+                        return client.margin(code);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("RateSync.java"), """
+                package com.example.e2e.rate;
+
+                import org.springframework.scheduling.annotation.Scheduled;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class RateSync {
+                    private final RateClient client;
+                    private final RateFeed feed;
+
+                    public RateSync(RateClient client, RateFeed feed) {
+                        this.client = client;
+                        this.feed = feed;
+                    }
+
+                    @Scheduled(fixedDelay = 60000)
+                    public void refresh() {
+                        System.out.println(client.current("EUR") + feed.latest("EUR"));
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("RateController.java"), """
+                package com.example.e2e.rate;
+
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class RateController {
+                    private final RateClient client;
+                    private final RateLedger ledger;
+
+                    public RateController(RateClient client, RateLedger ledger) {
+                        this.client = client;
+                        this.ledger = ledger;
+                    }
+
+                    @GetMapping("/rates/{code}/history")
+                    public String history(@PathVariable String code) {
+                        return client.history(code);
+                    }
+
+                    @GetMapping("/rates/{code}/margin")
+                    public String margin(@PathVariable String code) {
+                        return ledger.record(code);
+                    }
+
+                    @PostMapping("/rates/{code}/quotes")
+                    public void quote(@PathVariable String code) {
+                        client.submit(code);
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #105: retry where it is safe and missing, and not twice. A GET nothing retries is reported (RETRY_RECOMMENDED):
+     * reached from a scheduled job with backoff settings from resilience.retry.defaults, from a request with at most one
+     * quick retry inside the caller's timeout. A GET with @Retryable, a WebClient call with retryWhen and a POST (a
+     * retry could repeat its side effect) are not. A @Retryable method calling another @Retryable method through its
+     * bean multiplies the attempts (NESTED_RETRY). Every file must equal e2e/expected-retry-coverage; the resilience
+     * pack alone reports the same.
+     */
+    @Test
+    void idempotentCallsWithoutRetryAndNestedRetriesAreReported() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, RATE_RETRIES);
+        String findings = actual.get("FINDINGS.txt");
+        List<String> expected = List.of(
+                "RateClient.current makes an idempotent HTTP call that nothing retries, reached from",
+                "(scheduled job): one dropped connection or 503 fails the run",
+                "RateClient.history makes an idempotent HTTP call that nothing retries, reached from",
+                "(request): one dropped connection or 503 fails the request",
+                "Retry it at most once, with a short backoff, inside the caller's timeout",
+                "Retry it with backoff: @Retryable(maxRetriesString = \"${resilience.retry.defaults.max-retries}\"",
+                "RateLedger.record retries and calls RateClient.margin, which retries again");
+        assertThat(findings).contains(expected).doesNotContain("RateClient.margin makes").doesNotContain("RateClient.submit makes")
+                .doesNotContain("RateFeed.latest makes").doesNotContain("RateClient.margin retries and calls");
+        golden(EXPECTED.resolveSibling("expected-retry-coverage"), actual);
+
+        // the resilience pack on its own reports the same
+        Map<String, String> alone = migrate(tmp.resolve("resilience-only"), CLASSPATH, app -> {
+            RATE_RETRIES.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [resilience]"));
+        });
+        assertThat(alone.get("FINDINGS.txt")).contains(expected);
+    }
+
     /** #104: stand-ins for Spring Retry 2.x (not on the e2e classpath): the attributes the retry settings scenario uses. */
     private static final Map<String, String> SPRING_RETRY_STUBS = Map.of(
             "org/springframework/retry/annotation/Retryable.java", """

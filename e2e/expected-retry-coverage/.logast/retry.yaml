@@ -1,0 +1,11 @@
+# Retry settings per @Retryable usage (optional). By default a usage reads the shared block of its kind in
+# application.yml: resilience.retry.defaults (Spring Framework) or resilience.retry.spring-retry-defaults
+# (Spring Retry). specific: true gives it its own block, resilience.retry.usages.<class>.<method>, starting
+# from the shared values or from values: given here; the next `logast apply` moves it. false points it back to
+# the shared block (its own block stays in application.yml, unused). Empty: logast decides (a usage whose
+# settings differ from the shared ones keeps them in a block of its own).
+usages:
+  RateClient.margin:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:24
+    specific: false
+  RateLedger.record:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateLedger.java:15
+    specific: false

@@ -32,7 +32,8 @@ import java.util.stream.Stream;
  *   <li>SHUTDOWN_NOT_GRACEFUL, HEALTH_PROBE_MISCONFIGURED, READINESS_WITHOUT_DATABASE: rollouts that cut work off and
  *       traffic that reaches instances that cannot serve it (service-level: only with a @SpringBootApplication);</li>
  *   <li>CACHE_UNBOUNDED: Spring caches without a size bound;</li>
- *   <li>RETRY_SETTINGS_HARDCODED: retry attempts and delays written into @Retryable ({@link RetrySettingsRules}).</li>
+ *   <li>RETRY_SETTINGS_HARDCODED: retry attempts and delays written into @Retryable ({@link RetrySettingsRules});</li>
+ *   <li>RETRY_RECOMMENDED, NESTED_RETRY: idempotent calls nothing retries, retries inside retries ({@link RetryCoverageRules}).</li>
  * </ul>
  * Method bodies and field initializers are both scanned (executors and clients usually live in fields).
  */
@@ -115,6 +116,9 @@ final class ResilienceRules {
         }
         if (ctx.enabled(Rules.RETRY_SETTINGS_HARDCODED)) {
             new RetrySettingsRules(ctx).run();
+        }
+        if (ctx.enabled(Rules.RETRY_RECOMMENDED) || ctx.enabled(Rules.NESTED_RETRY)) {
+            new RetryCoverageRules(ctx).run();
         }
         if (!clients && !executors && !waits && !jdbc && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
             return;
