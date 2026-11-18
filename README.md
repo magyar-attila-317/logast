@@ -272,3 +272,8 @@ snapshot in `e2e/expected*`.
 
 Rules for changes (every change comes with a test that fails without it, issues, the e2e matrix):
 [AGENTS.md](AGENTS.md).
+
+## License
+
+[Apache License 2.0](LICENSE): use, fork, change and redistribute it, also commercially. Copies and derivative works
+keep the license and the [NOTICE](NOTICE) file, which names logast as their source, and say what they changed.
