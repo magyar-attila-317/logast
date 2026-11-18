@@ -609,9 +609,13 @@ final class TracingRules {
      * TRACING_EXPORT_UNCONFIGURED: Micrometer Tracing with OpenTelemetry and Spring Boot's OTLP export on the
      * classpath, but no endpoint anywhere. Spring Boot creates the OTLP span exporter only when the endpoint property is
      * set (OtlpTracingConfigurations.ConnectionDetails is {@code @ConditionalOnProperty} on
-     * management.opentelemetry.tracing.export.otlp.endpoint in Boot 4.1, management.otlp.tracing.endpoint in Boot 3.5):
-     * spans are created and their ids logged, but sent nowhere. Also reports export switched off in the base
-     * configuration. The endpoint differs per environment, so this only reports.
+     * management.opentelemetry.tracing.export.otlp.endpoint in Boot 4.0 and 4.1, management.otlp.tracing.endpoint in Boot
+     * 3.5): spans are created and their ids logged, but sent nowhere. Also reports export switched off in the base
+     * configuration. The endpoint differs per environment, so this only reports. The names follow the service's Boot
+     * version (#97; application properties appendix, docs.spring.io/spring-boot/{3.5,4.0,4.1}/appendix/application-properties:
+     * 3.5 has management.otlp.tracing.endpoint, management.tracing.enabled and management.otlp.tracing.export.enabled,
+     * which 4.0 renames to management.opentelemetry.tracing.export.otlp.endpoint, management.tracing.export.enabled and
+     * management.tracing.export.otlp.enabled); only an unknown version is read from the classpath.
      */
     private void export() {
         var probe = ctx.a.project.probe();
@@ -625,8 +629,10 @@ final class TracingRules {
         if (!boot4 && !boot3) {
             return;
         }
-        String endpoint = boot4 ? "management.opentelemetry.tracing.export.otlp.endpoint" : "management.otlp.tracing.endpoint";
-        List<String> switches = boot4 ? List.of("management.tracing.export.enabled", "management.tracing.export.otlp.enabled")
+        int bootMajor = SetupRules.springBootVersion(ctx)[0];
+        boolean boot4Names = bootMajor >= 4 || bootMajor == 0 && boot4;
+        String endpoint = boot4Names ? "management.opentelemetry.tracing.export.otlp.endpoint" : "management.otlp.tracing.endpoint";
+        List<String> switches = boot4Names ? List.of("management.tracing.export.enabled", "management.tracing.export.otlp.enabled")
                 : List.of("management.tracing.enabled", "management.otlp.tracing.export.enabled");
         String rel = applicationYml()[0];
         for (String s : switches) {
@@ -641,7 +647,7 @@ final class TracingRules {
         String env = endpoint.toUpperCase(Locale.ROOT).replace('.', '_').replace("-", "");
         List<String> envNames = new ArrayList<>(List.of(env));
         // Boot 4 maps the OpenTelemetry SDK variables onto its properties (Boot reference, Observability, OpenTelemetry)
-        if (probe.hasClass("org.springframework.boot.opentelemetry.autoconfigure.OpenTelemetryEnvironmentVariableEnvironmentPostProcessor")) {
+        if (boot4Names && probe.hasClass("org.springframework.boot.opentelemetry.autoconfigure.OpenTelemetryEnvironmentVariableEnvironmentPostProcessor")) {
             envNames.addAll(List.of("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"));
         }
         if (configuredAnywhere(endpoint) || mentionedInProject(envNames) || mentionedInProject(List.of("opentelemetry-javaagent"))
