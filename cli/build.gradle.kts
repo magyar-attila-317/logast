@@ -81,7 +81,9 @@ fun Test.e2eSetup() {
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform()
     filter { includeTestsMatching(e2eGolden) }
-    dependsOn(":fixtures:sample-app:writeClasspath")
+    dependsOn(":fixtures:sample-app:writeClasspath", ":logging-support:classes")
+    // dependency mode: javac compiles the migrated service against the starter's classes (it is not on the classpath logast reads)
+    systemProperty("logast.e2e.support", project(":logging-support").layout.buildDirectory.dir("classes/java/main").get().asFile.absolutePath)
     inputs.files(e2eLombok)
     inputs.dir(rootProject.file("e2e"))
     systemProperty("logast.e2e.lombok", e2eLombok.asPath)

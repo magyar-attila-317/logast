@@ -1,0 +1,46 @@
+package com.example.e2e.order;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/** The order travels as an object: its id is order.id(). */
+@Service
+public class OrderService {
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
+    private final PaymentClient payments;
+    private final ApplicationEventPublisher events;
+    private final LoyaltyClient loyalty;
+
+    public OrderService(PaymentClient payments, ApplicationEventPublisher events, LoyaltyClient loyalty) {
+        this.payments = payments;
+        this.events = events;
+        this.loyalty = loyalty;
+    }
+
+    /** The loyalty call runs inside the transaction: the database connection waits for the network. */
+    @Transactional
+    public void placeAndReward(Order order) {
+        place(order);
+        loyalty.award(order.id(), order.amountCents() / 100);
+    }
+
+    public void place(Order order) {
+        log.info("Placing order {}", order.id());
+        payments.charge(order);
+        events.publishEvent(new OrderPlaced(order.id(), order.amountCents()));   // the listener runs here, same thread
+        log.info("Order {} placed", order.id());
+    }
+
+    /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
+    public void ship(java.util.List<Order> orders, int batchNumber) {
+        if (orders.isEmpty()) {
+            log.info("Order shipment skipped");
+            return;
+        }
+        orders.forEach(payments::charge);
+        log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
+    }
+}

@@ -77,6 +77,8 @@ class E2eGoldenTest {
     Path tmp;
     /** The charset javac reads the migrated sources in ({@code options.encoding} of the service). */
     private String sourceEncoding = "UTF-8";
+    /** Compiled logging-support classes javac gets on top of the classpath (dependency mode: what the starter brings). */
+    private Path starterClasses;
 
     @Test
     void migrationMatchesTheGoldenSnapshot() throws IOException {
@@ -750,6 +752,37 @@ class E2eGoldenTest {
                     .as("the property comes with the class that reads it").exists();
             assertThat(app.resolve("src/main/java/com/example/e2e/logging/MdcScope.java"))
                     .as("but not with the logging set-up the pack did not ask for").doesNotExist();
+        }
+    }
+
+    /**
+     * #87: the same in dependency mode (the default: no {@code support:} block). A pack whose fixes use the support
+     * classes adds the logging-support starter itself, and its fixes are applied, not left as reports for want of a
+     * starter only another pack would add. Packs whose fixes use none (resilience, audit) leave the build file alone.
+     * The starter is not on the classpath logast reads (this run adds it); javac gets its classes, as the service's
+     * build does once the dependency resolves.
+     */
+    @org.junit.jupiter.params.ParameterizedTest(name = "packs: [{0}]")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"logging", "tracing", "metrics", "resilience", "errors", "audit"})
+    void eachPackWorksOnItsOwnWithTheStarterAsDependency(String pack) throws IOException {
+        starterClasses = Path.of(System.getProperty("logast.e2e.support"));
+        Path app = tmp.resolve("app");
+        Map<String, String> actual = migrate(app, CLASSPATH, a -> {
+            Path yml = a.resolve("logast.yml");
+            String text = Files.readString(yml);
+            String only = text.replaceFirst("(?m)^packs: .*$", "packs: [" + pack + "]").replace("support:\n  mode: vendor\n", "");
+            assertThat(only).as("the scenario selects its packs, in dependency mode").contains("packs: [" + pack + "]")
+                    .doesNotContain("support:");
+            Files.writeString(yml, only);
+        });
+        assertThat(app.resolve("src/main/java/com/example/e2e/logging")).as("dependency mode copies no support class").doesNotExist();
+        boolean usesSupport = !Set.of("resilience", "audit").contains(pack);
+        assertThat(actual.get("build.gradle.kts").contains("dev.logast:logging-support"))
+                .as("the starter comes with a pack whose fixes use it, and only with one").isEqualTo(usesSupport);
+        if (pack.equals("errors")) {
+            assertThat(actual.get("src/main/resources/application.yml")).contains("problem-trace-id:\n    enabled: true");
+            assertThat(actual.get("FINDINGS.txt")).as("applied, not left as a report").doesNotContain("ERROR_RESPONSE_UNTRACED");
+            golden(EXPECTED.resolveSibling("expected-errors-pack-dependency"), actual);
         }
     }
 
@@ -2251,7 +2284,11 @@ class E2eGoldenTest {
                 + "\n=== the same again (what one run left behind)\n" + second);
         // every finding left, with its text, location and path: report-only rules only show here (OUTPUT counts them)
         Files.writeString(app.resolve("FINDINGS.txt"), run(app, "scan", app.toString(), "--classpath-file", classpath));
-        compile(app, sourceEncoding);
+        if (starterClasses == null) {
+            compile(app, sourceEncoding);
+        } else {
+            compile(app, sourceEncoding, PLATFORM, starterClasses);
+        }
         return files(app);
     }
 
@@ -2773,13 +2810,13 @@ class E2eGoldenTest {
         return out.resolve("classes");
     }
 
-    private static void compile(Path root, String encoding, Path platform) throws IOException {
+    private static void compile(Path root, String encoding, Path... classes) throws IOException {
         List<String> sources;
         try (Stream<Path> s = Files.walk(root.resolve("src/main/java"))) {
             sources = s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).toList();
         }
         List<String> cp = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList());
-        cp.add(platform.toString());
+        Stream.of(classes).map(Path::toString).forEach(cp::add);
         List<String> args = new ArrayList<>(List.of("-encoding", encoding, "-d", root.resolve("out").toString(), "-proc:full",
                 "-processorpath", LOMBOK, "-cp", String.join(java.io.File.pathSeparator, cp)));
         args.addAll(sources);
