@@ -6421,7 +6421,9 @@ abstract class E2eGoldenTest {
                 .contains("    # retries inside RateClient.margin, which retries too");
         Files.writeString(retry, listed
                 .replaceFirst("(RateClient\\.current:[^\n]*\n    retry: )\"\"", "$1no")
-                .replaceFirst("(RateClient\\.history:[^\n]*\n    retry: )\"\"", "$1yes"));
+                // yes with its settings decided at once (no second round): its own block, starting at 2 retries
+                .replaceFirst("(RateClient\\.history:[^\n]*\n    retry: )\"\"([^\n]*\n)",
+                        "$1yes$2    specific: true\n    values:\n      max-retries: 2\n"));
         String third = run(rated, "apply", rated.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         String trace = Files.readString(rated.resolve(".logast/reports/apply-trace.txt"));
         assertThat(trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "")
@@ -6436,8 +6438,12 @@ abstract class E2eGoldenTest {
                 .contains("@Retryable(");
         assertThat(decided.get("FINDINGS.txt")).as("both answered: neither is recommended again")
                 .doesNotContain("RateClient.current makes").doesNotContain("RateClient.history makes");
-        assertThat(decided.get(".logast/decisions/retry.yaml")).as("no stays listed; yes is a usage now")
-                .contains("  RateClient.current:\n    retry: \"no\"").contains("usages:\n  RateClient.history:");
+        assertThat(decided.get(".logast/decisions/retry.yaml")).as("no stays listed; yes is a usage now, with the candidate's settings")
+                .contains("  RateClient.current:\n    retry: \"no\"")
+                .contains("usages:\n  RateClient.history:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:20\n"
+                        + "    specific: true\n    values:\n      max-retries: 2\n");
+        assertThat(decided.get("src/main/resources/application.yml")).as("the candidate's values, in the same apply")
+                .contains("      rate-client:\n        history:\n          max-retries: 2\n");
         golden(EXPECTED.resolveSibling("expected-retry-decided"), decided);
 
         // the resilience pack on its own reports the same

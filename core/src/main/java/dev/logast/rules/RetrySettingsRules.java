@@ -317,19 +317,28 @@ public final class RetrySettingsRules {
         }
         try {
             JsonNode n = new ObjectMapper(new YAMLFactory()).readTree(Files.readString(p));
-            if (n == null || !n.path("usages").isObject()) {
+            if (n == null) {
                 return out;
             }
-            n.get("usages").fields().forEachRemaining(e -> {
-                JsonNode v = e.getValue();
-                JsonNode s = v == null ? null : v.get("specific");
-                Boolean specific = s == null || s.isNull() || s.asText().isBlank() ? null : s.asBoolean();
-                Map<String, String> values = new LinkedHashMap<>();
-                if (v != null && v.path("values").isObject()) {
-                    v.get("values").fields().forEachRemaining(x -> values.put(x.getKey(), x.getValue().asText()));
+            // usages first; a candidate's specific / values (#109) count for the usage its "retry: yes" creates, in the
+            // same apply, so its settings need no second round
+            for (String section : List.of("usages", "candidates")) {
+                if (!n.path(section).isObject()) {
+                    continue;
                 }
-                out.put(e.getKey(), new Mark(specific, values));
-            });
+                n.get(section).fields().forEachRemaining(e -> {
+                    JsonNode v = e.getValue();
+                    JsonNode s = v == null ? null : v.get("specific");
+                    Boolean specific = s == null || s.isNull() || s.asText().isBlank() ? null : s.asBoolean();
+                    Map<String, String> values = new LinkedHashMap<>();
+                    if (v != null && v.path("values").isObject()) {
+                        v.get("values").fields().forEachRemaining(x -> values.put(x.getKey(), x.getValue().asText()));
+                    }
+                    if (section.equals("usages") || specific != null || !values.isEmpty()) {
+                        out.putIfAbsent(e.getKey(), new Mark(specific, values));
+                    }
+                });
+            }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -393,7 +402,8 @@ public final class RetrySettingsRules {
                 .append("# candidates: idempotent HTTP calls nothing retries (GET / HEAD / PUT / DELETE / OPTIONS, no retry on any path to\n")
                 .append("# them). retry: yes adds @Retryable (a request: one quick retry; a job or consumer: retries with backoff; the\n")
                 .append("# settings then move into application.yml like any usage's); no: not recommended again. Say no when a gateway\n")
-                .append("# or service mesh already retries, or the remote side must not see the call twice.\n");
+                .append("# or service mesh already retries, or the remote side must not see the call twice. specific: and values:\n")
+                .append("# work here as under usages and are taken over by the usage yes creates.\n");
         sb.append("usages:").append(usages.isEmpty() ? " {}\n" : "\n");
         Set<String> listed = new HashSet<>();
         for (Usage u : usages) {
@@ -412,7 +422,9 @@ public final class RetrySettingsRules {
                 mark.values().forEach((k, v) -> sb.append("      ").append(k).append(": ").append(v).append('\n'));
             }
         }
-        List<String> gone = marks.keySet().stream().filter(l -> !listed.contains(l)).sorted().toList();
+        Set<String> candidateNames = new HashSet<>(answers.keySet());
+        candidates.forEach(c -> candidateNames.add(c.method()));
+        List<String> gone = marks.keySet().stream().filter(l -> !listed.contains(l) && !candidateNames.contains(l)).sorted().toList();
         if (!gone.isEmpty()) {
             sb.append("# no longer a retry usage logast manages (kept for reference):\n");
             gone.forEach(l -> sb.append("#  ").append(l).append(": specific ").append(marks.get(l).specific()).append('\n'));
@@ -425,9 +437,11 @@ public final class RetrySettingsRules {
                     .append("    retry: \"").append(answers.getOrDefault(c.method(), "")).append("\"    # yes: ")
                     .append(c.caller().equals("request") ? "one quick retry (maxRetries 1, delay 100 ms)"
                             : "retries with backoff (maxRetries 3, delay 1 s, multiplier 2)").append(" · no\n");
+            settings(sb, marks.get(c.method()));
         }
         for (String d : declined) {
             sb.append("  ").append(d).append(":\n    retry: \"no\"\n");
+            settings(sb, marks.get(d));
         }
         try {
             boolean created = !Files.exists(p);
@@ -438,6 +452,20 @@ public final class RetrySettingsRules {
             return created;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /** A candidate's specific / values as the person wrote them: kept until "yes" makes it a usage. */
+    private static void settings(StringBuilder sb, Mark mark) {
+        if (mark == null) {
+            return;
+        }
+        if (mark.specific() != null) {
+            sb.append("    specific: ").append(mark.specific()).append('\n');
+        }
+        if (!mark.values().isEmpty()) {
+            sb.append("    values:\n");
+            mark.values().forEach((k, v) -> sb.append("      ").append(k).append(": ").append(v).append('\n'));
         }
     }
 
