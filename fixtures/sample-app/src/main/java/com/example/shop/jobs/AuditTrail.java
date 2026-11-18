@@ -11,7 +11,7 @@ public class AuditTrail {
     private static final Logger log = LoggerFactory.getLogger(AuditTrail.class); // expect: AUDIT_LOG_MIXED
     private final java.util.List<String> entries = new java.util.concurrent.CopyOnWriteArrayList<>();
 
-    public void record(String action, String tenantId) {
+    public void record(String action, String tenantId) { // expect: AUDIT_RECORD_INCOMPLETE
         try {
             MDC.put("audit.action", action); // expect: MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS, MDC_CLEAR
             MDC.put("tenantId", tenantId);
@@ -21,7 +21,7 @@ public class AuditTrail {
         }
     }
 
-    public void record(String action, String customerId, String actor) {
+    public void record(String action, String customerId, String actor) { // expect: AUDIT_RECORD_INCOMPLETE
         entries.add(actor + " " + action + " " + customerId);
     }
 }

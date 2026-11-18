@@ -92,7 +92,11 @@ class RemedyTest {
     private static Map<String, String> with(Map<String, String> base, String... pathsAndTexts) {
         Map<String, String> out = new LinkedHashMap<>(base);
         for (int i = 0; i < pathsAndTexts.length; i += 2) {
-            out.put(pathsAndTexts[i], pathsAndTexts[i + 1]);
+            if (pathsAndTexts[i + 1] == null) {
+                out.remove(pathsAndTexts[i]);   // the file left out
+            } else {
+                out.put(pathsAndTexts[i], pathsAndTexts[i + 1]);
+            }
         }
         return out;
     }
@@ -1070,6 +1074,7 @@ class RemedyTest {
 
             import java.util.List;
             import java.util.concurrent.CopyOnWriteArrayList;
+            import org.slf4j.MDC;
             import org.springframework.stereotype.Component;
 
             @Component
@@ -1077,11 +1082,11 @@ class RemedyTest {
                 private final List<String> entries = new CopyOnWriteArrayList<>();
 
                 public void record(String action, String parcelId, String actor) {
-                    entries.add(actor + " " + action + " " + parcelId);
+                    entries.add(MDC.get("traceId") + " " + actor + " " + action + " " + parcelId);
                 }
 
                 public void record(String action, String parcelId) {
-                    entries.add(action + " " + parcelId);
+                    entries.add(MDC.get("traceId") + " " + action + " " + parcelId);
                 }
             }
             """;
@@ -1126,27 +1131,332 @@ class RemedyTest {
     @Test
     void auditRecordSaysWhoDidIt() throws IOException {
         Map<String, String> before = parcelController("", """
-                        audit.record("parcel.delete", parcelId);
+                        audit.record("parcel.delete.done", parcelId);
                         store.remove(parcelId);
                 """, PARCEL_AUDIT);
         fires(Rules.AUDIT_RECORD_INCOMPLETE, before);
         gone(Rules.AUDIT_RECORD_INCOMPLETE, "the acting user from a Principal parameter", parcelController(", Principal principal", """
-                        audit.record("parcel.delete", parcelId, principal.getName());
+                        audit.record("parcel.delete.done", parcelId, principal.getName());
                         store.remove(parcelId);
                 """, PARCEL_AUDIT));
         // Spring Security is not on the fixture's classpath: SecurityContextHolder stays unresolved, read by its name
         gone(Rules.AUDIT_RECORD_INCOMPLETE, "the audit method reads the user itself", with(before, java("ParcelAudit"),
                 PARCEL_AUDIT.replace("""
                                 public void record(String action, String parcelId) {
-                                    entries.add(action + " " + parcelId);
+                                    entries.add(MDC.get("traceId") + " " + action + " " + parcelId);
                                 }
                             """, """
                                 public void record(String action, String parcelId) {
                                     String actor = org.springframework.security.core.context.SecurityContextHolder.getContext()
                                             .getAuthentication().getName();
-                                    entries.add(actor + " " + action + " " + parcelId);
+                                    entries.add(MDC.get("traceId") + " " + actor + " " + action + " " + parcelId);
                                 }
                             """)));
+    }
+
+    @Test
+    void auditRecordStatesOutcomeAndRequest() throws IOException {
+        String audit = """
+                package x;
+
+                import java.util.List;
+                import java.util.concurrent.CopyOnWriteArrayList;
+                import org.slf4j.MDC;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelAudit {
+                    private final List<String> entries = new CopyOnWriteArrayList<>();
+
+                    public void record(String action, String parcelId, String actorOUTCOME) {
+                        entries.add(TRACEactor + " " + action + " " + parcelId);
+                    }
+                }
+                """;
+        String call = """
+                        audit.record("parcel.delete", parcelId, principal.getName()OUTCOME);
+                        store.remove(parcelId);
+                """;
+        fires(Rules.AUDIT_RECORD_INCOMPLETE, parcelController(", Principal principal", call.replace("OUTCOME", ""),
+                audit.replace("OUTCOME", "").replace("TRACE", "")));
+        // near miss: the trace id read, but no outcome
+        fires(Rules.AUDIT_RECORD_INCOMPLETE, parcelController(", Principal principal", call.replace("OUTCOME", ""),
+                audit.replace("OUTCOME", "").replace("TRACE", "MDC.get(\"traceId\") + \" \" + ")));
+        gone(Rules.AUDIT_RECORD_INCOMPLETE, "an outcome parameter, the trace id read from MDC", parcelController(", Principal principal",
+                call.replace("OUTCOME", ", \"succeeded\""), audit.replace("OUTCOME", ", String outcome")
+                        .replace("TRACE", "MDC.get(\"traceId\") + \" \" + outcome + \" \" + ")));
+        gone(Rules.AUDIT_RECORD_INCOMPLETE, "the outcome and the trace id passed in", parcelController(", Principal principal",
+                call.replace("OUTCOME", ", \"failed\", org.slf4j.MDC.get(\"traceId\")"),
+                audit.replace("OUTCOME", ", String outcome, String traceId").replace("TRACE", "traceId + \" \" + outcome + \" \" + ")));
+    }
+
+    // ---- AUDIT_LOGGER_UNROUTED -------------------------------------------------------------------------------------
+
+    @Test
+    void auditLoggerRoutedApart() throws IOException {
+        String logback = """
+                <configuration>
+                    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+                        <file>service.log</file>
+                        <encoder><pattern>%msg%n</pattern></encoder>
+                    </appender>
+                    <appender name="AUDIT" class="ch.qos.logback.core.FileAppender">
+                        <file>audit.log</file>
+                        <encoder><pattern>%msg%n</pattern></encoder>
+                    </appender>
+                LOGGER    <root level="INFO">
+                        <appender-ref ref="FILE"/>
+                    </root>
+                </configuration>
+                """;
+        Map<String, String> before = Map.of(java("ParcelAudit"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelAudit {
+                    private static final Logger AUDIT = LoggerFactory.getLogger("audit");
+
+                    public void record(String action, String parcelId) {
+                        AUDIT.info("Parcel audit record [action={}, parcelId={}]", action, parcelId);
+                    }
+                }
+                """, java("ParcelService"), """
+                package x;
+
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class ParcelService {
+                    private final ParcelAudit audit;
+
+                    public ParcelService(ParcelAudit audit) {
+                        this.audit = audit;
+                    }
+
+                    public void close(String parcelId) {
+                        audit.record("parcel.close", parcelId);
+                    }
+                }
+                """, "src/main/resources/logback-spring.xml", logback.replace("LOGGER", ""));
+        fires(Rules.AUDIT_LOGGER_UNROUTED, before);
+        // near miss: the logger declared, but additivity off and no appender: the records are dropped
+        fires(Rules.AUDIT_LOGGER_UNROUTED, with(before, "src/main/resources/logback-spring.xml",
+                logback.replace("LOGGER", "    <logger name=\"audit\" additivity=\"false\"/>\n")));
+        gone(Rules.AUDIT_LOGGER_UNROUTED, "a logger for audit with its own appender", with(before, "src/main/resources/logback-spring.xml",
+                logback.replace("LOGGER", "    <logger name=\"audit\" level=\"INFO\" additivity=\"false\">\n"
+                        + "        <appender-ref ref=\"AUDIT\"/>\n    </logger>\n")));
+        gone(Rules.AUDIT_LOGGER_UNROUTED, "no logback file: Boot's structured logging carries the logger name",
+                with(before, "src/main/resources/logback-spring.xml", null));
+        // near miss: logging.level.audit above the records' level drops them
+        fires(Rules.AUDIT_LOGGER_UNROUTED, with(before, "src/main/resources/logback-spring.xml", null,
+                "src/main/resources/application.yml", "spring:\n  application:\n    name: remedy\nlogging:\n  level:\n    audit: ERROR\n"));
+    }
+
+    // ---- AUDIT_BEFORE_COMMIT ---------------------------------------------------------------------------------------
+
+    @Test
+    void auditRecordWrittenWhenTheOutcomeIsKnown() throws IOException {
+        String auditLog = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelAudit {
+                    private static final Logger AUDIT = LoggerFactory.getLogger("audit");
+
+                    public void record(String action, String parcelId, String outcome) {
+                        AUDIT.info("Parcel audit record [action={}, parcelId={}, outcome={}]", action, parcelId, outcome);
+                    }
+                }
+                """;
+        String service = """
+                package x;
+
+                import org.springframework.context.ApplicationEventPublisher;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+                import org.springframework.transaction.event.TransactionalEventListener;
+
+                @Service
+                public class ParcelService {
+                    private final ParcelAudit audit;
+                    private final ApplicationEventPublisher events;
+
+                    public ParcelService(ParcelAudit audit, ApplicationEventPublisher events) {
+                        this.audit = audit;
+                        this.events = events;
+                    }
+
+                    public record ParcelClosed(String parcelId) {
+                    }
+
+                    @Transactional
+                    public void close(String parcelId) {
+                BODY    }
+
+                    @TransactionalEventListener
+                    public void onClosed(ParcelClosed event) {
+                        audit.record("parcel.close", event.parcelId(), "done");
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(java("ParcelAudit"), auditLog, java("ParcelService"),
+                service.replace("BODY", "        audit.record(\"parcel.close\", parcelId, \"done\");\n"));
+        fires(Rules.AUDIT_BEFORE_COMMIT, before);
+        gone(Rules.AUDIT_BEFORE_COMMIT, "an event recorded by a @TransactionalEventListener after commit", with(before,
+                java("ParcelService"), service.replace("BODY", "        events.publishEvent(new ParcelClosed(parcelId));\n")));
+        gone(Rules.AUDIT_BEFORE_COMMIT, "only the failure recorded in the transaction, from a catch", with(before,
+                java("ParcelService"), service.replace("BODY", """
+                                try {
+                                    events.publishEvent(new ParcelClosed(parcelId));
+                                } catch (RuntimeException e) {
+                                    audit.record("parcel.close", parcelId, "failed");
+                                    throw e;
+                                }
+                        """)));
+    }
+
+    // ---- AUDIT_RECORD_SECRET ---------------------------------------------------------------------------------------
+
+    @Test
+    void auditRecordWithoutSecrets() throws IOException {
+        String audit = """
+                package x;
+
+                import java.util.List;
+                import java.util.concurrent.CopyOnWriteArrayList;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class AccountAudit {
+                    private final List<String> entries = new CopyOnWriteArrayList<>();
+
+                    public void record(String action, Object details, String outcome) {
+                        entries.add(action + " " + details + " " + outcome);
+                    }
+                }
+                """;
+        String service = """
+                package x;
+
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class AccountService {
+                    private final AccountAudit audit;
+
+                    public AccountService(AccountAudit audit) {
+                        this.audit = audit;
+                    }
+
+                    public void changePassword(String accountId, String newPassword) {
+                        String secret = newPassword;
+                        audit.record("account.password", DETAILS, "done");
+                    }
+                }
+                """;
+        fires(Rules.AUDIT_RECORD_SECRET, Map.of(java("AccountAudit"), audit, java("AccountService"), service.replace("DETAILS", "secret")));
+        gone(Rules.AUDIT_RECORD_SECRET, "record that it changed, not the value", Map.of(java("AccountAudit"), audit,
+                java("AccountService"), service.replace("DETAILS", "accountId")));
+        gone(Rules.AUDIT_RECORD_SECRET, "a derived value: its length", Map.of(java("AccountAudit"), audit,
+                java("AccountService"), service.replace("DETAILS", "newPasswordLength(newPassword)")
+                        .replace("    }\n}", "    }\n\n    private static int newPasswordLength(String p) {\n        return p.length();\n    }\n}")));
+    }
+
+    // ---- AUDIT_ACTOR_LOST_ASYNC ------------------------------------------------------------------------------------
+
+    @Test
+    void auditActorReadBeforeTheHandOver() throws IOException {
+        String audit = """
+                package x;
+
+                import java.util.List;
+                import java.util.concurrent.CopyOnWriteArrayList;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelAudit {
+                    private final List<String> entries = new CopyOnWriteArrayList<>();
+
+                    public void recordCurrent(String action, String parcelId) {
+                        String actor = org.springframework.security.core.context.SecurityContextHolder.getContext()
+                                .getAuthentication().getName();
+                        entries.add(actor + " " + action + " " + parcelId);
+                    }
+
+                    public void record(String action, String parcelId, String actor) {
+                        entries.add(actor + " " + action + " " + parcelId);
+                    }
+                }
+                """;
+        String service = """
+                package x;
+
+                import java.security.Principal;
+                import org.springframework.scheduling.annotation.Async;
+                import org.springframework.stereotype.Service;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class ParcelController {
+                    private final ParcelArchive archive;
+
+                    public ParcelController(ParcelArchive archive) {
+                        this.archive = archive;
+                    }
+
+                    @PostMapping("/parcels/{parcelId}/archive")
+                    public void archive(@PathVariable String parcelId, Principal principal) {
+                        archive.archive(parcelId, principal.getName());
+                    }
+                }
+
+                @Service
+                class ParcelArchive {
+                    private final ParcelAudit audit;
+
+                    ParcelArchive(ParcelAudit audit) {
+                        this.audit = audit;
+                    }
+
+                    @Async
+                    public void archive(String parcelId, String actor) {
+                        RECORD
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(java("ParcelAudit"), audit, java("ParcelController"),
+                service.replace("RECORD", "audit.recordCurrent(\"parcel.archive\", parcelId);"));
+        fires(Rules.AUDIT_ACTOR_LOST_ASYNC, before);
+        gone(Rules.AUDIT_ACTOR_LOST_ASYNC, "the actor read on the request thread and passed in", with(before, java("ParcelController"),
+                service.replace("RECORD", "audit.record(\"parcel.archive\", parcelId, actor);")));
+        gone(Rules.AUDIT_ACTOR_LOST_ASYNC, "a DelegatingSecurityContextAsyncTaskExecutor carries the context", with(before,
+                java("AsyncConfig"), """
+                        package x;
+
+                        import org.springframework.context.annotation.Bean;
+                        import org.springframework.context.annotation.Configuration;
+                        import org.springframework.core.task.AsyncTaskExecutor;
+                        import org.springframework.core.task.SimpleAsyncTaskExecutor;
+
+                        @Configuration
+                        public class AsyncConfig {
+                            @Bean
+                            AsyncTaskExecutor taskExecutor() {
+                                return new org.springframework.security.task.DelegatingSecurityContextAsyncTaskExecutor(
+                                        new SimpleAsyncTaskExecutor());
+                            }
+                        }
+                        """));
     }
 
     // ---- CATCH_ALL_DEFAULT -----------------------------------------------------------------------------------------
