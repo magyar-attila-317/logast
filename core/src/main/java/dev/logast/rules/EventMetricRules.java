@@ -96,7 +96,8 @@ final class EventMetricRules {
 
     private boolean measured(MethodInfo m) {
         String body = m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
-        return MEASURED.matcher(body).find() || m.hasAnnotation("io.micrometer.observation.annotation.Observed")
+        // @Observed measures only while Spring Boot processes it (OBSERVED_ANNOTATION_INACTIVE decides, or plans it)
+        return MEASURED.matcher(body).find() || ctx.observedAnnotationsActive && TracingRules.observedAnnotation(m, false)
                 || m.hasAnnotation("io.micrometer.core.annotation.Timed") || m.hasAnnotation("io.micrometer.core.annotation.Counted");
     }
 

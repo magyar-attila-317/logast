@@ -1,0 +1,18 @@
+=== logast apply . --auto --write
+applied (8): SUP-065aa3 KFK-b4ade9 OBA-7df0b3 RBT-9559c7 SID-ce5940 SMP-73051d OBS-771fea OBS-cf7b8f
+files (20): build.gradle.kts, src/main/java/com/example/e2e/job/SettlementJobExecutor.java, src/main/java/com/example/e2e/logging/AfterCommit.java, src/main/java/com/example/e2e/logging/BatchTraceListener.java, src/main/java/com/example/e2e/logging/ContextExecutors.java, src/main/java/com/example/e2e/logging/ContextPropagation.java, src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java, src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygiene.java, src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygieneFilter.java, src/main/java/com/example/e2e/logging/MdcScope.java, src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java, src/main/java/com/example/e2e/logging/ObservedContext.java, src/main/java/com/example/e2e/logging/Outcomes.java, src/main/java/com/example/e2e/logging/TraceContextEnv.java, src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java, src/main/java/com/example/e2e/messaging/CouponMessages.java, src/main/resources/META-INF/spring.factories, src/main/resources/application.yml  ·  2 rounds, <t>
+
+Next steps
+  1. logast classpath .               dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
+  2. git diff                         review the changes
+  3. logast scan . --format summary   9 findings are decisions for a person (ASYNC_CONTEXT_LOSS 4, SPAN_NAME_DYNAMIC 3, TRACE_ID_NOT_LOGGED 1, …); each says what to decide
+  4. logast verify .                  build and run the tests with log capture: does the result really log what it should?
+
+=== the same again (what one run left behind)
+applied (0):
+files (0):   ·  0 rounds, <t>
+nothing to apply without text: the remaining orders need message text (`logast scan .` lists them; fill them via --fills or `logast review .`)
+
+Next steps
+  1. logast scan . --format summary   9 findings are decisions for a person (ASYNC_CONTEXT_LOSS 4, SPAN_NAME_DYNAMIC 3, TRACE_ID_NOT_LOGGED 1, …); each says what to decide
+  2. logast verify .                  build and run the tests with log capture: does the result really log what it should?
