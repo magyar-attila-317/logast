@@ -118,6 +118,23 @@ public final class PolicyValidator {
         duration("resilience.httpReadTimeout", p.resilience().httpReadTimeout());
         duration("resilience.dbQueryTimeout", p.resilience().dbQueryTimeout());
 
+        for (String b : p.queries().backends()) {
+            if (!Policy.Queries.BACKENDS.contains(b)) {
+                error("queries.backends", "'" + b + "' is not a query backend; use any of " + Policy.Queries.BACKENDS
+                        + didYouMean(b, Policy.Queries.BACKENDS));
+            }
+        }
+        // Splunk index names: lower-case letters, digits, '_' and '-', not starting with '_' or '-'
+        if (!p.queries().splunk().index().isEmpty() && !p.queries().splunk().index().matches("[a-z0-9][a-z0-9_-]*")) {
+            error("queries.splunk.index", "'" + p.queries().splunk().index() + "' is not a Splunk index name (lower-case "
+                    + "letters, digits, '_' and '-', not starting with '_' or '-')");
+        }
+        if (!p.queries().prometheus().serviceLabel().isEmpty()
+                && !p.queries().prometheus().serviceLabel().matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+            error("queries.prometheus.serviceLabel", "'" + p.queries().prometheus().serviceLabel()
+                    + "' is not a Prometheus label name ([a-zA-Z_][a-zA-Z0-9_]*)");
+        }
+
         List<Policy.AuditAction> actions = p.audit().actions();
         for (int i = 0; i < actions.size(); i++) {
             Policy.AuditAction a = actions.get(i);

@@ -71,6 +71,17 @@ class PolicyValidationTest {
     }
 
     @Test
+    void queriesBlockIsChecked() {
+        assertThat(error("queries:\n  backends: [prometheus, splunck]\n"))
+                .contains("logast.yaml: queries.backends: 'splunck' is not a query backend; use any of [prometheus, newrelic, "
+                        + "splunk]; did you mean splunk?");
+        assertThat(error("queries:\n  splunk:\n    index: App Logs\n"))
+                .contains("logast.yaml: queries.splunk.index: 'App Logs' is not a Splunk index name");
+        assertThat(error("queries:\n  prometheus:\n    serviceLabel: service.name\n"))
+                .contains("logast.yaml: queries.prometheus.serviceLabel: 'service.name' is not a Prometheus label name");
+    }
+
+    @Test
     void unknownPackIsAnError() {
         assertThat(error("packs: [loging, tracing]\n"))
                 .contains("logast.yaml: packs[0]: unknown pack 'loging', it selects no rule; did you mean logging?");

@@ -103,3 +103,8 @@ audit:                             # opt-in pack: packs: [..., audit]
     - http: "* /admin/**"
     - http: "* /api/admin/**"
     - method: "(?i)(export|delete|remove|grant|revoke|refund|void|approve|reject|reset|disable|enable|impersonate|assign|unassign)[A-Z_].*|(?i)(export|delete|refund|approve|reject|impersonate)"
+
+queries:                           # logast queries: PromQL, NRQL and Splunk SPL for the service's metrics and logs
+  backends: [prometheus, newrelic, splunk]
+  splunk:
+    index: ""                      # the index the service logs to; empty: no Splunk queries

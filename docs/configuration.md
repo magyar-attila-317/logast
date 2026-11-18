@@ -285,6 +285,24 @@ Independent of this setting, `scan` and `apply --write` with the logging pack wr
 call with what logast did with it (fixed, reported, ignored, skipped with the reason, checked). See "Every log call is
 accounted for" in [commands](commands.md#every-log-call-is-accounted-for).
 
+### `queries`: ready-made queries
+
+What `logast queries` writes ([commands](commands.md#queries)).
+
+```yaml
+queries:
+  backends: [prometheus, newrelic, splunk]   # default: all three
+  splunk:
+    index: app-logs        # the index the service logs to; without it there are no Splunk queries
+    sourcetype: _json      # optional: added to every search
+  prometheus:
+    serviceLabel: application   # the label that names the service; default: application when
+                                #   management.metrics.tags.application is set (logast sets it), else job
+```
+
+- **New Relic** queries assume Micrometer metrics sent over OTLP with the resource attribute `service.name`.
+- **Splunk** queries assume the JSON fields are extracted (sourcetype `_json` or `KV_MODE=json`).
+
 ### `verify`
 
 ```yaml

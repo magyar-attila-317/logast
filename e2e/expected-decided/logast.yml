@@ -25,3 +25,6 @@ vocabulary:
         params: [sponsorshipId]
 metrics:
   defaults: []
+queries:
+  splunk:
+    index: shop-logs

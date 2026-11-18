@@ -163,8 +163,9 @@ class E2eGoldenTest {
     /**
      * The whole process: migrate, then write every message text logast asks for (fills.json) and count every outcome
      * (metrics.json), then apply once more. Every decision must land, also the ones on lines the texts reword (their
-     * ids used to include the message text, so a reworded line lost its decision without a word). Every file must
-     * equal e2e/expected-decided.
+     * ids used to include the message text, so a reworded line lost its decision without a word). Then {@code logast
+     * queries} writes .logast/queries.md for what the service now measures (#106). Every file must equal
+     * e2e/expected-decided.
      */
     @org.junit.jupiter.params.ParameterizedTest(name = "metrics.catalog: {0}")
     @org.junit.jupiter.params.provider.ValueSource(strings = {"per-package", "single", "off"})
@@ -174,7 +175,8 @@ class E2eGoldenTest {
             // the manual flow: nothing counted by default, every outcome decided in metrics.json
             Path yml = a.resolve("logast.yml");
             Files.writeString(yml, Files.readString(yml) + "metrics:\n  defaults: []\n"
-                    + (catalog.equals("per-package") ? "" : "  catalog: " + catalog + "\n"));   // per-package is the default
+                    + (catalog.equals("per-package") ? "" : "  catalog: " + catalog + "\n")   // per-package is the default
+                    + "queries:\n  splunk:\n    index: shop-logs\n");   // logast queries (#106), run at the end
         });
         writeTexts(app);
         Path metrics = app.resolve(".logast/metrics.json");
@@ -198,6 +200,14 @@ class E2eGoldenTest {
         Files.writeString(app.resolve("OUTPUT.txt"), Files.readString(app.resolve("OUTPUT.txt"))
                 + "\n=== after writing every text and counting every outcome\n" + third);
         compile(app);
+        // #106: the queries for what the service now measures and logs; every counter, observation and MDC key shows
+        String queries = run(app, "queries", app.toString(), "--classpath-file", CLASSPATH);
+        assertThat(queries).as("written, all three backends").contains("PromQL").contains("NRQL").contains("SPL");
+        assertThat(Files.readString(app.resolve(".logast/queries.md"))).as("counters through the catalog or inline, observations "
+                        + "named by catalog constants")
+                .contains("sum by (outcome) (increase(pledge_resend_total{application=\"e2e-shop\"}[1h]))")
+                .contains("FROM Metric SELECT count(`pledge-messages.on-batch`)")
+                .contains("index=shop-logs \"service.name\"=\"e2e-shop\" orderId=\"<orderId>\"");
         Map<String, String> actual = files(app);
         // every decision is a counting line: inline (catalog off) or one call into a catalog, whose member holds the name
         long counted = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)

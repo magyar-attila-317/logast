@@ -21,7 +21,39 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
                      Entrypoints entrypoints, Logging logging, Support support, Map<String, RuleConfig> rules,
                      Map<String, Term> vocabulary, Map<String, Area> areas, Phrasing phrasing, Levels levels,
                      List<String> packs, List<String> overrides, Verify verify, Metrics metrics, Resilience resilience,
-                     Audit audit, Reporting reporting, List<String> warnings) {
+                     Audit audit, Reporting reporting, Queries queries, List<String> warnings) {
+
+    /**
+     * {@code logast queries}: ready-made queries for the service's metrics and logs (#106).
+     *
+     * @param backends   which to write: prometheus, newrelic, splunk (default: all three)
+     * @param splunk     where the service's logs are in Splunk; without an index the Splunk part is left out
+     * @param prometheus the label that names the service in Prometheus; empty: {@code application} when
+     *                   management.metrics.tags.application is set, else {@code job}
+     */
+    public record Queries(List<String> backends, Splunk splunk, Prometheus prometheus) {
+        public static final List<String> BACKENDS = List.of("prometheus", "newrelic", "splunk");
+
+        public Queries {
+            backends = backends == null ? BACKENDS : backends.stream().map(b -> b.toLowerCase(Locale.ROOT)).toList();
+            splunk = splunk == null ? new Splunk(null, null) : splunk;
+            prometheus = prometheus == null ? new Prometheus(null) : prometheus;
+        }
+    }
+
+    /** @param index the Splunk index of the service's logs; @param sourcetype optional, e.g. {@code _json} */
+    public record Splunk(String index, String sourcetype) {
+        public Splunk {
+            index = index == null ? "" : index.strip();
+            sourcetype = sourcetype == null ? "" : sourcetype.strip();
+        }
+    }
+
+    public record Prometheus(String serviceLabel) {
+        public Prometheus {
+            serviceLabel = serviceLabel == null ? "" : serviceLabel.strip();
+        }
+    }
 
     /** Source comments linking review findings to fills.json or metrics.json entries. */
     public record Reporting(Boolean sourceComments) {
@@ -354,6 +386,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         resilience = resilience == null ? new Resilience(null, null, null, null) : resilience;
         audit = audit == null ? new Audit(null, null, null) : audit;
         reporting = reporting == null ? new Reporting(null) : reporting;
+        queries = queries == null ? new Queries(null, null, null) : queries;
         warnings = warnings == null ? List.of() : List.copyOf(warnings);
     }
 
@@ -375,27 +408,27 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
     public Policy withPacks(List<String> selected) {
         PolicyValidator.checkPacks(selected, "--pack");
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, selected, overrides, verify, metrics, resilience, audit, reporting, warnings);
+                phrasing, levels, selected, overrides, verify, metrics, resilience, audit, reporting, queries, warnings);
     }
 
     public Policy withLogging(Logging l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, l, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, warnings);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, warnings);
     }
 
     public Policy withLevels(Levels l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, l, packs, overrides, verify, metrics, resilience, audit, reporting, warnings);
+                phrasing, l, packs, overrides, verify, metrics, resilience, audit, reporting, queries, warnings);
     }
 
     public Policy withWarnings(List<String> w) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, w);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, w);
     }
 
     public Policy withSupport(Support s) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, s, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, warnings);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, warnings);
     }
 
     // ---- derived views (vocabulary + the older flat glossary/mdc form) -------------------------------------

@@ -591,6 +591,30 @@ public static void pledgeResendFailed() {
 </tr>
 </table>
 
+### Queries for what the service now measures and logs
+
+`logast queries` turns the counters, observations and MDC keys into queries to paste (#106).
+*`e2e/expected-decided/.logast/queries.md`, with `queries.splunk.index: shop-logs`.*
+
+The counter of the failed resend above, in Prometheus and New Relic:
+
+```promql
+sum by (outcome) (increase(pledge_resend_total{application="e2e-shop"}[1h]))
+```
+
+```sql
+FROM Metric SELECT sum(pledge.resend) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
+
+Everything logged for one pledge in Splunk, across requests and jobs (the field names follow the service's log
+format, here `logstash`):
+
+```spl
+index=shop-logs "service.name"="e2e-shop" pledgeId="<pledgeId>"
+| sort _time
+| table _time traceId level message
+```
+
 ## Errors
 
 ### A lost cause is restored
