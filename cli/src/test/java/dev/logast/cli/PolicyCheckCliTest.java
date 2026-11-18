@@ -18,7 +18,7 @@ class PolicyCheckCliTest {
     @TempDir
     Path tmp;
 
-    record Run(int exit, String err) {
+    record Run(int exit, String err, String out) {
     }
 
     private Path project(String policy) throws IOException {
@@ -34,16 +34,18 @@ class PolicyCheckCliTest {
         PrintStream out = System.out;
         PrintStream err = System.err;
         ByteArrayOutputStream e = new ByteArrayOutputStream();
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
         int rc;
         try {
-            System.setOut(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+            System.setOut(new PrintStream(o, true, StandardCharsets.UTF_8));
             System.setErr(new PrintStream(e, true, StandardCharsets.UTF_8));
             rc = new CommandLine(new Main()).execute(args);
         } finally {
             System.setOut(out);
             System.setErr(err);
         }
-        return new Run(rc, e.toString(StandardCharsets.UTF_8).replaceAll("\u001b\\[[0-9;]*m", ""));
+        return new Run(rc, e.toString(StandardCharsets.UTF_8).replaceAll("\u001b\\[[0-9;]*m", ""),
+                o.toString(StandardCharsets.UTF_8).replaceAll("\u001b\\[[0-9;]*m", ""));
     }
 
     @Test
@@ -71,5 +73,74 @@ class PolicyCheckCliTest {
         Run pack = run("scan", app.toString(), "--format", "json", "--pack", "loging");
         assertThat(pack.exit()).isNotZero();
         assertThat(pack.err()).contains("--pack loging: unknown pack; did you mean logging?");
+    }
+
+    /** #56: logast policy --check: names that match nothing in the code, ignore comments naming no rule; exit 0 / 1 / 2. */
+    @Test
+    void policyCheckFindsNamesThatMatchNothing() throws IOException {
+        Path app = project("packs: [logging, audit]\naudit:\n  emitters: [demo.Audit]\nvocabulary:\n  order:\n    mdc:\n"
+                + "      key: orderId\n      sources:\n        types:\n          demo.Order: \"id()\"\n");
+        Files.writeString(app.resolve("src/main/java/demo/AuditLog.java"),
+                "package demo;\n\nclass AuditLog {\n    void record() {\n    }\n}\n");
+        Files.writeString(app.resolve("src/main/java/demo/Ok.java"), "package demo;\n\nclass Ok {\n    int one() {\n"
+                + "        return 1; // logast:ignore LOG_FORAMT\n    }\n}\n");
+        Run r = run("policy", app.toString(), "--check");
+        assertThat(r.exit()).as(r.out() + r.err()).isEqualTo(1);
+        assertThat(r.out()).contains("logast.yaml: audit.emitters[0]: demo.Audit is not in the code or on the classpath")
+                .contains("logast.yaml: vocabulary.order.mdc.sources.types: demo.Order is not in the code or on the classpath")
+                .contains("src/main/java/demo/Ok.java:5: logast:ignore LOG_FORAMT names no rule, so it silences nothing; "
+                        + "did you mean LOG_FORMAT?")
+                .contains("3 warning(s)");
+        assertThat(run("scan", app.toString(), "--format", "json").err()).as("scan says it too")
+                .contains("policy: src/main/java/demo/Ok.java:5: logast:ignore LOG_FORAMT names no rule");
+
+        Run clean = run("policy", project("packs: [logging]\n").toString(), "--check");
+        assertThat(clean.exit()).as(clean.out() + clean.err()).isZero();
+        assertThat(clean.out()).contains("policy ok");
+        assertThat(run("policy", project("packs: [loging]\n").toString(), "--check").exit()).as("a load error").isEqualTo(2);
+    }
+
+    /** #56: an --only id that matches no order is said, not dropped silently. */
+    @Test
+    void applyOnlyWithAnUnknownIdSaysSo() throws IOException {
+        Path app = project("packs: [logging]\n");
+        Run r = run("apply", app.toString(), "--only", "FMT-000000");
+        assertThat(r.out() + r.err()).contains("FMT-000000").contains("no such order");
+    }
+
+    /** #56: an extends: URL is pinned by #sha256=; unpinned is a warning naming the hash, a changed file an error. */
+    @Test
+    void extendsUrlsArePinned() throws IOException {
+        String shared = "logging:\n  keyStyle: camel\n";
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/shared.yaml", ex -> {
+            byte[] b = shared.getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, b.length);
+            ex.getResponseBody().write(b);
+            ex.close();
+        });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/shared.yaml";
+            String hash = java.util.HexFormat.of().formatHex(sha256(shared));
+            Run unpinned = run("policy", project("extends: [\"" + url + "\"]\n").toString(), "--check");
+            assertThat(unpinned.out()).contains("extends: " + url + " is not pinned").contains(url + "#sha256=" + hash);
+            Run pinned = run("policy", project("extends: [\"" + url + "#sha256=" + hash + "\"]\n").toString(), "--check");
+            assertThat(pinned.exit()).as(pinned.out() + pinned.err()).isZero();
+            Run changed = run("policy", project("extends: [\"" + url + "#sha256=00ff\"]\n").toString(), "--check");
+            assertThat(changed.exit()).isEqualTo(2);
+            assertThat(changed.err()).contains("policy " + url + " changed: its sha256 is " + hash);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private static byte[] sha256(String s) {
+        try {
+            return java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
