@@ -1,0 +1,333 @@
+diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
+index fcbeedd..6e6c5af 100644
+--- a/src/main/java/com/example/e2e/job/PublishRunJob.java
++++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.platformlib.Week;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -14,13 +15,17 @@
+ 
+     @Override
+     protected void doRun(String runCode, Week week) {
+-        log.info("Publishing started [runCode={}]", runCode);
+-        var summary = RunSummary.of(runCode, week);
+-        report(summary);   // overloaded: the var's type picks report(RunSummary)
+-        String current = runCode;                                       // the same value under another name
+-        log.debug("Publishing batch [runCode={}]", current);
+-        notifyDone(runCode);
+-        log.info("Publishing completed [runCode={}]", runCode);
++        ObservedContext.entrypoint("publishing")
++                .quiet()
++                .run(() -> {
++                    log.info("Publishing started [runCode={}]", runCode);
++                    var summary = RunSummary.of(runCode, week);
++                    report(summary);   // overloaded: the var's type picks report(RunSummary)
++                    String current = runCode;                                       // the same value under another name
++                    log.debug("Publishing batch [runCode={}]", current);
++                    notifyDone(runCode);
++                    log.info("Publishing completed [runCode={}]", runCode);
++                });
+     }
+ 
+     /** Every caller passes the run code: the parameter is the value MDC already carries. */
+diff --git a/src/main/java/com/example/e2e/web/QuoteController.java b/src/main/java/com/example/e2e/web/QuoteController.java
+index 93796ad..17cde43 100644
+--- a/src/main/java/com/example/e2e/web/QuoteController.java
++++ b/src/main/java/com/example/e2e/web/QuoteController.java
+@@ -1,11 +1,13 @@ 
+ package com.example.e2e.web;
+ 
+ import java.util.concurrent.CompletableFuture;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RestController;
+ 
+ /** Two parallel lookups joined on one line (#43: two findings of one rule on one line once crashed the scan). */
++@Slf4j
+ @RestController
+ public class QuoteController {
+     record Quote(String price, String stock) {
+@@ -22,7 +24,12 @@
+     @GetMapping("/quotes/{productId}/refresh")
+     public String refresh(@PathVariable String productId) {
+         String result = productId.strip();
+-        CompletableFuture.runAsync(() -> System.out.println(result));
++        CompletableFuture.runAsync(() -> System.out.println(result))
++                .whenComplete((result2, error) -> {
++                    if (error != null) {
++                        log.error("Quote controller async work failed", error); // logast:wording
++                    }
++                });
+         return result;
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 953396f..2e68061 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -39,7 +39,12 @@ 
+         audit(salesData.couponId());                                               // default method of an interface
+         EdgeLogHelper.info("Coupon processed [couponId={}]", salesData.couponId()); // a home-made log helper
+         CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+-                log.info("Coupon archived [couponId={}]", salesData.couponId()));
++                log.info("Coupon archived [couponId={}]", salesData.couponId()))
++                .whenComplete((result, error) -> {
++                    if (error != null) {
++                        log.error("Edge flow async work failed", error); // logast:wording
++                    }
++                });
+         log.info("Coupon parsed [couponId={}]", UUID.nameUUIDFromBytes(salesData.couponId().getBytes())); // a transformed value
+         new CouponTask(salesData.couponId()).run();                                // an id kept in an instance field
+         log.info("Edge processing completed [couponId={}]", salesData.couponId());
+diff --git a/src/main/java/com/example/e2e/coupon/CouponRepository.java b/src/main/java/com/example/e2e/coupon/CouponRepository.java
+index 0d60ea5..436af48 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponRepository.java
++++ b/src/main/java/com/example/e2e/coupon/CouponRepository.java
+@@ -1,10 +1,13 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import java.util.List;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /** JdbcTemplate repository: an update, an upsert through queryForObject, a list read. */
++@Slf4j
+ @Repository
+ public class CouponRepository {
+     private static final String CLOSE = "UPDATE coupons SET closed = true WHERE coupon_id = ?";
+@@ -20,14 +23,19 @@
+     }
+ 
+     public void close(String couponId) {
+-        jdbcTemplate.update(CLOSE, couponId);
++        int rows = jdbcTemplate.update(CLOSE, couponId);
++        AfterCommit.log(() -> log.debug("Coupons updated [rows={}]", rows)); // logast:wording
+     }
+ 
+     public int countUse(String couponId) {
+-        return jdbcTemplate.queryForObject(COUNT_USE, Integer.class, couponId);
++        int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, couponId);
++        AfterCommit.log(() -> log.info("Coupon usage saved [uses={}]", uses)); // logast:wording
++        return uses;
+     }
+ 
+     public List<String> findOpen() {
+-        return jdbcTemplate.queryForList("SELECT coupon_id FROM coupons WHERE closed = false", String.class);
++        List<String> result = jdbcTemplate.queryForList("SELECT coupon_id FROM coupons WHERE closed = false", String.class);
++        log.debug("Coupons read [count={}]", result.size()); // logast:wording
++        return result;
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/CalculationJob.java b/src/main/java/com/example/e2e/job/CalculationJob.java
+index 6f153ca..3103ead 100644
+--- a/src/main/java/com/example/e2e/job/CalculationJob.java
++++ b/src/main/java/com/example/e2e/job/CalculationJob.java
+@@ -12,6 +12,7 @@ 
+ 
+     @Override
+     protected void doExecute() {
++        log.info("Calculation started"); // logast:wording
+         log.info("Calculation done");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 7fb069d..4f47def 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -1,12 +1,16 @@ 
+ package com.example.e2e.job;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.context.annotation.Profile;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ @Profile("export")
+ public class ExportJob extends SettlementJob {
+     @Override
+     protected void doExecute() {
++        log.info("Export job started"); // logast:wording
++        log.info("Export job completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/stock/StockRejects.java b/src/main/java/com/example/e2e/stock/StockRejects.java
+index b6e9d6e..63a9284 100644
+--- a/src/main/java/com/example/e2e/stock/StockRejects.java
++++ b/src/main/java/com/example/e2e/stock/StockRejects.java
+@@ -1,9 +1,11 @@ 
+ package com.example.e2e.stock;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.amqp.AmqpRejectAndDontRequeueException;
+ import org.springframework.amqp.rabbit.annotation.RabbitListener;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ public class StockRejects {
+     @RabbitListener(queues = "stock-rejects")
+@@ -11,5 +13,6 @@
+         if (itemId.isBlank()) {
+             throw new AmqpRejectAndDontRequeueException("blank item id");
+         }
++        log.info("Stock rejects completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
+index 535e1fe..7bba83c 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponReloadJob.java
+@@ -1,8 +1,10 @@ 
+ package com.example.e2e.coupon;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ public class CouponReloadJob {
+     private final CouponLookup lookup;
+@@ -13,6 +15,8 @@
+ 
+     @Scheduled(fixedDelay = 600000)
+     public void run() {
++        log.info("Coupon reload started"); // logast:wording
+         lookup.reload();
++        log.info("Coupon reload completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+index d5cf243..c2e5489 100644
+--- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
++++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+@@ -26,10 +26,12 @@ 
+     @RabbitListener(queues = "coupon-returns")
+     public void onReturn(String couponId) {
+         log.info("Coupon return received [couponId={}]", couponId);
++        log.info("Coupon messages completed"); // logast:wording
+     }
+ 
+     @JmsListener(destination = "coupon-audits")
+     public void onAudit(String couponId) {
+         log.info("Coupon audit received [couponId={}]", couponId);
++        log.info("Coupon messages completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/stock/StockEvents.java b/src/main/java/com/example/e2e/stock/StockEvents.java
+index 53c913c..bee5346 100644
+--- a/src/main/java/com/example/e2e/stock/StockEvents.java
++++ b/src/main/java/com/example/e2e/stock/StockEvents.java
+@@ -1,8 +1,10 @@ 
+ package com.example.e2e.stock;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.amqp.rabbit.annotation.RabbitListener;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ public class StockEvents {
+     private final StockLedger ledger;
+@@ -14,10 +16,12 @@
+     @RabbitListener(queues = "stock-returns")
+     public void onReturn(String itemId) {
+         ledger.refill(itemId);
++        log.info("Stock events completed"); // logast:wording
+     }
+ 
+     @RabbitListener(queues = "stock-audits", ackMode = "MANUAL")
+     public void onAudit(String itemId) {
+         ledger.refill(itemId);
++        log.info("Stock events completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
+index 19fd1cc..7334819 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeJob.java
++++ b/src/main/java/com/example/e2e/edge/EdgeJob.java
+@@ -2,11 +2,13 @@ 
+ 
+ import com.example.e2e.income.SalesTotals;
+ import java.util.List;
++import lombok.extern.slf4j.Slf4j;
+ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.stereotype.Component;
+ 
+ /** Drives the edge-case shapes row by row. */
++@Slf4j
+ @Component
+ public class EdgeJob {
+     private final EdgeFlow flow;
+@@ -18,9 +20,12 @@
+     @Scheduled(cron = "0 30 3 * * *")
+     @SchedulerLock(name = "edge-job")   // runs on one instance at a time
+     public void run() {
+-        for (SalesTotals row : pending()) {
++        log.info("Edge started"); // logast:wording
++        var rows = pending();
++        for (SalesTotals row : rows) {
+             flow.process(row);
+         }
++        log.info("Edge completed [salesTotalsCount={}]", rows.size()); // logast:wording
+     }
+ 
+     private List<SalesTotals> pending() {
+diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+index 20a83cc..08f9ee6 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.coupon;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.scheduling.annotation.Scheduled;
+@@ -19,9 +20,12 @@
+     @Scheduled(cron = "0 0 2 * * *")
+     @Transactional
+     public void cleanup() {
+-        for (String couponId : repository.findOpen()) {
++        log.info("Coupon cleanup started"); // logast:wording
++        var couponIds = repository.findOpen();
++        for (String couponId : couponIds) {
+             log.info("Closing stale coupon {}", couponId);
+             repository.close(couponId);
+         }
++        AfterCommit.log(() -> log.info("Coupon cleanup completed [couponCount={}]", couponIds.size())); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 1ad9a72..3422916 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.order;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.event.EventListener;
+@@ -20,6 +21,11 @@
+     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
+     @TransactionalEventListener
+     public void onCommitted(OrderPlaced event) {
+-        log.info("Order audit recorded [orderId={}]", event.orderId());
++        ObservedContext.entrypoint("order.notifications")
++                .quiet()
++                .run(() -> {
++                    log.info("Order audit recorded [orderId={}]", event.orderId());
++                    log.info("Order notifications completed"); // logast:wording
++                });
+     }
+ }

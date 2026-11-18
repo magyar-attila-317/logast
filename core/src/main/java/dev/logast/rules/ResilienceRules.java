@@ -15,6 +15,7 @@ import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
 
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * {@code resilience} pack: what turns a slow or failing dependency into an outage.
@@ -23,6 +24,8 @@ import java.util.*;
  *       without a connect timeout;</li>
  *   <li>KAFKA_NO_ERROR_HANDLER: listeners on Boot's default error handling: 9 immediate retries, then the record is
  *       logged and skipped;</li>
+ *   <li>RABBIT_NO_ERROR_HANDLER: RabbitMQ listeners on Boot's defaults: a failing message is requeued without end;</li>
+ *   <li>RETRY_IN_TRANSACTION: a @Retryable @Transactional method joining a caller's transaction;</li>
  *   <li>UNBOUNDED_EXECUTOR: thread pools with unbounded threads or queues (memory, latency under load);</li>
  *   <li>BLOCKING_WAIT_UNBOUNDED: {@code future.get()}, {@code join()}, {@code latch.await()} without a timeout on a
  *       request/message path: one stuck dependency holds the request thread forever;</li>
@@ -57,7 +60,8 @@ final class ResilienceRules {
     }
 
     private final RuleContext ctx;
-    private final List<String[]> untimedClients = new ArrayList<>();   // file, line
+    private final List<String[]> untimedClients = new ArrayList<>();   // file, line: RestClient / RestTemplate builders Boot injects
+    private final List<String[]> untimedWebClients = new ArrayList<>(); // file, line: WebClient builders Boot injects
     private final Set<String> seenStatements = new HashSet<>();         // a builder chain is one client
     private final boolean clients;
     private final boolean executors;
@@ -99,6 +103,12 @@ final class ResilienceRules {
         }
         if (ctx.enabled(Rules.CACHE_UNBOUNDED)) {
             caches();
+        }
+        if (ctx.enabled(Rules.RABBIT_NO_ERROR_HANDLER)) {
+            rabbit();
+        }
+        if (ctx.enabled(Rules.RETRY_IN_TRANSACTION)) {
+            retryInTransaction();
         }
         if (!clients && !executors && !waits && !jdbc && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
             return;
@@ -366,7 +376,9 @@ final class ResilienceRules {
             // #90 item 6: WebClient.create() / the static WebClient.builder() get no auto-configuration (Spring Boot
             // reference, "Calling REST Services"); a builder Spring injects is left to Spring Boot's settings
             String unconfigured = unconfiguredBuilder(mi, cursor);
-            if (unconfigured != null) {
+            if (unconfigured == null) {
+                untimedWebClients.add(new String[]{site.file().relPath(), String.valueOf(line)});   // Boot's builder: YAML
+            } else {
                 unconfiguredClient(site, mi, line, unconfigured, statement, "Build it from the injected WebClient.Builder "
                         + "(Spring Boot's HTTP client settings apply), or give it a clientConnector with a connect and a "
                         + "response timeout (Reactor Netty: HttpClient.create().option(CONNECT_TIMEOUT_MILLIS, ..)"
@@ -530,24 +542,61 @@ final class ResilienceRules {
                 SPRING_CLIENT_REMEDY);
     }
 
-    /** One YAML order: Spring's builders apply spring.http.clients.* to every client they build. */
+    /**
+     * YAML orders: Spring Boot applies its HTTP client properties to every client built from the builders it injects
+     * (Spring Boot reference, "Calling REST Services"). The names depend on the version (application properties
+     * appendix): Boot 4 has spring.http.clients.* for RestClient, RestTemplate and WebClient alike; Boot 3.5 has
+     * spring.http.client.* for RestClient / RestTemplate and spring.http.reactiveclient.* for WebClient; Boot 3.4 only
+     * the former; earlier versions neither. An unknown version gets Boot 4's names (logast's default target). Where no
+     * property exists the clients are reported instead.
+     */
     private void springClientTimeouts() {
+        int[] boot = SetupRules.springBootVersion(ctx);
+        if (boot[0] == 3 || boot[0] > 0 && boot[0] < 3) {
+            boolean three = boot[0] == 3;
+            clientTimeouts(untimedClients, "client", "http-timeouts", "HTTP clients",
+                    three && boot[1] >= 4 ? null : "Spring Boot " + boot[0] + "." + boot[1] + " has no property for them "
+                            + "(spring.http.client.* came with 3.4): build them with timeouts (RestTemplateBuilder.connectTimeout(..) "
+                            + "/ readTimeout(..), or a requestFactory with connect and read timeouts on the RestClient.Builder).");
+            clientTimeouts(untimedWebClients, "reactiveclient", "http-timeouts-reactive", "WebClients",
+                    three && boot[1] >= 5 ? null : "Spring Boot " + boot[0] + "." + boot[1] + " has no property for them "
+                            + "(spring.http.reactiveclient.* came with 3.5): declare a WebClientCustomizer that sets a "
+                            + "clientConnector with a connect and a response timeout (Reactor Netty: HttpClient.create()"
+                            + ".option(CONNECT_TIMEOUT_MILLIS, ..).responseTimeout(..)).");
+            return;
+        }
+        List<String[]> all = new ArrayList<>(untimedClients);
+        all.addAll(untimedWebClients);
+        clientTimeouts(all, "clients", "http-timeouts", "HTTP clients", null);
+    }
+
+    /**
+     * One order for {@code clients}: sets spring.http.{@code group}.connect-timeout / read-timeout, or, when this Spring
+     * Boot version has no such property ({@code noProperty} says what to do instead), reports them.
+     */
+    private void clientTimeouts(List<String[]> clients, String group, String anchor, String what, String noProperty) {
+        String prefix = "spring\\.http\\." + java.util.regex.Pattern.quote(group) + "\\.";
         Map<String, String> props = ctx.a.springProperties;
-        boolean read = props.keySet().stream().anyMatch(k -> k.matches("spring\\.http\\.clients?\\..*read-timeout"));
-        boolean connect = props.keySet().stream().anyMatch(k -> k.matches("spring\\.http\\.clients?\\..*connect-timeout"));
-        if (untimedClients.isEmpty() || read && connect) {
+        boolean read = props.keySet().stream().anyMatch(k -> k.matches(prefix + ".*read-?timeout"));
+        boolean connect = props.keySet().stream().anyMatch(k -> k.matches(prefix + ".*connect-?timeout"));
+        if (clients.isEmpty() || noProperty == null && read && connect) {
             return;
         }
         var cfg = ctx.policy.resilience();
-        String[] first = untimedClients.getFirst();
-        String missing = !read && !connect ? "connect/read" : read ? "connect" : "read";
-        OrderBuilder b = ctx.order(Rules.HTTP_CLIENT_NO_TIMEOUT, "http-timeouts").at(first[0], Integer.parseInt(first[1]))
-                .title("HTTP clients without " + missing + " timeout: Spring Boot sets none, so a slow dependency holds "
-                        + "request threads until they run out")
-                .suggestion("Sets spring.http.clients.connect-timeout=" + cfg.httpConnectTimeout() + " / read-timeout="
-                        + cfg.httpReadTimeout() + " (policy resilience.*) for every client built from Spring's builders; "
-                        + "clients that need longer get their own requestFactory settings.");
-        StringBuilder snippet = new StringBuilder("spring:\n  http:\n    clients:\n");
+        String[] first = clients.getFirst();
+        String missing = noProperty != null || !read && !connect ? "connect/read" : read ? "connect" : "read";
+        OrderBuilder b = ctx.order(Rules.HTTP_CLIENT_NO_TIMEOUT, anchor).at(first[0], Integer.parseInt(first[1]))
+                .title(what + " without " + missing + " timeout: Spring Boot sets none, so a slow dependency holds "
+                        + "request threads until they run out");
+        clients.stream().skip(1).forEach(c -> b.location(c[0], Integer.parseInt(c[1]), Rules.HTTP_CLIENT_NO_TIMEOUT));
+        if (noProperty != null) {
+            b.suggestion(noProperty);
+            return;
+        }
+        b.suggestion("Sets spring.http." + group + ".connect-timeout=" + cfg.httpConnectTimeout() + " / read-timeout="
+                + cfg.httpReadTimeout() + " (policy resilience.*) for every client built from Spring's builders; "
+                + "clients that need longer get their own requestFactory settings.");
+        StringBuilder snippet = new StringBuilder("spring:\n  http:\n    " + group + ":\n");
         if (!connect) {
             snippet.append("      connect-timeout: ").append(cfg.httpConnectTimeout()).append('\n');
         }
@@ -555,7 +604,6 @@ final class ResilienceRules {
             snippet.append("      read-timeout: ").append(cfg.httpReadTimeout()).append('\n');
         }
         ServiceYaml.merge(ctx, b, snippet.toString());
-        untimedClients.stream().skip(1).forEach(c -> b.location(c[0], Integer.parseInt(c[1]), Rules.HTTP_CLIENT_NO_TIMEOUT));
     }
 
     // ---- database --------------------------------------------------------------------------------
@@ -1467,6 +1515,167 @@ final class ResilienceRules {
                         + "@RetryableTopic or setCommonErrorHandler")
                 .doneWhen("a source file uses one of them (e.g. declares a DefaultErrorHandler bean)");
         listeners.stream().skip(1).forEach(ep -> b.location(ep.method().file().relPath(), ep.method().line(), Rules.KAFKA_NO_ERROR_HANDLER));
+    }
+
+    // ---- RabbitMQ -------------------------------------------------------------------------------
+
+    private static final String RABBIT_LISTENER = "org.springframework.amqp.rabbit.annotation.RabbitListener";
+
+    /**
+     * RABBIT_NO_ERROR_HANDLER (#90 item 5): "By default, if retries are disabled and the listener throws an exception,
+     * the delivery is retried indefinitely" (Spring Boot reference, "AMQP", Receiving a Message; same in 3.5 and 4.x):
+     * Spring AMQP rejects the message and the broker requeues it (defaultRequeueRejected is true by default; Spring AMQP
+     * reference, "Exception Handling"), so a message that always fails comes back without end. Not reported when
+     * listener retries are on (spring.rabbitmq.listener.&lt;type&gt;.retry.enabled: exhausted retries reject without
+     * requeue), default-requeue-rejected is false, a source configures the container (setDefaultRequeueRejected, an
+     * advice chain, RetryInterceptorBuilder), or the listener's own class throws AmqpRejectAndDontRequeueException.
+     * Listeners with an explicit ackMode settle messages themselves; stream listeners do not requeue. Report: where a
+     * failed message goes (dropped, a dead-letter exchange) is a decision.
+     */
+    private void rabbit() {
+        String type = propertyValue("spring.rabbitmq.listener.type").orElse("simple").toLowerCase(Locale.ROOT);
+        if (type.equals("stream")
+                || propertyValue("spring.rabbitmq.listener." + type + ".retry.enabled").filter("true"::equalsIgnoreCase).isPresent()
+                || propertyValue("spring.rabbitmq.listener." + type + ".default-requeue-rejected").filter("false"::equalsIgnoreCase).isPresent()
+                || mentioned("setDefaultRequeueRejected") || mentioned("RetryInterceptorBuilder") || mentioned("setAdviceChain")) {
+            return;
+        }
+        List<MethodInfo> listeners = ctx.a.entrypoints.stream().filter(ep -> ep.kind() == Entrypoint.Kind.RABBIT)
+                .map(Entrypoint::method)
+                .filter(m -> m.decl().getLeadingAnnotations().stream().filter(a -> Annotations.is(a, RABBIT_LISTENER))
+                        .noneMatch(a -> Annotations.attribute(a, "ackMode").isPresent()))
+                .filter(m -> !m.file().text().contains("AmqpRejectAndDontRequeueException"))
+                .filter(m -> !ctx.ignored(m.file(), m.line(), Rules.RABBIT_NO_ERROR_HANDLER))
+                .sorted(Comparator.comparing((MethodInfo m) -> m.file().relPath()).thenComparingInt(MethodInfo::line)).toList();
+        if (listeners.isEmpty()) {
+            return;
+        }
+        MethodInfo first = listeners.getFirst();
+        String prefix = "spring.rabbitmq.listener." + type;
+        OrderBuilder b = ctx.order(Rules.RABBIT_NO_ERROR_HANDLER, "rabbit-errors").at(first.file().relPath(), first.line())
+                .title("RabbitMQ listeners on the default error handling: a message whose listener throws is rejected and "
+                        + "requeued, so a message that always fails is redelivered without end ("
+                        + String.join(", ", listeners.stream().map(MethodInfo::label).toList()) + ")")
+                .suggestion("Turn on listener retries (" + prefix + ".retry.enabled: true): once they are exhausted the "
+                        + "message is rejected without requeue, and dropped unless the queue has a dead-letter exchange "
+                        + "(x-dead-letter-exchange), so declare one to keep it. Or set " + prefix
+                        + ".default-requeue-rejected: false, or throw AmqpRejectAndDontRequeueException for failures a "
+                        + "redelivery cannot fix.")
+                .basis("Spring Boot: \"if retries are disabled and the listener throws an exception, the delivery is retried "
+                        + "indefinitely\"; the Spring configuration sets neither " + prefix + ".retry.enabled: true nor "
+                        + prefix + ".default-requeue-rejected: false, no source configures the container's requeue or "
+                        + "advice chain, and the listeners neither set an ackMode nor throw AmqpRejectAndDontRequeueException")
+                .doneWhen(prefix + ".retry.enabled: true or " + prefix + ".default-requeue-rejected: false is set, a "
+                        + "source calls setDefaultRequeueRejected / setAdviceChain or uses RetryInterceptorBuilder, or the "
+                        + "listener's class throws AmqpRejectAndDontRequeueException");
+        listeners.stream().skip(1).forEach(m -> b.location(m.file().relPath(), m.line(), Rules.RABBIT_NO_ERROR_HANDLER));
+    }
+
+    /** The value the Spring configuration sets for {@code key} (relaxed binding: kebab-case, camelCase). */
+    private Optional<String> propertyValue(String key) {
+        String want = key.replace("-", "").toLowerCase(Locale.ROOT);
+        return ctx.a.springProperties.entrySet().stream()
+                .filter(e -> e.getKey().replace("-", "").toLowerCase(Locale.ROOT).equals(want))
+                .map(e -> e.getValue().trim()).findFirst();
+    }
+
+    // ---- retries inside an outer transaction ----------------------------------------------------
+
+    /**
+     * RETRY_IN_TRANSACTION (#90 item 4 follow-up): retry is always applied outside {@code @Transactional}, so "Each
+     * retry attempt starts a fresh transaction" (Framework reference, "Resilience Features"). That holds only when the
+     * method starts the transaction: called from inside another transaction, with the default propagation it joins that
+     * one, and "a rollback-only marker set in the inner transaction scope does affect the outer transaction's chance to
+     * actually commit" (Framework reference, "Transaction Propagation", PROPAGATION_REQUIRED). Every attempt then runs
+     * in the one transaction the first failure already marked rollback-only, and the caller's commit ends in an
+     * UnexpectedRollbackException. Reported for a {@code @Retryable} (Framework 7 or Spring Retry) method whose own
+     * {@code @Transactional} joins (not REQUIRES_NEW / NESTED / NOT_SUPPORTED / NEVER), reached through a bean call
+     * (another class: the proxy applies) from a transactional method, up to 4 calls out.
+     */
+    private void retryInTransaction() {
+        for (MethodInfo m : ctx.methods()) {
+            if (m.decl().getBody() == null || !retryable(m) || !joinsTransaction(m)
+                    || ctx.ignored(m.file(), m.line(), Rules.RETRY_IN_TRANSACTION)) {
+                continue;
+            }
+            List<String> path = outerTransaction(m);
+            if (path == null) {
+                continue;
+            }
+            ctx.order(Rules.RETRY_IN_TRANSACTION, m, m.line(), "retry-in-tx")
+                    .title(m.label() + " is @Retryable and @Transactional, but runs inside the transaction of "
+                            + String.join(" → ", path) + ": its attempts join that transaction, so after the first failure "
+                            + "they retry in a transaction already marked rollback-only, and the caller's commit fails with "
+                            + "UnexpectedRollbackException")
+                    .suggestion("Retry the whole transaction: put @Retryable on the method that starts it (retry wraps "
+                            + "@Transactional, so each attempt gets a fresh transaction), or give " + m.label()
+                            + " @Transactional(propagation = Propagation.REQUIRES_NEW) so each attempt commits or rolls back "
+                            + "on its own (it takes a second connection while the caller's is held).")
+                    .doneWhen("the method is no longer reached from another transactional method, or its @Transactional "
+                            + "uses REQUIRES_NEW, NESTED or NOT_SUPPORTED");
+        }
+    }
+
+    private boolean retryable(MethodInfo m) {
+        return Stream.concat(m.decl().getLeadingAnnotations().stream(), m.owner().decl().getLeadingAnnotations().stream())
+                .map(a -> annotationFqn(a, m.file()))
+                .anyMatch(f -> (RESILIENCE_PKG + "Retryable").equals(f) || (SPRING_RETRY_PKG + "Retryable").equals(f));
+    }
+
+    /** The method's transaction annotation (its own, else its class's), or null. */
+    private static J.Annotation transactional(MethodInfo m) {
+        return Stream.concat(m.decl().getLeadingAnnotations().stream(), m.owner().decl().getLeadingAnnotations().stream())
+                .filter(a -> TRANSACTIONAL.stream().anyMatch(t -> Annotations.is(a, t))).findFirst().orElse(null);
+    }
+
+    private static String propagation(J.Annotation a) {
+        return (Annotations.is(a, TRANSACTIONAL.getFirst()) ? Annotations.attribute(a, "propagation")
+                : Annotations.attribute(a, "value")).map(e -> e.printTrimmed()).orElse("REQUIRED");
+    }
+
+    /** @Transactional whose propagation joins a caller's transaction. */
+    private static boolean joinsTransaction(MethodInfo m) {
+        J.Annotation a = transactional(m);
+        String p = a == null ? "" : propagation(a);
+        return a != null && Stream.of("REQUIRES_NEW", "NESTED", "NOT_SUPPORTED", "NEVER").noneMatch(p::endsWith);
+    }
+
+    /** @Transactional that holds a transaction for what it calls (not SUPPORTS / NOT_SUPPORTED / NEVER). */
+    private static boolean holdsTransaction(MethodInfo m) {
+        J.Annotation a = transactional(m);
+        String p = a == null ? "" : propagation(a);
+        return a != null && Stream.of("SUPPORTS", "NOT_SUPPORTED", "NEVER").noneMatch(p::endsWith);
+    }
+
+    /**
+     * The nearest transactional caller of {@code m} on the same thread, up to 4 calls out, as a path of labels from it
+     * to {@code m}; null when there is none. The call into {@code m} must come from another class (a self-call skips
+     * the proxy, so neither retry nor transaction apply to it).
+     */
+    private List<String> outerTransaction(MethodInfo m) {
+        Deque<List<MethodInfo>> todo = new ArrayDeque<>(List.of(List.of(m)));
+        Set<String> seen = new HashSet<>();
+        while (!todo.isEmpty()) {
+            List<MethodInfo> path = todo.poll();
+            MethodInfo callee = path.getFirst();
+            if (!seen.add(callee.key()) || path.size() > 5) {
+                continue;
+            }
+            for (var e : ctx.a.graph.in(callee)) {
+                MethodInfo caller = e.from();
+                if (e.async() != dev.logast.graph.CallGraph.Async.NONE
+                        || callee.key().equals(m.key()) && caller.owner().fqn().equals(m.owner().fqn())) {
+                    continue;
+                }
+                List<MethodInfo> next = new ArrayList<>(path);
+                next.addFirst(caller);
+                if (holdsTransaction(caller)) {
+                    return next.stream().map(MethodInfo::label).toList();
+                }
+                todo.add(next);
+            }
+        }
+        return null;
     }
 
     // ---- reports --------------------------------------------------------------------------------

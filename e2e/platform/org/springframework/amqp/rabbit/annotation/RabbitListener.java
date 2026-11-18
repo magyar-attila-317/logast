@@ -7,4 +7,6 @@ import java.lang.annotation.*;
 @Target(ElementType.METHOD)
 public @interface RabbitListener {
     String[] queues() default {};
+
+    String ackMode() default "";
 }

@@ -1,5 +1,5 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index 6bd81fc..6f790a0 100644
+index 6bd81fc..9bfd0b3 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
 @@ -1,7 +1,50 @@ 
@@ -11,7 +11,7 @@ index 6bd81fc..6f790a0 100644
 +    template:
 +      query-timeout: 5m
 +  http:
-+    clients:
++    client:
 +      connect-timeout: 5s
 +      read-timeout: 30s
 +  kafka:

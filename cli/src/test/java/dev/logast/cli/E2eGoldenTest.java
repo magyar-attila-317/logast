@@ -3786,6 +3786,205 @@ class E2eGoldenTest {
         assertThat(alone.get("FINDINGS.txt")).contains(expected);
     }
 
+    /** #90 item 5, the retry follow-up and the WebClient.Builder: the shapes of {@link #poisonMessagesNestedRetriesAndWebClientTimeouts()}. */
+    private static final IoAction STOCK = app -> {
+        Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/stock"));
+        Files.writeString(dir.resolve("StockConfig.java"), """
+                package com.example.e2e.stock;
+
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.resilience.annotation.EnableResilientMethods;
+
+                @Configuration
+                @EnableResilientMethods
+                public class StockConfig {
+                }
+                """);
+        // reserve joins book's transaction: its retries run in a transaction already marked rollback-only; release has
+        // a transaction of its own per attempt; restock is not called inside a transaction
+        Files.writeString(dir.resolve("StockWriter.java"), """
+                package com.example.e2e.stock;
+
+                import org.springframework.resilience.annotation.Retryable;
+                import org.springframework.stereotype.Component;
+                import org.springframework.transaction.annotation.Propagation;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Component
+                public class StockWriter {
+                    @Retryable(maxRetries = 2)
+                    @Transactional
+                    public int reserve(String itemId, int quantity) {
+                        return quantity;
+                    }
+
+                    @Retryable(maxRetries = 2)
+                    @Transactional(propagation = Propagation.REQUIRES_NEW)
+                    public int release(String itemId) {
+                        return 0;
+                    }
+
+                    @Retryable(maxRetries = 2)
+                    @Transactional
+                    public int restock(String itemId) {
+                        return 1;
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("StockLedger.java"), """
+                package com.example.e2e.stock;
+
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public class StockLedger {
+                    private final StockWriter writer;
+
+                    public StockLedger(StockWriter writer) {
+                        this.writer = writer;
+                    }
+
+                    @Transactional
+                    public int book(String itemId, int quantity) {
+                        return writer.reserve(itemId, quantity) + writer.release(itemId);
+                    }
+
+                    public int refill(String itemId) {
+                        return writer.restock(itemId);
+                    }
+                }
+                """);
+        // onReturn is requeued forever when it throws; onAudit acknowledges itself; StockRejects rejects for good
+        Files.writeString(dir.resolve("StockEvents.java"), """
+                package com.example.e2e.stock;
+
+                import org.springframework.amqp.rabbit.annotation.RabbitListener;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class StockEvents {
+                    private final StockLedger ledger;
+
+                    public StockEvents(StockLedger ledger) {
+                        this.ledger = ledger;
+                    }
+
+                    @RabbitListener(queues = "stock-returns")
+                    public void onReturn(String itemId) {
+                        ledger.refill(itemId);
+                    }
+
+                    @RabbitListener(queues = "stock-audits", ackMode = "MANUAL")
+                    public void onAudit(String itemId) {
+                        ledger.refill(itemId);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("StockRejects.java"), """
+                package com.example.e2e.stock;
+
+                import org.springframework.amqp.AmqpRejectAndDontRequeueException;
+                import org.springframework.amqp.rabbit.annotation.RabbitListener;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class StockRejects {
+                    @RabbitListener(queues = "stock-rejects")
+                    public void onReject(String itemId) {
+                        if (itemId.isBlank()) {
+                            throw new AmqpRejectAndDontRequeueException("blank item id");
+                        }
+                    }
+                }
+                """);
+        // a WebClient built from the builder Spring Boot injects: the timeout properties reach it
+        Files.writeString(dir.resolve("StockFeed.java"), """
+                package com.example.e2e.stock;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.reactive.function.client.WebClient;
+
+                @Component
+                public class StockFeed {
+                    private final WebClient client;
+
+                    public StockFeed(WebClient.Builder builder) {
+                        this.client = builder.baseUrl("http://stock").build();
+                    }
+
+                    public String level(String itemId) {
+                        return client.get().uri("/levels/{id}", itemId).retrieve().bodyToMono(String.class).block();
+                    }
+                }
+                """);
+    };
+
+    /** The scenario's build declares Spring Boot {@code version}. */
+    private static IoAction bootVersion(String version) {
+        return app -> {
+            Path build = app.resolve("build.gradle.kts");
+            String text = Files.readString(build);
+            String declared = text.replace("plugins { java }", "plugins {\n    java\n    id(\"org.springframework.boot\") version \""
+                    + version + "\"\n}");
+            assertThat(declared).as("the scenario declares the target Spring Boot version").isNotEqualTo(text);
+            Files.writeString(build, declared);
+        };
+    }
+
+    /**
+     * #90 item 5 and the follow-ups of item 4 and 6. A @RabbitListener on Spring Boot's defaults requeues a message
+     * whose listener throws without end (RABBIT_NO_ERROR_HANDLER); one with its own ackMode, or whose class throws
+     * AmqpRejectAndDontRequeueException, is not reported. A @Retryable @Transactional method called from another
+     * transaction joins it, so its retries run in a transaction already marked rollback-only (RETRY_IN_TRANSACTION);
+     * REQUIRES_NEW, or no outer transaction, is fine. A WebClient built from the injected WebClient.Builder gets
+     * Spring Boot's timeout properties: spring.http.clients.* on Boot 4 (with the RestClient), spring.http.reactiveclient.*
+     * next to spring.http.client.* on Boot 3.5, and a report on Boot 3.4, which has no such property. Every file must
+     * equal e2e/expected-resilience-messaging; the resilience pack alone reports the same.
+     */
+    @Test
+    void poisonMessagesNestedRetriesAndWebClientTimeouts() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, STOCK);
+        String findings = actual.get("FINDINGS.txt");
+        List<String> expected = List.of("RabbitMQ listeners on the default error handling: a message whose listener throws is "
+                        + "rejected and requeued, so a message that always fails is redelivered without end "
+                        + "(CouponMessages.onReturn, StockEvents.onReturn)",
+                "StockWriter.reserve is @Retryable and @Transactional, but runs inside the transaction of StockLedger.book → "
+                        + "StockWriter.reserve");
+        assertThat(findings).contains(expected).doesNotContain("StockWriter.release is").doesNotContain("StockWriter.restock is")
+                .doesNotContain("StockEvents.onAudit)").doesNotContain("StockRejects.onReject)");
+        assertThat(actual.get("src/main/resources/application.yml")).contains("  http:\n    clients:\n      connect-timeout:")
+                .doesNotContain("reactiveclient");
+        golden(EXPECTED.resolveSibling("expected-resilience-messaging"), actual);
+
+        // the resilience pack on its own reports the same
+        Map<String, String> alone = migrate(tmp.resolve("resilience-only"), CLASSPATH, app -> {
+            STOCK.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [resilience]"));
+        });
+        assertThat(alone.get("FINDINGS.txt")).contains(expected);
+
+        // Spring Boot 3.5: the WebClient gets its own property group, the RestClient spring.http.client.*
+        Map<String, String> boot35 = migrate(tmp.resolve("boot35"), CLASSPATH, app -> {
+            STOCK.run(app);
+            bootVersion("3.5.7").run(app);
+        });
+        assertThat(boot35.get("src/main/resources/application.yml"))
+                .contains("    client:\n      connect-timeout: 5s\n      read-timeout: 30s\n")
+                .contains("    reactiveclient:\n      connect-timeout: 5s\n      read-timeout: 30s\n")
+                .doesNotContain("clients:");
+
+        // Spring Boot 3.4 has no property for WebClient timeouts: reported instead
+        Path boot34 = tmp.resolve("boot34");
+        copy(BEFORE, boot34);
+        STOCK.run(boot34);
+        bootVersion("3.4.10").run(boot34);
+        assertThat(run(boot34, "scan", boot34.toString(), "--classpath-file", CLASSPATH))
+                .contains("WebClients without connect/read timeout").contains("Spring Boot 3.4 has no property for them")
+                .contains("Sets spring.http.client.connect-timeout=");
+    }
+
     /**
      * Java 22+ unnamed catch parameters (#44): {@code catch (X _)} cannot be passed on as a cause or logged, so neither
      * fix may write {@code _} into the code. Needs JDK 22+ to compile.
