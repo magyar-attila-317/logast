@@ -51,9 +51,16 @@ final class TracingRules {
             if (ctx.enabled(Rules.SPAN_NOT_CLOSED) && !m.owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
                 spans(m);
             }
+            if (ctx.enabled(Rules.SPAN_NAME_DYNAMIC) && !m.owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
+                spanNames(m);
+            }
         }
         if (ctx.enabled(Rules.TRACING_EXPORT_UNCONFIGURED) && ctx.a.appPackage != null) {
             export();
+        }
+        // with the logging pack, SETUP_LOGBACK_XML replaces the file with Spring Boot's structured logging (MDC included)
+        if (ctx.enabled(Rules.TRACE_ID_NOT_LOGGED) && !ctx.enabled(Rules.SETUP_LOGBACK_XML) && ctx.a.appPackage != null) {
+            logPatterns();
         }
         if (ctx.enabled(Rules.HTTP_CLIENT_UNTRACED)) {
             fieldInitializers();
@@ -122,7 +129,15 @@ final class TracingRules {
      * the methods a proxy can intercept: not constructors, private or static ones).
      */
     static boolean observedAnnotation(MethodInfo m) {
-        if (m.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, OBSERVED) || Annotations.is(a, NEW_SPAN))) {
+        return observedAnnotation(m, true);
+    }
+
+    /**
+     * {@code @Observed} on the method or its class (as {@link #observedAnnotation(MethodInfo)}), and with
+     * {@code newSpan} also {@code @NewSpan}, which yields a span but no timer.
+     */
+    static boolean observedAnnotation(MethodInfo m, boolean newSpan) {
+        if (m.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, OBSERVED) || newSpan && Annotations.is(a, NEW_SPAN))) {
             return true;
         }
         return !m.decl().isConstructor() && !m.decl().hasModifier(J.Modifier.Type.Private) && !m.decl().hasModifier(J.Modifier.Type.Static)
@@ -382,6 +397,210 @@ final class TracingRules {
             }
         }.visit(m.decl().getBody(), 0, new Cursor(new Cursor(null, Cursor.ROOT_VALUE), m.decl()));
         return use;
+    }
+
+    // ---- span and observation names ---------------------------------------------------------------------------
+
+    private static final java.util.regex.Pattern ID_NAME = java.util.regex.Pattern.compile("(id|uuid)|[a-z][A-Za-z0-9]*(Id|ID|Uuid|UUID)");
+
+    /** What a call names, or null: an observation's name or contextual name, a span's name. */
+    private static String namedBy(J.MethodInvocation mi) {
+        JavaType.Method mt = mi.getMethodType();
+        if (mt == null || mi.getArguments().isEmpty() || !TypeUtils.isString(mi.getArguments().getFirst().getType())) {
+            return null;
+        }
+        String decl = mt.getDeclaringType().getFullyQualifiedName().replace('$', '.');
+        String n = mi.getSimpleName();
+        return switch (decl) {
+            case "io.micrometer.observation.Observation" -> n.equals("createNotStarted") || n.equals("start") ? "Observation name"
+                    : n.equals("contextualName") ? "Observation contextual name" : null;
+            case "io.micrometer.tracing.Span", "io.micrometer.tracing.Span.Builder" -> n.equals("name") ? "Span name" : null;
+            case "io.micrometer.tracing.Tracer" -> n.equals("startScopedSpan") ? "Span name" : null;
+            case "io.opentelemetry.api.trace.Tracer" -> n.equals("spanBuilder") ? "Span name" : null;
+            case "io.opentelemetry.api.trace.Span" -> n.equals("updateName") ? "Span name" : null;
+            default -> null;
+        };
+    }
+
+    /** The values a string is built from: the operands of a concatenation, the arguments of String.format / formatted. */
+    private static void parts(Expression e, List<Expression> out) {
+        if (e instanceof J.Parentheses<?> p && p.getTree() instanceof Expression inner) {
+            parts(inner, out);
+        } else if (e instanceof J.Binary b && b.getOperator() == J.Binary.Type.Addition) {
+            parts(b.getLeft(), out);
+            parts(b.getRight(), out);
+        } else if (e instanceof J.MethodInvocation mi && (mi.getSimpleName().equals("format") || mi.getSimpleName().equals("valueOf"))
+                && mi.getMethodType() != null && TypeUtils.isOfClassType(mi.getMethodType().getDeclaringType(), "java.lang.String")) {
+            mi.getArguments().stream().skip(mi.getSimpleName().equals("format") ? 1 : 0).forEach(a -> parts(a, out));
+        } else if (e instanceof J.MethodInvocation mi && mi.getSimpleName().equals("formatted") && mi.getSelect() != null
+                && TypeUtils.isString(mi.getSelect().getType())) {
+            parts(mi.getSelect(), out);
+            mi.getArguments().forEach(a -> parts(a, out));
+        } else {
+            out.add(e);
+        }
+    }
+
+    /**
+     * The name of an unbounded value (an id or personal data), or null: a vocabulary key with high cardinality (as
+     * METRIC_HIGH_CARDINALITY_TAG decides, also through the key it is stored under), PII, or a value named like an id
+     * ({@code id}, {@code orderId}, {@code uuid}).
+     */
+    private String unbounded(Expression value, String key) {
+        if (DomainValues.isConstant(value)) {
+            return null;
+        }
+        String name = DomainValues.derivedKey(value);
+        Optional<String> valueKey = ctx.domain.keyOf(value);
+        if (valueKey.map(ctx.policy::highCardinality).orElse(false)) {
+            return name != null ? name : valueKey.get();
+        }
+        if (key != null && ctx.policy.highCardinality(ctx.policy.mdcAliases().getOrDefault(key, key))) {
+            return name != null ? name : key;
+        }
+        if (ctx.domain.isPii(value) || name != null && ID_NAME.matcher(name).matches()) {
+            return name;
+        }
+        return null;
+    }
+
+    /**
+     * SPAN_NAME_DYNAMIC: an observation or span name built from an id, or an id among an observation's low-cardinality
+     * key values. Micrometer names the observation's timer after it and tags it with every low-cardinality key value
+     * (Micrometer Observation reference, "Observation Handler": "Only low cardinality key values are used as meter
+     * tags"; high-cardinality values "can cause a cardinality explosion in the metrics backend"); a span name should be
+     * "the most general string that identifies a (statistically) interesting class of Spans" (OpenTelemetry Tracing
+     * API: get_account, not get_account/42). An id there makes one timer series and one span name per value. Only
+     * names built from an id are reported: a name passed in by a caller, or built from a topic or type, is bounded.
+     */
+    private void spanNames(MethodInfo m) {
+        SourceFileInfo f = m.file();
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration c, Integer p) {
+                return c;
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                String named = namedBy(mi);
+                if (named != null) {
+                    List<Expression> parts = new ArrayList<>();
+                    parts(mi.getArguments().getFirst(), parts);
+                    for (Expression part : parts) {
+                        String id = unbounded(part, null);
+                        if (id != null) {
+                            report(mi, named + " built from " + id, "use a fixed name and put " + id
+                                    + " into highCardinalityKeyValue(...) or a span tag");
+                            break;
+                        }
+                    }
+                } else if (mi.getSimpleName().equals("lowCardinalityKeyValue") && mi.getMethodType() != null
+                        && TypeUtils.isAssignableTo("io.micrometer.observation.Observation", mi.getMethodType().getDeclaringType())) {
+                    List<Expression> args = mi.getArguments();
+                    if (args.size() == 1 && args.getFirst() instanceof J.MethodInvocation of && of.getSimpleName().equals("of")
+                            && of.getArguments().size() == 2) {
+                        args = of.getArguments();   // lowCardinalityKeyValue(KeyValue.of("order.id", orderId))
+                    }
+                    if (args.size() == 2) {
+                        String key = args.getFirst() instanceof J.Literal l && l.getValue() instanceof String k ? k : null;
+                        String id = unbounded(args.get(1), key);
+                        if (id != null) {
+                            report(mi, "Low-cardinality key value " + (key == null ? "" : "'" + key + "' ") + "is " + id,
+                                    "use highCardinalityKeyValue(...) for it (on the span, not a meter tag)");
+                        }
+                    }
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+
+            private void report(J.MethodInvocation mi, String what, String fix) {
+                int line = Pos.line(mi.getName());   // in a chain: the line of this call, not of the chain's start
+                if (ctx.ignored(f, line, Rules.SPAN_NAME_DYNAMIC)) {
+                    return;
+                }
+                ctx.orderNth(Rules.SPAN_NAME_DYNAMIC, m, line, "name")
+                        .title(what + " in " + m.label() + ": every value starts its own timer series and span name")
+                        .suggestion("Keep names and low-cardinality key values bounded: " + fix + ".")
+                        .doneWhen("the name is built from constants only and no id is a low-cardinality key value")
+                        .context(ctx.context(m, Pos.start(mi), Text.oneLine(mi.printTrimmed(), 160), null));
+            }
+        }.visit(m.decl().getBody(), 0, new Cursor(new Cursor(null, Cursor.ROOT_VALUE), m.decl()));
+    }
+
+    // ---- trace ids in a custom log pattern ---------------------------------------------------------------------
+
+    /** What puts the trace id into a pattern: the MDC key, all of MDC, Spring Boot's correlation or default pattern. */
+    private static final java.util.regex.Pattern CORRELATED = java.util.regex.Pattern.compile(
+            "traceId|trace_id|%correlationId|LOG_CORRELATION_PATTERN|CONSOLE_LOG_PATTERN|FILE_LOG_PATTERN|%(X|mdc)(?!\\{)");
+    private static final java.util.regex.Pattern PATTERN_ELEMENT = java.util.regex.Pattern.compile("<pattern>([\\s\\S]*?)</pattern>");
+    private static final java.util.regex.Pattern XML_PROPERTY = java.util.regex.Pattern.compile(
+            "<property\\s+name=\"([^\"]+)\"\\s+value=\"([^\"]*)\"");
+
+    /**
+     * TRACE_ID_NOT_LOGGED: Spring Boot puts the trace and span id into log lines through its own pattern
+     * ({@code ${LOG_CORRELATION_PATTERN}}, from logging.pattern.correlation, inside defaults.xml's CONSOLE_LOG_PATTERN and
+     * FILE_LOG_PATTERN, Boot 3.5 and 4.1; Boot reference, Tracing, "Logging Correlation IDs"). A logback(-spring).xml
+     * with a text pattern of its own, or a logging.pattern.console / .file, without it drops them: the log lines cannot
+     * be matched to a trace. Only without the logging pack, where SETUP_LOGBACK_XML replaces the file.
+     */
+    private void logPatterns() {
+        Path root = ctx.a.project.root();
+        Path resources = SpringProperties.appResources(root);
+        if (resources == null || ctx.a.springProperties.get("logging.config") != null) {
+            return;
+        }
+        boolean ownFile = false;
+        for (String name : List.of("logback-spring.xml", "logback.xml")) {
+            Path xml = resources.resolve(name);
+            if (!Files.exists(xml)) {
+                continue;
+            }
+            ownFile = true;
+            String text = SetupRules.read(xml);
+            Map<String, String> props = new HashMap<>();
+            for (var pm = XML_PROPERTY.matcher(text); pm.find(); ) {
+                props.put(pm.group(1), pm.group(2));
+            }
+            List<Integer> lines = new ArrayList<>();
+            for (var pm = PATTERN_ELEMENT.matcher(text); pm.find(); ) {
+                String pattern = pm.group(1);
+                for (int i = 0; i < 3; i++) {   // ${NAME} of a <property> in the same file
+                    for (var e : props.entrySet()) {
+                        pattern = pattern.replace("${" + e.getKey() + "}", e.getValue());
+                    }
+                }
+                // a JSON encoder's pattern provider ({"field": "%..."}) is not a text layout
+                if (!pattern.strip().startsWith("{") && !CORRELATED.matcher(pattern).find()) {
+                    lines.add(1 + (int) text.substring(0, pm.start()).chars().filter(c -> c == '\n').count());
+                }
+            }
+            if (lines.isEmpty()) {
+                continue;
+            }
+            String rel = root.relativize(xml).toString().replace('\\', '/');
+            OrderBuilder b = ctx.order(Rules.TRACE_ID_NOT_LOGGED, "logback|" + rel).at(rel, lines.getFirst())
+                    .title(name + " logs with a pattern of its own without the trace id: its log lines cannot be matched to a trace")
+                    .suggestion("Add %X{traceId:-} %X{spanId:-} (or Spring Boot's ${LOG_CORRELATION_PATTERN:-}, which follows "
+                            + "logging.pattern.correlation) to each <pattern>, or switch to structured logging "
+                            + "(logging.structured.format.console), which writes every MDC value.")
+                    .doneWhen("every text <pattern> of " + name + " contains traceId, %correlationId or ${LOG_CORRELATION_PATTERN}");
+            lines.stream().skip(1).forEach(l -> b.location(rel, l, Rules.TRACE_ID_NOT_LOGGED));
+        }
+        // Spring Boot's logging.pattern.* only shape its own configuration, not a file of the service's
+        for (String kind : ownFile ? List.<String>of() : List.of("console", "file")) {
+            String pattern = ctx.a.springProperties.get("logging.pattern." + kind);
+            if (pattern == null || ctx.a.springProperties.get("logging.structured.format." + kind) != null
+                    || CORRELATED.matcher(pattern).find()) {
+                continue;
+            }
+            ctx.order(Rules.TRACE_ID_NOT_LOGGED, "pattern|" + kind).at(applicationYml()[0], 1)
+                    .title("logging.pattern." + kind + " replaces Spring Boot's pattern without the trace id: its log lines "
+                            + "cannot be matched to a trace")
+                    .suggestion("Add ${LOG_CORRELATION_PATTERN:-} (Spring Boot's correlation id, logging.pattern.correlation) or "
+                            + "%X{traceId:-} %X{spanId:-} to it, or remove it.")
+                    .doneWhen("logging.pattern." + kind + " contains traceId, %correlationId or ${LOG_CORRELATION_PATTERN}");
+        }
     }
 
     // ---- trace export -------------------------------------------------------------------------------------------

@@ -2524,4 +2524,59 @@ class RemedyTest {
                             value: http://otel-collector:4318
                         """));
     }
+
+    // ---- TRACE_ID_NOT_LOGGED ---------------------------------------------------------------------------------------
+
+    /** #89: a custom logback pattern with the trace id, or with Spring Boot's correlation pattern, is matched to traces. */
+    @Test
+    void customLogPatternWithTheTraceId() throws IOException {
+        String logback = """
+                <configuration>
+                    <property name="LINE" value="%%d %%-5level %s%%logger{36} - %%msg%%n"/>
+                    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+                        <encoder>
+                            <pattern>${LINE}</pattern>
+                        </encoder>
+                    </appender>
+                    <root level="INFO">
+                        <appender-ref ref="CONSOLE"/>
+                    </root>
+                </configuration>
+                """;
+        Map<String, String> before = Map.of("logast.yaml", "packs: [tracing]\n", java("RemedyApplication"), """
+                package x;
+
+                import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+                @SpringBootApplication
+                public class RemedyApplication {
+                }
+                """, "src/main/resources/logback-spring.xml", logback.formatted(""));
+        fires(Rules.TRACE_ID_NOT_LOGGED, before);
+        gone(Rules.TRACE_ID_NOT_LOGGED, "%X{traceId} in the pattern", with(before,
+                "src/main/resources/logback-spring.xml", logback.formatted("[%X{traceId:-},%X{spanId:-}] ")));
+        gone(Rules.TRACE_ID_NOT_LOGGED, "Spring Boot's correlation pattern", with(before,
+                "src/main/resources/logback-spring.xml", logback.formatted("${LOG_CORRELATION_PATTERN:-}")));
+
+        // no file of its own: Spring Boot's console pattern replaced by a property
+        Map<String, String> property = new LinkedHashMap<>(before);
+        property.remove("src/main/resources/logback-spring.xml");
+        fires(Rules.TRACE_ID_NOT_LOGGED, with(property, "src/main/resources/application.yml", """
+                spring:
+                  application:
+                    name: remedy
+                logging:
+                  pattern:
+                    console: "%d %-5level %logger - %msg%n"
+                """));
+        gone(Rules.TRACE_ID_NOT_LOGGED, "the correlation pattern in logging.pattern.console", with(property,
+                "src/main/resources/application.yml", """
+                        spring:
+                          application:
+                            name: remedy
+                        logging:
+                          pattern:
+                            console: "%d %-5level ${LOG_CORRELATION_PATTERN:-}%logger - %msg%n"
+                        """));
+    }
 }

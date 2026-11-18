@@ -1931,6 +1931,146 @@ class E2eGoldenTest {
                 .contains("ObservedContext.entrypoint(\"stock-tracker.warm-up\")");
     }
 
+    /** #89: observation and span names built from ids, ids as low-cardinality key values, a log pattern without the trace id. */
+    private static final IoAction DISPATCH_TRACING = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/dispatch");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("DispatchPlanner.java"), """
+                package com.example.e2e.dispatch;
+
+                import io.micrometer.observation.Observation;
+                import io.micrometer.observation.ObservationRegistry;
+                import io.micrometer.observation.annotation.Observed;
+                import io.micrometer.tracing.Span;
+                import io.micrometer.tracing.Tracer;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class DispatchPlanner {
+                    private static final Logger log = LoggerFactory.getLogger(DispatchPlanner.class);
+                    private final ObservationRegistry registry;
+                    private final Tracer tracer;
+
+                    DispatchPlanner(ObservationRegistry registry, Tracer tracer) {
+                        this.registry = registry;
+                        this.tracer = tracer;
+                    }
+
+                    @Observed(name = "dispatch.plan")
+                    public void plan() {
+                        log.info("Dispatch planning started");
+                        log.info("Dispatch planning completed");
+                    }
+
+                    public String route(String dispatchId, String lane) {
+                        return Observation.createNotStarted("dispatch.route." + dispatchId, registry)
+                                .lowCardinalityKeyValue("dispatch.lane", lane)
+                                .observe(() -> lane + "-" + dispatchId);
+                    }
+
+                    public String load(String orderId, String lane) {
+                        return Observation.createNotStarted("dispatch.load", registry)
+                                .highCardinalityKeyValue("dispatch.lane", lane)
+                                .lowCardinalityKeyValue("order", orderId)
+                                .observe(() -> "load-" + orderId);
+                    }
+
+                    public String pick(String dispatchId) {
+                        Span span = tracer.nextSpan().name("dispatch.pick-%s".formatted(dispatchId)).start();
+                        try (Tracer.SpanInScope ws = tracer.withSpan(span)) {
+                            return "pick-" + dispatchId;
+                        } catch (RuntimeException e) {
+                            span.error(e);
+                            throw e;
+                        } finally {
+                            span.end();
+                        }
+                    }
+
+                    public String weigh(String dispatchId, String kind) {
+                        return Observation.createNotStarted("dispatch.weigh." + kind, registry)
+                                .highCardinalityKeyValue("dispatch.id", dispatchId)
+                                .observe(() -> "weight-" + dispatchId);
+                    }
+                }
+                """);
+        // the console pattern drops the trace id; the file pattern keeps it
+        Files.writeString(app.resolve("src/main/resources/logback-spring.xml"), """
+                <configuration>
+                    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+                        <encoder>
+                            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+                        </encoder>
+                    </appender>
+                    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+                        <file>dispatch.log</file>
+                        <encoder>
+                            <pattern>%d [%X{traceId:-},%X{spanId:-}] %-5level %logger - %msg%n</pattern>
+                        </encoder>
+                    </appender>
+                    <root level="INFO">
+                        <appender-ref ref="CONSOLE"/>
+                        <appender-ref ref="FILE"/>
+                    </root>
+                </configuration>
+                """);
+    };
+
+    private static IoAction withPacks(IoAction prepare, String packs, String rules) {
+        return app -> {
+            prepare.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: " + packs) + rules);
+        };
+    }
+
+    /**
+     * #89: the tracing pack alone (snapshot e2e/expected-tracing-depth). An observation or span name built from an id,
+     * and an id as a low-cardinality key value, give one timer series and span name per value (SPAN_NAME_DYNAMIC); a name
+     * from a bounded value and an id as a high-cardinality key value do not. The console pattern of logback-spring.xml has
+     * no trace id (TRACE_ID_NOT_LOGGED); the file pattern has. Also: with every pack, SETUP_LOGBACK_XML covers the file
+     * instead; with the metrics pack alone, the inactive {@code @Observed} measures nothing, so the method's business
+     * event gets its observation (BUSINESS_EVENT_UNMEASURED).
+     */
+    @Test
+    void tracingPackFindsIdsInSpanNamesAndLogPatternsWithoutTheTraceId() throws IOException {
+        Path tracingOnly = tmp.resolve("tracing-only");
+        Map<String, String> alone = migrate(tracingOnly, CLASSPATH, withPacks(DISPATCH_TRACING, "[tracing]", ""));
+        String findings = alone.get("FINDINGS.txt");
+        assertThat(findings).as("name built from an id")
+                .contains("Observation name built from dispatchId in DispatchPlanner.route")
+                .contains("Span name built from dispatchId in DispatchPlanner.pick");
+        assertThat(findings).as("an id (vocabulary key) as a low-cardinality key value")
+                .contains("Low-cardinality key value 'order' is orderId in DispatchPlanner.load");
+        assertThat(findings).as("bounded name, bounded key value, id as high-cardinality key value")
+                .doesNotContain("DispatchPlanner.weigh").doesNotContain("'dispatch.lane'");
+        assertThat(findings).as("console pattern without the trace id")
+                .contains("logback-spring.xml logs with a pattern of its own without the trace id");
+        golden(EXPECTED.resolveSibling("expected-tracing-depth"), alone);
+
+        // both rules switched off: their findings go, nothing else changes (knock-out)
+        Path yml = tracingOnly.resolve("logast.yml");
+        Files.writeString(yml, Files.readString(yml) + "rules:\n  SPAN_NAME_DYNAMIC:\n    enabled: false\n"
+                + "  TRACE_ID_NOT_LOGGED:\n    enabled: false\n");
+        String off = run(tracingOnly, "scan", tracingOnly.toString(), "--classpath-file", CLASSPATH);
+        assertThat(off).doesNotContain("SPAN_NAME_DYNAMIC").doesNotContain("TRACE_ID_NOT_LOGGED")
+                .contains("ASYNC_CONTEXT_LOSS");
+
+        // every pack: the logging pack's SETUP_LOGBACK_XML replaces the file, so no second finding for it
+        Map<String, String> all = migrate(tmp.resolve("all"), CLASSPATH, DISPATCH_TRACING);
+        assertThat(all.get("FINDINGS.txt")).contains("Observation name built from dispatchId in DispatchPlanner.route")
+                .doesNotContain("TRACE_ID_NOT_LOGGED");
+        assertThat(all.get("src/main/java/com/example/e2e/dispatch/DispatchPlanner.java")).as("@Observed switched on: measured")
+                .doesNotContain("ObservedContext");
+
+        // the metrics pack alone leaves @Observed inactive: it measures nothing, the business event gets its observation
+        Map<String, String> metrics = migrate(tmp.resolve("metrics-only"), CLASSPATH, withPacks(DISPATCH_TRACING, "[metrics]", ""));
+        assertThat(metrics.get("src/main/java/com/example/e2e/dispatch/DispatchPlanner.java"))
+                .contains("ObservedContext.entrypoint(DispatchMetrics.DISPATCH_PLANNING)");
+    }
+
     /**
      * #51: API-first controllers. The request mappings sit on an interface the controller implements, the class-level
      * {@code @RequestMapping} too, and the paths come from {@code static final String} constants and their

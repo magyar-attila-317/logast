@@ -1,0 +1,47 @@
+diff --git a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
+index b09d628..8e05f57 100644
+--- a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
++++ b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.boot.context.event.ApplicationReadyEvent;
+ import org.springframework.context.event.EventListener;
+ import org.springframework.stereotype.Component;
+@@ -14,6 +15,10 @@
+ 
+     @EventListener(ApplicationReadyEvent.class)
+     public void onReady() {
+-        job.execute();
++        ObservedContext.entrypoint("settlement-job-executor.on-ready")
++                .failureLoggedByCaller()
++                .run(() -> {
++                    job.execute();
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+index 4be0fa1..d5cf243 100644
+--- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
++++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.messaging;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import java.util.List;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -15,7 +16,11 @@
+ 
+     @KafkaListener(topics = "pledge-batches", batch = "true")
+     public void onBatch(List<String> pledgeIds) {
+-        log.info("Pledge batch received [count={}]", pledgeIds.size());
++        ObservedContext.entrypoint("pledge-messages.on-batch")
++                .debugOnSuccess()
++                .run(() -> {
++                    log.info("Pledge batch received [count={}]", pledgeIds.size());
++                });
+     }
+ 
+     @RabbitListener(queues = "pledge-returns")

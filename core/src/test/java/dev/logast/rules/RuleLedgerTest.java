@@ -80,7 +80,8 @@ class RuleLedgerTest {
             Map.entry(Rules.AUDIT_LOGGER_UNROUTED, "rules/RemedyTest#auditLoggerRoutedApart"),
             Map.entry(Rules.AUDIT_BEFORE_COMMIT, "rules/RemedyTest#auditRecordWrittenWhenTheOutcomeIsKnown"),
             Map.entry(Rules.AUDIT_RECORD_SECRET, "rules/RemedyTest#auditRecordWithoutSecrets"),
-            Map.entry(Rules.AUDIT_ACTOR_LOST_ASYNC, "rules/RemedyTest#auditActorReadBeforeTheHandOver"));
+            Map.entry(Rules.AUDIT_ACTOR_LOST_ASYNC, "rules/RemedyTest#auditActorReadBeforeTheHandOver"),
+            Map.entry(Rules.TRACE_ID_NOT_LOGGED, "rules/RemedyTest#customLogPatternWithTheTraceId"));
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus();
@@ -99,6 +100,9 @@ class RuleLedgerTest {
             Rules.BUSINESS_EVENT_TIMESTAMP, "#58: fires in its own e2e scenario (expected-business-timestamp); no corpus has the shape",
             Rules.MESSAGE_SUGGESTED, "#58: fires on the // logast:wording marker an apply leaves behind (e2e snapshots)",
             Rules.METRIC_CATALOG, "#58: fires once metric decisions are applied (e2e expected-decided)",
+            Rules.TRACE_ID_NOT_LOGGED, "#89: only without the logging pack (SETUP_LOGBACK_XML covers the file there), and no "
+                    + "corpus has a custom logback pattern without the trace id: fires in its own e2e scenario "
+                    + "(expected-tracing-depth), which also scans it switched off",
             Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)");
 
     private static Map<String, String> negativeCorpus(String... rules) {

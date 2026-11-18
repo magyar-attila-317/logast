@@ -7,7 +7,10 @@ import java.util.HashSet;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 
-/** Hand-made observations: an annotation Spring Boot does not process yet, one started by hand and left open. */
+/**
+ * Hand-made observations: an annotation Spring Boot does not process yet, one started by hand and left open, one named
+ * after an id.
+ */
 @Component
 public class StockReservations {
     private final ObservationRegistry registry;
@@ -38,5 +41,20 @@ public class StockReservations {
         } finally {
             observation.stop();
         }
+    }
+
+    public void recount(String sku, String reservationId) {
+        Observation.createNotStarted("stock.recount." + reservationId, registry) // expect: SPAN_NAME_DYNAMIC
+                .observe(() -> {
+                    reserved.remove(sku);
+                });
+    }
+
+    public void verify(String sku, String reservationId) {
+        Observation.createNotStarted("stock.verify", registry) // expect-not: SPAN_NAME_DYNAMIC
+                .highCardinalityKeyValue("reservation.id", reservationId)
+                .observe(() -> {
+                    reserved.add(sku);
+                });
     }
 }

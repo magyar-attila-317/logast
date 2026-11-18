@@ -1,0 +1,48 @@
+logast · 69 files · 21 entrypoints · 72/196 methods reachable · 132 call edges
+WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
+9 orders: 0 AUTO, 0 NEEDS TEXT, 9 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+glossary terms: pledge, order, sponsorship
+
+SND-ca41cd  high  REPORT-ONLY  SPAN_NAME_DYNAMIC  src/main/java/com/example/e2e/dispatch/DispatchPlanner.java:30  DispatchPlanner.route
+  Observation name built from dispatchId in DispatchPlanner.route: every value starts its own timer series and span name
+  note: Keep names and low-cardinality key values bounded: use a fixed name and put dispatchId into highCardinalityKeyValue(...) or a span tag.
+  done when: the name is built from constants only and no id is a low-cardinality key value
+SND-907288  high  REPORT-ONLY  SPAN_NAME_DYNAMIC  src/main/java/com/example/e2e/dispatch/DispatchPlanner.java:38  DispatchPlanner.load
+  Low-cardinality key value 'order' is orderId in DispatchPlanner.load: every value starts its own timer series and span name
+  note: Keep names and low-cardinality key values bounded: use highCardinalityKeyValue(...) for it (on the span, not a meter tag).
+  done when: the name is built from constants only and no id is a low-cardinality key value
+SND-aa4aab  high  REPORT-ONLY  SPAN_NAME_DYNAMIC  src/main/java/com/example/e2e/dispatch/DispatchPlanner.java:43  DispatchPlanner.pick
+  Span name built from dispatchId in DispatchPlanner.pick: every value starts its own timer series and span name
+  note: Keep names and low-cardinality key values bounded: use a fixed name and put dispatchId into highCardinalityKeyValue(...) or a span tag.
+  done when: the name is built from constants only and no id is a low-cardinality key value
+ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:41  EdgeFlow.process
+  CompletableFuture.runAsync runs on another thread without MDC/trace context
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+  done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
+ASY-e82926  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:16  QuoteController.quote
+  CompletableFuture.supplyAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+  done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
+ASY-0537b2  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:17  QuoteController.quote
+  CompletableFuture.supplyAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId} → QuoteController.quote
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+  done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
+ASY-535b95  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/web/QuoteController.java:25  QuoteController.refresh
+  CompletableFuture.runAsync runs on another thread without MDC/trace context
+  path: GET /quotes/{productId}/refresh → QuoteController.refresh
+  note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+  done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
+TEX-42c898  medium  REPORT-ONLY  TRACING_EXPORT_UNCONFIGURED  src/main/resources/application.yml:1
+  Traces are exported nowhere: management.opentelemetry.tracing.export.otlp.endpoint is not set, so Spring Boot creates no OTLP exporter and the trace ids in the logs lead nowhere
+  note: Set the collector's endpoint per environment: management.opentelemetry.tracing.export.otlp.endpoint in application-<profile>.yml, or MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT in the deployment (e.g. http://otel-collector:4318/v1/traces).
+  done when: management.opentelemetry.tracing.export.otlp.endpoint is set in an application*.yml/.properties, or MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT appears in the project's deployment files
+TNL-db06df  medium  REPORT-ONLY  TRACE_ID_NOT_LOGGED  src/main/resources/logback-spring.xml:4
+  logback-spring.xml logs with a pattern of its own without the trace id: its log lines cannot be matched to a trace
+  note: Add %X{traceId:-} %X{spanId:-} (or Spring Boot's ${LOG_CORRELATION_PATTERN:-}, which follows logging.pattern.correlation) to each <pattern>, or switch to structured logging (logging.structured.format.console), which writes every MDC value.
+  done when: every text <pattern> of logback-spring.xml contains traceId, %correlationId or ${LOG_CORRELATION_PATTERN}
+
+Next steps
+  1. logast scan . --format summary   9 findings are decisions for a person (ASYNC_CONTEXT_LOSS 4, SPAN_NAME_DYNAMIC 3, TRACE_ID_NOT_LOGGED 1, …); each says what to decide

@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: e2e-shop
+    version: ${APPLICATION_VERSION:unknown}
+  kafka:
+    listener:
+      observation-enabled: true
+  rabbitmq:
+    listener:
+      simple:
+        observation-enabled: true
+logging:
+  structured:
+    format:
+      console: ecs
+    json:
+      add:
+        service:
+          name: ${spring.application.name}
+          version: ${spring.application.version}
+logging-support:
+  context-propagation:
+    enabled: true
+  batch-trace:
+    enabled: true
+management:
+  observations:
+    annotations:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      version: ${spring.application.version}
+  opentelemetry:
+    resource-attributes:
+      service:
+        version: ${spring.application.version}
+  tracing:
+    sampling:
+      probability: 1.0
