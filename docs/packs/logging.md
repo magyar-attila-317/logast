@@ -6,7 +6,7 @@ the entrypoint down, and a log line wherever a flow would otherwise be silent.
 - **On by default** (`packs: [logging, tracing]`).
 - **Settings:** `vocabulary`, `areas`, `logging`, `phrasing`, `levels`, `mdc`, `pii` in
   [configuration.md](../configuration.md); how the vocabulary and phrasing work: [vocabulary.md](../vocabulary.md).
-- ASYNC_CONTEXT_LOSS and SCHEDULED_TASK_UNTRACED (context lost on another thread) are in both this pack and
+- ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED (context lost on another thread) and SSE_BROADCAST_CONTEXT are in both this pack and
   [tracing](tracing.md#rules), where they are listed.
 
 Legend: [rules.md](../rules.md#how-to-read-the-rule-tables). The fix column names the usual outcome; where a rule

@@ -69,6 +69,7 @@ public final class Rules {
     public static final String TRACING_EXPORT_UNCONFIGURED = "TRACING_EXPORT_UNCONFIGURED";
     public static final String SPAN_NAME_DYNAMIC = "SPAN_NAME_DYNAMIC";
     public static final String TRACE_ID_NOT_LOGGED = "TRACE_ID_NOT_LOGGED";
+    public static final String SSE_BROADCAST_CONTEXT = "SSE_BROADCAST_CONTEXT";
     public static final String RUNTIME_TRACE_LOST = "RUNTIME_TRACE_LOST";
     public static final String RUNTIME_MDC_LOST = "RUNTIME_MDC_LOST";
     public static final String RUNTIME_NULL_VALUE = "RUNTIME_NULL_VALUE";
@@ -162,6 +163,9 @@ public final class Rules {
         // context propagation matters to MDC (logging) and spans (tracing); the starter serves every pack
         PACKS.put(ASYNC_CONTEXT_LOSS, Set.of("logging", "tracing"));
         PACKS.put(SCHEDULED_TASK_UNTRACED, Set.of("logging", "tracing"));
+        // a broadcast's per-subscriber lines: the subscriber is missing from MDC (logging) and the line sits in the
+        // sender's trace, not the subscriber's (tracing)
+        PACKS.put(SSE_BROADCAST_CONTEXT, Set.of("logging", "tracing"));
         for (String r : List.of(METRIC_NAMING, METRIC_HIGH_CARDINALITY_TAG, METRIC_DIRECT_REGISTRY, METRIC_TAG_KEY,
                 METRIC_TAG_VALUE, METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, BUSINESS_EVENT_UNMEASURED, METRIC_TAG_KEYS_MISMATCH)) {
             PACKS.put(r, Set.of("metrics"));
@@ -241,7 +245,7 @@ public final class Rules {
                 UNBOUNDED_EXECUTOR, KAFKA_NO_ERROR_HANDLER, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE, REMOTE_CALL_IN_TRANSACTION, SCHEDULED_WITHOUT_LOCK, SCHEDULER_SINGLE_THREAD, SHUTDOWN_NOT_GRACEFUL, HEALTH_PROBE_MISCONFIGURED, READINESS_WITHOUT_DATABASE, CACHE_UNBOUNDED, RABBIT_NO_ERROR_HANDLER, RETRY_IN_TRANSACTION, CATCH_ALL_DEFAULT, AUDIT_FAILURES_UNRECORDED, AUDIT_RECORD_INCOMPLETE, DATA_CHANGES_UNAUDITED, ERROR_DETAILS_EXPOSED,
                 UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED, ERROR_HANDLER_STATUS_OK, TX_COMMITS_ON_CHECKED, REQUEST_NOT_VALIDATED, AUDIT_MISSING, AUDIT_SECURITY_EVENTS,
                 AUDIT_LOGGER_UNROUTED, AUDIT_BEFORE_COMMIT, AUDIT_RECORD_SECRET, AUDIT_ACTOR_LOST_ASYNC,
-                MANUAL_TRACE_MDC, SPAN_NOT_CLOSED, TRACING_EXPORT_UNCONFIGURED, SPAN_NAME_DYNAMIC, TRACE_ID_NOT_LOGGED, RUNTIME_TRACE_LOST, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE)) {
+                MANUAL_TRACE_MDC, SPAN_NOT_CLOSED, TRACING_EXPORT_UNCONFIGURED, SPAN_NAME_DYNAMIC, TRACE_ID_NOT_LOGGED, SSE_BROADCAST_CONTEXT, RUNTIME_TRACE_LOST, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE)) {
             STEPS.put(r, Step.REPORTS);
         }
     }
@@ -310,7 +314,7 @@ public final class Rules {
             Map.entry(OBSERVED_ANNOTATION_INACTIVE, "high"), Map.entry(SPAN_NOT_CLOSED, "medium"), Map.entry(TRACING_EXPORT_UNCONFIGURED, "medium"),
             Map.entry(AUDIT_LOGGER_UNROUTED, "medium"), Map.entry(AUDIT_BEFORE_COMMIT, "medium"), Map.entry(AUDIT_RECORD_SECRET, "high"),
             Map.entry(AUDIT_ACTOR_LOST_ASYNC, "high"),
-            Map.entry(SPAN_NAME_DYNAMIC, "high"), Map.entry(TRACE_ID_NOT_LOGGED, "medium"),
+            Map.entry(SPAN_NAME_DYNAMIC, "high"), Map.entry(TRACE_ID_NOT_LOGGED, "medium"), Map.entry(SSE_BROADCAST_CONTEXT, "low"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
             Map.entry(LOG_IN_LOOP, "low"), Map.entry(LOG_VOLUME, "medium"),
             Map.entry(METRIC_NAMING, "low"), Map.entry(METRIC_HIGH_CARDINALITY_TAG, "high"), Map.entry(METRIC_DIRECT_REGISTRY, "low"));

@@ -84,7 +84,8 @@ class RuleLedgerTest {
             Map.entry(Rules.AUDIT_BEFORE_COMMIT, "rules/RemedyTest#auditRecordWrittenWhenTheOutcomeIsKnown"),
             Map.entry(Rules.AUDIT_RECORD_SECRET, "rules/RemedyTest#auditRecordWithoutSecrets"),
             Map.entry(Rules.AUDIT_ACTOR_LOST_ASYNC, "rules/RemedyTest#auditActorReadBeforeTheHandOver"),
-            Map.entry(Rules.TRACE_ID_NOT_LOGGED, "rules/RemedyTest#customLogPatternWithTheTraceId"));
+            Map.entry(Rules.TRACE_ID_NOT_LOGGED, "rules/RemedyTest#customLogPatternWithTheTraceId"),
+            Map.entry(Rules.SSE_BROADCAST_CONTEXT, "rules/RemedyTest#broadcastLinesNameTheSubscriber"));
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus();
@@ -106,7 +107,9 @@ class RuleLedgerTest {
             Rules.TRACE_ID_NOT_LOGGED, "#89: only without the logging pack (SETUP_LOGBACK_XML covers the file there), and no "
                     + "corpus has a custom logback pattern without the trace id: fires in its own e2e scenario "
                     + "(expected-tracing-depth), which also scans it switched off",
-            Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)");
+            Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)",
+            Rules.SSE_BROADCAST_CONTEXT, "#17: no corpus broadcasts to stored SseEmitters: fires in its own e2e scenario "
+                    + "(expected-sse-broadcast), which also scans it switched off");
 
     private static Map<String, String> negativeCorpus(String... rules) {
         Map<String, String> out = new TreeMap<>();
