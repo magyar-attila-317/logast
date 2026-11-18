@@ -842,7 +842,7 @@ final class AuditRules {
     }
 
     private static boolean matches(Policy.AuditAction a, Entrypoint ep, Set<String> terms) {
-        if (a.http() != null && glob(a.http()).matcher(ep.label()).matches()) {
+        if (a.http() != null && ep.labels().stream().anyMatch(l -> glob(a.http()).matcher(l).matches())) {
             return true;
         }
         if (a.method() != null && Pattern.compile(a.method()).matcher(ep.method().name()).matches()) {

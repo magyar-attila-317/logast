@@ -354,7 +354,7 @@ public final class MetricsMap {
             if (lowFrequency(ep)) {
                 continue;
             }
-            Double rate = a.traffic.known() ? a.traffic.perDay(ep.label()) : null;
+            Double rate = a.traffic.known() ? a.traffic.perDay(ep) : null;
             if (rate == null) {
                 return "unknown: no rate for \"" + ep.label() + "\" in .logast/traffic.yaml";
             }

@@ -6,8 +6,10 @@ import dev.logast.model.Entrypoint;
 import dev.logast.model.Entrypoint.Kind;
 import dev.logast.model.MethodInfo;
 import dev.logast.policy.Policy;
+import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.Flag;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.TypeUtils;
 
 import java.util.*;
@@ -166,20 +168,31 @@ public final class EntrypointFinder {
     /**
      * A request mapping on the method, else on the method it overrides in a source interface or superclass: Spring
      * finds mapping annotations through the type hierarchy (API-first controllers implement a mapped interface, #51).
+     * An interface outside the sources (a library jar, generated sources) is read from its type information.
      */
     private static Entrypoint http(MethodInfo m, CodeIndex index) {
+        boolean controller = controller(m.owner(), index);
         List<MethodInfo> declarations = new ArrayList<>();
         declarations.add(m);
-        if (controller(m.owner(), index)) {
+        if (controller) {
             // only a controller serves the mappings it inherits: a client stub or a Feign fallback implementing a
             // mapped interface is not an endpoint
             declarations.addAll(index.overridden(m));
         }
         for (MethodInfo d : declarations) {
             for (J.Annotation a : d.decl().getLeadingAnnotations()) {
-                for (var e : HTTP_VERBS.entrySet()) {
-                    if (Annotations.is(a, e.getKey())) {
-                        return new Entrypoint(m, Kind.HTTP, httpLabel(m, a, e.getValue(), index), true);
+                Mapping mapping = mapping(a, index);
+                if (mapping != null) {
+                    return httpEntrypoint(m, mapping, index);
+                }
+            }
+        }
+        if (controller) {
+            for (JavaType.Method o : overriddenOutsideSource(m, index)) {
+                for (JavaType.FullyQualified a : o.getAnnotations()) {
+                    Mapping mapping = mapping(a, 0);
+                    if (mapping != null) {
+                        return httpEntrypoint(m, mapping, index);
                     }
                 }
             }
@@ -187,14 +200,152 @@ public final class EntrypointFinder {
         return null;
     }
 
-    /** {@code @Controller} / {@code @RestController} on the class or a source supertype: what Spring MVC maps. */
+    /** {@code @Controller} / {@code @RestController} on the class or a source supertype, also through a meta-annotation. */
     private static boolean controller(ClassInfo c, CodeIndex index) {
         List<ClassInfo> types = new ArrayList<>();
         types.add(c);
         types.addAll(index.sourceSupertypes(c));
         return types.stream().flatMap(t -> t.decl().getLeadingAnnotations().stream())
-                .anyMatch(a -> Annotations.is(a, "org.springframework.stereotype.Controller")
-                        || Annotations.is(a, WEB + "RestController"));
+                .anyMatch(a -> Annotations.is(a, CONTROLLER) || Annotations.is(a, WEB + "RestController")
+                        || a.getType() instanceof JavaType.FullyQualified t && metaAnnotated(t, 0));
+    }
+
+    private static final String CONTROLLER = "org.springframework.stereotype.Controller";
+    /** How deep meta-annotations are followed: Spring's own composed annotations are one or two levels deep. */
+    private static final int META_DEPTH = 3;
+
+    /** An annotation type annotated (directly or through its own annotations) with {@code @Controller}. */
+    private static boolean metaAnnotated(JavaType.FullyQualified annotationType, int depth) {
+        for (JavaType.FullyQualified meta : annotationType.getAnnotations()) {
+            String fqn = meta.getFullyQualifiedName();
+            if (fqn.equals(CONTROLLER) || fqn.equals(WEB + "RestController")
+                    || !fqn.startsWith("java.lang.annotation.") && depth + 1 < META_DEPTH && metaAnnotated(meta, depth + 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A request mapping: its verb ({@code ANY} when a {@code @RequestMapping} names none) and its paths (none: ""). */
+    private record Mapping(String verb, List<String> paths) {
+    }
+
+    /** {@code @GetMapping(...)} written in source, or an annotation meta-annotated with one (#51). */
+    private static Mapping mapping(J.Annotation a, CodeIndex index) {
+        for (var e : HTTP_VERBS.entrySet()) {
+            if (Annotations.is(a, e.getKey())) {
+                String verb = e.getValue();
+                if (verb.equals("ANY")) {
+                    verb = Annotations.rawAttribute(a, "method")
+                            .map(s -> s.substring(s.lastIndexOf('.') + 1).replaceAll("[^A-Z]", ""))
+                            .filter(s -> !s.isEmpty()).orElse("ANY");
+                }
+                return new Mapping(verb, paths(a, index));
+            }
+        }
+        Mapping meta = a.getType() instanceof JavaType.FullyQualified t ? metaMapping(t, 0) : null;
+        // a composed annotation's own value/path (Spring: @AliasFor to the mapping's path) replaces the meta paths
+        return meta == null || paths(a, index).isEmpty() ? meta : new Mapping(meta.verb(), paths(a, index));
+    }
+
+    /** The first mapping among the annotations of an annotation type, followed up to {@link #META_DEPTH} levels. */
+    private static Mapping metaMapping(JavaType.FullyQualified annotationType, int depth) {
+        for (JavaType.FullyQualified meta : annotationType.getAnnotations()) {
+            Mapping m = mapping(meta, depth + 1);
+            if (m != null) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A mapping from type information (meta-annotations, interfaces in library jars or generated sources): javac has
+     * evaluated the attribute values, constants included.
+     */
+    private static Mapping mapping(JavaType.FullyQualified a, int depth) {
+        String fqn = a.getFullyQualifiedName();
+        if (fqn.startsWith("java.lang.annotation.") || depth > META_DEPTH) {
+            return null;
+        }
+        String verb = HTTP_VERBS.get(fqn);
+        List<String> own = values(a, "value", "path");
+        if (verb == null) {
+            Mapping meta = metaMapping(a, depth);
+            return meta == null || own.isEmpty() ? meta : new Mapping(meta.verb(), own);
+        }
+        return new Mapping(verb.equals("ANY") ? values(a, "method").stream().findFirst().orElse("ANY") : verb, own);
+    }
+
+    /** The values of the first attribute named {@code names} that is set: strings, or enum constant names. */
+    private static List<String> values(JavaType.FullyQualified a, String... names) {
+        if (!(a instanceof JavaType.Annotation annotation)) {
+            return List.of();
+        }
+        for (String n : names) {
+            for (JavaType.Annotation.ElementValue v : annotation.getValues()) {
+                if (v.getElement() instanceof JavaType.Method element && element.getName().equals(n)) {
+                    List<?> raw = v instanceof JavaType.Annotation.ArrayElementValue array ? array.getValues() : List.of(v.getValue());
+                    return raw.stream().map(o -> o instanceof JavaType.Variable constant ? constant.getName() : String.valueOf(o)).toList();
+                }
+            }
+        }
+        return List.of();
+    }
+
+    /** Supertypes of {@code c} that are not source (library jars, generated sources), in Spring's search order. */
+    private static List<JavaType.FullyQualified> outsideSource(ClassInfo c, CodeIndex index) {
+        List<JavaType.FullyQualified> out = new ArrayList<>();
+        outsideSource(c.type(), index, new HashSet<>(Set.of(c.fqn(), "java.lang.Object")), out);
+        return out;
+    }
+
+    private static void outsideSource(JavaType.FullyQualified t, CodeIndex index, Set<String> seen, List<JavaType.FullyQualified> out) {
+        if (t == null) {
+            return;
+        }
+        List<JavaType.FullyQualified> parents = new ArrayList<>(t.getInterfaces());
+        if (t.getSupertype() != null) {
+            parents.add(t.getSupertype());
+        }
+        for (JavaType.FullyQualified parent : parents) {
+            if (seen.add(parent.getFullyQualifiedName())) {
+                if (index.clazz(parent.getFullyQualifiedName()) == null) {
+                    out.add(parent);
+                }
+                outsideSource(parent, index, seen, out);
+            }
+        }
+    }
+
+    /** The declarations {@code m} overrides in supertypes outside the sources (#51: a mapped interface from a jar). */
+    private static List<JavaType.Method> overriddenOutsideSource(MethodInfo m, CodeIndex index) {
+        if (m.type().hasFlags(Flag.Static) || m.type().hasFlags(Flag.Private)) {
+            return List.of();
+        }
+        List<JavaType.Method> out = new ArrayList<>();
+        for (JavaType.FullyQualified parent : outsideSource(m.owner(), index)) {
+            for (JavaType.Method o : parent.getMethods()) {
+                if (o.getName().equals(m.name()) && sameParameters(o, m.type())) {
+                    out.add(o);
+                }
+            }
+        }
+        return out;
+    }
+
+    private static boolean sameParameters(JavaType.Method declared, JavaType.Method override) {
+        List<JavaType> a = declared.getParameterTypes();
+        List<JavaType> b = override.getParameterTypes();
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            if (!(a.get(i) instanceof JavaType.GenericTypeVariable) && !Types.erasure(a.get(i)).equals(Types.erasure(b.get(i)))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Entrypoint messaging(MethodInfo m, J.Annotation a, Kind kind) {
@@ -378,31 +529,60 @@ public final class EntrypointFinder {
                 : "(" + Types.display(m.type().getParameterTypes().getFirst()) + ")";
     }
 
-    private static String httpLabel(MethodInfo m, J.Annotation a, String verb, CodeIndex index) {
-        if (verb.equals("ANY")) {
-            verb = Annotations.rawAttribute(a, "method")
-                    .map(s -> s.substring(s.lastIndexOf('.') + 1).replaceAll("[^A-Z]", ""))
-                    .filter(s -> !s.isEmpty()).orElse("ANY");
+    /** One entrypoint per handler; each class-level path times each method path is a label (#51: path arrays). */
+    private static Entrypoint httpEntrypoint(MethodInfo m, Mapping mapping, CodeIndex index) {
+        List<String> labels = new ArrayList<>();
+        for (String prefix : orEmpty(prefixes(m.owner(), index))) {
+            for (String path : orEmpty(mapping.paths())) {
+                String joined = ("/" + prefix + "/" + path).replaceAll("/+", "/");
+                if (joined.length() > 1 && joined.endsWith("/")) {
+                    joined = joined.substring(0, joined.length() - 1);
+                }
+                if (!labels.contains(mapping.verb() + " " + joined)) {
+                    labels.add(mapping.verb() + " " + joined);
+                }
+            }
         }
-        // the class-level mapping: on the controller, else on its nearest source supertype that has one
-        List<ClassInfo> types = new ArrayList<>();
-        types.add(m.owner());
-        types.addAll(index.sourceSupertypes(m.owner()));
-        String prefix = types.stream().flatMap(t -> t.decl().getLeadingAnnotations().stream())
-                .filter(c -> Annotations.is(c, WEB + "RequestMapping"))
-                .findFirst().flatMap(c -> path(c, index)).orElse("");
-        String path = path(a, index).orElse("");
-        String joined = ("/" + prefix + "/" + path).replaceAll("/+", "/");
-        if (joined.length() > 1 && joined.endsWith("/")) {
-            joined = joined.substring(0, joined.length() - 1);
-        }
-        return verb + " " + joined;
+        return new Entrypoint(m, Kind.HTTP, labels.getFirst(), true, List.copyOf(labels.subList(1, labels.size())));
     }
 
-    /** The {@code value}/{@code path} of a mapping: a literal, a source constant or a concatenation of them (#51). */
-    private static Optional<String> path(J.Annotation a, CodeIndex index) {
-        return Annotations.attribute(a, "value", "path").map(e -> e instanceof J.NewArray na
-                        && na.getInitializer() != null && !na.getInitializer().isEmpty() ? na.getInitializer().getFirst() : e)
-                .map(e -> Constants.concatenated(index, e));
+    private static List<String> orEmpty(List<String> paths) {
+        return paths.isEmpty() ? List.of("") : paths;
+    }
+
+    /**
+     * The class-level mapping: on the controller (also through a meta-annotation), else on its nearest source
+     * supertype that has one, else on a supertype outside the sources.
+     */
+    private static List<String> prefixes(ClassInfo owner, CodeIndex index) {
+        List<ClassInfo> types = new ArrayList<>();
+        types.add(owner);
+        types.addAll(index.sourceSupertypes(owner));
+        for (ClassInfo t : types) {
+            for (J.Annotation a : t.decl().getLeadingAnnotations()) {
+                Mapping mapping = mapping(a, index);
+                if (mapping != null) {
+                    return mapping.paths();
+                }
+            }
+        }
+        for (JavaType.FullyQualified t : outsideSource(owner, index)) {
+            for (JavaType.FullyQualified a : t.getAnnotations()) {
+                Mapping mapping = mapping(a, 0);
+                if (mapping != null) {
+                    return mapping.paths();
+                }
+            }
+        }
+        return List.of();
+    }
+
+    /** Every {@code value}/{@code path} of a mapping: literals, source constants or concatenations of them (#51). */
+    private static List<String> paths(J.Annotation a, CodeIndex index) {
+        return Annotations.attribute(a, "value", "path")
+                .map(e -> e instanceof J.NewArray na ? na.getInitializer() == null ? List.<Expression>of() : na.getInitializer() : List.of(e))
+                .orElse(List.of()).stream()
+                .filter(e -> !(e instanceof J.Empty))
+                .map(e -> Constants.concatenated(index, e)).filter(Objects::nonNull).toList();
     }
 }

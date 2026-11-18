@@ -1,9 +1,25 @@
 package dev.logast.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * @param observedByFramework the framework already opens an Observation (and trace) for this entrypoint
+ * @param aliases             further labels of the same handler: the other paths of {@code @GetMapping({"/a", "/b"})}
+ *                            (#51); the label is the first one
  */
-public record Entrypoint(MethodInfo method, Kind kind, String label, boolean observedByFramework) {
+public record Entrypoint(MethodInfo method, Kind kind, String label, boolean observedByFramework, List<String> aliases) {
+    public Entrypoint(MethodInfo method, Kind kind, String label, boolean observedByFramework) {
+        this(method, kind, label, observedByFramework, List.of());
+    }
+
+    /** The label and its aliases: every name traffic.yaml and audit globs know this entrypoint by. */
+    public List<String> labels() {
+        List<String> out = new ArrayList<>(List.of(label));
+        out.addAll(aliases);
+        return out;
+    }
+
     /**
      * BATCH: a CommandLineRunner/ApplicationRunner; STEP: a Spring Batch {@code Tasklet}; ITEM: a Spring Batch item
      * processor/writer (per item/chunk); SQS: {@code @SqsListener}; STREAM: the handler a Spring Cloud Stream
