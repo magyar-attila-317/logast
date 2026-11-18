@@ -100,6 +100,58 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #21: BUSINESS_EVENT_UNMEASURED reads the wording a team really uses: the phrasing variants ("Starting X" …
+     * "Finished X") and "Processing X" with X's completion in the same method ("Ledger import done"). "Processing X"
+     * alone (a per-item line) is no business event, and it is not a phrasing variant: the line keeps its words. Every
+     * file must equal e2e/expected-business-event-wording.
+     */
+    @Test
+    void businessEventsInTheTeamsOwnWording() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/ledger"));
+            Files.writeString(dir.resolve("LedgerJobs.java"), """
+                    package com.example.e2e.ledger;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class LedgerJobs {
+                        private static final Logger log = LoggerFactory.getLogger(LedgerJobs.class);
+
+                        public void syncRefunds() {
+                            log.info("Starting refund sync");
+                            work();
+                            log.info("Finished refund sync");
+                        }
+
+                        public void importLedger() {
+                            log.info("Processing ledger import");
+                            work();
+                            log.info("Ledger import done");
+                        }
+
+                        public void touchOrders() {
+                            log.info("Processing order batch");
+                            work();
+                        }
+
+                        private void work() {
+                        }
+                    }
+                    """);
+        });
+        String jobs = actual.get("src/main/java/com/example/e2e/ledger/LedgerJobs.java");
+        assertThat(jobs).as("both wordings are business events: each is counted")
+                .contains("ObservedContext.entrypoint(LedgerMetrics.REFUND_SYNC)")
+                .contains("ObservedContext.entrypoint(LedgerMetrics.LEDGER_IMPORT)")
+                .as("\"Processing X\" alone is no business event, and keeps its words").doesNotContain("ORDER_BATCH")
+                .contains("\"Processing order batch\"");
+        golden(EXPECTED.resolveSibling("expected-business-event-wording"), actual);
+    }
+
+    /**
      * #106: the Splunk fields follow the format the service really writes. Here nothing configures Spring's structured
      * logging and logast.yaml keeps the default (ecs), but logback-spring.xml uses the Logstash encoder: the queries
      * use its fields ({@code level}, {@code logger_name}), not ECS's ({@code log.level}).
