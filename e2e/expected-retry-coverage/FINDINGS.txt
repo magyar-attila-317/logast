@@ -1,4 +1,9 @@
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/edge/EdgeFlow.java:44
+REPORT-ONLY HTTP_CLIENT_UNTRACED src/main/java/com/example/e2e/rate/RateArchive.java:9
+REPORT-ONLY HTTP_CLIENT_NO_TIMEOUT src/main/java/com/example/e2e/rate/RateArchive.java:9
+REPORT-ONLY RETRY_BYPASSED src/main/java/com/example/e2e/rate/RateArchive.java:16
+REPORT-ONLY HTTP_CLIENT_UNTRACED src/main/java/com/example/e2e/rate/RateSpread.java:8
+REPORT-ONLY HTTP_CLIENT_NO_TIMEOUT src/main/java/com/example/e2e/rate/RateSpread.java:8
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:18
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:19
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:27
@@ -20,8 +25,8 @@ REPORT-ONLY REMOTE_CALL_IN_TRANSACTION src/main/java/com/example/e2e/order/Order
 REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/order/PaymentClient.java:18
 REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/order/PaymentClient.java:38
 REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentException.java:3
-REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/rate/RateClient.java:20
-NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/rate/RateController.java:29
+REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/rate/RateArchive.java:17
+NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/rate/RateController.java:33
 REPORT-ONLY NESTED_RETRY src/main/java/com/example/e2e/rate/RateLedger.java:15
 REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/CouponController.java:48
 NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/CouponController.java:55
@@ -68,6 +73,7 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderS
 NEEDS TEXT LOG_FORMAT src/main/java/com/example/e2e/order/PaymentClient.java:15
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/rate/RateClient.java:15
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/rate/RateClient.java:19
+REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/rate/RateSpread.java:10
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/rate/RateSync.java:20
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/rate/RateSync.java:22
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30

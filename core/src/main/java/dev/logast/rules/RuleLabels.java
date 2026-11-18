@@ -106,6 +106,7 @@ public final class RuleLabels {
             Map.entry(RETRY_SETTINGS_HARDCODED, "retry settings in code"),
             Map.entry(RETRY_RECOMMENDED, "idempotent call without retry"),
             Map.entry(NESTED_RETRY, "retry inside a retry"),
+            Map.entry(RETRY_BYPASSED, "retry the proxy never sees"),
             // errors
             Map.entry(ERROR_DETAILS_EXPOSED, "error details sent to clients"),
             Map.entry(ERROR_RESPONSE_UNTRACED, "error response without a trace id"),

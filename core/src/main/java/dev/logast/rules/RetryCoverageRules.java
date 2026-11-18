@@ -72,6 +72,11 @@ final class RetryCoverageRules {
         if (ctx.enabled(Rules.NESTED_RETRY)) {
             nested();
         }
+        if (ctx.enabled(Rules.RETRY_BYPASSED)) {
+            Set<String> keys = new HashSet<>();
+            ctx.a.entrypoints.forEach(ep -> keys.add(ep.method().key()));
+            bypassed(keys);
+        }
     }
 
     // ---- RETRY_RECOMMENDED --------------------------------------------------------------------------------------
@@ -84,6 +89,7 @@ final class RetryCoverageRules {
         // #109: the answers in retry.yaml: yes adds the retry, no stops the recommendation
         Map<String, String> answers = RetrySettingsRules.candidateMarks(ctx.a.project.root());
         boolean retryable = ctx.a.project.probe().hasClass(ResilienceRules.RESILIENCE_PKG + "Retryable");
+        Set<String> placed = new HashSet<>();
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() == null || body(m).http() != Http.IDEMPOTENT || retried(m)
                     || ctx.ignored(m.file(), m.line(), Rules.RETRY_RECOMMENDED) || "no".equals(answers.get(m.label()))) {
@@ -96,45 +102,81 @@ final class RetryCoverageRules {
             boolean request = callers.stream().anyMatch(ep -> USER_FACING.contains(ep.kind()));
             String from = String.join(", ", callers.stream().map(ep -> ep.label() + " (" + kind(ep) + ")").distinct().limit(3).toList())
                     + (callers.size() > 3 ? " and " + (callers.size() - 3) + " more" : "");
-            String annotation = "@Retryable(maxRetriesString = \"${resilience.retry.defaults.max-retries}\", "
-                    + "delayString = \"${resilience.retry.defaults.delay}\")";
-            OrderBuilder b = ctx.order(Rules.RETRY_RECOMMENDED, m, m.line(), "retry-recommended")
-                    .data("method", m.label()).data("caller", request ? "request" : "job").data("from", from);
-            if ("yes".equals(answers.get(m.label())) && retryable) {
-                // retry: yes: Spring Framework 7's @Retryable with the recommended values; the next round enables it
-                // (RETRY_INACTIVE) and moves the values into application.yml (RETRY_SETTINGS_HARDCODED)
-                String added = request ? "@Retryable(maxRetries = 1, delay = 100)" : "@Retryable(maxRetries = 3, delay = 1000, multiplier = 2)";
-                int at = m.decl().getLeadingAnnotations().isEmpty() ? dev.logast.parse.Pos.start(m.decl())
-                        : dev.logast.parse.Pos.start(m.decl().getLeadingAnnotations().getFirst());
-                b.title("Adds " + added + " to " + m.label() + " (retry: yes in " + RetrySettingsRules.WORK_FILE + "): its "
-                                + "idempotent HTTP call is reached from " + from)
-                        .suggestion("Answered yes in " + RetrySettingsRules.WORK_FILE + ". The next round enables @Retryable where "
-                                + "needed and moves the values into application.yml.")
-                        .edits(JavaEdits.imports(m.file(), ResilienceRules.RESILIENCE_PKG + "Retryable"))
-                        .edit(dev.logast.orders.Edit.insert(m.file().relPath(), at,
-                                added + "\n" + Text.indentAt(m.file().text(), at)));
+            // a retry annotation works only through the Spring proxy: where it can go (#109, self-invocation)
+            List<MethodInfo> targets = retryTargets(m, entrypoints.keySet());
+            if (targets.isEmpty()) {
+                ctx.order(Rules.RETRY_RECOMMENDED, m, m.line(), "retry-recommended")
+                        .data("method", m.label()).data("caller", request ? "request" : "job").data("from", from)
+                        .data("annotatable", "no")
+                        .title(m.label() + " makes an idempotent HTTP call that nothing retries, reached from " + from
+                                + ", and a @Retryable could not work on the way: " + whyNot(m))
+                        .suggestion("Retry the call in code instead: a RetryTemplate (Spring Framework 7's "
+                                + "org.springframework.core.retry.RetryTemplate) around it, or retryWhen(..) on a WebClient; or "
+                                + "move it into a bean other beans call, where @Retryable works.")
+                        .basis("Spring AOP proxies skip self-invocation and cannot advise private, static or final methods "
+                                + "(Spring Framework reference, Understanding AOP Proxies)")
+                        .doneWhen("the call is retried in code, or reached through a method other beans call");
                 continue;
             }
-            String decide = "Decide in " + RetrySettingsRules.WORK_FILE + " (candidates: " + m.label() + ", retry: yes or no)"
-                    + (retryable ? "; yes adds it on the next apply. " : "; Spring Framework 7's @Retryable is not on the "
-                    + "classpath, so add the retry yourself. ");
-            b.title(m.label() + " makes an idempotent HTTP call that nothing retries, reached from " + from + ": "
-                            + (request ? "one dropped connection or 503 fails the request"
-                            : "one dropped connection or 503 fails the run"))
-                    .suggestion(decide + (request
-                            ? "Retry it at most once, with a short backoff, inside the caller's timeout: @Retryable(maxRetries = 1, "
-                            + "delay = 100) on " + m.label() + " (Spring Framework 7, needs @EnableResilientMethods; the next apply "
-                            + "moves the settings into application.yml, under resilience.retry.usages when they differ from "
-                            + "resilience.retry.defaults), or retryWhen(Retry.backoff(1, Duration.ofMillis(100))) on a WebClient. "
-                            + "Skip it when a service mesh or gateway already retries."
-                            : "Retry it with backoff: " + annotation + " on " + m.label() + " (Spring Framework 7, needs "
-                            + "@EnableResilientMethods), with the settings shared in application.yml under resilience.retry.defaults "
-                            + "(for example 3 retries, starting at one second, multiplier 2), or retryWhen(Retry.backoff(..)) on a WebClient."))
-                    .basis("only idempotent calls (GET / HEAD / PUT / DELETE / OPTIONS); no @Retryable, Resilience4j @Retry, "
-                            + "RetryTemplate, retryWhen or Spring Cloud CircuitBreaker on the path, no Kafka / RabbitMQ redelivery")
-                    .doneWhen("the method, or a method on every path to it from an entrypoint, retries (@Retryable, Resilience4j "
-                            + "@Retry, RetryTemplate, retryWhen, Spring Cloud CircuitBreaker), or it makes a non-idempotent call");
+            for (MethodInfo t : targets) {
+                if (!placed.add(t.key()) || t != m && (retried(t) || "no".equals(answers.get(t.label()))
+                        || ctx.ignored(t.file(), t.line(), Rules.RETRY_RECOMMENDED))) {
+                    continue;
+                }
+                candidate(t, m, request, from, answers, retryable);
+            }
         }
+    }
+
+    /**
+     * The order for one place a retry can go: {@code t} itself makes the call ({@code t == m}), or reaches {@code m}
+     * through calls on itself, which the proxy does not see.
+     */
+    private void candidate(MethodInfo t, MethodInfo m, boolean request, String from, Map<String, String> answers, boolean retryable) {
+        String via = t == m ? "" : " (through " + m.label() + ", which it calls on itself: the Spring proxy skips that call, "
+                + "so the retry goes here)";
+        String annotation = "@Retryable(maxRetriesString = \"${resilience.retry.defaults.max-retries}\", "
+                + "delayString = \"${resilience.retry.defaults.delay}\")";
+        OrderBuilder b = ctx.order(Rules.RETRY_RECOMMENDED, t, t.line(), "retry-recommended")
+                .data("method", t.label()).data("caller", request ? "request" : "job").data("from", from);
+        if (t != m) {
+            b.data("via", m.label());
+        }
+        if ("yes".equals(answers.get(t.label())) && retryable) {
+            // retry: yes: Spring Framework 7's @Retryable with the recommended values; the next round enables it
+            // (RETRY_INACTIVE) and moves the values into application.yml (RETRY_SETTINGS_HARDCODED)
+            String added = request ? "@Retryable(maxRetries = 1, delay = 100)" : "@Retryable(maxRetries = 3, delay = 1000, multiplier = 2)";
+            int at = t.decl().getLeadingAnnotations().isEmpty() ? dev.logast.parse.Pos.start(t.decl())
+                    : dev.logast.parse.Pos.start(t.decl().getLeadingAnnotations().getFirst());
+            b.title("Adds " + added + " to " + t.label() + " (retry: yes in " + RetrySettingsRules.WORK_FILE + "): its "
+                            + "idempotent HTTP call is reached from " + from + via)
+                    .suggestion("Answered yes in " + RetrySettingsRules.WORK_FILE + ". The next round enables @Retryable where "
+                            + "needed and moves the values into application.yml.")
+                    .edits(JavaEdits.imports(t.file(), ResilienceRules.RESILIENCE_PKG + "Retryable"))
+                    .edit(dev.logast.orders.Edit.insert(t.file().relPath(), at,
+                            added + "\n" + Text.indentAt(t.file().text(), at)));
+            return;
+        }
+        String decide = "Decide in " + RetrySettingsRules.WORK_FILE + " (candidates: " + t.label() + ", retry: yes or no)"
+                + (retryable ? "; yes adds it on the next apply. " : "; Spring Framework 7's @Retryable is not on the "
+                + "classpath, so add the retry yourself. ");
+        b.title((t == m ? m.label() : t.label() + " calls " + m.label() + ", which") + " makes an idempotent HTTP call that "
+                        + "nothing retries, reached from " + from + via + ": "
+                        + (request ? "one dropped connection or 503 fails the request"
+                        : "one dropped connection or 503 fails the run"))
+                .suggestion(decide + (request
+                        ? "Retry it at most once, with a short backoff, inside the caller's timeout: @Retryable(maxRetries = 1, "
+                        + "delay = 100) on " + t.label() + " (Spring Framework 7, needs @EnableResilientMethods; the next apply "
+                        + "moves the settings into application.yml, under resilience.retry.usages when they differ from "
+                        + "resilience.retry.defaults), or retryWhen(Retry.backoff(1, Duration.ofMillis(100))) on a WebClient. "
+                        + "Skip it when a service mesh or gateway already retries."
+                        : "Retry it with backoff: " + annotation + " on " + t.label() + " (Spring Framework 7, needs "
+                        + "@EnableResilientMethods), with the settings shared in application.yml under resilience.retry.defaults "
+                        + "(for example 3 retries, starting at one second, multiplier 2), or retryWhen(Retry.backoff(..)) on a WebClient."))
+                .basis("only idempotent calls (GET / HEAD / PUT / DELETE / OPTIONS); no @Retryable, Resilience4j @Retry, "
+                        + "RetryTemplate, retryWhen or Spring Cloud CircuitBreaker on the path, no Kafka / RabbitMQ redelivery")
+                .doneWhen("the method, or a method on every path to it from an entrypoint, retries (@Retryable, Resilience4j "
+                        + "@Retry, RetryTemplate, retryWhen, Spring Cloud CircuitBreaker), or it makes a non-idempotent call");
     }
 
     private static String kind(Entrypoint ep) {
@@ -169,6 +211,94 @@ final class RetryCoverageRules {
         }
         out.sort(Comparator.comparing(Entrypoint::label));
         return out;
+    }
+
+    /** A proxy-based retry annotation can take effect on {@code m}: not private, static or final, its class not final. */
+    static boolean proxyable(MethodInfo m) {
+        return m.decl().getModifiers().stream().noneMatch(x -> x.getType() == J.Modifier.Type.Private
+                || x.getType() == J.Modifier.Type.Static || x.getType() == J.Modifier.Type.Final)
+                && m.owner().decl().getModifiers().stream().noneMatch(x -> x.getType() == J.Modifier.Type.Final);
+    }
+
+    /** {@code m} is called through the proxy: by the framework (an entrypoint) or from another class. */
+    private boolean calledThroughProxy(MethodInfo m, Set<String> entrypointKeys) {
+        return entrypointKeys.contains(m.key())
+                || ctx.a.graph.in(m).stream().anyMatch(e -> !e.from().owner().fqn().equals(m.owner().fqn()));
+    }
+
+    /**
+     * Where a retry annotation for {@code m} takes effect (Spring AOP: self-invocation bypasses the proxy, private /
+     * static / final methods cannot be advised; Spring Framework reference, "Understanding AOP Proxies"): {@code m}
+     * itself when the proxy sees its calls, else the methods of its class that reach it through calls on itself and
+     * that other beans (or the framework) call. Empty: no such method.
+     */
+    private List<MethodInfo> retryTargets(MethodInfo m, Set<String> entrypointKeys) {
+        List<MethodInfo> out = new ArrayList<>();
+        Deque<MethodInfo> todo = new ArrayDeque<>(List.of(m));
+        Set<String> seen = new HashSet<>();
+        while (!todo.isEmpty()) {
+            MethodInfo cur = todo.poll();
+            if (!seen.add(cur.key())) {
+                continue;
+            }
+            if (proxyable(cur) && calledThroughProxy(cur, entrypointKeys)) {
+                out.add(cur);
+                continue;
+            }
+            for (CallGraph.Edge e : ctx.a.graph.in(cur)) {
+                if (e.from().owner().fqn().equals(cur.owner().fqn()) && e.async() == CallGraph.Async.NONE) {
+                    todo.add(e.from());
+                }
+            }
+        }
+        out.sort(Comparator.comparing(MethodInfo::label));
+        return out;
+    }
+
+    /** Why a retry annotation on {@code m} would do nothing. */
+    private String whyNot(MethodInfo m) {
+        List<String> mods = m.decl().getModifiers().stream().map(x -> x.getType()).filter(t -> t == J.Modifier.Type.Private
+                || t == J.Modifier.Type.Static || t == J.Modifier.Type.Final).map(t -> t.name().toLowerCase(Locale.ROOT)).toList();
+        return !mods.isEmpty() ? "it is " + String.join(" ", mods) + " and only called from its own class"
+                : "it is only called from its own class (self-invocation skips the Spring proxy)";
+    }
+
+    // ---- RETRY_BYPASSED -------------------------------------------------------------------------------------------
+
+    /**
+     * RETRY_BYPASSED (report, high): a {@code @Retryable} (Spring Framework 7 or Spring Retry) or Resilience4j
+     * {@code @Retry} that never takes effect: on a private / static / final method, or on a method only its own class
+     * calls (self-invocation bypasses the proxy). The method runs once; its first failure is final. Methods nobody calls
+     * in the analysed code (called from elsewhere, by reflection) are left alone.
+     */
+    private void bypassed(Set<String> entrypointKeys) {
+        for (MethodInfo m : ctx.methods()) {
+            boolean annotated = m.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, RESILIENCE4J_RETRY)
+                    || Stream.of(ResilienceRules.RESILIENCE_PKG + "Retryable", ResilienceRules.SPRING_RETRY_PKG + "Retryable")
+                    .anyMatch(f -> f.equals(ResilienceRules.annotationFqn(a, m.file()))));
+            if (!annotated || ctx.ignored(m.file(), m.line(), Rules.RETRY_BYPASSED)) {
+                continue;
+            }
+            boolean called = entrypointKeys.contains(m.key()) || !ctx.a.graph.in(m).isEmpty();
+            if (proxyable(m) && (!called || calledThroughProxy(m, entrypointKeys))) {
+                continue;
+            }
+            List<String> outside = new ArrayList<>();
+            for (MethodInfo t : retryTargets(m, entrypointKeys)) {
+                outside.add(t.label());
+            }
+            ctx.order(Rules.RETRY_BYPASSED, m, m.line(), "retry-bypassed")
+                    .data("method", m.label())
+                    .title("The retry on " + m.label() + " never runs: " + whyNot(m) + ", so it runs once and its first "
+                            + "failure is final")
+                    .suggestion(outside.isEmpty()
+                            ? "Move the method into a bean other beans call (and make it public), or retry in code (RetryTemplate)."
+                            : "Put the annotation on " + String.join(" / ", outside) + ", which other beans call (the retry then "
+                            + "repeats it, including the call to " + m.label() + "), or move " + m.label() + " into its own bean.")
+                    .basis("Spring AOP: \"self invocation via an explicit or implicit this reference will bypass the advice\"; "
+                            + "private and final methods cannot be advised (Spring Framework reference, Understanding AOP Proxies)")
+                    .doneWhen("the annotation sits on a method other beans call through the proxy, or the retry is in code");
+        }
     }
 
     // ---- NESTED_RETRY -------------------------------------------------------------------------------------------

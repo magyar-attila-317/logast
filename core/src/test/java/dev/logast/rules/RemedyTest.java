@@ -889,6 +889,56 @@ class RemedyTest {
                 quoteClient("", "post")));
     }
 
+    /** The client's public method makes the call through a private helper it calls on itself (#109). */
+    private static final String SELF_CALLING_CLIENT = """
+            package x;
+
+            import org.springframework.resilience.annotation.Retryable;
+            import org.springframework.stereotype.Component;
+            import org.springframework.web.client.RestClient;
+
+            @Component
+            public class QuoteClient {
+                private final RestClient rest = RestClient.create("http://quotes");
+
+                OUTER
+                public String quote(String code) {
+                    return fetch(code);
+                }
+
+                INNER
+                private String fetch(String code) {
+                    return rest.get().uri("/quotes/{code}", code).retrieve().body(String.class);
+                }
+            }
+            """;
+
+    /**
+     * #109: a retry annotation works only through the Spring proxy (self-invocation bypasses it; private methods cannot
+     * be advised: Spring Framework reference, Understanding AOP Proxies). The recommendation goes where other beans call,
+     * and a retry that never runs is reported.
+     */
+    @Test
+    void retryGoesWhereTheProxySeesTheCall() throws IOException {
+        Map<String, String> before = Map.of(java("QuoteClient"), SELF_CALLING_CLIENT.replace("OUTER", "").replace("INNER", ""),
+                java("QuoteJob"), QUOTE_JOB.replace("RETRY", ""));
+        List<WorkOrder> orders = scan(before);
+        assertThat(orders.stream().filter(o -> o.rule().equals(Rules.RETRY_RECOMMENDED)).map(WorkOrder::title).toList())
+                .as("recommended on the method the job calls, not on the private helper")
+                .singleElement().asString().startsWith("QuoteClient.quote calls QuoteClient.fetch, which makes an idempotent HTTP call")
+                .contains("the Spring proxy skips that call, so the retry goes here");
+
+        Map<String, String> bypassed = with(before, java("QuoteClient"), SELF_CALLING_CLIENT.replace("OUTER", "")
+                .replace("INNER", "@Retryable(maxRetries = 2)"));
+        fires(Rules.RETRY_BYPASSED, bypassed);
+        assertThat(scan(bypassed).stream().filter(o -> o.rule().equals(Rules.RETRY_BYPASSED)).map(WorkOrder::suggestion).toList())
+                .singleElement().asString().startsWith("Put the annotation on QuoteClient.quote, which other beans call");
+        gone(Rules.RETRY_BYPASSED, "the annotation on the method other beans call", with(before, java("QuoteClient"),
+                SELF_CALLING_CLIENT.replace("OUTER", "@Retryable(maxRetries = 2)").replace("INNER", "")));
+        gone(Rules.RETRY_BYPASSED, "a retried method other beans call", with(before, java("QuoteClient"),
+                quoteClient("@Retryable(maxRetries = 2)", "get")));
+    }
+
     @Test
     void retryAtOneLayerOnly() throws IOException {
         Map<String, String> before = Map.of(java("QuoteClient"), quoteClient("@Retryable(maxRetries = 2)", "get"),
