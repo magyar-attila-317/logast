@@ -100,6 +100,24 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #112: the whole e2e service with logging.keyStyle: dotted keeps every invariant (one pass, a second apply changes
+     * nothing, no CHECK FAILED, compiles): a value MDC carries under run.code leaves a [runCode={}] / [run.code={}]
+     * suffix like it does under camel (the key names the Java value runCode). Every file must equal
+     * e2e/expected-key-style-dotted.
+     */
+    @Test
+    void dottedKeyStyleKeepsTheInvariants() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replace("keyStyle: camel", "keyStyle: dotted"));
+        });
+        assertThat(actual.get("src/main/java/com/example/e2e/job/BaseRunJob.java")).contains("MdcScope.of(\"run.code\", runCode)");
+        assertThat(actual.get("src/main/java/com/example/e2e/job/PublishRunJob.java")).as("MDC carries run.code: not in the messages")
+                .contains("log.info(\"Publishing started\");").doesNotContain("run.code={}");
+        golden(EXPECTED.resolveSibling("expected-key-style-dotted"), actual);
+    }
+
+    /**
      * #18: one line logs a plain [order=…], another the property order.id: the search index maps order as an object
      * and rejects the first line (Elasticsearch expands dotted names; Boot's ECS format nests them). Reported, with
      * both places. (keyStyle: keep: the keys as written; dotted is #112.) Every file must equal
