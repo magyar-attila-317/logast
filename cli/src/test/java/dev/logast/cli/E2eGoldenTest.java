@@ -2522,6 +2522,57 @@ class E2eGoldenTest {
         assertThat(alone.get("FINDINGS.txt")).doesNotContainPattern("SPAN_NAME_DYNAMIC .*/berth/");
     }
 
+    /** #16: code of the service that hands a business id to the next service as baggage (written by a person, never by logast). */
+    private static final IoAction TENANT_BAGGAGE = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/tenant");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("TenantRelay.java"), """
+                package com.example.e2e.tenant;
+
+                import com.example.e2e.logging.BusinessBaggage;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class TenantRelay {
+                    public void relay(String tenantId, Runnable downstreamCall) {
+                        try (var baggage = BusinessBaggage.with("tenantId", tenantId)) {
+                            downstreamCall.run();
+                        }
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #16: BusinessBaggage is copied in vendor mode only once the service's code uses it, with its Tracer wiring
+     * (Micrometer Tracing is on the classpath): the result compiles. A service that does not use it gets neither.
+     * A service vendored before it used the helper gets it on the next apply. Every file must equal
+     * e2e/expected-business-baggage.
+     */
+    @Test
+    void businessBaggageIsCopiedInVendorModeOnlyWhenUsed() throws IOException {
+        Path used = tmp.resolve("app");
+        Map<String, String> actual = migrate(used, CLASSPATH, TENANT_BAGGAGE);
+        // the copied support classes are compiled (migrate does), not part of the snapshot
+        Path support = used.resolve("src/main/java/com/example/e2e/logging");
+        assertThat(support.resolve("BusinessBaggage.java")).exists();
+        assertThat(Files.readString(support.resolve("BusinessBaggageConfiguration.java")))
+                .contains("@Configuration(proxyBeanMethods = false)").doesNotContain("@AutoConfiguration");
+        golden(EXPECTED.resolveSibling("expected-business-baggage"), actual);
+
+        // vendored first, the helper used later: the next apply adds it
+        Path later = tmp.resolve("later");
+        migrate(later, CLASSPATH, app -> {
+        });
+        assertThat(later.resolve("src/main/java/com/example/e2e/logging/BusinessBaggage.java")).doesNotExist();
+        TENANT_BAGGAGE.run(later);
+        String out = run(later, "apply", later.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(out).doesNotContain("CHECK FAILED");
+        assertThat(later.resolve("src/main/java/com/example/e2e/logging/BusinessBaggage.java")).exists();
+        assertThat(later.resolve("src/main/java/com/example/e2e/logging/BusinessBaggageConfiguration.java")).exists();
+        compile(later);
+    }
+
     private static String between(String text, String from, String to) {
         int start = text.indexOf(from);
         int end = text.indexOf(to, start);

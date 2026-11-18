@@ -3,7 +3,9 @@
 Generated code calls a small Spring Boot starter instead of repeating plumbing in every service: `ObservedContext`
 (observed entrypoints), `MdcScope` (MDC that restores what it changed), `ContextExecutors` and a
 context-propagating `TaskDecorator` (MDC and trace across threads), `TraceContextEnv` (trace into launched
-processes), `AfterCommit`, `Outcomes` (counting), `ProblemTraceId`, MDC hygiene and ECS log defaults.
+processes), `AfterCommit`, `Outcomes` (counting), `ProblemTraceId`, MDC hygiene and ECS log defaults. One class only
+your own code calls: `BusinessBaggage` (a business id as trace baggage, see
+[tracing](packs/tracing.md#business-ids-across-services-baggage)); in vendor mode it is copied once your code uses it.
 
 **On its own the starter switches nothing on.** Each behaviour has a property that is off unless `true`; logast
 writes it to `application.yml` for the pack that uses it.
