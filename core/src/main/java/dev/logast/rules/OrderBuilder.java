@@ -38,6 +38,7 @@ public final class OrderBuilder {
             Map.entry(Rules.UNBOUNDED_EXECUTOR, "UEX"), Map.entry(Rules.BLOCKING_WAIT_UNBOUNDED, "BWU"),
             Map.entry(Rules.ERROR_DETAILS_EXPOSED, "EDE"), Map.entry(Rules.ERROR_RESPONSE_UNTRACED, "ERT"), Map.entry(Rules.DB_NO_TIMEOUT, "DBT"), Map.entry(Rules.REMOTE_CALL_IN_TRANSACTION, "RCT"), Map.entry(Rules.SCHEDULED_WITHOUT_LOCK, "SWL"), Map.entry(Rules.ASYNC_ERROR_LOST, "AEL"), Map.entry(Rules.CAUSE_DROPPED, "CDR"), Map.entry(Rules.CATCH_ALL_DEFAULT, "CAD"), Map.entry(Rules.AUDIT_FAILURES_UNRECORDED, "AFU"), Map.entry(Rules.AUDIT_RECORD_INCOMPLETE, "ARI"), Map.entry(Rules.AUDIT_LOG_MIXED, "ALM"), Map.entry(Rules.DATA_CHANGES_UNAUDITED, "DCU"), Map.entry(Rules.UNMAPPED_EXCEPTION, "UMX"),
             Map.entry(Rules.CLIENT_ERROR_AS_SERVER_ERROR, "CES"), Map.entry(Rules.PROBLEM_DETAILS_DISABLED, "PDD"),
+            Map.entry(Rules.UNEXPECTED_ERROR_UNLOGGED, "UEU"), Map.entry(Rules.ERROR_HANDLER_STATUS_OK, "EHO"), Map.entry(Rules.TX_COMMITS_ON_CHECKED, "TCC"),
             Map.entry(Rules.AUDIT_MISSING, "AUM"), Map.entry(Rules.AUDIT_SECURITY_EVENTS, "AUS"), Map.entry(Rules.SCHEDULED_TASK_UNTRACED, "STU"),
             Map.entry(Rules.KAFKA_OBSERVATION_DISABLED, "KFK"), Map.entry(Rules.RABBIT_OBSERVATION_DISABLED, "RBT"), Map.entry(Rules.JOB_LAUNCH_UNTRACED, "JOB"),
             Map.entry(Rules.RUNTIME_TRACE_LOST, "RTL"), Map.entry(Rules.RUNTIME_MDC_LOST, "RML"), Map.entry(Rules.RUNTIME_NULL_VALUE, "RNV"),

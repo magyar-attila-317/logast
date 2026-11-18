@@ -1538,6 +1538,196 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-exceptions-not-thrown-with-new"), actual);
     }
 
+    /** #91: the shapes of the errors pack's newer checks, in a parcel service. */
+    private static final IoAction PARCEL_ERRORS = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/parcel");
+        Files.createDirectories(dir);
+        for (String name : List.of("ParcelHeld", "ParcelLate", "ParcelLost")) {
+            Files.writeString(dir.resolve(name + ".java"), """
+                    package com.example.e2e.parcel;
+
+                    public class %s extends RuntimeException {
+                        public %s(String message) {
+                            super(message);
+                        }
+                    }
+                    """.formatted(name, name));
+        }
+        Files.writeString(dir.resolve("ParcelAnswer.java"), """
+                package com.example.e2e.parcel;
+
+                public record ParcelAnswer(String code) {
+                }
+                """);
+        // a catch-all that logs nothing; two handlers that answer 200; one that sets its status
+        Files.writeString(dir.resolve("ParcelErrors.java"), """
+                package com.example.e2e.parcel;
+
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ProblemDetail;
+                import org.springframework.http.ResponseEntity;
+                import org.springframework.web.bind.annotation.ExceptionHandler;
+                import org.springframework.web.bind.annotation.ResponseStatus;
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+                @RestControllerAdvice
+                class ParcelErrors {
+                    @ExceptionHandler(Exception.class)
+                    ProblemDetail unexpected(Exception e) {
+                        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
+                    }
+
+                    @ExceptionHandler(ParcelHeld.class)
+                    ParcelAnswer held(ParcelHeld e) {
+                        return new ParcelAnswer("held");
+                    }
+
+                    @ExceptionHandler(ParcelLate.class)
+                    ResponseEntity<String> late(ParcelLate e) {
+                        return ResponseEntity.ok("late");
+                    }
+
+                    @ExceptionHandler(ParcelLost.class)
+                    @ResponseStatus(HttpStatus.GONE)
+                    ParcelAnswer lost(ParcelLost e) {
+                        return new ParcelAnswer("lost");
+                    }
+                }
+                """);
+        // a downstream call on an HTTP path nothing maps, and one its caller catches
+        Files.writeString(dir.resolve("ParcelClient.java"), """
+                package com.example.e2e.parcel;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+                import org.springframework.web.client.RestClientException;
+
+                @Component
+                class ParcelClient {
+                    private final RestClient rest;
+
+                    ParcelClient(RestClient.Builder builder) {
+                        this.rest = builder.baseUrl("http://parcels").build();
+                    }
+
+                    String track(String parcelCode) {
+                        return rest.get().uri("/parcels/{parcelCode}", parcelCode).retrieve().body(String.class);
+                    }
+
+                    String carrier(String parcelCode) {
+                        try {
+                            return rest.get().uri("/parcels/{parcelCode}/carrier", parcelCode).retrieve().body(String.class);
+                        } catch (RestClientException e) {
+                            throw new ParcelLate("carrier unknown for " + parcelCode);
+                        }
+                    }
+                }
+                """);
+        // checked exceptions out of a transaction: one commits by default, one has a rollback rule
+        Files.writeString(dir.resolve("ParcelLedger.java"), """
+                package com.example.e2e.parcel;
+
+                import java.io.IOException;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                class ParcelLedger {
+                    @Transactional
+                    public void archive(String parcelCode) throws IOException {
+                        if (parcelCode.isBlank()) {
+                            throw new IOException("no parcel code");
+                        }
+                    }
+
+                    @Transactional(rollbackFor = IOException.class)
+                    public void restore(String parcelCode) throws IOException {
+                        if (parcelCode.isBlank()) {
+                            throw new IOException("no parcel code");
+                        }
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("ParcelController.java"), """
+                package com.example.e2e.parcel;
+
+                import java.io.IOException;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class ParcelController {
+                    private final ParcelClient client;
+                    private final ParcelLedger ledger;
+
+                    ParcelController(ParcelClient client, ParcelLedger ledger) {
+                        this.client = client;
+                        this.ledger = ledger;
+                    }
+
+                    @GetMapping("/parcels/{parcelCode}")
+                    String track(@PathVariable String parcelCode) {
+                        return client.track(parcelCode);
+                    }
+
+                    @GetMapping("/parcels/{parcelCode}/carrier")
+                    String carrier(@PathVariable String parcelCode) {
+                        return client.carrier(parcelCode);
+                    }
+
+                    @PostMapping("/parcels/{parcelCode}/archive")
+                    void archive(@PathVariable String parcelCode) throws IOException {
+                        ledger.archive(parcelCode);
+                        ledger.restore(parcelCode);
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #91: the errors pack's newer checks. A catch-all handler that logs nothing gets an ERROR line with the exception
+     * (UNEXPECTED_ERROR_UNLOGGED, AUTO); handlers that answer 200 (a body object, ResponseEntity.ok) are reported, the
+     * one with @ResponseStatus is not (ERROR_HANDLER_STATUS_OK); a RestClient call on an HTTP path that no handler
+     * maps is reported as a downstream failure answered 500, the call its caller catches is not counted
+     * (UNMAPPED_EXCEPTION); a @Transactional method throwing a checked exception without rollbackFor is reported, the
+     * one with it is not (TX_COMMITS_ON_CHECKED). The same checks with only the errors pack selected. Every file must
+     * equal e2e/expected-errors-pack.
+     */
+    @Test
+    void errorsPackFindsUnloggedHandlersStatusOkDownstreamFailuresAndCommittingTransactions() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, PARCEL_ERRORS);
+        String handlers = actual.get("src/main/java/com/example/e2e/parcel/ParcelErrors.java");
+        assertThat(handlers).as("the catch-all logs the exception")
+                .contains("log.error(\"Request failed unexpectedly\", e);");
+        String findings = actual.get("FINDINGS.txt");
+        assertThat(findings).as("a body object without @ResponseStatus")
+                .contains("Handler for ParcelHeld returns ParcelAnswer without @ResponseStatus: the client gets 200");
+        assertThat(findings).as("ResponseEntity.ok").contains("Handler for ParcelLate answers ResponseEntity.ok");
+        assertThat(findings).as("@ResponseStatus sets it").doesNotContain("Handler for ParcelLost");
+        assertThat(findings).as("one unmapped downstream call; the caught one is not counted")
+                .contains("Failures of downstream calls (RestClient / RestTemplate, 1× on HTTP paths");
+        assertThat(findings).as("checked exception without a rollback rule")
+                .contains("ParcelLedger.archive is @Transactional and throws IOException")
+                .doesNotContain("ParcelLedger.restore is @Transactional");
+        golden(EXPECTED.resolveSibling("expected-errors-pack"), actual);
+
+        // the errors pack alone: the same checks, the log line brings its own logger
+        Map<String, String> alone = migrate(tmp.resolve("errors-only"), CLASSPATH, app -> {
+            PARCEL_ERRORS.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [errors]"));
+        });
+        assertThat(alone.get("src/main/java/com/example/e2e/parcel/ParcelErrors.java"))
+                .contains("log.error(\"Request failed unexpectedly\", e);");
+        assertThat(alone.get("FINDINGS.txt"))
+                .contains("Handler for ParcelHeld returns ParcelAnswer without @ResponseStatus")
+                .contains("Handler for ParcelLate answers ResponseEntity.ok")
+                .contains("Failures of downstream calls (RestClient / RestTemplate, 1× on HTTP paths")
+                .contains("ParcelLedger.archive is @Transactional and throws IOException");
+    }
+
     /**
      * #51: API-first controllers. The request mappings sit on an interface the controller implements, the class-level
      * {@code @RequestMapping} too, and the paths come from {@code static final String} constants and their

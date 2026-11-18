@@ -712,13 +712,16 @@ They use the same entrypoint and call-path analysis, so a finding says *which re
 | rule | finds | fix |
 |---|---|---|
 | ERROR_DETAILS_EXPOSED | `server.error.include-message/stacktrace/exception`; a handler for unexpected exceptions copying `e.getMessage()` into the body | AUTO for the config (set to never), report for handlers |
-| UNMAPPED_EXCEPTION | an application exception thrown on an HTTP path that no `@ExceptionHandler` or `@ResponseStatus` maps (it becomes a 500) | report: decide its status |
+| UNMAPPED_EXCEPTION | an application exception thrown on an HTTP path that no `@ExceptionHandler` or `@ResponseStatus` maps (it becomes a 500); a downstream call on an HTTP path (RestClient, RestTemplate, `@HttpExchange` / Feign interfaces) whose exceptions no handler maps, so another service's failure is answered as our own 500 | report: decide its status (downstream: 502 for an error status, 504 for a timeout, or pass a 404 on) |
 | CLIENT_ERROR_AS_SERVER_ERROR | a handler answering 500 for a validation / not-found / denied exception | report |
 | PROBLEM_DETAILS_DISABLED | Spring MVC errors are not RFC 9457 `ProblemDetail` responses | report (changes the API's error body) |
 | ERROR_RESPONSE_UNTRACED | error responses without the trace id (Spring MVC with Micrometer Tracing) | AUTO: `logging-support.problem-trace-id.enabled: true`; logging-support then adds `"traceId"` to every `ProblemDetail` and to Spring Boot's error map, so a reported error leads straight to its log lines and trace (a traceId a handler set is kept) |
 | ASYNC_ERROR_LOST | a Future whose result is thrown away: its exception stays in the future and is never logged (`@Async void` is fine: Spring logs those) | AUTO for a `CompletableFuture` statement: a `whenComplete` that logs the failure (wording marked `// logast:wording`); report for other Futures (`executor.submit(…)`) |
 | CAUSE_DROPPED | `catch (X e) { throw new Y(e.getMessage()); }`: the new exception does not carry `e`, so the original stack trace is lost | AUTO when `Y` has a constructor taking the same arguments plus the cause (`e` is appended); report otherwise (add such a constructor, or `initCause(e)`) |
 | CATCH_ALL_DEFAULT | `catch (Exception e) { … return null; }` (or `Optional.empty()`, an empty collection, `0`, `false`, `""`): the caller cannot tell a failure from an empty result, logged or not | report (let it through, catch only what means "nothing there", or return a result type that carries the failure) |
+| UNEXPECTED_ERROR_UNLOGGED | an `@ExceptionHandler(Exception / RuntimeException / Throwable)` that does not log the exception: Spring logs nothing for a handled exception, so the failure leaves no stack trace | AUTO: `log.error(…, e)` at the top of the handler (wording marked `// logast:wording`, logger added if missing); not when it rethrows or passes the exception on (`super.handleException(…)`) |
+| ERROR_HANDLER_STATUS_OK | an `@ExceptionHandler` that answers 200: a body object without `@ResponseStatus` (on it or its class), or `ResponseEntity.ok(…)`; a returned `ProblemDetail` / `ErrorResponse` carries its own status | report (the status is a decision) |
+| TX_COMMITS_ON_CHECKED | a `@Transactional` method (or class) that throws a checked exception without `rollbackFor` / `noRollbackFor`: checked exceptions do not roll back by default, so the work before the exception is committed | report (`rollbackFor` changes what is committed); not with `@EnableTransactionManagement(rollbackOn = ALL_EXCEPTIONS)` |
 
 **audit**: actions that must leave an audit record, not just a log line.
 
@@ -779,7 +782,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · RABBIT_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · DB_NO_TIMEOUT · REMOTE_CALL_IN_TRANSACTION · SCHEDULED_WITHOUT_LOCK · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED |
-| errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED · ASYNC_ERROR_LOST · CAUSE_DROPPED · CATCH_ALL_DEFAULT |
+| errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED · ASYNC_ERROR_LOST · CAUSE_DROPPED · CATCH_ALL_DEFAULT · UNEXPECTED_ERROR_UNLOGGED · ERROR_HANDLER_STATUS_OK · TX_COMMITS_ON_CHECKED |
 | audit (opt-in) | AUDIT_MISSING · AUDIT_SECURITY_EVENTS |
 | metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
 | runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
