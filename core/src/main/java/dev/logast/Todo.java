@@ -2,9 +2,12 @@ package dev.logast;
 
 import dev.logast.apply.FillsFile;
 import dev.logast.apply.MetricsFile;
+import dev.logast.orders.Ansi;
 import dev.logast.orders.ScanResult;
 import dev.logast.orders.WorkOrder;
 import dev.logast.policy.Policy;
+import dev.logast.rules.RuleLabels;
+import dev.logast.rules.Rules;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -13,19 +16,25 @@ import java.nio.file.Path;
 import java.util.*;
 
 /**
- * What is left for a person after scan/apply, one line per action: the files to fill, the decisions to make, the
- * checks to run. Also creates .logast/traffic.yaml when it is missing and a selected pack uses it, so every file to
- * fill exists.
+ * What is left after scan/apply, grouped by what has to happen next (#101): the fixes logast makes itself, then what
+ * waits on a person (wording, metric decisions, other decisions), then the optional checks. Also creates
+ * .logast/traffic.yaml when it is missing and a selected pack uses it, so every file to fill exists.
+ *
+ * @param auto      fixes that need nothing from a person
+ * @param text      orders waiting for a message text in fills.json
+ * @param outcomes  logged outcomes waiting for a count/tag/skip decision in metrics.json
+ * @param decisions the other report-only findings, per rule
+ * @param first     what has to happen before anything else (refresh the classpath), or null
+ * @param also      the optional and follow-up checks, one line each
  */
-public final class Todo {
+public record Todo(long auto, long text, long outcomes, Map<String, Long> decisions, Item first, List<Item> also) {
     /** @param action what to do (a file to edit or a command); {@code why} one short reason */
     public record Item(String action, String why) {
     }
 
-    private Todo() {
-    }
+    public static final String APPLY = "logast apply . --auto --write";
 
-    static String plural(long n, String word) {
+    public static String plural(long n, String word) {
         return n + " " + (n == 1 ? word : word.endsWith("x") ? word + "es" : word + "s");
     }
 
@@ -34,31 +43,20 @@ public final class Todo {
      * @param applied order ids applied in this run (empty for a scan)
      * @param wrote   files were changed
      */
-    public static List<Item> of(Path root, ScanResult result, Policy policy, Analysis a, Collection<String> applied, boolean wrote) {
-        List<Item> out = new ArrayList<>();
+    public static Todo of(Path root, ScanResult result, Policy policy, Analysis a, Collection<String> applied, boolean wrote) {
         List<WorkOrder> orders = result.orders();
-        if (result.stats() != null && result.stats().noClasspath()) {
-            out.add(new Item("logast classpath .", "logast cannot see library types yet; findings are incomplete"));
-        }
+        Item first = result.stats() != null && result.stats().noClasspath()
+                ? new Item("logast classpath .", "logast cannot see library types yet; findings are incomplete") : null;
         // fixes that wait for a text order are counted with the texts, not as "apply again"
         Set<String> textIds = new HashSet<>();
         orders.stream().filter(o -> !o.slots().isEmpty()).forEach(o -> textIds.add(o.id()));
         long auto = orders.stream().filter(WorkOrder::mechanical).filter(o -> o.dependsOn().stream().noneMatch(textIds::contains)).count();
-        long text = orders.stream().filter(o -> !o.slots().isEmpty()).count();
-        if (text > 0) {
-            out.add(new Item("write \"MSG\" texts in " + FillsFile.PATH, plural(text, "log line").replace("lines", "lines need").replace("line ", "line needs ").replaceAll("line$", "line needs")
-                    + " wording only a person knows"));
-        }
+        long text = textIds.size();
         long outcomes = orders.stream().filter(o -> o.rule().equals(MetricsFile.RULE) && o.reportOnly()).count();
-        if (outcomes > 0) {
-            out.add(new Item("set \"count\" in " + MetricsFile.PATH, plural(outcomes, "logged outcome") + (outcomes == 1 ? " is" : " are") + " not counted: counter, tag or skip each"));
-        }
-        // how to go on, spelled out: the files are filled in on this code, and the next apply runs on top of it
-        if (auto > 0 || text > 0 || outcomes > 0) {
-            String what = auto > 0 && (text > 0 || outcomes > 0) ? plural(auto, "fix") + " that need nothing from you, and what you filled in"
-                    : auto > 0 ? plural(auto, "fix") + " that need nothing from you" : "after filling them in: writes your texts and decisions";
-            out.add(new Item("logast apply . --auto --write", what + " (on this code: don't revert it)"));
-        }
+        Map<String, Long> decisions = new TreeMap<>();
+        orders.stream().filter(WorkOrder::reportOnly).filter(o -> !o.rule().equals(MetricsFile.RULE))
+                .forEach(o -> decisions.merge(o.rule(), 1L, Long::sum));
+        List<Item> also = new ArrayList<>();
         // the rates set log levels (logging) and metrics frequency: other packs alone have no use for them (#88)
         if (a != null && !a.entrypoints.isEmpty() && (policy.packSelected("logging") || policy.packSelected("metrics"))) {
             Path file = root.resolve(".logast/traffic.yaml");
@@ -75,29 +73,151 @@ public final class Todo {
             a.entrypoints.forEach(ep -> labels.add(ep.label()));
             long known = labels.stream().filter(l -> existing.perDay(l) != null).count();
             if (known < labels.size()) {
-                out.add(new Item("fill calls/day in .logast/traffic.yaml (optional)", (labels.size() - known) + " of " + labels.size()
+                also.add(new Item("fill calls/day in .logast/traffic.yaml (optional)", (labels.size() - known) + " of " + labels.size()
                         + " entrypoints have no rate: log levels and metrics frequency stay cautious there"));
             }
         }
-        Map<String, Long> report = new TreeMap<>();
-        orders.stream().filter(WorkOrder::reportOnly).filter(o -> !o.rule().equals(MetricsFile.RULE))
-                .forEach(o -> report.merge(o.rule(), 1L, Long::sum));
-        if (!report.isEmpty()) {
-            long n = report.values().stream().mapToLong(Long::longValue).sum();
-            out.add(new Item("logast scan . --format summary", n + " findings are decisions for a person ("
-                    + String.join(", ", report.entrySet().stream().sorted((x, y) -> Long.compare(y.getValue(), x.getValue()))
-                    .limit(3).map(e -> e.getKey() + " " + e.getValue()).toList()) + (report.size() > 3 ? ", …" : "")
-                    + "); each says what to decide"));
-        }
         if (policy.terms().isEmpty() && policy.vocabulary().isEmpty()) {
-            out.add(new Item("logast vocabulary .", "no business terms in logast.yaml yet: MDC keys and wording checks need them"));
+            also.add(new Item("logast vocabulary .", "no business terms in logast.yaml yet: MDC keys and wording checks need them"));
         }
         boolean starterAdded = applied.stream().anyMatch(id -> id.startsWith("SUP-"));
         if (starterAdded && !policy.support().vendor()) {
-            out.add(new Item("check " + policy.support().coordinates() + " resolves", "the build now depends on it; or set support.mode: vendor in logast.yaml"));
+            also.add(new Item("check " + policy.support().coordinates() + " resolves", "the build now depends on it; or set support.mode: vendor in logast.yaml"));
         }
         if (wrote) {
-            out.add(new Item("logast verify .", "build and run the tests with log capture: does the result really log what it should?"));
+            also.add(new Item("logast verify .", "build and run the tests with log capture: does the result really log what it should?"));
+        }
+        return new Todo(auto, text, outcomes, decisions, first, also);
+    }
+
+    /** Nothing to apply and nothing waits on a person. */
+    public boolean done() {
+        return auto == 0 && text == 0 && outcomes == 0 && decisions.isEmpty();
+    }
+
+    /**
+     * How a run renders this: the command that comes next, and where the decisions are listed.
+     *
+     * @param next          the command that applies the pending fixes, with why; null: {@link #APPLY} when fixes are pending
+     * @param decisionsHint where the decisions are listed ("logast scan .", "listed above")
+     * @param fills         the fills.json state after this run, or null when unknown
+     * @param metrics       the metrics.json state after this run, or null when unknown
+     */
+    public record View(Item next, String decisionsHint, FillsFile.Update fills, FillsFile.Update metrics) {
+    }
+
+    /**
+     * The lines a person reads (#101): first what to run, then what waits on them, grouped by what they do, then the
+     * state-aware "then run". Empty lines separate the blocks; nothing is printed for an empty block.
+     */
+    public List<String> lines(View v) {
+        List<String> out = new ArrayList<>();
+        if (first != null) {
+            out.add(Ansi.bold("First: ") + Ansi.cyan(first.action()) + Ansi.dim("   " + first.why()));
+        }
+        Item next = v.next() != null ? v.next() : auto > 0
+                ? new Item(APPLY, plural(auto, "fix") + " logast makes itself (without --write: a preview)") : null;
+        if (next != null) {
+            out.add(Ansi.bold("Next: ") + Ansi.cyan(next.action()) + Ansi.dim("   " + next.why()));
+        }
+        long decided = decisions.values().stream().mapToLong(Long::longValue).sum();
+        if (text == 0 && outcomes == 0 && decided == 0) {
+            if (next == null && first == null) {
+                out.add(Ansi.green("Nothing left: no fixes pending and nothing waits on you."));
+            }
+            return out;
+        }
+        if (!out.isEmpty()) {
+            out.add("");
+        }
+        out.add(Ansi.bold(next != null ? "Then waiting on you (the counts change with the apply):"
+                : "Waiting on you — logast can't continue without these:"));
+        List<String[]> rows = new ArrayList<>();
+        if (text > 0) {
+            String written = v.fills() != null && v.fills().filled() > 0 ? "   (" + v.fills().filled() + " written)" : "";
+            rows.add(new String[]{String.valueOf(text), (text == 1 ? "log line needs" : "log lines need") + " wording",
+                    "write \"MSG\" in " + FillsFile.PATH + written});
+        }
+        if (outcomes > 0) {
+            String state = v.metrics() == null ? "" : (v.metrics().filled() > 0 ? "   (" + v.metrics().filled() + " decided)" : "")
+                    + (v.metrics().problems() > 0 ? "   (" + v.metrics().problems() + " cannot be written: see \"_problem\")" : "");
+            rows.add(new String[]{String.valueOf(outcomes), (outcomes == 1 ? "outcome" : "outcomes") + ": count, tag or skip",
+                    MetricsFile.PATH + state});
+        }
+        if (decided > 0) {
+            rows.add(new String[]{String.valueOf(decided), decided == 1 ? "decision" : "decisions",
+                    v.decisionsHint() + "   (each says what to decide)"});
+        }
+        int w = rows.stream().mapToInt(r -> r[1].length()).max().orElse(0);
+        int nw = rows.stream().mapToInt(r -> r[0].length()).max().orElse(0);
+        String indent = " ".repeat(2 + nw + 1);
+        for (String[] r : rows) {
+            out.add("  " + Ansi.bold(String.format("%" + nw + "s", r[0])) + " " + String.format("%-" + w + "s", r[1]) + "  → " + Ansi.cyan(r[2]));
+            if (r[1].startsWith("decision") && decisions.size() > 1) {
+                out.add(Ansi.dim(indent + "mostly: " + String.join(", ", decisions.entrySet().stream()
+                        .sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                        .limit(3).map(e -> RuleLabels.of(e.getKey()) + " " + e.getValue()).toList())
+                        + (decisions.size() > 3 ? ", …" : "")));
+            } else if (r[1].startsWith("decision")) {
+                out.add(Ansi.dim(indent + RuleLabels.of(decisions.keySet().iterator().next())));
+            }
+        }
+        if (text > 0 || outcomes > 0) {
+            out.add("  then run: " + Ansi.cyan(APPLY) + Ansi.dim("   (on this code: don't revert it)"));
+        } else {
+            out.add(Ansi.dim("  logast applies nothing for these: change the code, and the next scan drops what is done"));
+        }
+        return out;
+    }
+
+    /** "Also": the follow-up and optional checks, with extra items of the caller's first (git diff, rejected fixes). */
+    public static List<String> alsoLines(List<Item> items) {
+        List<String> out = new ArrayList<>();
+        if (items.isEmpty()) {
+            return out;
+        }
+        out.add(Ansi.bold("Also:"));
+        int w = items.stream().mapToInt(i -> i.action().length()).max().orElse(0) + 3;
+        items.forEach(i -> out.add("  " + Ansi.cyan(String.format("%-" + w + "s", i.action())) + Ansi.dim(i.why())));
+        return out;
+    }
+
+    /** Short location: the first directory, "…" and the file name ({@code src/…/X.java:31}). */
+    static String shortLocation(String file, int line) {
+        String[] parts = file.split("/");
+        String f = parts.length > 2 ? parts[0] + "/…/" + parts[parts.length - 1] : file;
+        return f + ":" + line;
+    }
+
+    /**
+     * "Fix first": the person's orders (text or decision) of the worst severity among them, up to {@code max}, with the
+     * other severities counted (#101). Empty when nothing waits on a person.
+     */
+    public static List<String> fixFirst(List<WorkOrder> orders, int max) {
+        List<WorkOrder> person = orders.stream().filter(o -> !o.mechanical()).toList();
+        if (person.isEmpty()) {
+            return List.of();
+        }
+        String worst = person.stream().map(WorkOrder::severity).max(Comparator.comparingInt(Rules::rank)).orElseThrow();
+        List<WorkOrder> top = person.stream().filter(o -> o.severity().equals(worst)).toList();
+        List<String> out = new ArrayList<>();
+        out.add(Ansi.bold("Fix first (" + worst + "):"));
+        int lw = top.stream().limit(max).mapToInt(o -> RuleLabels.of(o.rule()).length()).max().orElse(0);
+        int fw = top.stream().limit(max).mapToInt(o -> shortLocation(o.file(), o.line()).length()).max().orElse(0);
+        top.stream().limit(max).forEach(o -> out.add("  " + String.format("%-" + lw + "s", RuleLabels.of(o.rule())) + "   "
+                + String.format("%-" + fw + "s", shortLocation(o.file(), o.line())) + "   " + Ansi.dim(o.rule())));
+        List<String> rest = new ArrayList<>();
+        if (top.size() > max) {
+            rest.add((top.size() - max) + " more " + worst);
+        }
+        for (String sev : List.of("high", "medium", "low")) {
+            long n = person.stream().filter(o -> o.severity().equals(sev)).count();
+            if (!sev.equals(worst) && n > 0) {
+                rest.add(n + " " + sev);
+            }
+        }
+        if (!rest.isEmpty()) {
+            out.add(Ansi.dim("  (" + String.join(", ", rest) + ": logast scan .)"));
         }
         return out;
     }

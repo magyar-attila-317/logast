@@ -78,6 +78,46 @@ DOM-f22aa2  medium  AUTO  MISSING_DOMAIN_MDC  src/main/java/com/example/shop/web
   have exactly as it is, adds entries for new findings and removes the ones that are done. Nothing is rewritten when
   nothing changed.
 
+### What happens next
+
+The end of `scan` and `apply` is for a person: it groups what is left by what you do about it, not by rule.
+`scan --format summary` prints only that part, plus the worst findings that wait on you:
+
+```
+Applied earlier: 100 changes in 53 files (git diff to review)
+
+Waiting on you — logast can't continue without these:
+  21 log lines need wording        → write "MSG" in .logast/fills.json
+  12 outcomes: count, tag or skip  → .logast/metrics.json
+  34 decisions                     → logast scan .   (each says what to decide)
+     mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
+  then run: logast apply . --auto --write   (on this code: don't revert it)
+
+Fix first (high):
+  async work loses the log context   src/…/EdgeFlow.java:44          ASYNC_CONTEXT_LOSS
+  async work loses the log context   src/…/QuoteController.java:18   ASYNC_CONTEXT_LOSS
+  async work loses the log context   src/…/QuoteController.java:19   ASYNC_CONTEXT_LOSS
+  async work loses the log context   src/…/QuoteController.java:27   ASYNC_CONTEXT_LOSS
+  transactions without a timeout     src/…/application.yml:1         DB_NO_TIMEOUT
+  (23 medium, 39 low: logast scan .)
+
+Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
+Places that should log: 17 of 21 do (jobs 9/9, endpoints 8/12)
+```
+
+- **Applied earlier** appears when an `apply --write` changed files (`.logast/last-apply.txt`).
+- **Next** comes first when logast still has fixes of its own to make: `logast apply . --auto --write`. The person's
+  work is then listed as what follows, since the apply changes it.
+- **Waiting on you** is what logast cannot do: message wording (`fills.json`), whether to count a logged outcome
+  (`metrics.json`), and decisions it only reports (the three most frequent kinds by name). `then run` appears when
+  something you fill in is applied by the next `apply`; decisions are done by changing the code.
+- When nothing is pending and nothing waits on you, it says `Nothing left`.
+- **Fix first** lists the findings of the worst severity among those that wait on you (up to 8), by a short name, with
+  the rule id last; the rest are counted.
+- **Also** holds the optional and follow-up checks (`logast verify .`, traffic rates, vocabulary).
+
+The compact listing (the default) ends with the same blocks, without "Fix first" (the listing is the detail).
+
 The log-coverage line is the share of places that should log (jobs, HTTP endpoints that change something, skips,
 state changes, loops) and do; see [log coverage](packs/logging.md#log-coverage). It is also a column in the fleet
 report.
@@ -85,8 +125,7 @@ report.
 ### Every log call is accounted for
 
 A line without a finding could mean "checked, fine" or "never looked at", so `scan` (and `apply --write`) also writes
-`.logast/coverage.txt`: one line per log call, in file/line order, with what logast did with it, and prints one summary
-line per outcome:
+`.logast/coverage.txt`: one line per log call, in file/line order, with what logast did with it:
 
 ```
 src/main/java/com/example/shop/service/PledgeService.java:41   fixed    LOG_FORMAT FMT-e10ae3; reported MESSAGE_VAGUE MVG-53c6bf
@@ -94,13 +133,12 @@ src/main/java/com/example/shop/service/PledgeService.java:44   checked  no findi
 src/main/java/com/example/shop/service/GatewayCalls.java:10    skipped  protected message (logging.protectedMessages)
 src/main/java/com/example/shop/service/GatewayCalls.java:14    ignored  LOG_FORMAT
 src/main/java/com/example/shop/service/LegacyGateway.java:9    skipped  other logging API: java.util.logging
+```
 
-log calls 91, each accounted for in .logast/coverage.txt:
-  fixed       51  changed by an apply
-  reported    15  a finding on the line
-  ignored      1  a logast:ignore comment silences a rule
-  skipped     13  fluent call (format and level not checked) 2 · logging-support code 5 · message not a literal (built at runtime) 2 · …
-  checked     11  looked at, no finding
+and one line at the end of the run's output (the skip reasons and every line's detail stay in the file):
+
+```
+Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
 ```
 
 | outcome | meaning |
@@ -122,22 +160,31 @@ and static blocks are not in it (logast analyses method and constructor bodies).
 
 `apply` fixes what it can across all selected packs (best effort), refreshes the classpath when it changed a build
 file, creates the files to fill (`.logast/fills.json`, `.logast/metrics.json`, `.logast/traffic.yaml`), and ends with
-one line per thing left to do:
+what is left, grouped by what you do about it ([what happens next](#what-happens-next)):
 
 ```
-Next steps
-  1. git diff                                            review the changes
-  2. write "MSG" texts in .logast/fills.json             21 log lines need wording only a person knows
-  3. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
-  4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  5. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  6. logast scan . --format summary                      34 findings are decisions for a person (MESSAGE_VAGUE 6, …); each says what to decide
-  7. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+applied (100): SLG-d7dbb8 SUP-065aa3 …
+files (53): …  ·  10 rounds, 41.2s
+
+Waiting on you — logast can't continue without these:
+  21 log lines need wording        → write "MSG" in .logast/fills.json
+  12 outcomes: count, tag or skip  → .logast/metrics.json
+  34 decisions                     → logast scan .   (each says what to decide)
+     mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
+  then run: logast apply . --auto --write   (on this code: don't revert it)
+
+Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
+
+Also:
+  git diff                                            review the changes (one diff per kind of change in .logast/steps/)
+  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 ```
 
 One `apply` does everything automatic; a second one is only for what you filled in. Fill the files, run
-`logast apply . --auto --write` again on the migrated code, and repeat until the list is empty. `logast scan .` shows
-the same list without changing anything.
+`logast apply . --auto --write` again on the migrated code, and repeat until nothing is left. `logast scan .` shows
+the same without changing anything. `apply --write` records what it changed in `.logast/last-apply.txt`, so a later
+scan starts with "Applied earlier: 100 changes in 53 files".
 
 - **Steps.** `apply` runs in steps (setup, structure, lines, mdc, messages, exceptions, levels, reports), each on the
   result of the previous one, and saves one diff per step in `.logast/steps/` (`01-setup.diff`, `02-structure.diff`,

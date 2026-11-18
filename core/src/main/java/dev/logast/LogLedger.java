@@ -161,34 +161,27 @@ public final class LogLedger {
         return sb.toString();
     }
 
-    /** "fixed 3 · reported 25 · …": per outcome its count; the skip reasons with theirs. */
-    public static List<String> summary(List<Entry> entries) {
+    /**
+     * One line for a person (#101): "Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked
+     * (.logast/coverage.txt)". The skip reasons and every line's detail stay in the file.
+     */
+    public static String line(List<Entry> entries) {
         Map<String, Integer> counts = new LinkedHashMap<>();
-        OUTCOMES.forEach(o -> counts.put(o, 0));
-        Map<String, Integer> reasons = new TreeMap<>();
-        for (Entry e : entries) {
-            counts.merge(e.outcome(), 1, Integer::sum);
-            if (e.outcome().equals("skipped")) {
-                for (String r : e.detail().split("; |, ")) {
-                    reasons.merge(r, 1, Integer::sum);
-                }
-            }
-        }
-        List<String> out = new ArrayList<>();
-        out.add("log calls " + entries.size() + ", each accounted for in " + PATH + ":");
+        List.of("fixed", "reported", "checked", "ignored", "skipped").forEach(o -> counts.put(o, 0));   // the reader's order
+        entries.forEach(e -> counts.merge(e.outcome(), 1, Integer::sum));
+        List<String> parts = new ArrayList<>();
         counts.forEach((outcome, n) -> {
             if (n > 0) {
-                String detail = switch (outcome) {
-                    case "fixed" -> "changed by an apply";
-                    case "reported" -> "a finding on the line";
-                    case "ignored" -> "a logast:ignore comment silences a rule";
-                    case "skipped" -> String.join(" · ", reasons.entrySet().stream().map(r -> r.getKey() + " " + r.getValue()).toList());
-                    default -> "looked at, no finding";
-                };
-                out.add(String.format("  %-9s%5d  %s", outcome, n, detail));
+                parts.add(n + " " + switch (outcome) {
+                    case "fixed" -> "fixed";
+                    case "reported" -> "with a finding";
+                    case "ignored" -> "silenced by logast:ignore";
+                    case "skipped" -> "not checked";
+                    default -> "fine";
+                });
             }
         });
-        return out;
+        return "Log lines: " + entries.size() + (parts.isEmpty() ? "" : " — " + String.join(", ", parts)) + " (" + PATH + ")";
     }
 
     /**

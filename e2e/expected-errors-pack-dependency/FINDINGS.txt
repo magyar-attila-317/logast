@@ -22,5 +22,9 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
   note: Set spring.mvc.problemdetails.enabled: true (or extend ResponseEntityExceptionHandler in the controller advice). Not applied automatically: it changes the error body API clients see.
   done when: spring.mvc.problemdetails.enabled: true, or a class extends ResponseEntityExceptionHandler
 
-Next steps
-  1. logast scan . --format summary   4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
+Applied earlier: 5 changes in 5 files (git diff to review)
+
+Waiting on you — logast can't continue without these:
+  4 decisions  → the REPORT-ONLY orders above   (each says what to decide)
+    mostly: failure turned into a default value 1, exception cause dropped 1, error responses not ProblemDetail 1, …
+  logast applies nothing for these: change the code, and the next scan drops what is done

@@ -44,5 +44,9 @@ TNL-db06df  medium  REPORT-ONLY  TRACE_ID_NOT_LOGGED  src/main/resources/logback
   note: Add %X{traceId:-} %X{spanId:-} (or Spring Boot's ${LOG_CORRELATION_PATTERN:-}, which follows logging.pattern.correlation) to each <pattern>, or switch to structured logging (logging.structured.format.console), which writes every MDC value.
   done when: every text <pattern> of logback-spring.xml contains traceId, %correlationId or ${LOG_CORRELATION_PATTERN}
 
-Next steps
-  1. logast scan . --format summary   9 findings are decisions for a person (ASYNC_CONTEXT_LOSS 4, SPAN_NAME_DYNAMIC 3, TRACE_ID_NOT_LOGGED 1, …); each says what to decide
+Applied earlier: 8 changes in 20 files (git diff to review)
+
+Waiting on you — logast can't continue without these:
+  9 decisions  → the REPORT-ONLY orders above   (each says what to decide)
+    mostly: async work loses the log context 4, span name built from data 3, trace id not in the logs 1, …
+  logast applies nothing for these: change the code, and the next scan drops what is done

@@ -2,21 +2,24 @@
 applied (13): SUP-065aa3 OBA-7df0b3 SID-ce5940 BEU-212707 BEU-f11deb MCA-cd561d OUM-02f9e9 OUM-0d4ba2 OUM-164f3d OUM-59c48e OUM-9f157d OUM-e22a2d MCA-f0560e
 files (29): build.gradle.kts, src/main/java/com/example/e2e/pledge/PledgeLookup.java, src/main/java/com/example/e2e/pledge/PledgeMetrics.java, src/main/java/com/example/e2e/pledge/PledgeSender.java, src/main/java/com/example/e2e/edge/EdgeFlow.java, src/main/java/com/example/e2e/edge/EdgeMetrics.java, src/main/java/com/example/e2e/job/TallyJob.java, src/main/java/com/example/e2e/job/JobMetrics.java, src/main/java/com/example/e2e/job/PreloadJob.java, src/main/java/com/example/e2e/job/PublishRunJob.java, src/main/java/com/example/e2e/logging/AfterCommit.java, src/main/java/com/example/e2e/logging/BatchTraceListener.java, src/main/java/com/example/e2e/logging/ContextExecutors.java, src/main/java/com/example/e2e/logging/ContextPropagation.java, src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java, src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygiene.java, src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygieneFilter.java, src/main/java/com/example/e2e/logging/MdcScope.java, src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java, src/main/java/com/example/e2e/logging/ObservedContext.java, src/main/java/com/example/e2e/logging/Outcomes.java, src/main/java/com/example/e2e/logging/TraceContextEnv.java, src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java, src/main/java/com/example/e2e/order/OrderMetrics.java, src/main/java/com/example/e2e/order/OrderService.java, src/main/resources/META-INF/spring.factories, src/main/resources/application.yml  ·  4 rounds, <t>
 
-Next steps
-  1. logast classpath .                                  dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
-  2. git diff                                            review the changes
-  3. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
-  4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  5. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+Waiting on you — logast can't continue without these:
+  12 outcomes: count, tag or skip  → .logast/metrics.json
+  then run: logast apply . --auto --write   (on this code: don't revert it)
+
+Also:
+  logast classpath .                                  dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
+  git diff                                            review the changes (one diff per kind of change in .logast/steps/)
+  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)
 applied (0):
 files (0):   ·  0 rounds, <t>
-nothing to apply without text: the remaining orders need message text (`logast scan .` lists them; fill them via --fills or `logast review .`)
 
-Next steps
-  1. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
-  2. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  3. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  4. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+Waiting on you — logast can't continue without these:
+  12 outcomes: count, tag or skip  → .logast/metrics.json
+  then run: logast apply . --auto --write   (on this code: don't revert it)
+
+Also:
+  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  logast verify .                                     build and run the tests with log capture: does the result really log what it should?

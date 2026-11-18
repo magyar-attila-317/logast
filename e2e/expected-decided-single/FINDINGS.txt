@@ -427,15 +427,16 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
-log calls 85, each accounted for in .logast/coverage.txt:
-  fixed       44  changed by an apply
-  reported    22  a finding on the line
-  skipped      8  TRACE level (arguments not checked) 2 · inside a log helper (LOG_HELPER reports the helper) 1 · logging-support code 5 · message not a literal (built at runtime) 2
-  checked     11  looked at, no finding
+Applied earlier: 89 changes in 48 files (git diff to review)
 
-Next steps
-  1. write "MSG" texts in .logast/fills.json             21 log lines need wording only a person knows
-  2. set "count" in .logast/metrics.json                 22 logged outcomes are not counted: counter, tag or skip each
-  3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  4. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      34 findings are decisions for a person (MESSAGE_VAGUE 6, AUDIT_RECORD_INCOMPLETE 5, ASYNC_CONTEXT_LOSS 4, …); each says what to decide
+Waiting on you — logast can't continue without these:
+  21 log lines need wording        → write "MSG" in .logast/fills.json
+  22 outcomes: count, tag or skip  → .logast/metrics.json
+  34 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
+     mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
+  then run: logast apply . --auto --write   (on this code: don't revert it)
+
+Log lines: 85 — 44 fixed, 22 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
+
+Also:
+  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
