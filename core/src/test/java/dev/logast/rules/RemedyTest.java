@@ -170,6 +170,111 @@ class RemedyTest {
                 """));
     }
 
+    // ---- RABBIT_NO_ERROR_HANDLER -----------------------------------------------------------------------------------
+
+    private static final String RETURN_LISTENER = """
+            package x;
+
+            import org.springframework.amqp.rabbit.annotation.RabbitListener;
+            import org.springframework.stereotype.Component;
+
+            @Component
+            public class ReturnListener {
+                @RabbitListener(queues = "returns"%s)
+                public void onReturn(String payload) {
+                    %s
+                }
+            }
+            """;
+
+    @Test
+    void rabbitListenerRetriedOrRejectedForGood() throws IOException {
+        Map<String, String> before = Map.of(java("ReturnListener"), RETURN_LISTENER.formatted("", "System.out.println(payload);"));
+        fires(Rules.RABBIT_NO_ERROR_HANDLER, before);
+        gone(Rules.RABBIT_NO_ERROR_HANDLER, "listener retries", with(before, YML,
+                CONFIG + "  rabbitmq:\n    listener:\n      simple:\n        retry:\n          enabled: true\n"));
+        gone(Rules.RABBIT_NO_ERROR_HANDLER, "default-requeue-rejected: false", with(before, YML,
+                CONFIG + "  rabbitmq:\n    listener:\n      simple:\n        default-requeue-rejected: false\n"));
+        gone(Rules.RABBIT_NO_ERROR_HANDLER, "retries of the direct container", with(before, YML,
+                CONFIG + "  rabbitmq:\n    listener:\n      type: direct\n      direct:\n        retry:\n          enabled: true\n"));
+        gone(Rules.RABBIT_NO_ERROR_HANDLER, "a container factory that does not requeue", with(before, java("RabbitConfig"), """
+                package x;
+
+                import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+
+                @Configuration
+                public class RabbitConfig {
+                    @Bean
+                    SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory() {
+                        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+                        factory.setDefaultRequeueRejected(false);
+                        return factory;
+                    }
+                }
+                """));
+        gone(Rules.RABBIT_NO_ERROR_HANDLER, "AmqpRejectAndDontRequeueException", with(before, java("ReturnListener"),
+                RETURN_LISTENER.formatted("", "throw new org.springframework.amqp.AmqpRejectAndDontRequeueException(payload);")));
+        gone(Rules.RABBIT_NO_ERROR_HANDLER, "manual acknowledgement", with(before, java("ReturnListener"),
+                RETURN_LISTENER.formatted(", ackMode = \"MANUAL\"", "System.out.println(payload);")));
+        // retries switched on for the other container type do not reach this one
+        fires(Rules.RABBIT_NO_ERROR_HANDLER, with(before, YML,
+                CONFIG + "  rabbitmq:\n    listener:\n      direct:\n        retry:\n          enabled: true\n"));
+    }
+
+    // ---- RETRY_IN_TRANSACTION --------------------------------------------------------------------------------------
+
+    private static final String SEATS = """
+            package x;
+
+            import org.springframework.resilience.annotation.Retryable;
+            import org.springframework.stereotype.Component;
+            import org.springframework.transaction.annotation.Propagation;
+            import org.springframework.transaction.annotation.Transactional;
+
+            @Component
+            public class Seats {
+                %s
+                public int hold(String seatId) {
+                    return 1;
+                }
+            }
+            """;
+    private static final String BOOKING = """
+            package x;
+
+            import org.springframework.resilience.annotation.Retryable;
+            import org.springframework.stereotype.Service;
+            import org.springframework.transaction.annotation.Transactional;
+
+            @Service
+            public class Booking {
+                private final Seats seats;
+
+                public Booking(Seats seats) {
+                    this.seats = seats;
+                }
+
+                %s
+                public int book(String seatId) {
+                    return seats.hold(seatId);
+                }
+            }
+            """;
+
+    @Test
+    void retryWrapsTheWholeTransaction() throws IOException {
+        Map<String, String> before = Map.of(java("Seats"), SEATS.formatted("@Retryable @Transactional"),
+                java("Booking"), BOOKING.formatted("@Transactional"));
+        fires(Rules.RETRY_IN_TRANSACTION, before);
+        gone(Rules.RETRY_IN_TRANSACTION, "a transaction of its own per attempt", with(before, java("Seats"),
+                SEATS.formatted("@Retryable @Transactional(propagation = Propagation.REQUIRES_NEW)")));
+        gone(Rules.RETRY_IN_TRANSACTION, "the retry moved to the method that starts the transaction", with(before,
+                java("Seats"), SEATS.formatted("@Transactional"), java("Booking"), BOOKING.formatted("@Retryable @Transactional")));
+        gone(Rules.RETRY_IN_TRANSACTION, "no outer transaction", with(before, java("Booking"), BOOKING.formatted("")));
+    }
+
     // ---- PROBLEM_DETAILS_DISABLED ----------------------------------------------------------------------------------
 
     @Test

@@ -6,7 +6,7 @@ spring:
     template:
       query-timeout: 5m
   http:
-    clients:
+    client:
       connect-timeout: 5s
       read-timeout: 30s
   kafka:

@@ -28,7 +28,7 @@ public final class SetupRules {
             "\\bid\\s*(?:\\(\\s*)?[\\\"']org\\.springframework\\.boot[\\\"']\\s*\\)?\\s*version\\s*[\\\"']([^\\\"']+)[\\\"']");
     private static final Pattern BOOT_PLUGIN_CLASSPATH_VERSION = Pattern.compile(
             "org\\.springframework\\.boot:spring-boot-gradle-plugin:([0-9][^\\s\\\"']*)");
-    private static final Pattern BOOT_CORE_JAR_MAJOR = Pattern.compile("^spring-boot-([0-9]+)\\..*\\.jar$");
+    private static final Pattern BOOT_CORE_JAR = Pattern.compile("^spring-boot-([0-9]+\\..*)\\.jar$");
     private static final String BOOT4_OTEL_STARTER = "spring-boot-starter-opentelemetry";
     private static final String ACTUATOR_STARTER = "spring-boot-starter-actuator";
     private static final String OTEL_BRIDGE = "micrometer-tracing-bridge-otel";
@@ -407,70 +407,100 @@ public final class SetupRules {
 
     /** Spring Boot 3 uses Micrometer's OTel bridge; the dedicated starter is for Boot 4+. */
     private int springBootMajor(Path buildFile) {
+        return major(springBootVersion(buildFile));
+    }
+
+    /**
+     * {major, minor} of the Spring Boot version the service builds with, {0, 0} when unknown: the Boot plugin's version
+     * in the build file, its settings or version catalog, else the one spring-boot jar on the classpath. Property names
+     * change between versions (spring.http.client.* in 3.4/3.5, spring.http.clients.* from 4.0), so other packs ask too.
+     */
+    static int[] springBootVersion(RuleContext ctx) {
+        SetupRules s = new SetupRules(ctx);
+        Path start = ctx.a.index.classes().stream()
+                .filter(c -> c.decl().getLeadingAnnotations().stream()
+                        .anyMatch(an -> Annotations.is(an, "org.springframework.boot.autoconfigure.SpringBootApplication")))
+                .findFirst().map(c -> c.file().absPath().getParent()).orElse(s.root);
+        Path buildFile = s.findBuildFile(start);
+        String version = buildFile != null ? s.springBootVersion(buildFile) : s.classpathBootVersion();
+        return new int[]{major(version), minor(version)};
+    }
+
+    private String springBootVersion(Path buildFile) {
         for (Path dir = buildFile.getParent(); dir != null && dir.startsWith(root); dir = dir.getParent()) {
             for (String name : List.of("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle")) {
                 Path candidate = dir.resolve(name);
                 if (!Files.isRegularFile(candidate)) {
                     continue;
                 }
-                int major = bootMajorFromBuild(BuildScripts.of(root, candidate).text());
-                if (major > 0) {
-                    return major;
+                String version = bootVersionFromBuild(BuildScripts.of(root, candidate).text());
+                if (major(version) > 0) {
+                    return version;
                 }
             }
             Path catalog = dir.resolve("gradle/libs.versions.toml");
             if (Files.isRegularFile(catalog)) {
-                int major = bootMajorFromCatalog(read(catalog));
-                if (major > 0) {
-                    return major;
+                String version = bootVersionFromCatalog(read(catalog));
+                if (major(version) > 0) {
+                    return version;
                 }
             }
         }
-        return classpathBootMajor();
+        return classpathBootVersion();
     }
 
-    private static int bootMajorFromBuild(String text) {
+    private static String bootVersionFromBuild(String text) {
         Matcher plugin = BOOT_PLUGIN_VERSION.matcher(text);
         if (plugin.find()) {
-            return major(plugin.group(1));
+            return plugin.group(1);
         }
         Matcher classpath = BOOT_PLUGIN_CLASSPATH_VERSION.matcher(text);
-        return classpath.find() ? major(classpath.group(1)) : 0;
+        return classpath.find() ? classpath.group(1) : null;
     }
 
-    private static int bootMajorFromCatalog(String text) {
+    private static String bootVersionFromCatalog(String text) {
         Matcher plugin = Pattern.compile("(?m)^[\\w.-]+\\s*=\\s*\\{[^\\n]*id\\s*=\\s*[\\\"']org\\.springframework\\.boot[\\\"'][^\\n]*}")
                 .matcher(text);
         if (!plugin.find()) {
-            return 0;
+            return null;
         }
         Matcher direct = Pattern.compile("version\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']").matcher(plugin.group());
         if (direct.find()) {
-            return major(direct.group(1));
+            return direct.group(1);
         }
         Matcher ref = Pattern.compile("version\\.ref\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']").matcher(plugin.group());
         if (!ref.find()) {
-            return 0;
+            return null;
         }
         Matcher version = Pattern.compile("(?m)^\\s*" + Pattern.quote(ref.group(1))
                 + "\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']").matcher(text);
-        return version.find() ? major(version.group(1)) : 0;
+        return version.find() ? version.group(1) : null;
     }
 
     private static int major(String version) {
-        Matcher m = Pattern.compile("^(\\d+)(?:\\.|$)").matcher(version);
+        Matcher m = Pattern.compile("^(\\d+)(?:\\.|$)").matcher(version == null ? "" : version);
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
+    }
+
+    private static int minor(String version) {
+        Matcher m = Pattern.compile("^\\d+\\.(\\d+)").matcher(version == null ? "" : version);
         return m.find() ? Integer.parseInt(m.group(1)) : 0;
     }
 
     private int classpathBootMajor() {
-        Set<Integer> majors = new TreeSet<>();
+        return major(classpathBootVersion());
+    }
+
+    /** The version of the spring-boot jar on the classpath when all of them agree on major.minor, else null. */
+    private String classpathBootVersion() {
+        Map<String, String> versions = new TreeMap<>();
         for (Path path : ctx.a.project.classpath()) {
-            Matcher m = BOOT_CORE_JAR_MAJOR.matcher(path.getFileName().toString());
+            Matcher m = BOOT_CORE_JAR.matcher(path.getFileName().toString());
             if (m.matches()) {
-                majors.add(Integer.parseInt(m.group(1)));
+                versions.put(major(m.group(1)) + "." + minor(m.group(1)), m.group(1));
             }
         }
-        return majors.size() == 1 ? majors.iterator().next() : 0;
+        return versions.size() == 1 ? versions.values().iterator().next() : null;
     }
 
     private boolean dependencyPresent(String text, String coordinate, int bootMajor) {

@@ -75,6 +75,8 @@ class RuleLedgerTest {
             Map.entry(Rules.HEALTH_PROBE_MISCONFIGURED, "rules/RemedyTest#healthProbesOnAndLivenessKeptToTheInstance"),
             Map.entry(Rules.READINESS_WITHOUT_DATABASE, "rules/RemedyTest#readinessWithTheDatabaseOrDecidedAgainst"),
             Map.entry(Rules.CACHE_UNBOUNDED, "rules/RemedyTest#cachesWithASizeBound"),
+            Map.entry(Rules.RABBIT_NO_ERROR_HANDLER, "rules/RemedyTest#rabbitListenerRetriedOrRejectedForGood"),
+            Map.entry(Rules.RETRY_IN_TRANSACTION, "rules/RemedyTest#retryWrapsTheWholeTransaction"),
             Map.entry(Rules.AUDIT_SECURITY_EVENTS, "rules/RemedyTest#securityEventsRecordedDurably"),
             Map.entry(Rules.TRACING_EXPORT_UNCONFIGURED, "rules/RemedyTest#tracingExportWithAnEndpointPerEnvironment"),
             // #92: the audit pack's report-only rules, each with the remedy its note names

@@ -1,7 +1,7 @@
 logast · 79 files · 23 entrypoints · 90/220 methods reachable · 171 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 82.6% (jobs 11/11 · http 8/12)   (places that should log and do)
-69 orders: 0 AUTO, 21 NEEDS TEXT, 48 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+70 orders: 0 AUTO, 21 NEEDS TEXT, 49 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: country, week, pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -87,6 +87,11 @@ KEH-b1f2de  medium  REPORT-ONLY  KAFKA_NO_ERROR_HANDLER  src/main/java/com/examp
   why: no source file mentions DefaultErrorHandler, CommonErrorHandler, DeadLetterPublishingRecoverer, @RetryableTopic or setCommonErrorHandler
   note: Declare a CommonErrorHandler bean (Spring Boot wires it into the listener containers): new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate), new ExponentialBackOff(1000, 2)) sends records that still fail to <topic>-dlt; or use @RetryableTopic per listener.
   done when: a source file uses one of them (e.g. declares a DefaultErrorHandler bean)
+REH-4df675  medium  REPORT-ONLY  RABBIT_NO_ERROR_HANDLER  src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
+  RabbitMQ listeners on the default error handling: a message whose listener throws is rejected and requeued, so a message that always fails is redelivered without end (PledgeMessages.onReturn)
+  why: Spring Boot: "if retries are disabled and the listener throws an exception, the delivery is retried indefinitely"; the Spring configuration sets neither spring.rabbitmq.listener.simple.retry.enabled: true nor spring.rabbitmq.listener.simple.default-requeue-rejected: false, no source configures the container's requeue or advice chain, and the listeners neither set an ackMode nor throw AmqpRejectAndDontRequeueException
+  note: Turn on listener retries (spring.rabbitmq.listener.simple.retry.enabled: true): once they are exhausted the message is rejected without requeue, and dropped unless the queue has a dead-letter exchange (x-dead-letter-exchange), so declare one to keep it. Or set spring.rabbitmq.listener.simple.default-requeue-rejected: false, or throw AmqpRejectAndDontRequeueException for failures a redelivery cannot fix.
+  done when: spring.rabbitmq.listener.simple.retry.enabled: true or spring.rabbitmq.listener.simple.default-requeue-rejected: false is set, a source calls setDefaultRequeueRejected / setAdviceChain or uses RetryInterceptorBuilder, or the listener's class throws AmqpRejectAndDontRequeueException
 SWA-91b292  medium  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/e2e/order/LoyaltyClient.java:20  LoyaltyClient.balance
   Exception is caught and dropped without a log line in LoyaltyClient.balance (falls back silently)
   + log.warn("{{MSG}}"{{ARGS}}, e);
@@ -399,4 +404,4 @@ Next steps
   2. set "count" in .logast/metrics.json                 15 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   23 of 23 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      33 findings are decisions for a person (MESSAGE_VAGUE 6, AUDIT_RECORD_INCOMPLETE 5, ASYNC_CONTEXT_LOSS 4, …); each says what to decide
+  5. logast scan . --format summary                      34 findings are decisions for a person (MESSAGE_VAGUE 6, AUDIT_RECORD_INCOMPLETE 5, ASYNC_CONTEXT_LOSS 4, …); each says what to decide
