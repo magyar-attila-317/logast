@@ -166,3 +166,51 @@ public ShippingClient(RestClient.Builder restClientBuilder) {         // was Res
 }
 pb.environment().putAll(TraceContextEnv.current());                    // orchestrator → batch job pod/process
 ```
+
+## Business ids across services (baggage)
+
+MDC stays inside a service: the next service gets the trace id, not your `tenantId`. Trace **baggage** carries a value
+with the trace to every service downstream. logast adds none automatically; the starter has a helper for the places
+you choose:
+
+```java
+try (var baggage = BusinessBaggage.with("tenantId", tenantId)) {
+    shippingClient.book(order);      // the shipping service receives tenantId with the trace
+}
+```
+
+`BusinessBaggage.with(key, value)` puts the value into baggage (`Tracer.createBaggageInScope`, Micrometer Tracing) and
+into this service's MDC for the block; closing restores both. A null value changes nothing (an outer value stays).
+Without Micrometer Tracing (no `Tracer` bean) only the MDC entry is set. In vendor mode logast copies the class into
+the service once its code uses `BusinessBaggage` (and its Tracer wiring, `BusinessBaggageConfiguration`, when Micrometer
+Tracing is on the classpath); otherwise it is not copied.
+
+Spring Boot properties, the same names in Boot 3.5 and 4.x
+([Boot reference, Tracing › Baggage](https://docs.spring.io/spring-boot/reference/actuator/tracing.html#actuator.micrometer-tracing.baggage);
+application properties appendix, `management.tracing.baggage.*`):
+
+```yaml
+management:
+  tracing:
+    baggage:
+      remote-fields: tenantId          # sent as a header of its own; W3C propagation also sends all baggage in `baggage`
+      correlation:
+        fields: tenantId               # receiving side: the value lands in MDC (and in every log line)
+```
+
+Boot's reference: baggage "is automatically propagated over the network if you're using W3C propagation. If you're
+using B3 propagation, baggage is not automatically propagated"; `remote-fields` propagates it in both, and
+`correlation.fields` puts it into the MDC. Each service that should log the value sets `correlation.fields`.
+
+**When to use it**: a few low-volume business keys every service in a flow logs and someone searches by (tenant,
+channel, a correlation id of the business process), where passing them as parameters through every API is not
+possible.
+
+**When not to**:
+- Every downstream call carries it, to third parties too (a payment provider, a public API you call): headers leave
+  your system. **Never personal data** (names, e-mails, customer numbers that identify a person, tokens).
+- Size: it is sent on every hop; keep values short and fields few (implementations need only propagate 64 entries and
+  8192 bytes in total, [W3C Baggage › Limits](https://www.w3.org/TR/baggage/#limits); servers limit header size too).
+- Not for ids of one service's own work (an order id inside the order service): MDC (logast's MdcScope) is enough.
+- Not as input: a downstream service must not trust baggage for authorisation or business decisions; anyone upstream can
+  set it.

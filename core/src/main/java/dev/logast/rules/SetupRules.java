@@ -232,6 +232,17 @@ public final class SetupRules {
     static final List<String> VENDORED_METRICS = List.of("Outcomes");
     /** Only copied for Spring MVC with Micrometer Tracing, when the errors pack's ERROR_RESPONSE_UNTRACED is on. */
     static final List<String> VENDORED_ERRORS = List.of("ProblemTraceId");   // component scan finds it; no configuration
+    /**
+     * Only copied when the service's own code uses BusinessBaggage (#16): logast never generates that call, so the
+     * helper arrives the moment someone writes it; its Tracer wiring only with Micrometer Tracing on the classpath.
+     */
+    static final List<String> VENDORED_BAGGAGE = List.of("BusinessBaggage", "BusinessBaggageConfiguration");
+    private static final Pattern BUSINESS_BAGGAGE = Pattern.compile("\\bBusinessBaggage\\b");
+
+    private boolean usesBusinessBaggage() {
+        return ctx.a.index.classes().stream().filter(c -> !c.fqn().startsWith(ctx.a.supportPackage + "."))
+                .map(c -> c.file()).distinct().anyMatch(f -> BUSINESS_BAGGAGE.matcher(f.text()).find());
+    }
 
     private boolean hasMetrics() {
         return ctx.a.project.probe().hasClass("io.micrometer.core.instrument.Metrics");
@@ -247,6 +258,12 @@ public final class SetupRules {
         }
         if (ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED) && ErrorRules.traceableErrors(ctx)) {
             out.addAll(VENDORED_ERRORS);
+        }
+        if (usesBusinessBaggage()) {
+            out.add(VENDORED_BAGGAGE.get(0));
+            if (ctx.a.project.probe().hasClass("io.micrometer.tracing.Tracer")) {
+                out.add(VENDORED_BAGGAGE.get(1));
+            }
         }
         return out;
     }
@@ -325,6 +342,7 @@ public final class SetupRules {
         classes.addAll(VENDORED_TX);
         classes.addAll(VENDORED_METRICS);
         classes.addAll(VENDORED_ERRORS);
+        classes.addAll(VENDORED_BAGGAGE);
         OrderBuilder b = null;
         List<String> changed = new ArrayList<>();
         for (String cls : classes) {
@@ -373,7 +391,7 @@ public final class SetupRules {
         }
         src = src.replace("package dev.logast.support;", "package " + pkg + ";");
         if (cls.equals("LoggingSupportAutoConfiguration") || cls.equals("MdcHygieneConfiguration")
-                || cls.equals("TraceContextEnvConfiguration")) {
+                || cls.equals("TraceContextEnvConfiguration") || cls.equals("BusinessBaggageConfiguration")) {
             src = AUTO_CONFIGURATION.matcher(src).replaceFirst("@Configuration(proxyBeanMethods = false)")
                     .replace("import org.springframework.boot.autoconfigure.AutoConfiguration;",
                             "import org.springframework.context.annotation.Configuration;");
