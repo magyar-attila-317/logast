@@ -44,7 +44,7 @@ final class DbRules {
             "queryForMap", "queryForRowSet");
     private static final Set<String> CLIENT_TERMINALS = Set.of("update", "list", "single", "optional", "set");
     private static final Set<Entrypoint.Kind> LOW_FREQUENCY = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
-            Entrypoint.Kind.MAIN);
+            Entrypoint.Kind.MAIN, Entrypoint.Kind.STEP);
 
     private final RuleContext ctx;
     private final Map<String, List<int[]>> loopRanges = new HashMap<>();

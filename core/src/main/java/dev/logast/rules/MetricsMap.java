@@ -322,6 +322,7 @@ public final class MetricsMap {
     /** Runs a handful of times a day by its nature: jobs, batch runners, main, and listeners of startup events. */
     static boolean lowFrequency(Entrypoint ep) {
         return ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.MAIN
+                || ep.kind() == Entrypoint.Kind.STEP
                 || ep.kind() == Entrypoint.Kind.EVENT && STARTUP_EVENT.matcher(ep.label()).find();
     }
 

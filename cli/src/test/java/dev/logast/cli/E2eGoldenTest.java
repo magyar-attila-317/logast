@@ -2435,6 +2435,440 @@ class E2eGoldenTest {
     }
 
     /**
+     * Stand-ins for Spring Batch 5, Spring Cloud AWS SQS and Spring Cloud Stream, which are not on the e2e classpath
+     * (adding them would change every scenario): only the types the entrypoint scenario uses (#15).
+     */
+    private static final Map<String, String> ENTRYPOINT_LIBRARY_STUBS = Map.of(
+            "org/springframework/batch/core/step/tasklet/Tasklet.java", """
+                    package org.springframework.batch.core.step.tasklet;
+
+                    public interface Tasklet {
+                        org.springframework.batch.repeat.RepeatStatus execute(org.springframework.batch.core.StepContribution contribution,
+                                org.springframework.batch.core.scope.context.ChunkContext chunkContext) throws Exception;
+                    }
+                    """,
+            "org/springframework/batch/core/StepContribution.java", """
+                    package org.springframework.batch.core;
+
+                    public class StepContribution {
+                    }
+                    """,
+            "org/springframework/batch/core/scope/context/ChunkContext.java", """
+                    package org.springframework.batch.core.scope.context;
+
+                    public class ChunkContext {
+                    }
+                    """,
+            "org/springframework/batch/repeat/RepeatStatus.java", """
+                    package org.springframework.batch.repeat;
+
+                    public enum RepeatStatus { CONTINUABLE, FINISHED }
+                    """,
+            "org/springframework/batch/item/ItemProcessor.java", """
+                    package org.springframework.batch.item;
+
+                    public interface ItemProcessor<I, O> {
+                        O process(I item) throws Exception;
+                    }
+                    """,
+            "org/springframework/batch/item/ItemWriter.java", """
+                    package org.springframework.batch.item;
+
+                    public interface ItemWriter<T> {
+                        void write(Chunk<? extends T> chunk) throws Exception;
+                    }
+                    """,
+            "org/springframework/batch/item/Chunk.java", """
+                    package org.springframework.batch.item;
+
+                    public class Chunk<T> implements Iterable<T> {
+                        private final java.util.List<T> items = new java.util.ArrayList<>();
+
+                        public java.util.Iterator<T> iterator() {
+                            return items.iterator();
+                        }
+
+                        public int size() {
+                            return items.size();
+                        }
+                    }
+                    """,
+            "org/springframework/batch/core/configuration/annotation/EnableBatchProcessing.java", """
+                    package org.springframework.batch.core.configuration.annotation;
+
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface EnableBatchProcessing {
+                    }
+                    """,
+            "io/awspring/cloud/sqs/annotation/SqsListener.java", """
+                    package io.awspring.cloud.sqs.annotation;
+
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface SqsListener {
+                        String[] value() default {};
+
+                        String[] queueNames() default {};
+                    }
+                    """,
+            "org/springframework/cloud/stream/function/StreamBridge.java", """
+                    package org.springframework.cloud.stream.function;
+
+                    public class StreamBridge {
+                    }
+                    """);
+
+    /** Stubs compiled into a jar (logast leaves class folders out of type attribution), and a classpath file with it. */
+    private Path libraryClasspath(String name, Map<String, String> stubs) throws IOException {
+        Path src = tmp.resolve(name + "/src");
+        Path out = Files.createDirectories(tmp.resolve(name + "/classes"));
+        List<String> args = new ArrayList<>(List.of("-d", out.toString(), "-cp",
+                String.join(java.io.File.pathSeparator, Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList())));
+        for (Map.Entry<String, String> e : new TreeMap<>(stubs).entrySet()) {
+            Path f = src.resolve(e.getKey());
+            Files.createDirectories(f.getParent());
+            Files.writeString(f, e.getValue());
+            args.add(f.toString());
+        }
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        assertThat(ToolProvider.getSystemJavaCompiler().run(null, null, err, args.toArray(String[]::new)))
+                .as(name + " stubs compile:\n" + err).isZero();
+        Path jar = tmp.resolve(name + "/" + name + ".jar");
+        try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar)); Stream<Path> s = Files.walk(out)) {
+            for (Path c : s.filter(Files::isRegularFile).sorted().toList()) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(out.relativize(c).toString().replace('\\', '/')));
+                zip.write(Files.readAllBytes(c));
+                zip.closeEntry();
+            }
+        }
+        extraClasses = new Path[]{jar};
+        Path cp = tmp.resolve("classpath-" + name + ".txt");
+        List<String> lines = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)));
+        lines.add(jar.toString());
+        Files.write(cp, lines);
+        return cp;
+    }
+
+    /** #15: a Spring Batch tasklet and item processor, SQS listeners, Spring Cloud Stream functions, MVC router functions. */
+    private static final IoAction INTAKE_ENTRYPOINTS = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/intake");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("CouponImportTasklet.java"), """
+                package com.example.e2e.intake;
+
+                import org.springframework.batch.core.StepContribution;
+                import org.springframework.batch.core.scope.context.ChunkContext;
+                import org.springframework.batch.core.step.tasklet.Tasklet;
+                import org.springframework.batch.repeat.RepeatStatus;
+                import org.springframework.stereotype.Component;
+
+                /** One step of the nightly import job. */
+                @Component
+                public class CouponImportTasklet implements Tasklet {
+                    private final CouponFeed feed;
+
+                    CouponImportTasklet(CouponFeed feed) {
+                        this.feed = feed;
+                    }
+
+                    @Override
+                    public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
+                        feed.load();
+                        return RepeatStatus.FINISHED;
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CouponFeed.java"), """
+                package com.example.e2e.intake;
+
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class CouponFeed {
+                    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(CouponFeed.class);
+
+                    void load() {
+                        log.info("Coupon feed loaded");
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("OrderLineProcessor.java"), """
+                package com.example.e2e.intake;
+
+                import com.example.e2e.order.Order;
+                import org.springframework.batch.item.ItemProcessor;
+                import org.springframework.stereotype.Component;
+
+                /** A chunk step's processor: called once per order read. */
+                @Component
+                public class OrderLineProcessor implements ItemProcessor<Order, String> {
+                    private final CouponFeed feed;
+
+                    OrderLineProcessor(CouponFeed feed) {
+                        this.feed = feed;
+                    }
+
+                    @Override
+                    public String process(Order order) {
+                        feed.load();
+                        return order.customerId() + ":" + order.amountCents();
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CouponQueueListener.java"), """
+                package com.example.e2e.intake;
+
+                import io.awspring.cloud.sqs.annotation.SqsListener;
+                import java.util.List;
+                import org.springframework.stereotype.Component;
+
+                /** One message at a time, and a batch: Spring Cloud AWS observes only the first, and only when switched on. */
+                @Component
+                public class CouponQueueListener {
+                    private final CouponFeed feed;
+
+                    CouponQueueListener(CouponFeed feed) {
+                        this.feed = feed;
+                    }
+
+                    @SqsListener("coupon-requests")
+                    public void onRequest(String couponId) {
+                        feed.load();
+                    }
+
+                    @SqsListener(queueNames = "coupon-bulk")
+                    public void onBulk(List<String> couponIds) {
+                        feed.load();
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("IntakeFunctions.java"), """
+                package com.example.e2e.intake;
+
+                import com.example.e2e.order.Order;
+                import java.util.function.Consumer;
+                import java.util.function.Function;
+                import java.util.function.Supplier;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.messaging.Message;
+
+                /** Spring Cloud Stream binds the functions spring.cloud.function.definition names. */
+                @Configuration
+                public class IntakeFunctions {
+                    @Bean
+                    public Consumer<Message<Order>> orderIntake(IntakeDesk intake) {
+                        return message -> intake.accept(message.getPayload());
+                    }
+
+                    @Bean
+                    public Function<String, String> couponNormalizer(CodeNormalizer normalizer) {
+                        return normalizer::normalize;
+                    }
+
+                    @Bean
+                    public Consumer<String> couponArchive(CodeNormalizer normalizer) {
+                        return normalizer::archive;
+                    }
+
+                    @Bean
+                    public Supplier<String> heartbeat() {
+                        return () -> "alive";
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("IntakeDesk.java"), """
+                package com.example.e2e.intake;
+
+                import com.example.e2e.order.Order;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class IntakeDesk {
+                    private final CouponFeed feed;
+
+                    IntakeDesk(CouponFeed feed) {
+                        this.feed = feed;
+                    }
+
+                    public void accept(Order order) {
+                        feed.load();
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CodeNormalizer.java"), """
+                package com.example.e2e.intake;
+
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class CodeNormalizer {
+                    public String normalize(String couponId) {
+                        return couponId.trim();
+                    }
+
+                    public void archive(String couponId) {
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CouponRoutes.java"), """
+                package com.example.e2e.intake;
+
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.web.servlet.function.RequestPredicates;
+                import org.springframework.web.servlet.function.RouterFunction;
+                import org.springframework.web.servlet.function.RouterFunctions;
+                import org.springframework.web.servlet.function.ServerResponse;
+
+                /** Functional endpoints: handler methods instead of @RequestMapping. */
+                @Configuration
+                public class CouponRoutes {
+                    static final String BASE = "/coupon-routes";
+
+                    @Bean
+                    public RouterFunction<ServerResponse> couponRouter(CouponRouteHandler handler) {
+                        return RouterFunctions.route()
+                                .path(BASE, builder -> builder
+                                        .GET("/{couponId}", handler::show)
+                                        .POST("", handler::register))
+                                .DELETE(BASE + "/{couponId}", request -> handler.remove(request))
+                                .build();
+                    }
+
+                    @Bean
+                    public RouterFunction<ServerResponse> couponReplace(CouponRouteHandler handler) {
+                        return RouterFunctions.route(RequestPredicates.PUT("/coupon-routes/{couponId}"), handler::replace);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CouponRouteHandler.java"), """
+                package com.example.e2e.intake;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.servlet.function.ServerRequest;
+                import org.springframework.web.servlet.function.ServerResponse;
+
+                @Component
+                public class CouponRouteHandler {
+                    private final CouponFeed feed;
+
+                    CouponRouteHandler(CouponFeed feed) {
+                        this.feed = feed;
+                    }
+
+                    public ServerResponse show(ServerRequest request) {
+                        return ServerResponse.ok().body(request.pathVariable("couponId"));
+                    }
+
+                    public ServerResponse register(ServerRequest request) {
+                        return ServerResponse.accepted().build();
+                    }
+
+                    public ServerResponse remove(ServerRequest request) {
+                        feed.load();
+                        return ServerResponse.noContent().build();
+                    }
+
+                    public ServerResponse replace(ServerRequest request) {
+                        feed.load();
+                        return ServerResponse.noContent().build();
+                    }
+                }
+                """);
+        Path yml = app.resolve("src/main/resources/application.yml");
+        Files.writeString(yml, Files.readString(yml).replaceFirst("spring:\n", """
+                spring:
+                  cloud:
+                    function:
+                      definition: orderIntake;couponNormalizer
+                """));
+    };
+
+    private static final String INTAKE = "src/main/java/com/example/e2e/intake/";
+
+    /**
+     * #15: entrypoints that are not annotated controllers or Kafka/JMS/Rabbit listeners. A Spring Batch {@code Tasklet}
+     * (one run per step: started/outcome lines) and item processor (per item: MDC of the order) are not observed on
+     * Batch 5 without {@code @EnableBatchProcessing} or BatchObservabilityBeanPostProcessor: ObservedContext. Each
+     * {@code @SqsListener} message is observed only with spring.cloud.aws.sqs.observation-enabled, a batch never:
+     * ObservedContext. The handlers of the Spring Cloud Stream functions spring.cloud.function.definition names
+     * (orderIntake, couponNormalizer; not couponArchive or the Supplier) are observed by Stream: MDC and entry line
+     * only. The handlers of MVC router functions are HTTP endpoints with their paths (observed by Spring MVC). All
+     * appear in traffic.yaml. Every file must equal e2e/expected-entrypoint-kinds; tracing alone and logging alone
+     * each do their part; with the observation switched on (property, {@code @EnableBatchProcessing}) nothing wraps.
+     */
+    @Test
+    void seesBatchStepsSqsListenersStreamFunctionsAndRouterFunctions() throws IOException {
+        String classpath = libraryClasspath("entrypoint-libraries", ENTRYPOINT_LIBRARY_STUBS).toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, INTAKE_ENTRYPOINTS);
+        assertThat(actual.get(".logast/traffic.yaml")).as("every new kind is an entrypoint")
+                .contains("\"tasklet CouponImportTasklet.execute\"")
+                .contains("\"item processor OrderLineProcessor.process\"")
+                .contains("\"@SqsListener coupon-requests\"").contains("\"@SqsListener coupon-bulk\"")
+                .contains("\"stream orderIntake-in-0\"").contains("\"stream couponNormalizer-in-0\"")
+                .doesNotContain("couponArchive").doesNotContain("heartbeat")
+                .contains("\"GET /coupon-routes/{couponId}\"").contains("\"POST /coupon-routes\"")
+                .contains("\"DELETE /coupon-routes/{couponId}\"").contains("\"PUT /coupon-routes/{couponId}\"");
+        assertThat(actual.get(INTAKE + "CouponImportTasklet.java")).as("Batch 5 without observability: the step run is wrapped")
+                .contains("ObservedContext.entrypoint(IntakeMetrics.COUPON_IMPORT_TASKLET_EXECUTE)");
+        assertThat(actual.get(INTAKE + "OrderLineProcessor.java")).as("per item, with the order's MDC")
+                .contains("ObservedContext.entrypoint(IntakeMetrics.ORDER_LINE_PROCESSOR_PROCESS)").contains(".mdc(\"orderId\", order.id())");
+        assertThat(actual.get(INTAKE + "CouponQueueListener.java")).as("SQS observation off by default; batches never")
+                .contains("ObservedContext.entrypoint(IntakeMetrics.COUPON_QUEUE_LISTENER_ON_REQUEST)")
+                .contains("ObservedContext.entrypoint(IntakeMetrics.COUPON_QUEUE_LISTENER_ON_BULK)");
+        assertThat(actual.get(INTAKE + "IntakeDesk.java")).as("observed by Spring Cloud Stream: MDC only")
+                .doesNotContain("ObservedContext").contains("MdcScope.of(\"orderId\", order.id())");
+        assertThat(actual.get(INTAKE + "CodeNormalizer.java")).as("bound: MDC; couponArchive is not bound")
+                .contains("MdcScope.of(\"couponId\", couponId)").containsOnlyOnce("MdcScope.of");
+        assertThat(actual.get(INTAKE + "CouponRouteHandler.java")).as("observed by Spring MVC: no wrapper")
+                .doesNotContain("ObservedContext");
+        golden(EXPECTED.resolveSibling("expected-entrypoint-kinds"), actual);
+
+        // the tracing pack alone: the wrappers, no MDC scopes or lines (the logging pack's)
+        Map<String, String> tracing = migrate(tmp.resolve("tracing-only"), classpath, withPacks(INTAKE_ENTRYPOINTS, "[tracing]", ""));
+        assertThat(tracing.get(INTAKE + "CouponImportTasklet.java")).contains("ObservedContext.entrypoint(\"coupon-import-tasklet.execute\")");
+        assertThat(tracing.get(INTAKE + "CouponQueueListener.java")).contains("ObservedContext.entrypoint(\"coupon-queue-listener.on-bulk\")");
+        assertThat(tracing.get(INTAKE + "IntakeDesk.java")).doesNotContain("MdcScope").doesNotContain("ObservedContext");
+
+        // the logging pack alone: MDC scopes for every kind, no ObservedContext
+        Map<String, String> logging = migrate(tmp.resolve("logging-only"), classpath, withPacks(INTAKE_ENTRYPOINTS, "[logging]", ""));
+        assertThat(logging.get(INTAKE + "IntakeDesk.java")).contains("MdcScope.of(\"orderId\", order.id())");
+        assertThat(logging.get(INTAKE + "OrderLineProcessor.java")).contains("MdcScope.of(\"orderId\", order.id())")
+                .doesNotContain("ObservedContext");
+        assertThat(logging.get(INTAKE + "CouponQueueListener.java")).contains("MdcScope.of(\"couponId\", couponId)")
+                .doesNotContain("ObservedContext");
+
+        // observation switched on: SQS by its property (a batch still is not observed), Batch by @EnableBatchProcessing
+        Map<String, String> observed = migrate(tmp.resolve("observed"), classpath, withPacks(app -> {
+            INTAKE_ENTRYPOINTS.run(app);
+            Path yml = app.resolve("src/main/resources/application.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("  cloud:\n", "  cloud:\n    aws:\n      sqs:\n        observation-enabled: true\n"));
+            Files.writeString(app.resolve(INTAKE + "BatchSetup.java"), """
+                    package com.example.e2e.intake;
+
+                    import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+                    import org.springframework.context.annotation.Configuration;
+
+                    @Configuration
+                    @EnableBatchProcessing
+                    public class BatchSetup {
+                    }
+                    """);
+        }, "[tracing]", ""));
+        assertThat(observed.get(INTAKE + "CouponImportTasklet.java")).doesNotContain("ObservedContext");
+        assertThat(observed.get(INTAKE + "OrderLineProcessor.java")).doesNotContain("ObservedContext");
+        assertThat(observed.get(INTAKE + "CouponQueueListener.java"))
+                .doesNotContain("ObservedContext.entrypoint(\"coupon-queue-listener.on-request\")")
+                .contains("ObservedContext.entrypoint(\"coupon-queue-listener.on-bulk\")");
+    }
+
+    /**
      * #51: API-first controllers. The request mappings sit on an interface the controller implements, the class-level
      * {@code @RequestMapping} too, and the paths come from {@code static final String} constants and their
      * concatenation: Spring finds mapping annotations through the type hierarchy, so these are HTTP entrypoints with

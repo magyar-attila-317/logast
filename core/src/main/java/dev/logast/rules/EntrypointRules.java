@@ -59,7 +59,7 @@ final class EntrypointRules {
         boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
         // a run's started and outcome lines belong to JOB_OUTCOME_MISSING: split between two rules, the outcome line it adds
         // ended the silence, the started line lost its owner, and the order came back after its own fix
-        boolean run = ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.MAIN;
+        boolean run = LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.RUN;
         boolean silent = !readEndpoint && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
                 && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(f, line, Rules.ENTRYPOINT_SILENT)
                 && !LifecyclePlan.ownFlowLogs(ctx, m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
@@ -113,7 +113,8 @@ final class EntrypointRules {
                 chain.add(".mdc(\"" + v.key() + "\", " + v.expr() + ")");
             }
             if (ep.kind() == Entrypoint.Kind.KAFKA || ep.kind() == Entrypoint.Kind.JMS || ep.kind() == Entrypoint.Kind.RABBIT
-                    || ep.kind() == Entrypoint.Kind.WEBSOCKET || ep.kind() == Entrypoint.Kind.HTTP) {
+                    || ep.kind() == Entrypoint.Kind.WEBSOCKET || ep.kind() == Entrypoint.Kind.HTTP || ep.kind() == Entrypoint.Kind.SQS
+                    || ep.kind() == Entrypoint.Kind.STREAM || ep.kind() == Entrypoint.Kind.ITEM) {
                 chain.add(".debugOnSuccess()"); // one per message/request: "completed" at DEBUG; failures stay ERROR
             }
             if (ep.kind() == Entrypoint.Kind.EVENT && !m.hasAnnotation("org.springframework.scheduling.annotation.Async")

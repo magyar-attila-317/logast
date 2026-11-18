@@ -1,0 +1,13 @@
+diff --git a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+index 7704c24..046add5 100644
+--- a/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
++++ b/src/main/java/com/example/e2e/coupon/CouponCleanupJob.java
+@@ -23,7 +23,7 @@ 
+         log.info("Coupon cleanup started"); // logast:wording
+         var couponIds = repository.findOpen();
+         for (String couponId : couponIds) {
+-            log.info("Closing stale coupon [couponId={}]", couponId);
++            log.debug("Closing stale coupon [couponId={}]", couponId);
+             repository.close(couponId);
+         }
+         AfterCommit.log(() -> log.info("Coupon cleanup completed [couponCount={}]", couponIds.size())); // logast:wording

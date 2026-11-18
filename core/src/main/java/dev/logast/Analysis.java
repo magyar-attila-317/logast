@@ -52,7 +52,8 @@ public final class Analysis {
         // span): part of that flow, not an entrypoint of its own
         boolean rabbitObserved = "true".equals(springProperties.get("spring.rabbitmq.listener.simple.observation-enabled"))
                 || "true".equals(springProperties.get("spring.rabbitmq.listener.direct.observation-enabled"));
-        this.entrypoints = new EntrypointFinder(policy, kafkaObserved, rabbitObserved).find(index).stream()
+        this.entrypoints = new EntrypointFinder(policy, kafkaObserved, rabbitObserved, platform(project, index, springProperties))
+                .find(index).stream()
                 .filter(ep -> ep.kind() != Entrypoint.Kind.EVENT || graph.in(ep.method()).stream()
                         .noneMatch(e -> e.site().type().getName().equals("publishEvent")))
                 .toList();
@@ -110,6 +111,22 @@ public final class Analysis {
                 }
             }
         }
+    }
+
+    /** What decides the bean- and type-found entrypoints (#15); sources in {@link EntrypointFinder.Platform}. */
+    private static EntrypointFinder.Platform platform(ParsedProject project, CodeIndex index, Map<String, String> props) {
+        boolean sqsObserved = "true".equals(props.get("spring.cloud.aws.sqs.observation-enabled"));
+        boolean batchObserved = project.probe().hasClass("org.springframework.batch.infrastructure.item.ItemProcessor")
+                || index.classes().stream().anyMatch(c -> c.decl().getLeadingAnnotations().stream().anyMatch(a -> dev.logast.model.Annotations.is(a,
+                "org.springframework.batch.core.configuration.annotation.EnableBatchProcessing")))
+                || index.methods().stream().anyMatch(m -> m.type().getReturnType() instanceof org.openrewrite.java.tree.JavaType.FullyQualified rt
+                && rt.getFullyQualifiedName().equals("org.springframework.batch.core.configuration.annotation.BatchObservabilityBeanPostProcessor"));
+        boolean stream = project.probe().hasClass("org.springframework.cloud.stream.function.StreamBridge");
+        String definition = props.get("spring.cloud.function.definition");
+        List<String> functions = definition == null ? null
+                : Arrays.stream(definition.split("[;|,]")).map(String::trim).filter(f -> !f.isEmpty()).toList();
+        return new EntrypointFinder.Platform(sqsObserved, batchObserved, stream, functions,
+                !"false".equals(props.get("spring.cloud.stream.function.autodetect")));
     }
 
     private static String appPackage(CodeIndex index) {

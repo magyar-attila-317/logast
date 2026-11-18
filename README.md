@@ -339,6 +339,23 @@ sets the ObservationRegistry on the container factory), `@KafkaListener` and `@R
 (KAFKA_OBSERVATION_DISABLED and RABBIT_OBSERVATION_DISABLED add it). Batch listeners (`batch = "true"`, a `List` or
 `ConsumerRecords` parameter) are never observed per message, so they keep the ObservedContext wrapper.
 
+More entrypoints, each checked against its framework's documentation:
+- **Spring Batch** (`tasklet X.execute` once per step run; `item processor X.process` / `item writer X.write` per
+  item or chunk, as classes): Batch opens a span per step only when it has the ObservationRegistry, which
+  `BatchObservabilityBeanPostProcessor` sets. Batch 6's `DefaultBatchConfiguration` (which Boot 4 extends) and
+  `@EnableBatchProcessing` register it; Boot 3's auto-configuration with Batch 5 does not, so there the step code gets
+  an ObservedContext (Spring Batch reference, Monitoring and metrics › Tracing).
+- **`@SqsListener`** (Spring Cloud AWS): each message is observed only with
+  `spring.cloud.aws.sqs.observation-enabled: true` (default false); a batch listener never (Spring Cloud AWS reference,
+  SQS › Observability).
+- **Spring Cloud Stream** functions (`stream <name>-in-0`): the method a bound `@Bean Consumer`/`Function` returns as a
+  method reference or a one-call lambda. Bound are the names in `spring.cloud.function.definition`, else the single
+  functional bean. Stream observes each invocation (ObservationFunctionAroundWrapper), so they get MDC and lifecycle
+  lines, no wrapper. A lambda with a body of its own has no method to scope and is not seen; a `Supplier` sends.
+- **Functional endpoints** (Spring MVC `RouterFunction`): the handler methods of `route().GET("/x", h::get)`,
+  `path("/p", b -> …)` and `RouterFunctions.route(RequestPredicates.GET("/x"), h::get)` are HTTP entrypoints with their
+  paths, observed like controllers.
+
 A method with `@Observed` (on it or its class) or `@NewSpan` counts as observed only while Spring Boot processes these
 annotations: `management.observations.annotations.enabled: true` and aspectjweaver on the classpath (Boot reference,
 Observability). Without them the annotation does nothing at runtime; the tracing pack switches them on, or the method

@@ -29,11 +29,28 @@ public final class EntrypointFinder {
         // STOMP over WebSocket: only the HTTP handshake is observed, each inbound message runs without a trace
         MESSAGING.put("org.springframework.messaging.handler.annotation.MessageMapping", Kind.WEBSOCKET);
         MESSAGING.put("org.springframework.messaging.simp.annotation.SubscribeMapping", Kind.WEBSOCKET);
+        MESSAGING.put("io.awspring.cloud.sqs.annotation.SqsListener", Kind.SQS);
+    }
+
+    /**
+     * What decides whether the entrypoints found by type or bean (not by annotation alone) exist and are observed (#15).
+     *
+     * @param sqsObserved   spring.cloud.aws.sqs.observation-enabled is true (Spring Cloud AWS, default false)
+     * @param batchObserved Spring Batch sets the ObservationRegistry on jobs and steps: Batch 6 (its
+     *                      DefaultBatchConfiguration, which Boot 4 extends, imports BatchObservabilityBeanPostProcessor),
+     *                      {@code @EnableBatchProcessing}, or that post-processor registered in source
+     * @param stream        Spring Cloud Stream is on the classpath: Consumer/Function beans are bound to destinations
+     * @param functions     spring.cloud.function.definition split into function names; null when not set
+     * @param autodetect    spring.cloud.stream.function.autodetect is not false
+     */
+    public record Platform(boolean sqsObserved, boolean batchObserved, boolean stream, List<String> functions, boolean autodetect) {
+        public static final Platform NONE = new Platform(false, false, false, null, true);
     }
 
     private final Policy policy;
     private final boolean kafkaObserved;
     private final boolean rabbitObserved;
+    private final Platform platform;
 
     public EntrypointFinder(Policy policy) {
         this(policy, policy.entrypoints().kafkaObservationEnabled(), false);
@@ -48,15 +65,28 @@ public final class EntrypointFinder {
      * @param rabbitObserved spring.rabbitmq.listener.{simple,direct}.observation-enabled is true
      */
     public EntrypointFinder(Policy policy, boolean kafkaObserved, boolean rabbitObserved) {
+        this(policy, kafkaObserved, rabbitObserved, Platform.NONE);
+    }
+
+    public EntrypointFinder(Policy policy, boolean kafkaObserved, boolean rabbitObserved, Platform platform) {
         this.rabbitObserved = rabbitObserved;
         this.policy = policy;
         this.kafkaObserved = kafkaObserved;
+        this.platform = platform;
     }
 
     public List<Entrypoint> find(CodeIndex index) {
         List<Entrypoint> out = new ArrayList<>();
+        Map<String, Entrypoint> bound = new HashMap<>();
+        FunctionalEntrypoints.routes(index, bound);
+        if (platform.stream()) {
+            FunctionalEntrypoints.streamFunctions(index, platform.functions(), platform.autodetect(), bound);
+        }
         for (MethodInfo m : index.methods()) {
             Entrypoint ep = classify(m, index);
+            if (ep == null && m.hasBody()) {
+                ep = bound.get(m.key());
+            }
             if (ep != null) {
                 out.add(ep);
             }
@@ -86,6 +116,10 @@ public final class EntrypointFinder {
             }
         }
         ClassInfo owner = m.owner();
+        Entrypoint batch = springBatch(m, owner);
+        if (batch != null) {
+            return batch;
+        }
         if (WEBSOCKET_CALLBACKS.contains(m.name()) && m.decl().getBody() != null
                 && TypeUtils.isAssignableTo("org.springframework.web.socket.WebSocketHandler", owner.type())) {
             return new Entrypoint(m, Kind.WEBSOCKET, "websocket " + m.label(), false);
@@ -139,6 +173,7 @@ public final class EntrypointFinder {
             case KAFKA -> "@KafkaListener " + Annotations.stringAttribute(a, "topics", "value").orElse(m.label());
             case JMS -> "@JmsListener " + Annotations.stringAttribute(a, "destination").orElse(m.label());
             case RABBIT -> "@RabbitListener " + Annotations.stringAttribute(a, "queues", "value").orElse(m.label());
+            case SQS -> "@SqsListener " + Annotations.stringAttribute(a, "value", "queueNames").orElse(m.label());
             case WEBSOCKET -> "@" + a.getSimpleName() + " " + Annotations.stringAttribute(a, "value", "destination").orElse(m.label());
             case EVENT -> "@" + a.getSimpleName() + " " + m.label() + eventType(m, a);
             default -> "@" + a.getSimpleName() + " " + m.label();
@@ -155,6 +190,8 @@ public final class EntrypointFinder {
             // Spring Boot (3.2.1+) puts the ObservationRegistry on the @JmsListener container factory itself
             case JMS -> true;
             case RABBIT -> rabbitObserved && !batch(m, a);
+            // Spring Cloud AWS observes each message (spring.cloud.aws.sqs.observation-enabled); its batch sink none
+            case SQS -> platform.sqsObserved() && !batch(m, a);
             default -> false;
         };
         return new Entrypoint(m, kind, label, observed);
@@ -168,6 +205,34 @@ public final class EntrypointFinder {
         return !m.type().getParameterTypes().isEmpty() && (org.openrewrite.java.tree.TypeUtils.isAssignableTo("java.util.List",
                 m.type().getParameterTypes().getFirst()) || org.openrewrite.java.tree.TypeUtils.isAssignableTo(
                 "org.apache.kafka.clients.consumer.ConsumerRecords", m.type().getParameterTypes().getFirst()));
+    }
+
+    /** Spring Batch 5 and 6 (6 moved the item types to {@code org.springframework.batch.infrastructure}). */
+    private static final String TASKLET = "org.springframework.batch.core.step.tasklet.Tasklet";
+    private static final Map<String, String> ITEM_TYPES = Map.of(
+            "org.springframework.batch.item.ItemProcessor", "process", "org.springframework.batch.item.ItemWriter", "write",
+            "org.springframework.batch.infrastructure.item.ItemProcessor", "process",
+            "org.springframework.batch.infrastructure.item.ItemWriter", "write");
+
+    /**
+     * A Spring Batch step's own code: {@code Tasklet.execute} (once per step run) and the {@code process}/{@code write}
+     * of an item processor or writer (per item/chunk), as classes. Both run inside the step's observation when Batch
+     * has the registry (Spring Batch reference, Monitoring and metrics / Tracing).
+     */
+    private Entrypoint springBatch(MethodInfo m, ClassInfo owner) {
+        if (owner.type() == null || m.type().hasFlags(Flag.Static)) {
+            return null;
+        }
+        if (m.name().equals("execute") && m.type().getParameterTypes().size() == 2 && TypeUtils.isAssignableTo(TASKLET, owner.type())) {
+            return new Entrypoint(m, Kind.STEP, "tasklet " + m.label(), platform.batchObserved());
+        }
+        for (var e : ITEM_TYPES.entrySet()) {
+            if (m.name().equals(e.getValue()) && m.type().getParameterTypes().size() == 1 && TypeUtils.isAssignableTo(e.getKey(), owner.type())) {
+                return new Entrypoint(m, Kind.ITEM, (e.getValue().equals("process") ? "item processor " : "item writer ") + m.label(),
+                        platform.batchObserved());
+            }
+        }
+        return null;
     }
 
     /** WebSocketHandler methods Spring calls per connection event or message, outside any HTTP request. */
