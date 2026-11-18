@@ -28,6 +28,88 @@ What a service gets out of it:
 **Works with** Spring Boot 3 and 4 services on Java 17+, built with Gradle, logging through SLF4J + Logback, tracing
 with Micrometer Tracing / OpenTelemetry. logast itself runs on Java 21+ (25 recommended).
 
+### What it changes, in code
+
+Shortened from the end-to-end test service (`e2e/before` → `e2e/expected`).
+
+The business id goes into MDC for the whole operation, and stops being repeated in every message:
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```java
+log.info("Pledge allotment started [pledgeId={}]",
+        request.code());
+sender.send(request.code());
+log.info("Pledge allotment completed [pledgeId={}, tableId={}]",
+        request.code(), request.tableId());
+```
+
+</td>
+<td>
+
+```java
+try (var mdc = MdcScope.of("pledgeId", request.code())) {
+    log.info("Pledge allotment started");
+    sender.send(request.code());
+    log.info("Pledge allotment completed [tableId={}]",
+            request.tableId());
+}
+```
+
+</td>
+</tr>
+</table>
+
+A failure keeps its cause, and the error line carries the order id from MDC:
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```java
+try {
+    gateway(order);
+} catch (IllegalStateException e) {
+    log.error("Charge failed for order {}", order.id(), e);
+    throw new PaymentException("charge failed", e);
+}
+// …
+} catch (IllegalStateException e) {
+    throw new PaymentException(
+        "refund failed: " + e.getMessage());
+}
+```
+
+</td>
+<td>
+
+```java
+try (var mdc = MdcScope.of("orderId", order.id())) {
+    try {
+        gateway(order);
+    } catch (IllegalStateException e) {
+        log.error("Charge failed for order", e);
+        throw new PaymentException("charge failed", e);
+    }
+}
+// …
+} catch (IllegalStateException e) {
+    throw new PaymentException(
+        "refund failed: " + e.getMessage(), e);
+}
+```
+
+</td>
+</tr>
+</table>
+
+What logast can't decide on its own (a vague message, an unmeasured outcome, a missing audit record) it reports, with
+what to decide and when it counts as done.
+
 ---
 
 ## How it works
