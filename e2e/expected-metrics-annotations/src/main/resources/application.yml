@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: e2e-shop
+    version: ${APPLICATION_VERSION:unknown}
+logging:
+  structured:
+    format:
+      console: ecs
+    json:
+      add:
+        service:
+          name: ${spring.application.name}
+          version: ${spring.application.version}
+management:
+  observations:
+    annotations:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      version: ${spring.application.version}
+  opentelemetry:
+    resource-attributes:
+      service:
+        version: ${spring.application.version}

@@ -56,8 +56,8 @@ public final class RuleContext {
     boolean kafkaListenerObservationPlanned;
     boolean rabbitListenerObservationPlanned;
     /**
-     * Spring Boot processes @Observed / @NewSpan (or an order of this scan makes it do so): only then does such an
-     * annotation count as observing its method (OBSERVED_ANNOTATION_INACTIVE).
+     * Spring Boot processes @Observed / @NewSpan / @Timed / @Counted (or an order of this scan makes it do so): only
+     * then does such an annotation count as observing or measuring its method (OBSERVED_ANNOTATION_INACTIVE).
      */
     boolean observedAnnotationsActive = true;
     private PathContext planned;

@@ -96,9 +96,10 @@ final class EventMetricRules {
 
     private boolean measured(MethodInfo m) {
         String body = m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
-        // @Observed measures only while Spring Boot processes it (OBSERVED_ANNOTATION_INACTIVE decides, or plans it)
-        return MEASURED.matcher(body).find() || ctx.observedAnnotationsActive && TracingRules.observedAnnotation(m, false)
-                || m.hasAnnotation("io.micrometer.core.annotation.Timed") || m.hasAnnotation("io.micrometer.core.annotation.Counted");
+        // @Observed / @Timed / @Counted measure only while Spring Boot processes them (OBSERVED_ANNOTATION_INACTIVE decides,
+        // or plans it): one switch, management.observations.annotations.enabled plus aspectjweaver
+        return MEASURED.matcher(body).find()
+                || ctx.observedAnnotationsActive && (TracingRules.observedAnnotation(m, false) || TracingRules.meterAnnotation(m));
     }
 
     private static final Pattern TRAILING_PREPOSITION = Pattern.compile("(?i).*\\b(to|for|on|after|before|with|from|of|in|at|by|into)$");

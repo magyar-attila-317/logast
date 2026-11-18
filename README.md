@@ -352,7 +352,7 @@ starter it needs).
 |---|---|---|
 | SETUP_OTEL_STARTER | no tracer bridge or exporter (Boot 4: `spring-boot-starter-opentelemetry`; Boot 3: actuator + `micrometer-tracing-bridge-otel` + `opentelemetry-exporter-otlp`); conflicting setups (a Boot 4 starter in a Boot 3 build, Brave next to OpenTelemetry, the OpenTelemetry Spring starter or Java agent next to Boot's) | AUTO: adds the dependencies of the Boot generation in the build; report for conflicts |
 | ENTRYPOINT_NOT_OBSERVED | an entrypoint Spring does not observe (`@EventListener` / `@TransactionalEventListener` starting a flow of its own, WebSocket handlers, batch runners and `main`, annotations from `entrypoints.extraAnnotations`, Kafka / RabbitMQ listeners until their observation is on, batch listeners): its logs have no trace id and it records no span | AUTO: `ObservedContext.entrypoint(…)` around the body (see above) |
-| OBSERVED_ANNOTATION_INACTIVE | `@Observed` / `@NewSpan` without `management.observations.annotations.enabled: true` or without aspectjweaver: the annotated methods run without an observation or span | AUTO: sets the property and adds `spring-boot-starter-aspectj` (Boot 4) / `spring-boot-starter-aop` (Boot 3); report when the build file or Boot's observation auto-configuration is missing. Also switches on `@Timed` / `@Counted` |
+| OBSERVED_ANNOTATION_INACTIVE | `@Observed` / `@NewSpan` without `management.observations.annotations.enabled: true` or without aspectjweaver: the annotated methods run without an observation or span | AUTO: sets the property and adds `spring-boot-starter-aspectj` (Boot 4) / `spring-boot-starter-aop` (Boot 3); report when the build file or Boot's observation auto-configuration is missing. Also switches on `@Timed` / `@Counted`. In the metrics pack too, for `@Observed` / `@Timed` / `@Counted` (the same switch) |
 | HTTP_CLIENT_UNTRACED | `RestTemplate` / `RestClient` / `WebClient` built by hand instead of from Spring Boot's builder, JDK `HttpClient`, Apache, OkHttp, OpenFeign without `feign-micrometer`: no `traceparent` header, the called service starts a new trace | AUTO where a Boot builder can be injected; report otherwise (Feign: add `feign-micrometer`) |
 | KAFKA_OBSERVATION_DISABLED / RABBIT_OBSERVATION_DISABLED | `KafkaTemplate` / `@KafkaListener`, `@RabbitListener` without observation (off by default): the trace stops at the topic or queue | AUTO: `spring.kafka.template/listener.observation-enabled`, `spring.rabbitmq.listener.*.observation-enabled` |
 | JOB_LAUNCH_UNTRACED | a Kubernetes container (fabric8, official client) or `ProcessBuilder` started without `TRACEPARENT` in its environment: the job runs as a new, unrelated trace | AUTO: adds `TraceContextEnv.current()` to the environment (the starter's batch-trace listener continues it); report where it cannot be added |
@@ -604,6 +604,12 @@ ready snippet: an `outcome` tag on the timer that is already running, or a count
 same outcomes are METRIC_OUTCOME_UNMEASURED findings (REPORT-ONLY): logast does not decide which business metrics
 matter, the LLM or a person picks.
 
+`@Timed`, `@Counted` and `@Observed` measure only while Spring Boot processes them: the same switch as for tracing,
+`management.observations.annotations.enabled: true` plus aspectjweaver (Boot reference, Observability, "Micrometer
+Observation Annotations support"; MetricsAspectsAutoConfiguration). The metrics pack switches them on by itself
+(OBSERVED_ANNOTATION_INACTIVE, shared with the tracing pack: one order when both run); while they are off, an annotated
+method counts as unmeasured and its business event gets an observation.
+
 Some outcomes are counted by default, without a decision, best effort like the logging fixes (`metrics.defaults`
 in logast.yaml, all four on; `[]` switches them off; a metrics.json decision always wins):
 
@@ -824,7 +830,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · DB_NO_TIMEOUT · REMOTE_CALL_IN_TRANSACTION · SCHEDULED_WITHOUT_LOCK · SCHEDULER_SINGLE_THREAD · RETRY_INACTIVE · RETRY_IN_TRANSACTION · SHUTDOWN_NOT_GRACEFUL · HEALTH_PROBE_MISCONFIGURED · READINESS_WITHOUT_DATABASE · CACHE_UNBOUNDED · KAFKA_NO_ERROR_HANDLER · RABBIT_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED · ROW_BY_ROW_WRITE |
 | errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED · ASYNC_ERROR_LOST · CAUSE_DROPPED · CATCH_ALL_DEFAULT · UNEXPECTED_ERROR_UNLOGGED · ERROR_HANDLER_STATUS_OK · TX_COMMITS_ON_CHECKED · REQUEST_NOT_VALIDATED | · TX_COMMITS_ON_CHECKED |
 | audit (opt-in) | AUDIT_MISSING · AUDIT_FAILURES_UNRECORDED · AUDIT_RECORD_INCOMPLETE · AUDIT_LOG_MIXED · DATA_CHANGES_UNAUDITED · AUDIT_SECURITY_EVENTS · AUDIT_LOGGER_UNROUTED · AUDIT_BEFORE_COMMIT · AUDIT_RECORD_SECRET · AUDIT_ACTOR_LOST_ASYNC |
-| metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
+| metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · OBSERVED_ANNOTATION_INACTIVE · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
 | runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
 
 Suppress a single finding with `// logast:ignore RULE` on the line or the line above (several rules: `RULE_A, RULE_B`;
