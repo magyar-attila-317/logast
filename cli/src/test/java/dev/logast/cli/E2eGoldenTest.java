@@ -89,6 +89,43 @@ class E2eGoldenTest {
     }
 
     /**
+     * #106: the Splunk fields follow the format the service really writes. Here nothing configures Spring's structured
+     * logging and logast.yaml keeps the default (ecs), but logback-spring.xml uses the Logstash encoder: the queries
+     * use its fields ({@code level}, {@code logger_name}), not ECS's ({@code log.level}).
+     */
+    @Test
+    void queriesUseTheFieldsOfTheEncoderTheServiceUses() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path yml = app.resolve("logast.yml");
+        Files.writeString(yml, Files.readString(yml).replace("  structuredFormat: logstash\n", "")
+                + "queries:\n  splunk:\n    index: shop-logs\n");
+        Path props = app.resolve("src/main/resources/application.yml");
+        Files.writeString(props, Files.readString(props).replace("logging:\n  structured:\n    format:\n      console: ecs\n", ""));
+        Files.writeString(app.resolve("src/main/resources/logback-spring.xml"), """
+                <configuration>
+                  <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+                    <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+                  </appender>
+                  <root level="INFO"><appender-ref ref="JSON"/></root>
+                </configuration>
+                """);
+        String q = run(app, "queries", app.toString(), "--stdout", "--classpath-file", CLASSPATH);
+        assertThat(q).as("Logstash fields").contains("in the `logstash` format")
+                .contains("index=shop-logs \"service.name\"=\"e2e-shop\" level=ERROR\n| stats count latest(_time) as last by logger_name, message")
+                .doesNotContain("log.level");
+
+        // only logast.yaml says logstash, Spring's property still says ecs (no apply yet): logast.yaml wins, as apply makes it so
+        Path policyOnly = tmp.resolve("policy-only");
+        copy(BEFORE, policyOnly);
+        Files.writeString(policyOnly.resolve("logast.yml"), Files.readString(policyOnly.resolve("logast.yml"))
+                + "queries:\n  splunk:\n    index: shop-logs\n");
+        assertThat(Files.readString(policyOnly.resolve("src/main/resources/application.yml"))).contains("console: ecs");
+        assertThat(run(policyOnly, "queries", policyOnly.toString(), "--stdout", "--classpath-file", CLASSPATH))
+                .as("the format of logast.yaml").contains("in the `logstash` format").contains(" level=ERROR").doesNotContain("log.level");
+    }
+
+    /**
      * #107: scan for a person at a terminal: counts, then the decisions grouped by severity and rule, what to do per
      * rule (the first instruction of the notes), one line per finding below the application package (two findings on one line and text as one, ×2), at most four per rule.
      * Piped, scan keeps the full listing every other scenario snapshots (FINDINGS.txt). Must equal
