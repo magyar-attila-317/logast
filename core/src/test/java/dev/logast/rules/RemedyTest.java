@@ -280,6 +280,215 @@ class RemedyTest {
                 config.formatted("        executor.setQueueCapacity(100);\n")));
     }
 
+    // ---- UNBOUNDED_EXECUTOR (Spring Boot's executor behind @Async) and SCHEDULER_SINGLE_THREAD (#90) -----------------
+
+    private static final String BOOT_APP = """
+            package x;
+
+            import org.springframework.boot.autoconfigure.SpringBootApplication;
+            import org.springframework.scheduling.annotation.EnableAsync;
+            import org.springframework.scheduling.annotation.EnableScheduling;
+
+            @SpringBootApplication
+            @EnableAsync
+            @EnableScheduling
+            public class ParcelApp {
+            }
+            """;
+
+    private static final String PARCEL_JOBS = """
+            package x;
+
+            import org.springframework.scheduling.annotation.Async;
+            import org.springframework.scheduling.annotation.Scheduled;
+            import org.springframework.stereotype.Component;
+
+            @Component
+            public class ParcelJobs {
+                @Async
+                public void label(String parcelId) {
+                    System.out.println(parcelId);
+                }
+
+                @Scheduled(fixedDelay = 60000)
+                public void sweep() {
+                    System.out.println("sweep");
+                }
+
+                @Scheduled(cron = "0 0 * * * *")
+                public void archive() {
+                    System.out.println("archive");
+                }
+            }
+            """;
+
+    private static final String CONFIG = "spring:\n  application:\n    name: remedy\n";
+
+    @Test
+    void asyncOnBootsExecutorWithABoundedQueue() throws IOException {
+        Map<String, String> before = Map.of(java("ParcelApp"), BOOT_APP, java("ParcelJobs"), PARCEL_JOBS);
+        fires(Rules.UNBOUNDED_EXECUTOR, before);
+        gone(Rules.UNBOUNDED_EXECUTOR, "spring.task.execution.pool.queue-capacity", with(before, "src/main/resources/application.yml",
+                CONFIG + "  task:\n    execution:\n      pool:\n        queue-capacity: 100\n        max-size: 16\n"));
+        gone(Rules.UNBOUNDED_EXECUTOR, "virtual threads", with(before, "src/main/resources/application.yml",
+                CONFIG + "  threads:\n    virtual:\n      enabled: true\n"));
+        gone(Rules.UNBOUNDED_EXECUTOR, "an Executor bean of its own", with(before, java("AsyncConfig"), """
+                package x;
+
+                import java.util.concurrent.ArrayBlockingQueue;
+                import java.util.concurrent.ExecutorService;
+                import java.util.concurrent.ThreadPoolExecutor;
+                import java.util.concurrent.TimeUnit;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+
+                @Configuration
+                public class AsyncConfig {
+                    @Bean
+                    ExecutorService labelExecutor() {
+                        return new ThreadPoolExecutor(2, 4, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100));
+                    }
+                }
+                """));
+        // without @EnableAsync the annotation does nothing, and Boot's executor is not behind it
+        gone(Rules.UNBOUNDED_EXECUTOR, "no @EnableAsync", with(before, java("ParcelApp"), BOOT_APP.replace("@EnableAsync\n", "")));
+    }
+
+    @Test
+    void scheduledJobsWithAPoolOfTheirOwn() throws IOException {
+        Map<String, String> before = Map.of(java("ParcelApp"), BOOT_APP, java("ParcelJobs"), PARCEL_JOBS);
+        fires(Rules.SCHEDULER_SINGLE_THREAD, before);
+        gone(Rules.SCHEDULER_SINGLE_THREAD, "spring.task.scheduling.pool.size", with(before, "src/main/resources/application.yml",
+                CONFIG + "  task:\n    scheduling:\n      pool:\n        size: 2\n"));
+        gone(Rules.SCHEDULER_SINGLE_THREAD, "virtual threads", with(before, "src/main/resources/application.yml",
+                CONFIG + "  threads:\n    virtual:\n      enabled: true\n"));
+        gone(Rules.SCHEDULER_SINGLE_THREAD, "a TaskScheduler bean of its own", with(before, java("SchedulingConfig"), """
+                package x;
+
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+
+                @Configuration
+                public class SchedulingConfig {
+                    @Bean
+                    ThreadPoolTaskScheduler taskScheduler() {
+                        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+                        scheduler.setPoolSize(4);
+                        return scheduler;
+                    }
+                }
+                """));
+        // one job cannot delay another
+        gone(Rules.SCHEDULER_SINGLE_THREAD, "a single job", with(before, java("ParcelJobs"),
+                PARCEL_JOBS.replace("    @Scheduled(cron = \"0 0 * * * *\")\n", "")));
+    }
+
+    // ---- RETRY_INACTIVE (#90) --------------------------------------------------------------------------------------
+
+    @Test
+    void retryAnnotationsWithTheirEnablingAnnotation() throws IOException {
+        String client = """
+                package x;
+
+                import org.springframework.resilience.annotation.ConcurrencyLimit;
+                import org.springframework.resilience.annotation.Retryable;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class CarrierClient {
+                    @Retryable(maxRetries = 2)
+                    public String track(String parcelId) {
+                        return parcelId;
+                    }
+
+                    @ConcurrencyLimit(4)
+                    public String quote(String parcelId) {
+                        return parcelId;
+                    }
+                }
+                """;
+        String app = """
+                package x;
+
+                import org.springframework.boot.autoconfigure.SpringBootApplication;
+                ENABLE_IMPORT
+                ENABLE
+                @SpringBootApplication
+                public class ParcelApp {
+                }
+                """;
+        Map<String, String> before = Map.of(java("CarrierClient"), client, java("ParcelApp"), app.replace("ENABLE_IMPORT\n", "")
+                .replace("ENABLE\n", ""));
+        List<WorkOrder> orders = scan(before).stream().filter(o -> o.rule().equals(Rules.RETRY_INACTIVE)).toList();
+        assertThat(orders).singleElement().satisfies(o -> {
+            assertThat(o.reportOnly()).as("the enabling annotation goes onto the @SpringBootApplication class").isFalse();
+            assertThat(o.edits()).anySatisfy(e -> assertThat(e.text()).isEqualTo("@EnableResilientMethods\n"));
+        });
+        gone(Rules.RETRY_INACTIVE, "@EnableResilientMethods", with(before, java("ParcelApp"), app
+                .replace("ENABLE_IMPORT", "import org.springframework.resilience.annotation.EnableResilientMethods;")
+                .replace("ENABLE", "@EnableResilientMethods")));
+        gone(Rules.RETRY_INACTIVE, "the post-processor beans", with(before, java("ResilienceConfig"), """
+                package x;
+
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.resilience.annotation.ConcurrencyLimitBeanPostProcessor;
+                import org.springframework.resilience.annotation.RetryAnnotationBeanPostProcessor;
+
+                @Configuration
+                public class ResilienceConfig {
+                    @Bean
+                    static RetryAnnotationBeanPostProcessor retryProcessor() {
+                        return new RetryAnnotationBeanPostProcessor();
+                    }
+
+                    @Bean
+                    static ConcurrencyLimitBeanPostProcessor limitProcessor() {
+                        return new ConcurrencyLimitBeanPostProcessor();
+                    }
+                }
+                """));
+        // no @SpringBootApplication class to put it on: reported only
+        assertThat(scan(Map.of(java("CarrierClient"), client))).filteredOn(o -> o.rule().equals(Rules.RETRY_INACTIVE))
+                .singleElement().satisfies(o -> assertThat(o.reportOnly()).isTrue());
+    }
+
+    @Test
+    void springRetryWithEnableRetry() throws IOException {
+        // Spring Retry is not on the fixture's classpath: the annotation is told apart from Framework 7's by its import
+        String client = """
+                package x;
+
+                import org.springframework.retry.annotation.Retryable;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class CarrierClient {
+                    @Retryable
+                    public String track(String parcelId) {
+                        return parcelId;
+                    }
+                }
+                """;
+        String app = """
+                package x;
+
+                import org.springframework.boot.autoconfigure.SpringBootApplication;
+                import org.springframework.retry.annotation.EnableRetry;
+
+                ENABLE
+                @SpringBootApplication
+                public class ParcelApp {
+                }
+                """;
+        Map<String, String> before = Map.of(java("CarrierClient"), client, java("ParcelApp"), app.replace("ENABLE\n", ""));
+        // nor is AspectJ, which Spring Retry's annotations need at runtime: reported, not applied
+        assertThat(scan(before)).filteredOn(o -> o.rule().equals(Rules.RETRY_INACTIVE)).singleElement()
+                .satisfies(o -> assertThat(o.reportOnly()).isTrue());
+        gone(Rules.RETRY_INACTIVE, "@EnableRetry", with(before, java("ParcelApp"), app.replace("ENABLE", "@EnableRetry")));
+    }
+
     // ---- BLOCKING_WAIT_UNBOUNDED -----------------------------------------------------------------------------------
 
     @Test
@@ -872,6 +1081,58 @@ class RemedyTest {
                     }
                 }
                 """));
+    }
+
+    /** #41: a JdbcTemplate made with new is out of spring.jdbc.template.*'s reach; JPA gets its own property. */
+    @Test
+    void handMadeJdbcTemplateWithAQueryTimeoutAndJpaWithItsProperty() throws IOException {
+        String rates = """
+                package x;
+
+                import javax.sql.DataSource;
+                import org.springframework.jdbc.core.JdbcTemplate;
+                import org.springframework.stereotype.Repository;
+
+                @Repository
+                public class RateRepository {
+                    private final JdbcTemplate jdbc;
+
+                    public RateRepository(DataSource dataSource) {
+                        this.jdbc = new JdbcTemplate(dataSource);
+                %s    }
+
+                    public Integer rate(String zone) {
+                        return jdbc.queryForObject("SELECT rate FROM rate WHERE zone = ?", Integer.class, zone);
+                    }
+                }
+                """;
+        String config = CONFIG + "  jdbc:\n    template:\n      query-timeout: 30s\n";
+        Map<String, String> before = Map.of(java("RateRepository"), rates.formatted(""), "src/main/resources/application.yml", config);
+        assertThat(scan(before)).filteredOn(o -> o.rule().equals(Rules.DB_NO_TIMEOUT)).as("the property is set and still")
+                .singleElement().satisfies(o -> assertThat(o.title()).startsWith("new JdbcTemplate(..)"));
+        gone(Rules.DB_NO_TIMEOUT, "setQueryTimeout(..) on it", with(before, java("RateRepository"),
+                rates.formatted("        this.jdbc.setQueryTimeout(30);\n")));
+
+        // JPA (not on the fixture's classpath: @Entity is known by its import)
+        Map<String, String> jpa = Map.of(java("Parcel"), """
+                package x;
+
+                import jakarta.persistence.Entity;
+
+                @Entity
+                public class Parcel {
+                    private String parcelId;
+                }
+                """);
+        assertThat(scan(jpa)).filteredOn(o -> o.rule().equals(Rules.DB_NO_TIMEOUT)).singleElement()
+                .satisfies(o -> assertThat(o.edits()).singleElement().satisfies(e ->
+                        assertThat(e.text()).contains("jakarta.persistence.query.timeout: 300000")));
+        gone(Rules.DB_NO_TIMEOUT, "spring.jpa.properties.jakarta.persistence.query.timeout", with(jpa, "src/main/resources/application.yml",
+                CONFIG + "  jpa:\n    properties:\n      \"[jakarta.persistence.query.timeout]\": 30000\n"));
+        assertThat(ResilienceRules.millis("5m")).isEqualTo(300_000L);
+        assertThat(ResilienceRules.millis("PT30S")).isEqualTo(30_000L);
+        assertThat(ResilienceRules.millis("45")).isEqualTo(45_000L);
+        assertThat(ResilienceRules.millis("500ms")).isEqualTo(500L);
     }
 
     // ---- HTTP_CLIENT_NO_TIMEOUT, HTTP_CLIENT_UNTRACED --------------------------------------------------------------

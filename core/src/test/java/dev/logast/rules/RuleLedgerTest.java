@@ -70,7 +70,8 @@ class RuleLedgerTest {
             // #58 c: project-wide findings, so the near miss is the whole project with the note's remedy applied
             Rules.KAFKA_NO_ERROR_HANDLER, "rules/RemedyTest#kafkaListenerWithACommonErrorHandlerBean",
             Rules.PROBLEM_DETAILS_DISABLED, "rules/RemedyTest#problemDetailsByPropertyOrByAdvice",
-            Rules.SCHEDULED_WITHOUT_LOCK, "rules/RemedyTest#scheduledJobWithALockOrOnASingleInstance");
+            Rules.SCHEDULED_WITHOUT_LOCK, "rules/RemedyTest#scheduledJobWithALockOrOnASingleInstance",
+            Rules.SCHEDULER_SINGLE_THREAD, "rules/RemedyTest#scheduledJobsWithAPoolOfTheirOwn");
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus(
