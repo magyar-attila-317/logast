@@ -712,9 +712,18 @@ final class TracingRules {
         return false;
     }
 
-    private static final Set<String> SKIPPED_DIRS = Set.of(".git", ".gradle", ".idea", ".logast", "build", "target", "node_modules", "out");
+    /** Not the project's configuration: tool folders, build output, and logast's own (.logast/, fleet report folder). */
+    private static final Set<String> SKIPPED_DIRS = Set.of(".git", ".gradle", ".idea", ".logast", "logast-fleet", "build", "target",
+            "node_modules", "out");
+    /** logast's policy file: it may name the rule, it configures no endpoint. */
+    private static final Set<String> SKIPPED_FILES = Set.of("logast.yml", "logast.yaml");
 
-    /** One of {@code names} appears in a text file of the project (deployment manifests, compose files, scripts, .env). */
+    /**
+     * One of {@code names} appears in a text file of the project (deployment manifests, compose files, scripts, .env).
+     * logast's own output kept in the tree does not count (#96): a saved scan (any format, under any name: FINDINGS.txt,
+     * scan.json, a SARIF file) carries this rule's suggestion, which names the very variables searched for. Such output
+     * names the rule; configuration does not.
+     */
     private boolean mentionedInProject(List<String> names) {
         Path root = ctx.a.project.root();
         try (var walk = Files.walk(root, 8)) {
@@ -726,7 +735,7 @@ final class TracingRules {
                             }
                         }
                         String n = p.getFileName().toString();
-                        return !n.endsWith(".java") && !n.endsWith(".class") && !n.endsWith(".jar");
+                        return !n.endsWith(".java") && !n.endsWith(".class") && !n.endsWith(".jar") && !SKIPPED_FILES.contains(n);
                     })
                     .filter(p -> {
                         try {
@@ -737,7 +746,7 @@ final class TracingRules {
                     })
                     .anyMatch(p -> {
                         String text = SetupRules.read(p);
-                        return names.stream().anyMatch(text::contains);
+                        return !text.contains(Rules.TRACING_EXPORT_UNCONFIGURED) && names.stream().anyMatch(text::contains);
                     });
         } catch (java.io.IOException | java.io.UncheckedIOException e) {
             return false;

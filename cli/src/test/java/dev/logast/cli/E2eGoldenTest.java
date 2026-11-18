@@ -2182,6 +2182,15 @@ class E2eGoldenTest {
         assertThat(findings).as("no endpoint").contains("Traces are exported nowhere");
         golden(EXPECTED.resolveSibling("expected-tracing-pack"), actual);
 
+        // #96: logast's own output kept in the tree names the endpoint variables in its suggestion; it is no configuration,
+        // so a rescan still reports the missing export (FINDINGS.txt / OUTPUT.txt from above, a saved JSON and SARIF scan)
+        Path saved = tmp.resolve("app");
+        Files.writeString(saved.resolve("scan.json"), run(saved, "scan", saved.toString(), "--classpath-file", CLASSPATH, "--format", "json"));
+        Files.writeString(saved.resolve("logast.sarif"), run(saved, "scan", saved.toString(), "--classpath-file", CLASSPATH, "--format", "sarif"));
+        assertThat(Files.readString(saved.resolve("FINDINGS.txt"))).contains("OTEL_EXPORTER_OTLP_ENDPOINT");
+        assertThat(run(saved, "scan", saved.toString(), "--classpath-file", CLASSPATH)).as("rescan with the saved output in the tree")
+                .contains("Traces are exported nowhere");
+
         // the tracing pack alone: the same checks
         Map<String, String> alone = migrate(tmp.resolve("tracing-only"), CLASSPATH, app -> {
             STOCK_TRACING.run(app);
