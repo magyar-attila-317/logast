@@ -1,6 +1,5 @@
 package com.example.e2e.weekly;
 
-import com.example.e2e.logging.MdcScope;
 import com.example.e2e.logging.ObservedContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,11 +19,10 @@ public class WeeklyReportStarter {
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
         ObservedContext.entrypoint(WeeklyMetrics.WEEKLY_REPORT_STARTER_ON_READY)
+                .mdc("targetWeek", targetWeekResolver.targetWeek())
                 .failureLoggedByCaller()
                 .run(() -> {
-                    try (var mdc = MdcScope.of("targetWeek", targetWeekResolver.targetWeek())) {
-                        log.info("Weekly report started");
-                    }
+                    log.info("Weekly report started");
                 });
     }
 }

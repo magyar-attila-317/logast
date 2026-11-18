@@ -549,10 +549,16 @@ public final class RepeatedValueRules {
         String unit = Text.indentUnit(text);
         String var = EntrypointRules.unique("mdc", ctx.taken(m, r.start()));
         String body = text.substring(r.start(), r.end());
-        String scope = EntrypointRules.mdcScope(cs.stream().map(c -> new DomainValues.Value(c.key(), c.expr())).toList());
-        b.edit(Edit.replace(f.relPath(), r.start(), r.end(),
-                r.indent() + "try (var " + var + " = " + scope + ") {\n" + Text.reindent(body, unit) + r.indent() + "}\n"));
-        b.edits(JavaEdits.imports(f, ctx.support("MdcScope")));
+        List<DomainValues.Value> values = cs.stream().map(c -> new DomainValues.Value(c.key(), c.expr())).toList();
+        int observedAt = EntrypointRules.observedMdcAt(m, text, r.start(), r.end());
+        if (observedAt >= 0) {
+            // #20: the scope would be the whole observation: its MDC goes into the ObservedContext chain
+            b.edit(Edit.insert(f.relPath(), observedAt, EntrypointRules.observedMdc(m, text, values)));
+        } else {
+            b.edit(Edit.replace(f.relPath(), r.start(), r.end(), r.indent() + "try (var " + var + " = "
+                    + EntrypointRules.mdcScope(values) + ") {\n" + Text.reindent(body, unit) + r.indent() + "}\n"));
+            b.edits(JavaEdits.imports(f, ctx.support("MdcScope")));
+        }
         ctx.dependOnStarter(b);
         b.context(ctx.context(m, r.start(), Text.oneLine(body, 200), null));
         String id = b.id();

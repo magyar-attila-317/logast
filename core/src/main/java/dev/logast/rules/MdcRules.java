@@ -500,6 +500,19 @@ final class MdcRules {
                     + src(f, put.getArguments().get(1)));
         }
         String var = EntrypointRules.unique("mdc", ctx.taken(m, Pos.start(op.call())));
+        int observedAt = pairs.isEmpty() ? -1 : EntrypointRules.observedMdcAt(m, text, pLines[0], replaceEnd);
+        if (observedAt >= 0) {
+            // #20: the scope would be the whole observation: its MDC goes into the ObservedContext chain
+            String cont = Text.indentAt(text, Pos.start(m.decl().getBody().getStatements().getFirst())) + unit + unit;
+            StringBuilder chain = new StringBuilder();
+            pairs.forEach(pair -> chain.append('\n').append(cont).append(".mdc(").append(pair).append(')'));
+            b.edit(Edit.insert(f.relPath(), observedAt, chain.toString()));
+            b.edit(Edit.replace(f.relPath(), pLines[0], replaceEnd, Text.dedent(region, unit)));
+            if (!text.substring(0, pLines[0]).concat(text.substring(replaceEnd)).contains("MDC.")) {
+                b.edit(removeImport(f, "org.slf4j.MDC"));
+            }
+            return new int[]{pLines[0], replaceEnd};
+        }
         String replacement = pairs.isEmpty() ? Text.dedent(region, unit)
                 : indent + "try (var " + var + " = MdcScope.of(" + String.join(", ", pairs) + ")) {\n" + region + indent + "}\n";
         b.edit(Edit.replace(f.relPath(), pLines[0], replaceEnd, replacement));

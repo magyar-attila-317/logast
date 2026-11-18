@@ -1,6 +1,5 @@
 package com.example.e2e.intake;
 
-import com.example.e2e.logging.MdcScope;
 import com.example.e2e.logging.ObservedContext;
 import com.example.e2e.order.Order;
 import lombok.extern.slf4j.Slf4j;
@@ -19,13 +18,12 @@ public class OrderLedger {
 
     @TransactionalEventListener
     public void onSettled(Order order) {
-        try (var mdc = MdcScope.of("orderId", order.id())) {
-            ObservedContext.entrypoint(IntakeMetrics.ORDER_LEDGER)
-                    .quiet()
-                    .run(() -> {
-                        feed.load();
-                        log.info("Order ledger completed"); // logast:wording
-                    });
-        }
+        ObservedContext.entrypoint(IntakeMetrics.ORDER_LEDGER)
+                .mdc("orderId", order.id())
+                .quiet()
+                .run(() -> {
+                    feed.load();
+                    log.info("Order ledger completed"); // logast:wording
+                });
     }
 }
