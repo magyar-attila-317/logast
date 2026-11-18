@@ -350,7 +350,7 @@ public final class Rules {
     private static void outcomeGaps(RuleContext ctx) {
         Map<String, Integer> seen = new HashMap<>();
         List<OrderBuilder> builders = new ArrayList<>();
-        List<MetricsMap.Gap> gaps = MetricsMap.of(ctx.a).gaps();
+        List<MetricsMap.Gap> gaps = MetricsMap.of(ctx.a, ctx.observedAnnotationsActive).gaps();
         List<dev.logast.apply.MetricsFile.Spot> spots = new ArrayList<>();
         for (MetricsMap.Gap g : gaps) {
             MetricsMap.Unmeasured u = g.outcome();

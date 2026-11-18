@@ -96,6 +96,36 @@ annotations: `management.observations.annotations.enabled: true` and aspectjweav
 Observability). Without them the annotation does nothing at runtime; the tracing pack switches them on, or the method
 gets an ObservedContext like any other entrypoint.
 
+### Opting in to more spans
+
+logast gives entrypoints a span; the code below them (a service method under a controller, a listener running inside
+the publisher's flow) shares the entrypoint's span. That is the default on purpose, and there is no policy switch to
+change it. Where you want a span of its own, put Micrometer's `@Observed` on the method:
+
+```java
+@Observed(name = "berth.release")
+public void release(String berthCode) { … }
+
+@EventListener
+@Observed(name = "berth.ledger-entry")
+public void onReleased(BerthReleased event) { … }
+```
+
+What logast does with it: switches the annotations on (OBSERVED_ANNOTATION_INACTIVE: the property and the AspectJ
+starter), and from then on counts the method as observed: no ObservedContext around it, no second business timer
+(BUSINESS_EVENT_UNMEASURED), and no counter for a "… completed" / "… failed" line its observation already counts
+(METRIC_OUTCOME_UNMEASURED). A constant name is fine for SPAN_NAME_DYNAMIC.
+
+- **Naming**: a fixed, dotted name for the kind of work (`berth.release`), never an id; the name is the timer's name
+  too (`berth.release` with `error`, `class`, `method` tags) and the span's contextual name. Ids go into MDC (logast
+  scopes them) or `highCardinalityKeyValue(…)`.
+- **Proxies**: the aspect works on Spring beans called through their proxy: not on `private` methods, and not when the
+  bean calls its own method (`this.release(…)`).
+- **Cost**: each annotated call is one more span exported to the tracing backend (with the sampling rate) and one more
+  timer series in the metrics backend. Worth it for work that takes time or fails on its own (a downstream call, a
+  batch step, a listener doing real work); not for helpers called per item in a loop, where it multiplies spans and
+  hides the trace's shape.
+
 ### Reactive code
 
 Spring WebFlux controller methods (`@RestController` returning `Mono`/`Flux`) and WebFlux router handlers are HTTP

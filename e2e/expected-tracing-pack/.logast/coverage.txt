@@ -82,8 +82,8 @@ src/main/java/com/example/e2e/order/OrderService.java:43              fixed    M
 src/main/java/com/example/e2e/order/OrderService.java:48              reported METRIC_OUTCOME_UNMEASURED OUM-00f4c0
 src/main/java/com/example/e2e/order/PaymentClient.java:15             fixed    REPEATED_LOG_VALUE RLV-fc4256; reported LOG_FORMAT FMT-93dcb8
 src/main/java/com/example/e2e/order/PaymentClient.java:18             fixed    LOG_FORMAT FMT-9cb82a; reported LOG_AND_RETHROW LAR-277884
-src/main/java/com/example/e2e/stock/StockTracker.java:21              fixed    METRIC_OUTCOME_UNMEASURED OUM-c6917e; reported MESSAGE_SUGGESTED SUG-b56f84
-src/main/java/com/example/e2e/stock/StockTracker.java:28              fixed    METRIC_OUTCOME_UNMEASURED OUM-630947; reported MESSAGE_SUGGESTED SUG-f4a8e0
+src/main/java/com/example/e2e/stock/StockTracker.java:21              reported MESSAGE_SUGGESTED SUG-b56f84
+src/main/java/com/example/e2e/stock/StockTracker.java:27              fixed    METRIC_OUTCOME_UNMEASURED OUM-630947; reported MESSAGE_SUGGESTED SUG-f4a8e0
 src/main/java/com/example/e2e/web/AuditController.java:16             checked  no finding
 src/main/java/com/example/e2e/web/QuoteController.java:30             reported MESSAGE_SUGGESTED SUG-08dd18
 # fixed lines are kept while their file is unchanged:
@@ -109,4 +109,4 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             reported M
 # src/main/java/com/example/e2e/order/OrderNotifications.java 64c604f572ef
 # src/main/java/com/example/e2e/order/OrderService.java 3e84740bdd33
 # src/main/java/com/example/e2e/order/PaymentClient.java 58e66cb90b86
-# src/main/java/com/example/e2e/stock/StockTracker.java a3d6a19d604e
+# src/main/java/com/example/e2e/stock/StockTracker.java af634d9102c9
