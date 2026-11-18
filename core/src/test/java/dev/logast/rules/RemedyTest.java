@@ -889,6 +889,36 @@ class RemedyTest {
                 quoteClient("", "post")));
     }
 
+    /** #24: support.repository: added next to the starter, inside the build's repositories, or said for settings. */
+    @Test
+    void theStartersRepositoryComesWithIt() throws IOException {
+        String policy = PACKS + "support:\n  repository: https://nexus.example.com/repository/maven-releases/\n";
+        String job = QUOTE_JOB.replace("RETRY", "");
+        java.util.function.Function<Map<String, String>, String> starterEdits = files -> {
+            try {
+                return scan(files).stream().filter(o -> o.rule().equals(Rules.SETUP_SUPPORT_STARTER))
+                        .flatMap(o -> o.edits().stream()).map(e -> e.text()).reduce("", String::concat)
+                        + scan(files).stream().filter(o -> o.rule().equals(Rules.SETUP_SUPPORT_STARTER))
+                        .map(o -> o.suggestion()).reduce("", String::concat);
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        };
+        String inside = starterEdits.apply(Map.of("logast.yaml", policy, java("QuoteJob"), job,
+                "build.gradle.kts", "plugins { java }\n\nrepositories {\n    mavenCentral()\n}\n\ndependencies {\n}\n"));
+        assertThat(inside).contains("\n    maven { url = uri(\"https://nexus.example.com/repository/maven-releases/\") }")
+                .doesNotContain("repositories {\n    maven");
+        String block = starterEdits.apply(Map.of("logast.yaml", policy, java("QuoteJob"), job,
+                "build.gradle", "plugins { id 'java' }\n\ndependencies {\n}\n"));
+        assertThat(block).contains("repositories {\n    maven { url 'https://nexus.example.com/repository/maven-releases/' }\n}\n");
+        String settings = starterEdits.apply(Map.of("logast.yaml", policy, java("QuoteJob"), job,
+                "build.gradle.kts", "plugins { java }\n\ndependencies {\n}\n",
+                "settings.gradle.kts", "dependencyResolutionManagement {\n    repositories { mavenCentral() }\n}\n"));
+        assertThat(settings).as("central repositories: said, not written").doesNotContain("\n    maven { url")
+                .doesNotContain("repositories {\n    maven")
+                .contains("add maven { url = uri(\"https://nexus.example.com/repository/maven-releases/\") } to dependencyResolutionManagement");
+    }
+
     private static final String SHIPMENT_LOG = """
             package x;
 
