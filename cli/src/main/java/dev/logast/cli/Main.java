@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
         subcommands = {Main.Scan.class, Main.Explain.class, Main.Apply.class, Main.Classpath.class, Main.RulesCmd.class,
-                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class, Main.WhyCmd.class, Main.ShapeCmd.class, Main.LifecycleCmd.class})
+                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class, Main.WhyCmd.class, Main.ShapeCmd.class, Main.LifecycleCmd.class, Main.QueriesCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override
@@ -595,6 +595,31 @@ public final class Main {
             dev.logast.rules.MetricsMap.Map map = dev.logast.rules.MetricsMap.of(a);
             System.out.print(format.equals("json") ? OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(map) + "\n"
                     : dev.logast.rules.MetricsMap.text(map));
+            return 0;
+        }
+    }
+
+    @Command(name = "queries", description = "Ready-made queries for the service's metrics and logs: PromQL, NRQL and "
+            + "Splunk SPL per entrypoint, business outcome and MDC key, written to <root>/.logast/queries.md (backends and "
+            + "the Splunk index: queries: in logast.yaml)")
+    static class QueriesCmd extends Common implements Callable<Integer> {
+        @Option(names = "--stdout", description = "Print the queries instead of writing .logast/queries.md")
+        boolean stdout;
+
+        @Override
+        public Integer call() throws IOException {
+            Analysis a = Logast.analyse(root(), classpath(), policy());
+            dev.logast.queries.ServiceSignals s = dev.logast.queries.ServiceSignals.of(a);
+            dev.logast.queries.QueryWriter.Result r = dev.logast.queries.QueryWriter.markdown(s, a.policy.queries());
+            if (stdout) {
+                System.out.print(r.text());
+                return 0;
+            }
+            Path file = root().resolve(".logast/queries.md");
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, r.text());
+            System.out.println("queries: " + r.summary() + " in " + root().relativize(file));
+            r.hints().forEach(h -> Out.warn(h));
             return 0;
         }
     }

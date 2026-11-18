@@ -15,6 +15,7 @@ examples. Output samples are illustrations; counts and ids differ per service an
 | `logast lifecycle <svc>` | every flow's lifecycle lines: which exist, who owns the start and the outcome, what logast will add; implementation families that log unevenly |
 | `logast why <svc> <key>` | why an MDC key is scoped where it is: every method that logs it, the decision (scope, covered, in MDC, no scope, lifted) and the reason |
 | `logast metrics <svc>` | the metrics map: exporters, identity, metric per entrypoint, meters in code, outcomes not counted (`--format json`, `--format table` = meters only) |
+| `logast queries <svc>` | ready-made PromQL, NRQL and Splunk SPL for the service's metrics and logs, written to `.logast/queries.md` (`--stdout` prints them) |
 | `logast vocabulary <svc>` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
 | `logast traffic <svc>` | writes `.logast/traffic.yaml` with every entrypoint, ready to fill in |
 | `logast policy <svc>` | the effective policy after all layers, with overrides |
@@ -250,6 +251,30 @@ Outcomes logged but not counted: …
 
 `--format json` has every entry, with the exact metric and tag values to query. More in the
 [metrics pack](packs/metrics.md#the-metrics-map).
+
+## queries
+
+```
+$ logast queries .
+queries: 30 PromQL, 20 NRQL, 12 SPL in .logast/queries.md
+```
+
+Queries to paste, one code block each, for what the service measures and logs as the code stands (run it after
+`apply`):
+
+- **Prometheus (PromQL) and New Relic (NRQL):**
+  - calls, failure share, average and p95 duration of the HTTP endpoints, scheduled jobs and Kafka listeners that
+    Spring times, with each entrypoint's labels;
+  - the same for every observation (`ObservedContext`, `@Observed`, `Observation`) and timer in code;
+  - every business outcome counter and summary (`Outcomes.count` / `record`, catalogs, Micrometer builders), by
+    `outcome`.
+- **Splunk (SPL):** errors over time, the most frequent errors, exceptions by type, everything one trace logged,
+  everything logged for one business id (each vocabulary MDC key the service uses), the ids with the most errors, and
+  the loggers that write the most. Field names follow `logging.structured.format.console` (ecs, logstash, gelf).
+
+Which backends, the Splunk index and the Prometheus service label come from `queries:` in `logast.yaml`
+([configuration](configuration.md#queries-ready-made-queries)). Without a Splunk index the Splunk part is left out with
+a hint.
 
 ## vocabulary, policy, traffic
 

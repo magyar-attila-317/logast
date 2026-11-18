@@ -292,7 +292,7 @@ class RuleLedgerTest {
         rules.put(rule, new Policy.RuleConfig(false, null));
         return new Policy(p.parents(), p.glossary(), p.mdc(), p.pii(), p.entrypoints(), p.logging(), p.support(), rules,
                 p.vocabulary(), p.areas(), p.phrasing(), p.levels(), p.packs(), p.overrides(), p.verify(), p.metrics(),
-                p.resilience(), p.audit(), p.reporting(), p.warnings());
+                p.resilience(), p.audit(), p.reporting(), p.queries(), p.warnings());
     }
 
     /** {@code // expect-not: RULE} lines of the fixture: the rule must not report that line. */

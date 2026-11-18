@@ -26,3 +26,6 @@ vocabulary:
 metrics:
   defaults: []
   catalog: off
+queries:
+  splunk:
+    index: shop-logs

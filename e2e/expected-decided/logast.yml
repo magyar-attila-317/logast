@@ -25,3 +25,6 @@ vocabulary:
         params: [agreementId]
 metrics:
   defaults: []
+queries:
+  splunk:
+    index: shop-logs
