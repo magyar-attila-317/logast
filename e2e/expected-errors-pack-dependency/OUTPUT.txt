@@ -3,12 +3,11 @@ applied (5): SUP-6dc594 ERT-0d5559 AEL-63267a AEL-bb56e0 CDR-2fa891
 files (5): build.gradle.kts, src/main/java/com/example/e2e/edge/EdgeFlow.java, src/main/java/com/example/e2e/order/PaymentClient.java, src/main/java/com/example/e2e/web/QuoteController.java, src/main/resources/application.yml  ·  3 rounds, <t>
 
 Next steps
-  1. logast classpath .                                  dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
-  2. git diff                                            review the changes
-  3. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  4. logast scan . --format summary                      4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
-  5. check dev.logast:logging-support:0.1.0 resolves     the build now depends on it; or set support.mode: vendor in logast.yaml
-  6. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  1. logast classpath .                                dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
+  2. git diff                                          review the changes
+  3. logast scan . --format summary                    4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
+  4. check dev.logast:logging-support:0.1.0 resolves   the build now depends on it; or set support.mode: vendor in logast.yaml
+  5. logast verify .                                   build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)
 applied (0):
@@ -16,6 +15,5 @@ files (0):   ·  0 rounds, <t>
 nothing to apply without text: the remaining orders need message text (`logast scan .` lists them; fill them via --fills or `logast review .`)
 
 Next steps
-  1. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  2. logast scan . --format summary                      4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
-  3. logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  1. logast scan . --format summary   4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
+  2. logast verify .                  build and run the tests with log capture: does the result really log what it should?

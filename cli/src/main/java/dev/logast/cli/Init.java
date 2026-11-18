@@ -26,7 +26,8 @@ final class Init implements Callable<Integer> {
     Path root;
     @Option(names = "--extends", split = ",", description = "Company/area policy layers to extend (files or URLs)")
     List<String> extendsList = new ArrayList<>();
-    @Option(names = "--pack", split = ",", description = "Rule packs for the policy (default: logging,tracing)")
+    @Option(names = "--pack", split = ",", completionCandidates = Main.PackNames.class,
+            description = "Rule packs for the policy: ${COMPLETION-CANDIDATES} (default: logging,tracing)")
     List<String> packs = new ArrayList<>();
     @Option(names = "--keep-wording", description = "Legacy service: don't rewrite existing message wording")
     boolean keepWording;

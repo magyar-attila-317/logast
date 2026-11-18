@@ -60,6 +60,14 @@ public final class Main {
         p.warnings().stream().filter(WARNED::add).forEach(w -> Out.warn("policy: " + w));
     }
 
+    /** The packs {@code --pack} can select, for its help text: every pack some rule belongs to. */
+    static final class PackNames implements Iterable<String> {
+        @Override
+        public Iterator<String> iterator() {
+            return Rules.packs().iterator();
+        }
+    }
+
     static class Common {
         @Parameters(index = "0", description = "Project root", defaultValue = ".")
         Path root;
@@ -67,7 +75,8 @@ public final class Main {
         Path classpathFile;
         @Option(names = "--policy", description = "Policy YAML (default: <root>/logast.yaml)")
         Path policyFile;
-        @Option(names = "--pack", split = ",", description = "Rule packs to run: logging, tracing, metrics (default: policy packs)")
+        @Option(names = "--pack", split = ",", completionCandidates = PackNames.class,
+                description = "Rule packs to run: ${COMPLETION-CANDIDATES} (default: policy packs)")
         List<String> packs = new ArrayList<>();
         @Option(names = "--traffic", description = "Entrypoint calls/day (YAML 'entrypoints:' or a Prometheus query result; default: <root>/.logast/traffic.*)")
         Path traffic;
