@@ -104,7 +104,25 @@ tasks.test {
         excludeTestsMatching(e2eGolden)
         excludeTestsMatching(e2eShards)
         excludeTestsMatching(privateRun)
+        excludeTestsMatching(corpusRun)
     }
+}
+
+// #9: public Spring Boot services (corpus/corpus.yaml) cloned at pinned commits and migrated; network and minutes per
+// service, so its own task (nightly in CI). -Pcorpus.only=petclinic,… runs a few.
+val corpusRun = "dev.logast.cli.CorpusRun"
+val corpus by tasks.registering(Test::class) {
+    description = "Migrates the public services of corpus/corpus.yaml and checks the migration invariants (#9)"
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform()
+    filter { includeTestsMatching(corpusRun) }
+    systemProperty("logast.corpus.file", rootProject.file("corpus/corpus.yaml").absolutePath)
+    providers.gradleProperty("corpus.only").orNull?.let { systemProperty("logast.corpus.only", it) }
+    outputs.upToDateWhen { false }
+    maxHeapSize = "4g"
+    testLogging { events("passed", "failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }
 
 // #10: the owner's real services, outside git (~/.logast-private/<service>/{before,expected,classpath.txt}); nothing to

@@ -1,0 +1,28 @@
+# #9: public Spring Boot services logast must migrate cleanly (Gradle builds, Spring Boot 3 / 4), each pinned to a
+# commit so a result is reproducible. ./gradlew :cli:corpus (-Pcorpus.only=<name>); nightly in CI (corpus workflow).
+# Picked for their entrypoints: MVC + JPA, @Scheduled, RabbitMQ, JMS, Spring Batch, WebFlux.
+services:
+  - name: petclinic
+    repo: https://github.com/spring-projects/spring-petclinic.git
+    commit: 500158f732419217507c7656904b8e6aa1bcc0d6
+    dir: .
+  - name: scheduling-tasks
+    repo: https://github.com/spring-guides/gs-scheduling-tasks.git
+    commit: f60278baec6aff7d008fc364fc3cfdbadb9fa49b
+    dir: .
+  - name: messaging-rabbitmq
+    repo: https://github.com/spring-guides/gs-messaging-rabbitmq.git
+    commit: df3d3a41db2490bf754a477f68adcf154ec416a0
+    dir: complete
+  - name: batch-processing
+    repo: https://github.com/spring-guides/gs-batch-processing.git
+    commit: 8432843d2be2c50a473541887d5f96f27581d667
+    dir: complete
+  - name: messaging-jms
+    repo: https://github.com/spring-guides/gs-messaging-jms.git
+    commit: a773b2ce163bcd6b0f41350e5b132a5b160baea3
+    dir: complete
+  - name: reactive-rest-service
+    repo: https://github.com/spring-guides/gs-reactive-rest-service.git
+    commit: 8f5ebc87d0838e46999373e7fe4b5217b491be59
+    dir: complete
