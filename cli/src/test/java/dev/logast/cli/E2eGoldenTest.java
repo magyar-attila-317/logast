@@ -3971,6 +3971,43 @@ class E2eGoldenTest {
         return files(app);
     }
 
+    /**
+     * A house-format suffix written without the space after the comma ({@code [pledgeId={},channel={}]}) is house format:
+     * a key logast puts in MDC at the entrypoint is dropped from it, and the rest is written with ", " (user report).
+     */
+    @Test
+    void compactSuffixDropsTheKeyMdcCarries() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path source = app.resolve("src/main/java/com/example/e2e/ticket/TicketController.java");
+            Files.createDirectories(source.getParent());
+            Files.writeString(source, """
+                    package com.example.e2e.ticket;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.web.bind.annotation.PathVariable;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RequestParam;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    class TicketController {
+                        private static final Logger log = LoggerFactory.getLogger(TicketController.class);
+
+                        @PostMapping("/tickets/{pledgeId}/close")
+                        void close(@PathVariable String pledgeId, @RequestParam String channel) {
+                            log.info("Pledge closed [pledgeId={},channel={}]", pledgeId, channel);
+                        }
+                    }
+                    """);
+        });
+        String source = actual.get("src/main/java/com/example/e2e/ticket/TicketController.java");
+        assertThat(source).as("pledgeId is in MDC: it leaves the message, the rest is written with \", \"")
+                .contains("log.info(\"Pledge closed [channel={}]\", channel)")
+                .doesNotContain("pledgeId={}");
+        golden(EXPECTED.resolveSibling("expected-compact-suffix"), actual);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);
