@@ -5,7 +5,8 @@ the log lines can be matched to them.
 
 - **On by default** (`packs: [logging, tracing]`). `--pack tracing` works on its own: it brings the
   [runtime starter](../starter.md) it needs.
-- ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED and SSE_BROADCAST_CONTEXT belong to both the logging and the tracing pack;
+- ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED, SSE_BROADCAST_CONTEXT and REACTIVE_CONTEXT_LOSS belong to both the logging and
+  the tracing pack;
   OBSERVED_ANNOTATION_INACTIVE to both tracing and [metrics](metrics.md) (one order when both run).
 
 Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
@@ -28,6 +29,7 @@ Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
 | TRACE_ID_NOT_LOGGED | medium | a `logback-spring.xml` / `logback.xml` text `<pattern>` without the trace id (`%X{traceId}`, `%correlationId`, `${LOG_CORRELATION_PATTERN}` or Boot's default pattern), or a `logging.pattern.console` / `.file` replacing Boot's pattern without it: Spring Boot adds the correlation id only through its own pattern ([Boot reference, Tracing, Logging Correlation IDs](https://docs.spring.io/spring-boot/reference/actuator/tracing.html)), so the log lines cannot be matched to a trace. Only without the logging pack: there SETUP_LOGBACK_XML replaces the file with structured logging, which writes every MDC value | report: add `%X{traceId:-} %X{spanId:-}` or `${LOG_CORRELATION_PATTERN:-}`, or switch to structured logging |
 | ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED (shared with logging) | high / medium | work handed to another thread (`CompletableFuture.*Async` without an executor, raw executors, parallel streams, `@Async` without the TaskDecorator) and tasks an executor runs periodically: their logs and spans lose the trace | AUTO where a context-propagating wrapper fits (`ContextExecutors.wrap`, `ObservedContext.observed(…)`, the starter's TaskDecorator); report otherwise |
 | SSE_BROADCAST_CONTEXT (shared with logging) | low | `SseEmitter.send` to the emitters of every subscriber held in a field (a loop over it, or a lambda passed to its `forEach` / `removeIf`) with a log line in the loop that does not name the subscriber. `send` writes on the calling thread ([Spring Framework, ResponseBodyEmitter](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/web/servlet/mvc/method/annotation/ResponseBodyEmitter.html)), so the line carries the sender's MDC and trace: there is no executor hop for the TaskDecorator or `ContextExecutors` to carry, and the subscriber's own request observation stays open until its async request ends. The subscriber's context reaches only the `onCompletion` / `onTimeout` / `onError` callbacks registered when it subscribed (ASYNC_CONTEXT_LOSS wraps them). STOMP is not reported: `ChannelInterceptor.preSend` runs on the sending thread before the channel hands the message to its executor, and Spring Boot gives the client inbound and outbound channels its `applicationTaskExecutor`, which the starter's TaskDecorator decorates | report: name the subscriber in the line (the map key, the subscriber's id) or log its outcome in the emitter's callback |
+| REACTIVE_CONTEXT_LOSS (shared with logging) | high | an entrypoint returning a `Mono`/`Flux` (WebFlux controller or router handler, reactive listener) while Reactor restores ThreadLocals only in `handle`/`tap` (the default): log lines in the operators carry no trace id, spans started there lose their parent | AUTO: `spring.reactor.context-propagation: auto` where Spring Boot's ReactorAutoConfiguration is on the classpath (Boot 3.2+; Boot 4: `spring-boot-reactor`, which `spring-boot-starter-webflux` brings), else `Hooks.enableAutomaticContextPropagation()` first in `main`; report when `io.micrometer:context-propagation` is missing, the property is set to something else, or there is no `main` ([Reactive code](#reactive-code)) |
 | RUNTIME_TRACE_LOST (`logast verify`) | high | a test's log line on another thread without the trace id the flow had before | report |
 
 ## Entrypoints Spring does not observe
@@ -82,9 +84,10 @@ More entrypoints, each checked against its framework's documentation:
   method reference or a one-call lambda. Bound are the names in `spring.cloud.function.definition`, else the single
   functional bean. Stream observes each invocation (ObservationFunctionAroundWrapper), so they get MDC and lifecycle
   lines, no wrapper. A lambda with a body of its own has no method to scope and is not seen; a `Supplier` sends.
-- **Functional endpoints** (Spring MVC `RouterFunction`): the handler methods of `route().GET("/x", h::get)`,
-  `path("/p", b -> …)` and `RouterFunctions.route(RequestPredicates.GET("/x"), h::get)` are HTTP entrypoints with their
-  paths, observed like controllers.
+- **Functional endpoints** (Spring MVC and Spring WebFlux `RouterFunction`): the handler methods of
+  `route().GET("/x", h::get)`, `path("/p", b -> …)` and `RouterFunctions.route(RequestPredicates.GET("/x"), h::get)` are
+  HTTP entrypoints with their paths, observed like controllers (Boot reference, Metrics › Spring WebFlux: "all requests
+  handled by Spring WebFlux controllers and functional handlers").
 
 ### `@Observed` and `@NewSpan`
 
@@ -95,9 +98,29 @@ gets an ObservedContext like any other entrypoint.
 
 ### Reactive code
 
-A method returning a `Mono`/`Flux` only assembles a pipeline that runs later, elsewhere: logast puts no MdcScope or
-ObservedContext around it (they would end before the work starts). Use Reactor's automatic context propagation
-(`Hooks.enableAutomaticContextPropagation()` with context-propagation on the classpath) for MDC in reactive code.
+Spring WebFlux controller methods (`@RestController` returning `Mono`/`Flux`) and WebFlux router handlers are HTTP
+entrypoints like their Spring MVC counterparts: WebFlux's server observation times each request (`http.server.requests`)
+and carries its trace, so they get no wrapper. A method returning a `Mono`/`Flux` only assembles a pipeline that runs
+later, on whichever thread emits, so logast edits it only where the edit is right at assembly time:
+
+| in a reactive method | what logast does | why |
+|---|---|---|
+| ObservedContext / MdcScope around the body | never | it would close before the pipeline runs: the operators would run without it |
+| business ids in MDC (MISSING_DOMAIN_MDC) | report | Reactor restores only the ThreadLocals registered in Micrometer's `ContextRegistry`, not arbitrary MDC keys: the note names `Slf4jThreadLocalAccessor` + `contextWrite`, or baggage |
+| entry line (ENTRYPOINT_SILENT) | NEEDS TEXT, at the top of the body | the method runs once per request, inside the request's observation |
+| outcome tag on the running timer (METRIC_OUTCOME_UNMEASURED) | not offered for a line inside an operator | the callback runs on another thread, where the request's timer is not the current observation |
+| `onErrorReturn` / `onErrorComplete` / `onErrorResume` to a fallback without an error type (CATCH_ALL_DEFAULT) | report | every error becomes a value; the request ends as a success and its observation records no error |
+
+The trace follows the pipeline only with Reactor's automatic context propagation (REACTIVE_CONTEXT_LOSS): "the
+automatic mode, enabled via `Hooks.enableAutomaticContextPropagation()` [...] provides access to ThreadLocal values
+throughout the reactive chain", while the default mode restores them only in `handle` and `tap`, and both need
+`io.micrometer:context-propagation` (Reactor reference, Context-Propagation Support). Spring Boot calls the hook for
+`spring.reactor.context-propagation: auto` (default `limited`; Boot reference, Observability › Context Propagation,
+3.5 and 4.1). The property exists since Boot 3.2, and Boot 4 reads it in `spring-boot-reactor`, which
+`spring-boot-starter-webflux` brings but a service with only `spring-webflux` (for `WebClient`) does not; there, and
+on Boot 3.0/3.1, logast calls the hook first in `main` ("this mode applies only to new subscriptions, so it is
+recommended to enable this hook when the application starts"). Micrometer Tracing puts the trace and span ids into
+MDC from the restored observation, so log lines in the operators carry them.
 
 ## What the fixes look like
 

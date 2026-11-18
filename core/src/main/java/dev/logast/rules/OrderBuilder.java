@@ -47,6 +47,7 @@ public final class OrderBuilder {
             Map.entry(Rules.OBSERVED_ANNOTATION_INACTIVE, "OBA"), Map.entry(Rules.SPAN_NOT_CLOSED, "SNC"), Map.entry(Rules.TRACING_EXPORT_UNCONFIGURED, "TEX"),
             Map.entry(Rules.SPAN_NAME_DYNAMIC, "SND"), Map.entry(Rules.TRACE_ID_NOT_LOGGED, "TNL"),
             Map.entry(Rules.SSE_BROADCAST_CONTEXT, "SBC"),
+            Map.entry(Rules.REACTIVE_CONTEXT_LOSS, "RCL"),
             Map.entry(Rules.RUNTIME_TRACE_LOST, "RTL"), Map.entry(Rules.RUNTIME_MDC_LOST, "RML"), Map.entry(Rules.RUNTIME_NULL_VALUE, "RNV"),
             Map.entry(Rules.LOG_IN_LOOP, "LIL"), Map.entry(Rules.LOG_VOLUME, "VOL"),
             Map.entry(Rules.METRIC_NAMING, "MTN"), Map.entry(Rules.METRIC_HIGH_CARDINALITY_TAG, "MTC"),
