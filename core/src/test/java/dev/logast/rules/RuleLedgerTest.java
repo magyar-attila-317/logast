@@ -68,6 +68,7 @@ class RuleLedgerTest {
             // #58 c: project-wide findings, so the near miss is the whole project with the note's remedy applied
             Map.entry(Rules.KAFKA_NO_ERROR_HANDLER, "rules/RemedyTest#kafkaListenerWithACommonErrorHandlerBean"),
             Map.entry(Rules.PROBLEM_DETAILS_DISABLED, "rules/RemedyTest#problemDetailsByPropertyOrByAdvice"),
+            Map.entry(Rules.REQUEST_NOT_VALIDATED, "rules/RemedyTest#requestBodyValidatedWithValid"),
             Map.entry(Rules.SCHEDULED_WITHOUT_LOCK, "rules/RemedyTest#scheduledJobWithALockOrOnASingleInstance"),
             Map.entry(Rules.SCHEDULER_SINGLE_THREAD, "rules/RemedyTest#scheduledJobsWithAPoolOfTheirOwn"),
             Map.entry(Rules.SHUTDOWN_NOT_GRACEFUL, "rules/RemedyTest#gracefulShutdownLongerThanTheWork"),

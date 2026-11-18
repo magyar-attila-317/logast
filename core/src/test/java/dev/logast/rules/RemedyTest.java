@@ -2579,4 +2579,109 @@ class RemedyTest {
                             console: "%d %-5level ${LOG_CORRELATION_PATTERN:-}%logger - %msg%n"
                         """));
     }
+
+    // ---- REQUEST_NOT_VALIDATED / #52 library advice ---------------------------------------------------------------
+
+    private static final Map<String, String> LABEL_REQUEST = Map.of(java("LabelRequest"), """
+            package x;
+
+            import jakarta.validation.constraints.NotBlank;
+
+            public record LabelRequest(@NotBlank String labelCode) {
+            }
+            """);
+
+    private static String labelController(String parameter) {
+        return """
+                package x;
+
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class LabelController {
+                    @PostMapping("/labels")
+                    public String create(%s LabelRequest request) {
+                        return request.labelCode();
+                    }
+                }
+                """.formatted(parameter);
+    }
+
+    @Test
+    void requestBodyValidatedWithValid() throws IOException {
+        Map<String, String> before = with(LABEL_REQUEST, java("LabelController"), labelController("@RequestBody"));
+        fires(Rules.REQUEST_NOT_VALIDATED, before);
+        gone(Rules.REQUEST_NOT_VALIDATED, "@Valid on the parameter", with(before, java("LabelController"),
+                labelController("@jakarta.validation.Valid @RequestBody")));
+        gone(Rules.REQUEST_NOT_VALIDATED, "@Validated on the parameter", with(before, java("LabelController"),
+                labelController("@org.springframework.validation.annotation.Validated @RequestBody")));
+    }
+
+    /** #52: the exception is mapped by a @RestControllerAdvice in a library jar, which the sources do not show. */
+    @Test
+    void exceptionMappedByAnAdviceInALibrary() throws IOException {
+        Map<String, String> before = Map.of(java("LabelController"), """
+                package x;
+
+                import org.platformlib.errors.NotFound;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class LabelController {
+                    @GetMapping("/labels/{labelCode}")
+                    public String label(@PathVariable String labelCode) {
+                        throw new LabelMissing(labelCode);
+                    }
+
+                    static class LabelMissing extends NotFound {
+                        LabelMissing(String labelCode) {
+                            super("no label " + labelCode);
+                        }
+                    }
+                }
+                """);
+        Map<String, String> base = Map.of("org/platformlib/errors/NotFound.java", """
+                package org.platformlib.errors;
+
+                public class NotFound extends RuntimeException {
+                    public NotFound(String message) {
+                        super(message);
+                    }
+                }
+                """);
+        Path without = stubJar(base);
+        assertThat(RuleLedgerTest.mentioned(scan(before, List.of(without)))).as("no handler maps it").contains(Rules.UNMAPPED_EXCEPTION);
+        Files.move(without, dir.resolve("without.jar"));
+        deleteTree(dir.resolve("stubs"));
+        Path with = stubJar(with(base, "org/platformlib/errors/PlatformErrors.java", """
+                package org.platformlib.errors;
+
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ProblemDetail;
+                import org.springframework.web.bind.annotation.ExceptionHandler;
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+                @RestControllerAdvice
+                public class PlatformErrors {
+                    @ExceptionHandler(NotFound.class)
+                    ProblemDetail notFound(NotFound e) {
+                        return ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+                    }
+                }
+                """));
+        assertThat(RuleLedgerTest.mentioned(scan(before, List.of(with)))).as("the library's advice maps it")
+                .doesNotContain(Rules.UNMAPPED_EXCEPTION);
+    }
+
+    private static void deleteTree(Path root) throws IOException {
+        try (java.util.stream.Stream<Path> s = Files.walk(root)) {
+            for (Path p : s.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.delete(p);
+            }
+        }
+    }
 }

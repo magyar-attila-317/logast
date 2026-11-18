@@ -10,6 +10,7 @@ dependencies {
     implementation("org.springframework.data:spring-data-commons")
     implementation("org.springframework:spring-jdbc")      // JdbcTemplate repositories (DB_OUTCOME_UNLOGGED)
     implementation("org.springframework:spring-webflux")   // WebClient without Boot's webclient module
+    implementation("jakarta.validation:jakarta.validation-api")   // constraints on request types, no provider (#91)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

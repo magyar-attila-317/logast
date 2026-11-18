@@ -6,6 +6,7 @@ import dev.logast.model.Entrypoint;
 import dev.logast.model.LogCall;
 import dev.logast.model.MethodInfo;
 import dev.logast.orders.Edit;
+import dev.logast.parse.LibraryAdvice;
 import dev.logast.parse.Pos;
 import dev.logast.parse.SourceFileInfo;
 import org.openrewrite.Cursor;
@@ -29,8 +30,11 @@ import java.util.*;
  *   <li>PROBLEM_DETAILS_DISABLED: Spring MVC errors are not RFC 9457 ProblemDetail responses;</li>
  *   <li>UNEXPECTED_ERROR_UNLOGGED: a catch-all handler answers without logging the exception (no stack trace anywhere);</li>
  *   <li>ERROR_HANDLER_STATUS_OK: a handler whose answer carries no error status (the client gets 200);</li>
- *   <li>TX_COMMITS_ON_CHECKED: a {@code @Transactional} method that throws a checked exception commits by default.</li>
+ *   <li>TX_COMMITS_ON_CHECKED: a {@code @Transactional} method that throws a checked exception commits by default;</li>
+ *   <li>REQUEST_NOT_VALIDATED: a request body / model attribute whose type has Bean Validation constraints, without
+ *       {@code @Valid}: the constraints are never checked.</li>
  * </ul>
+ * Handlers count from the sources and from {@code @ControllerAdvice} classes in libraries on the classpath (#52).
  */
 final class ErrorRules {
     private static final String EXCEPTION_HANDLER = "org.springframework.web.bind.annotation.ExceptionHandler";
@@ -44,6 +48,10 @@ final class ErrorRules {
 
     private final RuleContext ctx;
     private final List<Handler> handlers = new ArrayList<>();
+    /** Exception types handled by global {@code @ControllerAdvice} classes in libraries on the classpath (#52). */
+    private final List<JavaType.FullyQualified> libraryHandled = new ArrayList<>();
+    /** A library advice extends ResponseEntityExceptionHandler: Spring MVC's exceptions get their 4xx ProblemDetail. */
+    private boolean libraryAnswersMvcErrors;
     private final Set<String> clientErrors;
 
     ErrorRules(RuleContext ctx) {
@@ -58,7 +66,7 @@ final class ErrorRules {
         boolean any = ctx.enabled(Rules.ERROR_DETAILS_EXPOSED) || ctx.enabled(Rules.UNMAPPED_EXCEPTION)
                 || ctx.enabled(Rules.CLIENT_ERROR_AS_SERVER_ERROR) || ctx.enabled(Rules.PROBLEM_DETAILS_DISABLED)
                 || ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED) || ctx.enabled(Rules.UNEXPECTED_ERROR_UNLOGGED)
-                || ctx.enabled(Rules.ERROR_HANDLER_STATUS_OK);
+                || ctx.enabled(Rules.ERROR_HANDLER_STATUS_OK) || ctx.enabled(Rules.REQUEST_NOT_VALIDATED);
         if (!any || ctx.a.entrypoints.stream().noneMatch(ep -> ep.kind() == Entrypoint.Kind.HTTP)) {
             return;
         }
@@ -67,12 +75,28 @@ final class ErrorRules {
                 handlers.add(new Handler(m, handledTypes(m)));
             }
         }
+        for (LibraryAdvice advice : ctx.a.project.probe().controllerAdvice()) {
+            if (advice.global() && ctx.a.index.clazz(advice.className()) == null) {   // a source class is read from source
+                advice.handled().forEach(t -> libraryHandled.add(JavaType.ShallowClass.build(t)));
+                libraryAnswersMvcErrors |= REEH.equals(advice.superName());
+            }
+        }
         if (ctx.enabled(Rules.ERROR_DETAILS_EXPOSED)) {
             exposedByConfig();
             handlers.forEach(this::exposedByHandler);
         }
+        List<String[]> validated = new ArrayList<>();
+        List<String[]> unvalidated = new ArrayList<>();
+        requestBodies(validated, unvalidated);
+        Handler validationTo500 = validationAnsweredBy500();
         if (ctx.enabled(Rules.CLIENT_ERROR_AS_SERVER_ERROR)) {
             handlers.forEach(this::clientErrorAs500);
+            if (validationTo500 != null && !validated.isEmpty()) {
+                validationAs500(validationTo500, validated);
+            }
+        }
+        if (ctx.enabled(Rules.REQUEST_NOT_VALIDATED)) {
+            unvalidated.forEach(u -> notValidated(u, validationTo500));
         }
         if (ctx.enabled(Rules.UNEXPECTED_ERROR_UNLOGGED)) {
             handlers.forEach(this::unlogged);
@@ -284,6 +308,171 @@ final class ErrorRules {
                 .context(ctx.context(m, Pos.start(m.decl()), Text.oneLine(text, 160), null));
     }
 
+    // ---- request bodies without @Valid ----------------------------------------------------------
+
+    private static final String REEH = "org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler";
+    private static final List<String> BODY = List.of("org.springframework.web.bind.annotation.RequestBody",
+            "org.springframework.web.bind.annotation.ModelAttribute");
+    private static final List<String> VALID = List.of("jakarta.validation.Valid", "javax.validation.Valid",
+            "org.springframework.validation.annotation.Validated");
+    private static final List<String> CONSTRAINT_PACKAGES = List.of("jakarta.validation.constraints.",
+            "javax.validation.constraints.", "org.hibernate.validator.constraints.");
+    /** The types a handler may name for what a failed {@code @Valid} on a body or model attribute raises. */
+    private static final Set<String> MANVE_TYPES = Set.of("org.springframework.web.bind.MethodArgumentNotValidException",
+            "org.springframework.validation.BindException");
+
+    /**
+     * {@code @RequestBody} / {@code @ModelAttribute} parameters of HTTP entrypoints: {file, line, method label, param,
+     * type} of those with {@code @Valid} / {@code @Validated} (on the method or the interface method it implements:
+     * Spring merges parameter annotations from interfaces), and of those without whose type carries constraints.
+     */
+    private void requestBodies(List<String[]> validated, List<String[]> unvalidated) {
+        Set<String> seen = new HashSet<>();
+        for (Entrypoint ep : ctx.a.entrypoints) {
+            MethodInfo m = ep.method();
+            if (ep.kind() != Entrypoint.Kind.HTTP || !seen.add(m.key())) {
+                continue;
+            }
+            List<MethodInfo> declared = new ArrayList<>(List.of(m));
+            declared.addAll(ctx.a.index.overridden(m));
+            List<Statement> params = m.decl().getParameters();
+            for (int i = 0; i < params.size(); i++) {
+                if (!(params.get(i) instanceof J.VariableDeclarations vd) || vd.getVariables().isEmpty()) {
+                    continue;
+                }
+                List<J.Annotation> annotations = new ArrayList<>();
+                for (MethodInfo d : declared) {
+                    if (d.decl().getParameters().size() == params.size() && d.decl().getParameters().get(i) instanceof J.VariableDeclarations v) {
+                        annotations.addAll(v.getLeadingAnnotations());
+                    }
+                }
+                if (annotations.stream().noneMatch(a -> BODY.stream().anyMatch(b -> Annotations.is(a, b)))) {
+                    continue;
+                }
+                JavaType.FullyQualified type = TypeUtils.asFullyQualified(vd.getType());
+                String[] site = {m.file().relPath(), String.valueOf(Pos.line(vd)), m.label(),
+                        vd.getVariables().getFirst().getSimpleName(), type == null ? "?" : type.getClassName()};
+                if (annotations.stream().anyMatch(a -> VALID.stream().anyMatch(v -> Annotations.is(a, v)))) {
+                    validated.add(site);
+                } else if (type != null && constrained(type.getFullyQualifiedName(), new HashSet<>())) {
+                    unvalidated.add(site);
+                }
+            }
+        }
+    }
+
+    /** A source class with Bean Validation constraints on it, its fields / record components / getters, or a supertype. */
+    private boolean constrained(String fqn, Set<String> visited) {
+        ClassInfo c = ctx.a.index.clazz(fqn);
+        if (c == null || !visited.add(fqn)) {
+            return false;
+        }
+        boolean[] found = {false};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration cd, Integer p) {
+                return cd == c.decl() ? super.visitClassDeclaration(cd, p) : cd;   // nested classes are their own types
+            }
+
+            @Override
+            public J.Annotation visitAnnotation(J.Annotation a, Integer p) {
+                found[0] |= constraint(a);
+                return a;
+            }
+        }.visit(c.decl(), 0, new Cursor(null, Cursor.ROOT_VALUE));
+        return found[0] || ctx.a.index.sourceSupertypes(c).stream().anyMatch(s -> constrained(s.type().getFullyQualifiedName(), visited));
+    }
+
+    /** A built-in constraint, or one of the service's own (an annotation type meta-annotated with @Constraint). */
+    private static boolean constraint(J.Annotation a) {
+        JavaType.FullyQualified t = TypeUtils.asFullyQualified(a.getType());
+        if (t == null || a.getType() instanceof JavaType.Unknown) {
+            return false;
+        }
+        return CONSTRAINT_PACKAGES.stream().anyMatch(p -> t.getFullyQualifiedName().startsWith(p))
+                || t.getAnnotations().stream().anyMatch(m -> m.getFullyQualifiedName().equals("jakarta.validation.Constraint")
+                || m.getFullyQualifiedName().equals("javax.validation.Constraint"));
+    }
+
+    /**
+     * The handler a failed {@code @Valid} ends in when it answers 500: Spring MVC's DefaultHandlerExceptionResolver
+     * answers MethodArgumentNotValidException with 400, but it runs after the {@code @ExceptionHandler} methods
+     * (WebMvcConfigurationSupport: ExceptionHandlerExceptionResolver, then ResponseStatusExceptionResolver, then
+     * DefaultHandlerExceptionResolver), so a catch-all handler for Exception / Throwable takes it first. Null when a
+     * handler names it (or BindException), an advice extends ResponseEntityExceptionHandler, or no catch-all answers 500.
+     */
+    private Handler validationAnsweredBy500() {
+        if (libraryAnswersMvcErrors || libraryHandled.stream().anyMatch(t -> MANVE_TYPES.contains(t.getFullyQualifiedName()))) {
+            return null;
+        }
+        Handler catchAll = null;
+        for (Handler h : handlers) {
+            if (h.types().stream().anyMatch(t -> MANVE_TYPES.contains(t.getFullyQualifiedName()))
+                    || TypeUtils.isAssignableTo(REEH, h.method().owner().type())) {
+                return null;
+            }
+            if (catchAll == null && h.types().stream().anyMatch(t -> t.getFullyQualifiedName().equals("java.lang.Exception")
+                    || t.getFullyQualifiedName().equals("java.lang.Throwable")) && answers500(h.method())) {
+                catchAll = h;
+            }
+        }
+        return catchAll;
+    }
+
+    /** The handler's code answers 500 (comments left out). */
+    private static boolean answers500(MethodInfo m) {
+        String text = m.file().slice(Pos.start(m.decl()), Pos.end(m.decl()))
+                .replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\\n]*", "");
+        return text.contains("INTERNAL_SERVER_ERROR") || text.matches("(?s).*status\\(\\s*500\\s*\\).*") || text.contains("valueOf(500)");
+    }
+
+    /** CLIENT_ERROR_AS_SERVER_ERROR for validation: request bodies are validated, and the catch-all answers their failures 500. */
+    private void validationAs500(Handler h, List<String[]> validated) {
+        MethodInfo m = h.method();
+        if (ctx.ignored(m.file(), m.line(), Rules.CLIENT_ERROR_AS_SERVER_ERROR)) {
+            return;
+        }
+        String[] first = validated.getFirst();
+        ctx.order(Rules.CLIENT_ERROR_AS_SERVER_ERROR, m, m.line(), "validation")
+                .title("Handler for " + names(h.types()) + " also takes the validation failures of " + validated.size()
+                        + " @Valid request bod" + (validated.size() == 1 ? "y" : "ies") + " (e.g. " + first[3] + " in "
+                        + first[2] + ") and answers 500: a client's bad input is reported as a server failure")
+                .suggestion("Map MethodArgumentNotValidException to 400 (an @ExceptionHandler returning a ProblemDetail with "
+                        + "the field errors, or extend ResponseEntityExceptionHandler): @ExceptionHandler methods run before "
+                        + "Spring's default 400 answer.")
+                .doneWhen("an @ExceptionHandler names MethodArgumentNotValidException or BindException, or an advice extends "
+                        + "ResponseEntityExceptionHandler");
+    }
+
+    /**
+     * REQUEST_NOT_VALIDATED (report): Bean Validation runs on a {@code @RequestBody} / {@code @ModelAttribute} only with
+     * {@code @Valid} or {@code @Validated} (Spring Framework reference, Web MVC Validation). Without it the constraints on
+     * the type are decoration: bad input passes and fails deeper, often as a 500. Not applied automatically: adding it
+     * changes which requests are accepted (and what the client gets for a rejected one).
+     */
+    private void notValidated(String[] site, Handler validationTo500) {
+        int line = Integer.parseInt(site[1]);
+        SourceFileInfo f = ctx.a.index.methods().stream().map(MethodInfo::file).filter(x -> x.relPath().equals(site[0]))
+                .findFirst().orElse(null);
+        if (f == null || ctx.ignored(f, line, Rules.REQUEST_NOT_VALIDATED)) {
+            return;
+        }
+        String answer = validationTo500 != null
+                ? " Map MethodArgumentNotValidException to 400 first: the catch-all " + validationTo500.method().label()
+                        + " would answer the rejected requests with 500."
+                : " A rejected request gets 400 (MethodArgumentNotValidException).";
+        boolean provider = ctx.a.project.probe().hasClass("org.hibernate.validator.HibernateValidator")
+                || ctx.a.project.probe().hasClass("org.apache.bval.jsr.ApacheValidationProvider");
+        String noProvider = provider ? "" : " No Bean Validation provider is on the classpath (spring-boot-starter-validation): "
+                + "without one, @Valid checks nothing either.";
+        ctx.order(Rules.REQUEST_NOT_VALIDATED, "not-validated|" + site[2] + "|" + site[3]).at(site[0], line)
+                .title(site[2] + " takes " + site[3] + " (" + site[4] + ", with Bean Validation constraints) without @Valid: "
+                        + "the constraints are never checked, bad input passes into the service")
+                .suggestion("Decide whether the constraints apply: @Valid on the parameter rejects invalid requests before "
+                        + "the method runs. Not applied automatically: it changes which requests are accepted." + answer + noProvider)
+                .doneWhen("the parameter (or the interface method's) has @Valid or @Validated, or its type has no constraints");
+    }
+
     // ---- unexpected errors nobody logs ------------------------------------------------------------
 
     /** Catch-all types: what a handler for "anything else" names. */
@@ -378,6 +567,9 @@ final class ErrorRules {
         }
         JavaType rt = d.getReturnTypeExpression() == null ? null : d.getReturnTypeExpression().getType();
         JavaType.FullyQualified type = TypeUtils.asFullyQualified(rt);
+        if (statuslessProblem(h)) {
+            return;
+        }
         if (type == null || type instanceof JavaType.Unknown || STATUS_CARRIERS.stream().anyMatch(c -> TypeUtils.isAssignableTo(c, type))) {
             return;   // void (view name / handled response) or a value that carries its status
         }
@@ -404,6 +596,78 @@ final class ErrorRules {
                         + "or a ProblemDetail.forStatus(…) (its status becomes the HTTP status).")
                 .doneWhen("the handler (or its class) has @ResponseStatus, writes the response itself, or returns a "
                         + "ProblemDetail, an ErrorResponse or a ResponseEntity with an error status");
+    }
+
+    /**
+     * ERROR_HANDLER_STATUS_OK for a ProblemDetail subclass built without a status: its no-arg constructor leaves the
+     * status 0, and Spring builds the response with {@code ResponseEntity.of(detail)} ("The status property of
+     * ProblemDetail determines the HTTP status"), which rejects 0 ({@code HttpStatusCode.valueOf}: "should be a
+     * three-digit positive integer"). The handler fails, ExceptionHandlerExceptionResolver logs "Failure in
+     * {@code @ExceptionHandler}" and continues with the original exception: the client gets the default answer
+     * (usually 500) instead of this body. True when reported (or suppressed).
+     */
+    private boolean statuslessProblem(Handler h) {
+        MethodInfo m = h.method();
+        String handlerCode = m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
+        if (handlerCode.contains("setStatus(")) {
+            return false;
+        }
+        J.NewClass[] hit = {null};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.NewClass visitNewClass(J.NewClass nc, Integer p) {
+                JavaType.FullyQualified t = TypeUtils.asFullyQualified(nc.getType());
+                if (hit[0] == null && t != null && !t.getFullyQualifiedName().equals("org.springframework.http.ProblemDetail")
+                        && TypeUtils.isAssignableTo("org.springframework.http.ProblemDetail", t) && nc.getBody() == null
+                        && ctx.a.index.clazz(t.getFullyQualifiedName()) != null && !setsStatus(nc)) {
+                    hit[0] = nc;
+                }
+                return super.visitNewClass(nc, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        if (hit[0] == null) {
+            return false;
+        }
+        int line = Pos.line(hit[0]);
+        if (ctx.ignored(m.file(), line, Rules.ERROR_HANDLER_STATUS_OK)) {
+            return true;
+        }
+        String cls = TypeUtils.asFullyQualified(hit[0].getType()).getClassName();
+        ctx.order(Rules.ERROR_HANDLER_STATUS_OK, m, line, "status-missing")
+                .title("Handler for " + names(h.types()) + " returns " + cls + ", a ProblemDetail built without a status: Spring "
+                        + "cannot answer status 0, the handler fails and the client gets the default answer (usually 500) "
+                        + "instead of this body")
+                .suggestion("Give it a status: super(HttpStatus.….value()) in " + cls + "'s constructor, or setStatus(…) before "
+                        + "returning it (its status becomes the HTTP status).")
+                .doneWhen("the constructor passes a status to ProblemDetail (super(status) or this(…)), or the class or the "
+                        + "handler calls setStatus")
+                .context(ctx.context(m, Pos.start(hit[0]), Text.oneLine(hit[0].printTrimmed(), 160), null));
+        return true;
+    }
+
+    /**
+     * The ProblemDetail subclass's constructor called here passes a status on: {@code super(…)} with arguments or
+     * {@code this(…)} in it, or {@code setStatus} anywhere in the class (field / initializer / constructor).
+     */
+    private boolean setsStatus(J.NewClass nc) {
+        JavaType.FullyQualified t = TypeUtils.asFullyQualified(nc.getType());
+        ClassInfo c = ctx.a.index.clazz(t.getFullyQualifiedName());
+        String classCode = c.file().slice(Pos.start(c.decl()), Pos.end(c.decl()));
+        if (classCode.contains("setStatus(")) {
+            return true;
+        }
+        List<MethodInfo> ctors = nc.getConstructorType() == null ? List.of() : ctx.a.index.resolve(nc.getConstructorType());
+        for (MethodInfo ctor : ctors) {
+            if (ctor.decl().getBody() == null) {
+                continue;
+            }
+            String code = ctor.file().slice(Pos.start(ctor.decl().getBody()), Pos.end(ctor.decl().getBody()))
+                    .replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\\n]*", "");
+            if (code.matches("(?s).*\\bthis\\s*\\(.*") || code.matches("(?s).*\\bsuper\\s*\\(\\s*[^)\\s].*")) {
+                return true;
+            }
+        }
+        return false;   // the implicit constructor, or one that calls super() without a status
     }
 
     /** The handler writes its return value as the body: @ResponseBody on it or its class (@RestController / @RestControllerAdvice). */
@@ -536,8 +800,8 @@ final class ErrorRules {
             if (mapped(x)) {
                 return;
             }
-            boolean catchAll = handlers.stream().anyMatch(h -> h.types().stream().anyMatch(t -> GENERIC.contains(t.getFullyQualifiedName())
-                    && TypeUtils.isAssignableTo(t.getFullyQualifiedName(), x)));
+            boolean catchAll = allHandled().anyMatch(t -> GENERIC.contains(t.getFullyQualifiedName())
+                    && TypeUtils.isAssignableTo(t.getFullyQualifiedName(), x));
             ClassInfo c = ctx.a.index.clazz(fqn);
             int line = Pos.line(c.decl());
             if (ctx.ignored(c.file(), line, Rules.UNMAPPED_EXCEPTION)) {
@@ -561,8 +825,9 @@ final class ErrorRules {
      * timeouts), Feign clients FeignException.
      */
     private enum Downstream {
-        SPRING("RestClient / RestTemplate", "RestClientException", List.of("org.springframework.web.client.",
-                "org.springframework.web.reactive.function.client.")),
+        SPRING("RestClient / RestTemplate", "RestClientException", List.of("org.springframework.web.client.")),
+        /** WebClient blocked on: WebClientResponseException (error status), WebClientRequestException (I/O, timeouts). */
+        WEBCLIENT("WebClient", "WebClientException", List.of("org.springframework.web.reactive.function.client.")),
         FEIGN("Feign client", "FeignException", List.of("feign."));
 
         final String clients;
@@ -595,6 +860,8 @@ final class ErrorRules {
     private static final Set<String> REST_OPERATIONS = Set.of("getForObject", "getForEntity", "headForHeaders", "postForLocation",
             "postForObject", "postForEntity", "put", "patchForObject", "delete", "optionsForAllow", "exchange", "execute");
 
+    private static final Set<String> BLOCK = Set.of("block", "blockOptional", "blockFirst", "blockLast");
+
     /** The call goes out to another service: which client family's exceptions it throws, else null. */
     private Downstream downstream(J.MethodInvocation mi) {
         JavaType.Method t = mi.getMethodType();
@@ -602,6 +869,16 @@ final class ErrorRules {
             return null;
         }
         String fqn = t.getDeclaringType().getFullyQualifiedName();
+        if (BLOCK.contains(t.getName()) && (fqn.equals("reactor.core.publisher.Mono") || fqn.equals("reactor.core.publisher.Flux"))) {
+            // webClient.get()…retrieve().bodyToMono(X.class).block(): the request runs (and fails) in block()
+            for (Expression s = mi.getSelect(); s instanceof J.MethodInvocation in; s = in.getSelect()) {
+                if (in.getMethodType() != null && in.getMethodType().getDeclaringType() != null && in.getMethodType().getDeclaringType()
+                        .getFullyQualifiedName().startsWith("org.springframework.web.reactive.function.client.WebClient")) {
+                    return Downstream.WEBCLIENT;
+                }
+            }
+            return null;
+        }
         if (fqn.equals("org.springframework.web.client.RestClient$ResponseSpec")
                 || fqn.startsWith("org.springframework.web.client.RestClient$") && t.getName().startsWith("exchange")
                 || TypeUtils.isAssignableTo(SPRING_CLIENTS.getFirst(), t.getDeclaringType()) && REST_OPERATIONS.contains(t.getName())) {
@@ -633,10 +910,10 @@ final class ErrorRules {
      * passed on deliberately. Report: the mapping is a decision.
      */
     private void downstreamUnmapped(Downstream family, List<String[]> sites) {
-        if (handlers.stream().anyMatch(h -> h.types().stream().anyMatch(family::names))) {
+        if (allHandled().anyMatch(family::names)) {
             return;
         }
-        boolean catchAll = handlers.stream().anyMatch(h -> h.types().stream().anyMatch(t -> GENERIC.contains(t.getFullyQualifiedName())));
+        boolean catchAll = allHandled().anyMatch(t -> GENERIC.contains(t.getFullyQualifiedName()));
         String[] first = sites.getFirst();
         int line = Integer.parseInt(first[1]);
         SourceFileInfo f = ctx.a.index.methods().stream().map(MethodInfo::file).filter(x -> x.relPath().equals(first[0]))
@@ -679,8 +956,13 @@ final class ErrorRules {
                 || TypeUtils.isAssignableTo("org.springframework.web.server.ResponseStatusException", x) || clientError(x)) {
             return true;
         }
-        return handlers.stream().anyMatch(h -> h.types().stream().anyMatch(t -> !GENERIC.contains(t.getFullyQualifiedName())
-                && TypeUtils.isAssignableTo(t.getFullyQualifiedName(), x)));
+        return allHandled().anyMatch(t -> !GENERIC.contains(t.getFullyQualifiedName())
+                && TypeUtils.isAssignableTo(t.getFullyQualifiedName(), x));
+    }
+
+    /** The exception types every handler names: the sources' and the library advice's (#52). */
+    private java.util.stream.Stream<JavaType.FullyQualified> allHandled() {
+        return java.util.stream.Stream.concat(handlers.stream().flatMap(h -> h.types().stream()), libraryHandled.stream());
     }
 
     /** Thrown inside a try whose catch handles it right there (not from its catch or finally blocks: those propagate). */
@@ -709,9 +991,12 @@ final class ErrorRules {
             return;
         }
         for (ClassInfo c : ctx.a.index.classes()) {
-            if (TypeUtils.isAssignableTo("org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler", c.type())) {
+            if (TypeUtils.isAssignableTo(REEH, c.type())) {
                 return; // the advice already answers framework errors with ProblemDetail
             }
+        }
+        if (libraryAnswersMvcErrors) {
+            return; // so does a library's (#52)
         }
         ctx.order(Rules.PROBLEM_DETAILS_DISABLED, "problemdetails").at(ServiceYaml.path(ctx), 1)
                 .title("Spring MVC errors (400 bad input, 405, 415, ...) are not RFC 9457 ProblemDetail responses: "

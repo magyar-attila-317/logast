@@ -12,6 +12,7 @@ import java.util.zip.ZipFile;
 public final class ClasspathProbe {
     private final List<Path> classpath;
     private final Map<String, Boolean> cache = new HashMap<>();
+    private List<LibraryAdvice> advice;
 
     public ClasspathProbe(List<Path> classpath) {
         this.classpath = classpath;
@@ -19,6 +20,14 @@ public final class ClasspathProbe {
 
     public boolean hasClass(String fqn) {
         return cache.computeIfAbsent(fqn, this::lookup);
+    }
+
+    /** {@code @ControllerAdvice} classes in libraries on the classpath (#52), read once per probe. */
+    public synchronized List<LibraryAdvice> controllerAdvice() {
+        if (advice == null) {
+            advice = LibraryAdvice.scan(classpath);
+        }
+        return advice;
     }
 
     private boolean lookup(String fqn) {
