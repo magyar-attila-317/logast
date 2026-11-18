@@ -88,7 +88,7 @@ src/main/java/com/example/e2e/web/PledgeDetailsController.java:31     checked  n
 src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    MESSAGE_SUGGESTED SUG-08dd18
 # fixed lines are kept while their file is unchanged:
 # src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java 6c411c967e0a
-# src/main/java/com/example/e2e/pledge/PledgeLookup.java 8d65871cb174
+# src/main/java/com/example/e2e/pledge/PledgeLookup.java 83c7b9418069
 # src/main/java/com/example/e2e/pledge/PledgeReloadJob.java 250b497b1a18
 # src/main/java/com/example/e2e/pledge/PledgeRepository.java 9c165e7fbd31
 # src/main/java/com/example/e2e/pledge/PledgeSender.java 92ebf110e726

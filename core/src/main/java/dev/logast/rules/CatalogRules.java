@@ -221,6 +221,10 @@ final class CatalogRules {
             return null;
         }
         List<Expression> args = args(mi);
+        // #25: Outcomes.tag("skipped") tags the running timer: the outcome value moves into the catalog too
+        if (mi.getSimpleName().equals("tag") && args.size() == 1 && literal(args.getFirst()) != null) {
+            return new Key("tag", "", literal(args.getFirst()), "");
+        }
         String n = args.size() >= 2 ? literal(args.get(0)) : null;
         String o = args.size() >= 2 ? literal(args.get(1)) : null;
         if (n == null || o == null) {
@@ -288,6 +292,8 @@ final class CatalogRules {
         String base;
         if (k.kind().equals("name")) {
             base = String.join("_", words(k.name())).toUpperCase(Locale.ROOT);
+        } else if (k.kind().equals("tag")) {
+            base = "tag" + capitalize(camel(words(k.outcome())));
         } else {
             base = camel(words(k.name() + "." + k.outcome()));
             // the same outcome with another amount: a second method with the same parameter list needs its own name
@@ -317,6 +323,12 @@ final class CatalogRules {
         if (k.kind().equals("name")) {
             return "\n    /** Observation (timer and span) name. */\n"
                     + "    public static final String " + member + " = " + Text.javaString(k.name()) + ";\n";
+        }
+        if (k.kind().equals("tag")) {
+            return "\n    /** outcome=\"" + k.outcome() + "\" on the timer already running (same thread). */\n"
+                    + "    public static void " + member + "() {\n"
+                    + "        Outcomes.tag(" + Text.javaString(k.outcome()) + ");\n"
+                    + "    }\n";
         }
         String meter = k.name() + "{outcome=\"" + k.outcome() + "\"}";
         if (k.amount().isEmpty()) {

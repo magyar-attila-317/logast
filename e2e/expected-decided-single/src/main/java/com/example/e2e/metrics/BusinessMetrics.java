@@ -24,9 +24,9 @@ public final class BusinessMetrics {
     /** Observation (timer and span) name. */
     public static final String ORDER_NOTIFICATIONS = "order.notifications";
 
-    /** pledge.lookup{outcome="failed"} +1. */
-    public static void pledgeLookupFailed() {
-        Outcomes.count("pledge.lookup", "failed");
+    /** outcome="failed" on the timer already running (same thread). */
+    public static void tagFailed() {
+        Outcomes.tag("failed");
     }
 
     /** pledges{outcome="updated"} +1; rows is one sample of the distribution pledges.rows{outcome="updated"}. */

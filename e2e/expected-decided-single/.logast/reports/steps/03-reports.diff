@@ -58,7 +58,7 @@ index c2e743a..2c92597 100644
              }
          }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-index e2c3a76..e72e5be 100644
+index e2c3a76..a5e5ece 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 @@ -1,5 +1,6 @@ 
@@ -72,7 +72,7 @@ index e2c3a76..e72e5be 100644
              return load(pledgeId);
          } catch (IllegalStateException e) {
              log.warn("Pledge lookup failed", e);
-+            BusinessMetrics.pledgeLookupFailed();
++            BusinessMetrics.tagFailed();
              throw new PledgeMissing(pledgeId, e);
          }
      }
@@ -258,7 +258,7 @@ index 2edc8f7..4b7869f 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/metrics/BusinessMetrics.java b/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
-index 51a077b..aeb0533 100644
+index 51a077b..fb5d683 100644
 --- a/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
 +++ b/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
 @@ -1,5 +1,7 @@ 
@@ -274,9 +274,9 @@ index 51a077b..aeb0533 100644
      /** Observation (timer and span) name. */
      public static final String ORDER_NOTIFICATIONS = "order.notifications";
 +
-+    /** pledge.lookup{outcome="failed"} +1. */
-+    public static void pledgeLookupFailed() {
-+        Outcomes.count("pledge.lookup", "failed");
++    /** outcome="failed" on the timer already running (same thread). */
++    public static void tagFailed() {
++        Outcomes.tag("failed");
 +    }
 +
 +    /** pledges{outcome="updated"} +1; rows is one sample of the distribution pledges.rows{outcome="updated"}. */
