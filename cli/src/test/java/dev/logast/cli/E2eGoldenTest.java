@@ -100,6 +100,36 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #117: the first apply adds dependencies (the OpenTelemetry starter, logging-support) whose types setup decisions
+     * depend on (service identity's OTel attributes and meter tags, the support classes that need Micrometer). Before
+     * the classpath logast reads has them, those decisions come out one apply late. When apply refreshed the classpath
+     * itself, it runs one more round with it: a second apply changes nothing. The refresh is a stand-in gradlew that
+     * writes the full classpath (no Gradle run in the test); the service starts without Micrometer and OpenTelemetry.
+     */
+    @Test
+    void anApplyThatAddsDependenciesSettlesWithTheRefreshedClasspath() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        List<String> full = Files.readAllLines(Path.of(CLASSPATH));
+        Path cp = app.resolve(".logast/classpath-main.txt");
+        Files.createDirectories(cp.getParent());
+        Files.write(cp, full.stream().filter(l -> !l.contains("micrometer") && !l.contains("opentelemetry")).toList());
+        Path fullCp = tmp.resolve("full-classpath.txt");
+        Files.write(fullCp, full);
+        Path gradlew = app.resolve("gradlew");
+        Files.writeString(gradlew, "#!/bin/sh\ncp '" + fullCp + "' .logast/classpath-main.txt\n");
+        assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+
+        String first = run(app, "apply", app.toString(), "--auto", "--write");
+        assertThat(first.split("\napplied \\(", -1).length - 1 + (first.startsWith("applied (") ? 1 : 0))
+                .as("the dependencies changed and the classpath refreshed: one more round, with what the new types allow\n" + first)
+                .isEqualTo(2);
+        assertThat(STDERR.toString()).contains("one more round with the refreshed classpath");
+        String second = run(app, "apply", app.toString(), "--auto", "--write");
+        assertThat(second).as("settled in that one apply").contains("applied (0):");
+    }
+
+    /**
      * #112: the whole e2e service with logging.keyStyle: dotted keeps every invariant (one pass, a second apply changes
      * nothing, no CHECK FAILED, compiles): a value MDC carries under run.code leaves a [runCode={}] / [run.code={}]
      * suffix like it does under camel (the key names the Java value runCode). Every file must equal

@@ -329,6 +329,11 @@ public final class Main {
         boolean write;
         @Option(names = "--format", defaultValue = "text", description = "text | json")
         String format;
+        /** #117: set on the round apply runs itself after refreshing the classpath (once). */
+        @Option(names = "--refreshed", hidden = true)
+        boolean refreshed;
+        @CommandLine.Spec
+        CommandLine.Model.CommandSpec spec;
 
         @Override
         public Integer call() throws IOException {
@@ -454,6 +459,15 @@ public final class Main {
                 }
                 if (cpr.exitCode() == 0) {
                     Out.progress("classpath refreshed (" + cpr.entries() + " entries)");
+                    if (!refreshed && classpathFile == null && !format.equals("json")) {
+                        // #117: the new dependencies bring types (OpenTelemetry, Micrometer, …) that setup decisions depend
+                        // on; another round with the refreshed classpath settles them now, not on the next apply
+                        Out.progress("the new dependencies bring new types: one more round with the refreshed classpath");
+                        List<String> again = new ArrayList<>(spec.commandLine().getParseResult().originalArgs());   // "apply", …
+                        again.add("--refreshed");
+                        int rc = new CommandLine(new Main()).execute(again.toArray(String[]::new));
+                        return r.rejected().isEmpty() ? rc : 1;
+                    }
                 } else {
                     also.add(new dev.logast.Todo.Item("logast classpath .", "dependencies changed and Gradle failed (exit " + cpr.exitCode()
                             + "): fix the build, then refresh the classpath"));
