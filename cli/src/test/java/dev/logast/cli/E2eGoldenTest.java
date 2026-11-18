@@ -2371,6 +2371,166 @@ class E2eGoldenTest {
     }
 
     /**
+     * #19: opting in to more spans is {@code @Observed} on the method. A service method below a controller and an
+     * {@code @EventListener} running inside the publisher's flow, each {@code @Observed(name = ...)}; a listener for an
+     * event published outside the sources with it, and one without it (which gets its business timer, as before).
+     */
+    private static final IoAction BERTH_OPT_IN_SPANS = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/berth");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("BerthReleased.java"), """
+                package com.example.e2e.berth;
+
+                public record BerthReleased(String berthCode) {
+                }
+                """);
+        // published by code outside this service's sources (a message bridge): its listeners run in no observed flow
+        Files.writeString(dir.resolve("BerthInspected.java"), """
+                package com.example.e2e.berth;
+
+                public record BerthInspected(String berthCode) {
+                }
+                """);
+        Files.writeString(dir.resolve("BerthController.java"), """
+                package com.example.e2e.berth;
+
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class BerthController {
+                    private final BerthService service;
+
+                    BerthController(BerthService service) {
+                        this.service = service;
+                    }
+
+                    @PostMapping("/berths/{berthCode}/release")
+                    void release(@PathVariable String berthCode) {
+                        service.release(berthCode);
+                    }
+
+                    @PostMapping("/berths/{berthCode}/assign")
+                    void assign(@PathVariable String berthCode) {
+                        service.assign(berthCode);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("BerthService.java"), """
+                package com.example.e2e.berth;
+
+                import io.micrometer.observation.annotation.Observed;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.context.ApplicationEventPublisher;
+                import org.springframework.stereotype.Service;
+
+                @Service
+                class BerthService {
+                    private static final Logger log = LoggerFactory.getLogger(BerthService.class);
+                    private final ApplicationEventPublisher events;
+
+                    BerthService(ApplicationEventPublisher events) {
+                        this.events = events;
+                    }
+
+                    @Observed(name = "berth.release")
+                    public void release(String berthCode) {
+                        log.info("Berth released");
+                        events.publishEvent(new BerthReleased(berthCode));
+                    }
+
+                    public void assign(String berthCode) {
+                        log.info("Berth assigned");
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("BerthLedger.java"), """
+                package com.example.e2e.berth;
+
+                import io.micrometer.observation.annotation.Observed;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.context.event.EventListener;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                class BerthLedger {
+                    private static final Logger log = LoggerFactory.getLogger(BerthLedger.class);
+
+                    @EventListener
+                    @Observed(name = "berth.ledger-entry")
+                    public void onReleased(BerthReleased event) {
+                        log.info("Ledger sync started");
+                        log.info("Ledger sync completed");
+                    }
+
+                    @EventListener
+                    @Observed(name = "berth.inspection")
+                    public void onInspected(BerthInspected event) {
+                        log.info("Inspection sync started");
+                        log.info("Inspection sync completed");
+                    }
+
+                    @EventListener
+                    public void onInspectedNotify(BerthInspected event) {
+                        log.info("Notice sync started");
+                        log.info("Notice sync completed");
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #19: per-method spans are opted in with {@code @Observed(name = ...)}, nothing new. logast makes Spring Boot process
+     * the annotation (OBSERVED_ANNOTATION_INACTIVE: property and AspectJ starter), and then counts the annotated service
+     * method and event listener as observed: no ObservedContext around them (ENTRYPOINT_NOT_OBSERVED, alreadyObserved) and
+     * no second business timer (BUSINESS_EVENT_UNMEASURED), and no counter for the "completed" its observation already
+     * counts (METRIC_OUTCOME_UNMEASURED missed the annotation and added one); a constant name is no dynamic span name
+     * (SPAN_NAME_DYNAMIC).
+     * The same with the tracing pack alone. Every file must equal e2e/expected-opt-in-spans.
+     */
+    @Test
+    void observedOptsMethodsInToSpansWithoutASecondObservation() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, BERTH_OPT_IN_SPANS);
+        assertThat(actual.get("src/main/resources/application.yml")).as("annotations switched on")
+                .contains("observations:\n    annotations:\n      enabled: true");
+        assertThat(actual.get("build.gradle.kts")).contains("implementation(\"org.springframework.boot:spring-boot-starter-aspectj\")");
+        String service = actual.get("src/main/java/com/example/e2e/berth/BerthService.java");
+        String ledger = actual.get("src/main/java/com/example/e2e/berth/BerthLedger.java");
+        assertThat(between(service, "public void release", "public void assign")).as("@Observed method: no second observation")
+                .doesNotContain("ObservedContext");
+        assertThat(between(ledger, "public void onReleased(", "public void onInspectedNotify")).as("@Observed listeners: no second observation")
+                .doesNotContain("ObservedContext")
+                .as("nor a counter for the completion their observation counts").doesNotContain("BerthMetrics.");
+        assertThat(ledger.substring(ledger.indexOf("public void onInspectedNotify"))).as("the listener without it gets its business timer")
+                .contains("ObservedContext.entrypoint(");
+        String findings = actual.get("FINDINGS.txt");
+        assertThat(findings).as("constant names are not dynamic").doesNotContainPattern("SPAN_NAME_DYNAMIC .*/berth/");
+        assertThat(findings).as("their observation counts the completion: no outcome gap")
+                .doesNotContain("BerthLedger.onReleased\n").doesNotContain("BerthLedger.onInspected\n");
+        golden(EXPECTED.resolveSibling("expected-opt-in-spans"), actual);
+
+        Map<String, String> alone = migrate(tmp.resolve("tracing-only"), CLASSPATH, withPacks(BERTH_OPT_IN_SPANS, "[tracing]", ""));
+        assertThat(alone.get("src/main/resources/application.yml")).contains("observations:\n    annotations:\n      enabled: true");
+        assertThat(alone.get("build.gradle.kts")).contains("spring-boot-starter-aspectj");
+        assertThat(between(alone.get("src/main/java/com/example/e2e/berth/BerthService.java"), "public void release", "public void assign"))
+                .doesNotContain("ObservedContext");
+        assertThat(between(alone.get("src/main/java/com/example/e2e/berth/BerthLedger.java"), "public void onReleased(", "public void onInspectedNotify"))
+                .doesNotContain("ObservedContext");
+        assertThat(alone.get("FINDINGS.txt")).doesNotContainPattern("SPAN_NAME_DYNAMIC .*/berth/");
+    }
+
+    private static String between(String text, String from, String to) {
+        int start = text.indexOf(from);
+        int end = text.indexOf(to, start);
+        assertThat(start).as(from).isNotNegative();
+        assertThat(end).as(to).isPositive();
+        return text.substring(start, end);
+    }
+
+    /**
      * #89: the tracing pack alone (snapshot e2e/expected-tracing-depth). An observation or span name built from an id,
      * and an id as a low-cardinality key value, give one timer series and span name per value (SPAN_NAME_DYNAMIC); a name
      * from a bounded value and an id as a high-cardinality key value do not. The console pattern of logback-spring.xml has

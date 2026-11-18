@@ -109,7 +109,7 @@
   "SUG-f4a8e0" : {
     "MSG" : "",
     "_MSG" : "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Stock tracker completed | must read as: {subject} completed",
-    "_where" : "src/main/java/com/example/e2e/stock/StockTracker.java:28 StockTracker.onPicked"
+    "_where" : "src/main/java/com/example/e2e/stock/StockTracker.java:27 StockTracker.onPicked"
   },
   "SUG-08dd18" : {
     "MSG" : "",

@@ -19,7 +19,6 @@ class StockTracker {
     void warmUp() {
         picked.clear();
         log.info("Stock tracker completed"); // logast:wording
-        StockMetrics.stockTrackerCompleted(); // logast:metric review, confidence: low
     }
 
     @EventListener

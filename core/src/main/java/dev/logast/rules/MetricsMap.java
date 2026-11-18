@@ -129,7 +129,17 @@ public final class MetricsMap {
     private MetricsMap() {
     }
 
+    /** The map as the service stands: {@code @Observed} counts while the property is set and aspectjweaver is on the classpath. */
     public static Map of(Analysis a) {
+        return of(a, "true".equals(a.springProperties.get("management.observations.annotations.enabled"))
+                && a.project.probe().hasClass("org.aspectj.weaver.Advice"));
+    }
+
+    /**
+     * @param observedAnnotationsActive whether Spring Boot processes {@code @Observed} (or an order of this scan makes it
+     *                                  do so): only then is an annotated method timed and counted by its observation
+     */
+    public static Map of(Analysis a, boolean observedAnnotationsActive) {
         Phrasing phrasing = new Phrasing(a.policy);
         List<String> exporters = new ArrayList<>(new LinkedHashSet<>(EXPORTERS.entrySet().stream()
                 .filter(e -> a.project.probe().hasClass(e.getKey())).map(java.util.Map.Entry::getValue).toList()));
@@ -185,6 +195,16 @@ public final class MetricsMap {
             }
         }
 
+        // @Observed methods (#19): their observation times and counts every call, with the error, like an observed entrypoint.
+        // MeterCatalog records the annotation's line, which hasMeter (from the method name down) never reaches
+        if (observedAnnotationsActive) {
+            for (MethodInfo m : a.index.methods()) {
+                if (!m.owner().fqn().startsWith(a.supportPackage + ".") && TracingRules.observedAnnotation(m, false)) {
+                    observedMethods.add(m.key());
+                }
+            }
+        }
+
         List<String> repositories = a.index.classes().stream()
                 .filter(c -> c.type() != null && TypeUtils.isAssignableTo("org.springframework.data.repository.Repository", c.type())
                         && c.decl().getKind() == J.ClassDeclaration.Kind.Type.Interface)
@@ -227,7 +247,7 @@ public final class MetricsMap {
                 if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(a, m, lc, catalogs)) {
                     continue;
                 }
-                // a plain "completed"/"failed" of an entrypoint the framework or a wrapper times is in its timer already
+                // a plain "completed"/"failed" of an entrypoint the framework or a wrapper times, or of an @Observed method, is in its timer already
                 if ((event.equals("completed") || event.equals("failed")) && observedMethods.contains(m.key())) {
                     continue;
                 }

@@ -222,17 +222,10 @@ index 64835f7..6948134 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/stock/StockTracker.java b/src/main/java/com/example/e2e/stock/StockTracker.java
-index 2e9c6f4..a41c5a0 100644
+index 2e9c6f4..0ef6e27 100644
 --- a/src/main/java/com/example/e2e/stock/StockTracker.java
 +++ b/src/main/java/com/example/e2e/stock/StockTracker.java
-@@ -19,12 +19,14 @@ 
-     void warmUp() {
-         picked.clear();
-         log.info("Stock tracker completed"); // logast:wording
-+        StockMetrics.stockTrackerCompleted(); // logast:metric review, confidence: low
-     }
- 
-     @EventListener
+@@ -25,6 +25,7 @@ 
      void onPicked(StockPicked event) {
          picked.add(event.stockCode());
          log.info("Stock tracker completed"); // logast:wording
