@@ -4,28 +4,28 @@
 without asking each team to remember the rules.**
 
 logast reads a service's source with full type resolution, follows the call graph from every entrypoint (HTTP
-endpoints, schedulers, listeners, batch runners) and finds where logging, MDC context, tracing and metrics fall
-short of your standard. Each finding is a **work order**: a concrete, pre-decided code change. Most apply
-automatically. Where a message has to be worded, a human or an LLM writes **one line of text**, and logast
-checks it against your vocabulary and phrasing rules before writing anything.
+endpoints, schedulers, listeners, batch runners) and finds where logging, MDC context, tracing and metrics fall short
+of your standard. Each finding is a **work order**: a concrete, pre-decided code change. Most apply automatically.
+Where a message has to be worded, a person or an LLM writes **one line of text**, and logast checks it against your
+vocabulary and phrasing rules before writing anything.
 
 What a service gets out of it:
 
 - structured ECS JSON logs with `service.name` / `service.version`, and no hand-rolled `logback-spring.xml`;
 - the business ids (`order.id`, `tenant.id`, …) in MDC from the entrypoint down, scoped with try-with-resources, and
   never leaking into the next request on a pooled thread;
-- traces that survive `@Async`, executors, HTTP calls between services, Kafka, and orchestrator → batch-pod launches;
+- traces that survive `@Async`, executors, HTTP calls between services, messaging, and orchestrator → batch-pod launches;
 - log lines in one format and one vocabulary: `Payment charge failed [order.id=…]`, never
   `"Error while charging " + id`;
 - exceptions logged once, where they are handled, and never swallowed silently;
 - meter names and tags that don't explode your metrics backend, and business events that are measured;
-- timeouts on every outgoing call, bounded thread pools, Kafka records that are not silently dropped;
+- timeouts on every outgoing call, bounded thread pools, messages that are not silently dropped;
 - error responses that don't leak internals, and business exceptions that don't turn into 500s;
 - an audit record for every action that must have one;
 - a compliance score per service, and CI that fails only on *new* problems.
 
-Works with Spring Boot 4, SLF4J + Logback, OpenTelemetry (Micrometer Tracing), Gradle builds, Java 17+ services.
-logast itself runs on Java 21+ (25 recommended).
+**Works with** Spring Boot 3 and 4 services on Java 17+, built with Gradle, logging through SLF4J + Logback, tracing
+with Micrometer Tracing / OpenTelemetry. logast itself runs on Java 21+ (25 recommended).
 
 ---
 
@@ -43,861 +43,204 @@ flowchart LR
   T[existing tests] --> V[logast verify:<br/>what really got logged]
 ```
 
-- **The tool decides, the writer only writes.** Where to log, at what level, which values, which MDC scope,
-  which import: all of it is decided by logast. The LLM, or a person in `logast review`, only supplies message
-  text, so the result is repeatable, cheap and safe to run in CI.
-- **Paths, not single files.** "Is `order.id` in MDC here?" is answered for every path that reaches the line,
-  across interfaces, lambdas, async hops and filters. A value already in MDC is never repeated in a message.
-- **A runtime starter does the plumbing.** Generated code uses the small `logging-support` starter
-  (`ObservedContext`, `MdcScope`, `ContextExecutors`, `TraceContextEnv`, a context-propagating `TaskDecorator`,
-  MDC hygiene, ECS defaults). Pull it from your repository, or let logast copy it into the service
-  (`support.mode: vendor`).
+- **The tool decides, the writer only writes.** Where to log, at what level, which values, which MDC scope, which
+  import: all of it is decided by logast. The LLM, or a person in `logast review`, only supplies message text, so the
+  result is repeatable, cheap and safe to run in CI.
+- **Paths, not single files.** "Is `order.id` in MDC here?" is answered for every path that reaches the line, across
+  interfaces, lambdas, async hops and filters. A value already in MDC is never repeated in a message.
+- **A runtime starter does the plumbing.** Generated code calls a small library, `logging-support`, instead of
+  repeating boilerplate ([below](#the-runtime-starter)).
 
 ---
 
 ## Install
 
-### From a release zip
-
-```bash
-unzip logast-0.1.0.zip -d ~/.local/share && ln -s ~/.local/share/logast-0.1.0/bin/logast ~/.local/bin/logast
-logast --version
-```
-
-### From source
+**From source** (needs a JDK 21+ on `PATH`):
 
 ```bash
 git clone https://github.com/magyar-attila-317/logast.git && cd logast
 ./install.sh --skill --starter
+logast --version
 ```
 
-To update, pull and run `./install.sh` again: it rebuilds and replaces the installed copy (and refreshes the
-Claude Code skill if it was installed). Add `--starter` when the starter changed.
+**From a release zip:** `./install.sh --zip logast-<version>.zip`, or unzip it anywhere and put its `bin/` on `PATH`.
 
-**macOS:** the same steps work. Install a JDK first (`brew install openjdk@21`, or SDKMAN / Temurin) so `java` is
-on PATH; the `/usr/bin/java` stub alone is not a JDK. `~/.local/bin` is not on the macOS PATH by default: add
-`export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, or install elsewhere with `LOGAST_BIN=/opt/homebrew/bin ./install.sh`.
-
-| option | what it does |
+| `install.sh` option | what it does |
 |---|---|
 | *(none)* | builds the CLI, installs it to `~/.local/share/logast` and links `~/.local/bin/logast` |
 | `--skill` | installs the Claude Code skill to `~/.claude/skills/logast/SKILL.md`, so Claude Code knows the workflow |
 | `--starter` | publishes `dev.logast:logging-support` and `dev.logast:test-capture` to Maven Local (`~/.m2`) |
 | `--zip <file>` | installs a release zip instead of building |
 
-`LOGAST_HOME` / `LOGAST_BIN` override the install locations.
-
-**End-to-end test.** `e2e/before` is a small service with the shapes real services showed (values passed down call
-chains, an id travelling inside an object, abstract jobs behind a listener, a JdbcTemplate repository, a Logstash
-setup). `./gradlew :cli:e2e` runs `logast apply . --auto --write` on a copy, compiles the result and compares every
-file and the printed output with `e2e/expected` (`:cli:e2eJdk21` does the same on Java 21; `./gradlew build -Pe2e` and
-CI run both). After an intended behaviour change, `./gradlew :cli:e2e -Pe2e.update` rewrites the snapshot; review it
-with `git diff e2e/expected` before committing.
-
-### Publish the starter to your company repository
-
-```bash
-./gradlew :logging-support:publish :test-capture:publish \
-    -PrepoUrl=https://nexus.example.com/repository/maven-releases/ -PrepoUser=… -PrepoPassword=…
-# or REPO_URL / REPO_USER / REPO_PASSWORD in the environment (CI)
-```
-
-Then point services at it in their policy: `support.coordinates: com.example:logging-support:0.1.0`.
-The version comes from `gradle.properties`.
+- `LOGAST_HOME` / `LOGAST_BIN` override the install locations.
+- **Update:** pull and run `./install.sh` again. It replaces the installed copy and refreshes an installed skill; add
+  `--starter` when the starter changed.
+- **macOS:** install a JDK first (`brew install openjdk@21`, SDKMAN or Temurin); the `/usr/bin/java` stub alone is not
+  a JDK. `~/.local/bin` is not on the macOS `PATH` by default: add `export PATH="$HOME/.local/bin:$PATH"` to
+  `~/.zshrc`, or install elsewhere with `LOGAST_BIN=/opt/homebrew/bin ./install.sh`.
 
 ---
 
-## Set up a service (once)
+## Quick start
 
-### 1. Run `logast init` in the service's folder
+In the service's root folder:
 
-```
-$ cd my-service
-$ logast init --key-style camel
-logast init  /home/me/my-service
-Sets up this service once. Re-running keeps what you already edited.
-
-  ✓ logast.yaml             your settings: which checks run, key style, and 36 keys found in the code, one term each (organise them)
-  ✓ .gitignore              ignores .logast/, but keeps baseline.json, traffic.yaml and README.md shared
-  ✓ .logast/README.md       explains every file in .logast/ and which ones go into git
-  ✓ .logast/classpath-*.txt 263 jars and class folders (8.1s): lets logast understand types
-  ✓ .logast/traffic.yaml    845 entrypoints; optional: add calls/day so logast can judge log volume
-  · .logast/baseline.json   not recorded (add --baseline, or later `logast scan . --update-baseline`)
-
-Next steps
-  1. open logast.yaml                 organise the found terms as its example shows; the comments explain every setting
-  2. logast scan . --format summary   what logast would change, per rule
-  3. logast apply . --auto            preview the automatic fixes (add --write to change files)
+```bash
+logast init .                    # 1. once: logast.yaml, .gitignore, classpath, traffic.yaml
+                                 # 2. review logast.yaml: organise the business terms it found
+logast apply . --auto --write    # 3. changes the code, creates the files to fill in
+                                 # 4. fill in .logast/fills.json and .logast/metrics.json
+logast apply . --auto --write    # 5. again, on the migrated code: writes what you filled in
+git diff                         # 6. review
 ```
 
-### What `init` creates, and why
+- `apply` without `--write` only previews the diff.
+- One `apply` does everything automatic; the second is only for what you filled in. Don't revert the code before
+  it: the entries in the files point at the migrated code.
+- `init`, `apply` and `scan` print a numbered **Next steps** list: what is left and the command for each.
+- More packs from the start: `logast init . --pack logging,tracing,metrics,resilience,errors,audit`.
 
-| file | what it is for | in git? | when you touch it |
+---
+
+## The workflow
+
+### What a finding asks of you
+
+| kind | who acts | how |
+|---|---|---|
+| **AUTO** | logast | `apply --auto` makes the change |
+| **NEEDS TEXT** | a person or an LLM | write one message in `.logast/fills.json` (or in `logast review . --open`); the next `apply` validates and writes it |
+| **REPORT-ONLY** | a person | a decision logast does not make; the finding says what to decide and when it counts as done |
+
+Metric decisions (count an outcome, tag it, or skip it) go into `.logast/metrics.json` the same way.
+
+### Who writes the text
+
+- **A person:** `logast review . --open` opens a local page with one input per message, the code, the path from the
+  entrypoint and the required phrasing.
+- **An LLM:** with the skill installed, ask Claude Code *"bring this service's logging to the standard"*; it follows
+  [docs/llm-workflow.md](docs/llm-workflow.md).
+
+### The files it writes
+
+`init` adds `.logast/*` to `.gitignore`, keeping the shared files in git.
+
+| file | what it is | written by | in git? |
 |---|---|---|---|
-| `logast.yaml` | your settings: which checks run, how keys are spelled, your business words. Every option is explained in comments inside the file | yes | right after `init`, then rarely |
-| `.logast/classpath-*.txt` | the service's compile classpath. logast needs it to understand types; Gradle runs once, nothing is compiled | no (machine-specific paths) | run `logast classpath .` again after changing dependencies |
-| `.logast/traffic.yaml` | every entrypoint, with calls per day if you fill them in; used to judge log volume | yes | optional; refresh the list with `logast traffic .` |
-| `.logast/baseline.json` | today's findings, so CI fails only on new ones (`--baseline`) | yes | when you accept the current state |
-| `.logast/fills.json` | message texts for findings that need one; `logast scan` creates and updates it, `logast apply` uses it | no | when you (or an LLM) write messages |
-| `.logast/README.md` | the same explanation, inside the folder | yes | never |
+| `logast.yaml` | your settings; every option is explained in comments inside the file | `init` | yes |
+| `.logast/README.md` | what each file in the folder is for | `init` | yes |
+| `.logast/classpath-*.txt` | the service's compile classpath, so logast understands types (Gradle runs once, nothing is compiled) | `init`, `classpath`; `apply` after a build-file change | no (machine-specific) |
+| `.logast/traffic.yaml` | every entrypoint, with calls/day if you fill them in (judges log volume) | `init`, `traffic`, `apply` | yes |
+| `.logast/baseline.json` | the findings CI accepts as known | `init --baseline`, `scan --update-baseline` | yes |
+| `.logast/orders.json` | the last scan's work orders, in full | `scan` | no |
+| `.logast/fills.json` | message texts to write; kept in step with the code (entries kept, added, removed when done) | `scan`, `apply` | no |
+| `.logast/metrics.json` | metric decisions to make, kept in step the same way | `scan`, `apply` | no |
+| `.logast/steps/*.diff` | one diff per apply step, to review or drop a kind of change | `apply` | no |
+| `.logast/apply-trace.txt` | what each apply round did and what its rescan found | `apply` | no |
+| `.logast/verify.json` | the last `verify` result | `verify` | no |
 
-`init` options:
+Details of every command, with example output: [docs/commands.md](docs/commands.md).
 
-| option | what it does |
+---
+
+## Packs
+
+Rules come in six packs. `logging` and `tracing` run by default; the others are opt-in (`packs:` in `logast.yaml`, or
+`--pack`).
+
+| pack | what it covers |
 |---|---|
-| `--extends <url\|file>` | build on your company's shared settings (comma-separated) |
-| `--key-style camel` | spelling of MDC and `[k=v]` keys: `dotted` (default), `camel`, `pascal`, `snake` |
-| `--keep-wording` | legacy service: fix structure, keep the wording of existing messages |
-| `--support vendor` | copy `MdcScope` / `ObservedContext` into the service instead of adding the library (until it is in your Nexus) |
-| `--pack logging,tracing,metrics` | which checks run (default `logging,tracing`; also `metrics`, `resilience`, `errors`, `audit`) |
-| `--baseline` | scan once and record today's findings for CI |
-| `--no-classpath` / `--no-traffic` | skip those steps |
-| `--force` | write a fresh `logast.yaml` over an existing one |
+| [logging](docs/packs/logging.md) | message format and vocabulary, exceptions logged once, business ids in MDC, what goes into a line, log lines where flows are silent, levels and volume |
+| [tracing](docs/packs/tracing.md) | the trace across threads, HTTP calls, messaging and launched jobs; spans that end and carry errors; traces that reach a backend; trace ids in logs |
+| [metrics](docs/packs/metrics.md) | business events and outcomes that are measured; meter names and tags that stay bounded; service and version on every meter |
+| [resilience](docs/packs/resilience.md) | timeouts, bounded pools and waits, retries that run, scheduled-job locks, graceful shutdown, health probes |
+| [errors](docs/packs/errors.md) | error responses that don't leak internals, exceptions mapped to the right status, the trace id in error bodies, causes kept |
+| [audit](docs/packs/audit.md) | audit records that exist, say who, what and with which outcome, are written after commit and routed apart |
 
-Each step is also its own command: `logast classpath .`, `logast traffic .`, `logast scan . --update-baseline`.
+Every rule, its severity and how it is fixed: [docs/rules.md](docs/rules.md) (`logast rules` lists them from the code).
+Silence one finding with `// logast:ignore RULE` on the line or the line above.
 
-### 2. Review `logast.yaml`
+---
 
-The file explains itself: every setting has a comment, and optional ones are there as switched-off examples. The
-full list, with defaults, is in **[docs/configuration.md](docs/configuration.md)**. `logast policy .` shows the final
-settings after all layers are merged.
+## Configuration
 
-**The vocabulary starts from your code.** `init` (and `logast vocabulary .` at any time) collects every identifier key the
-service already uses: MDC keys, `[k=v]` / `k={}` keys in log messages, and id-like variables. It only collects: each key
-becomes a term of its own, spelled exactly as in the code, and nothing is merged, renamed or restyled until you edit it.
-Keys that look alike get a hint in a comment:
-
-```yaml
-vocabulary:
-  orderId:          # 1 / 25 / 283, 126 files            <- mdc / log / declared counts
-    mdc: { key: orderId, sources: { params: [orderId] } }
-  order_id:         # 0 / 4 / 0, 3 files; same value as orderId?
-    mdc: { key: order_id }
-  supplierNumber:   # 0 / 6 / 0, 2 files                 <- an id and a number are never "the same value"
-    mdc: { key: supplierNumber }
-  openedByUserId:   # 0 / 10 / 27, 23 files; a kind of userId?
-    mdc: { key: openedByUserId, sources: { params: [openedByUserId] } }
-
-# Identifiers declared in the code that no log or MDC uses yet; remove the "#" to add one:
-#  approverUuid: { mdc: { key: approverUuid, sources: { params: [approverUuid] } } }   # 0 / 0 / 90, 31 files
-```
-
-A short example at the top of the block shows how to organise it: rename a term to the business word (`orderId` →
-`order`), move other spellings of the same value into its `mdc.aliases`, keep an id and a number as two terms, keep a
-role (`openedByUserId`) as its own term rather than an alias, delete technical keys, and add banned words as `aliases`.
-With a company layer in `extends:`, only what it doesn't cover is listed.
-
-A minimal `logast.yaml` that builds on a company layer:
+`logast init` writes a `logast.yaml` that explains itself. You only write what differs from the defaults, and a
+service can build on shared company layers:
 
 ```yaml
 extends: [https://git.example.com/platform/observability/raw/main/company.yaml]
 
 logging:
-  rewriteExistingMessages: false   # legacy service: fix concatenation/glossary/lost exceptions, keep wording
+  rewriteExistingMessages: false   # legacy service: fix structure, keep the wording
 
 vocabulary:
   order:
     aliases: [ordr]                # added to the company's aliases
 ```
 
-The company layer is where the business language lives. See [`examples/restaurant-company.yaml`](examples/restaurant-company.yaml)
-for a complete one (terms, aliases, MDC keys and their sources, areas where words mean something else, PII), and
-[`docs/vocabulary.md`](docs/vocabulary.md) for how layers, overrides, phrasing and levels work.
-`logast policy .` prints the merged result and every override.
-
-### 3. Apply
-
-The whole flow, in order:
-```bash
-logast init . --pack logging,tracing,metrics,resilience,errors,audit   # 1. once: logast.yaml, classpath, traffic.yaml
-                                                                        # 2. review logast.yaml (business terms)
-logast apply . --auto --write                                           # 3. changes the code, creates the files to fill in
-#                                                                         4. fill in .logast/fills.json and .logast/metrics.json
-logast apply . --auto --write                                           # 5. again, on the migrated code: writes what you filled in
-git diff                                                                # 6. review
-```
-- `init` does not create `fills.json` / `metrics.json`: their entries belong to the code the first `apply` writes
-  (generated lines, database and job outcome lines) and to the wording it leaves, so they only make sense after it.
-- Don't revert the code before step 5: the entries point at the migrated code. One `apply` does everything automatic;
-  a second one is only for what you filled in. (`apply` without `--write` previews.)
-
-`apply` fixes everything it can (best effort, across all selected packs), refreshes the classpath when it changed
-a build file, creates the files to fill (`.logast/fills.json`, `.logast/metrics.json`, `.logast/traffic.yaml`), and ends
-with one line per thing left to do:
-```
-Next steps
-  1. git diff                                            review the changes
-  2. write "MSG" texts in .logast/fills.json             18 log lines need wording only a person knows
-  3. set "count" in .logast/metrics.json                 14 logged outcomes are not counted: counter, tag or skip each
-  4. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  5. fill calls/day in .logast/traffic.yaml (optional)   18 of 18 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  6. logast scan . --format summary                      24 findings are decisions for a person (AUDIT_MISSING 2, …); each says what to decide
-  7. logast verify .                                     build and run the tests with log capture
-```
-`apply` runs in steps (setup, structure, lines, MDC, messages, exceptions, levels, reports), each on the result of
-the previous one, and saves one diff per step in `.logast/steps/` (`01-setup.diff`, `02-structure.diff`, ...). They
-apply in order with `git apply`, so a whole kind of change can be reviewed on its own, or dropped: later steps build
-on earlier ones, so drop from the end, or rerun with `--until lines` (stop after a step). Every run also checks its
-result before writing (no key both in MDC and in a message, no nested scope, one started/completed per method) and
-prints `CHECK FAILED file:line` if something breaks that.
-
-Fill the files, run `logast apply . --auto --write` again (on the migrated code), repeat until the list is empty. `logast scan .` shows the
-same list without changing anything; `logast apply . --auto` (no `--write`) previews the diff.
-
-Findings come in three kinds: **AUTO** (logast fixes it), **NEEDS TEXT** (someone writes one message: put it into
-`.logast/fills.json` and `apply` picks it up), and **REPORT-ONLY** (a decision for a person; the note says what to
-decide).
-
-`.logast/fills.json` follows the code by itself: `scan` and `apply` create it when it is missing, keep every entry you
-already have exactly as it is, add entries for new findings and remove the ones that are done. Nothing is rewritten
-when nothing changed.
-
-Output is coloured in a terminal, and long steps (`scan`, `apply`) show a live progress line: the current step, the
-round and the number of fixes done, and the elapsed time. In CI or a pipe each step is printed as a plain line instead.
-`NO_COLOR=1` turns colours off, `LOGAST_COLOR=always|never` forces them.
-
+- Every setting, with its default: [docs/configuration.md](docs/configuration.md).
+- Vocabulary, layers, phrasing and levels: [docs/vocabulary.md](docs/vocabulary.md). The vocabulary starts from
+  your code: `init` collects the keys the service already uses, one term each, for you to organise.
+- A complete company layer: [examples/restaurant-company.yaml](examples/restaurant-company.yaml).
+- `logast policy .` prints the merged result and every override.
 
 ---
 
-## Examples
-
-### 1. Scan
-
-```
-$ logast scan .
-logast: 38 files, 9 entrypoints, 26/67 methods reachable, 27 call edges
-45 orders: 34 AUTO, 4 NEEDS TEXT, 7 REPORT-ONLY
-glossary terms: order, payment, charge, refund, shipment, customer, reconciliation
-
-SWA-d5b58b  low  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/shop/service/DefaultOrderService.java:41
-  PaymentException is caught and dropped without a log line in DefaultOrderService.place (documented as intentional)
-  path: POST /orders → OrderController.create → DefaultOrderService.place
-  + log.warn("{{MSG}}", order.id(){{ARGS}}, e);
-  MSG: What failed and what happens next … | suffix keys: [order.id] | must read as '{subject} failed'
-  note: PaymentClient.charge already logs this exception before rethrowing it. After this fix that log becomes
-        an EXCEPTION_LOGGED_TWICE order to delete (log once, where it is handled).
-
-DOM-f22aa2  medium  AUTO  MISSING_DOMAIN_MDC  src/main/java/com/example/shop/web/OrderController.java:37
-  GET /orders/{orderId}: MDC lacks order.id
-  + try (var mdc = MdcScope.of("order.id", orderId)) {
-  + … (4 lines)
-```
-
-`--rule`, `--pack logging|tracing|metrics`, `--severity high`, `--entrypoint "POST /orders"` and `--limit` narrow the
-list. `--format json|summary|sarif|fills-template` change the output.
-
-### 2. What the fixes look like
-
-An identifier repeated in every message of a method goes into MDC once (REPEATED_LOG_VALUE), and the messages lose
-the now redundant `[k=v]`:
-```java
-public void refund(String orderId, long amountCents) {
-    try (var mdc = MdcScope.of("order.id", orderId)) {
-        log.info("Refund started");
-        check(amountCents);
-        log.info("Refund completed [amount.cents={}]", amountCents);
-    }
-}
-```
-
-Swallowed exception, written text in **bold**:
-```java
-} catch (PaymentException e) {
-    log.warn("Payment charge failed, reconciliation job will retry [order.id={}]", order.id(), e);
-```
-
-Entrypoint the framework doesn't trace (`@EventListener`, custom listeners), with the ids from its parameters:
-```java
-ObservedContext.entrypoint("inbox-processor.handle")
-        .mdc("order.id", event.orderId())
-        .run(() -> {
-            ...
-        });
-// with a result: return ObservedContext.entrypoint("…").call(() -> { … });
-```
-It records failures on the span and metrics, and logs the outcome once, with the MDC keys and trace id:
-`inbox-processor.handle completed [durationMs=12]` (INFO; DEBUG for per-message listeners), or
-`inbox-processor.handle failed [durationMs=12]` (ERROR, with the exception). Checked exceptions pass through.
-The exception is always rethrown (rollback, retries and dead-letter routing depend on it). A synchronous
-`@EventListener` gets `.failureLoggedByCaller()`: the exception goes back to the publisher's code, which logs it, so
-the wrapper's failure line drops to DEBUG and one failure stays one ERROR. `.describe("Inbox handling")` sets the
-wording, `.quiet()` turns the lines off. In vendor mode, copied support classes from an older logast are updated by
-an AUTO order (the dry run shows the diff). Where a lambda can't compile (a
-parameter reassigned in the body, several checked exceptions), logast writes the same as try/catch/finally.
-
-A listener for an event the code publishes itself (`publisher.publishEvent(new OrderPlaced(…))`) is no entrypoint:
-Spring calls it inside `publishEvent`, on the publisher's thread, so it is part of the publisher's flow (its MDC and
-span; `@Async` listeners get them through the TaskDecorator). logast follows that call like any other, so the
-listener's lines drop keys the publisher's flow already has in MDC and it gets no outcome line of its own.
-
-A `@TransactionalEventListener` runs when the transaction commits (AFTER_COMMIT by default), after the publisher's
-scopes may have closed: it stays an entrypoint of its own (only `phase = BEFORE_COMMIT` joins the publisher's flow).
-
-Listeners Spring observes itself get no wrapper of their own (that would be a second span): `@JmsListener` (Spring Boot
-sets the ObservationRegistry on the container factory), `@KafkaListener` and `@RabbitListener` once
-`spring.kafka.listener.observation-enabled` / `spring.rabbitmq.listener.{simple,direct}.observation-enabled` is on
-(KAFKA_OBSERVATION_DISABLED and RABBIT_OBSERVATION_DISABLED add it). Batch listeners (`batch = "true"`, a `List` or
-`ConsumerRecords` parameter) are never observed per message, so they keep the ObservedContext wrapper.
-
-More entrypoints, each checked against its framework's documentation:
-- **Spring Batch** (`tasklet X.execute` once per step run; `item processor X.process` / `item writer X.write` per
-  item or chunk, as classes): Batch opens a span per step only when it has the ObservationRegistry, which
-  `BatchObservabilityBeanPostProcessor` sets. Batch 6's `DefaultBatchConfiguration` (which Boot 4 extends) and
-  `@EnableBatchProcessing` register it; Boot 3's auto-configuration with Batch 5 does not, so there the step code gets
-  an ObservedContext (Spring Batch reference, Monitoring and metrics › Tracing).
-- **`@SqsListener`** (Spring Cloud AWS): each message is observed only with
-  `spring.cloud.aws.sqs.observation-enabled: true` (default false); a batch listener never (Spring Cloud AWS reference,
-  SQS › Observability).
-- **Spring Cloud Stream** functions (`stream <name>-in-0`): the method a bound `@Bean Consumer`/`Function` returns as a
-  method reference or a one-call lambda. Bound are the names in `spring.cloud.function.definition`, else the single
-  functional bean. Stream observes each invocation (ObservationFunctionAroundWrapper), so they get MDC and lifecycle
-  lines, no wrapper. A lambda with a body of its own has no method to scope and is not seen; a `Supplier` sends.
-- **Functional endpoints** (Spring MVC `RouterFunction`): the handler methods of `route().GET("/x", h::get)`,
-  `path("/p", b -> …)` and `RouterFunctions.route(RequestPredicates.GET("/x"), h::get)` are HTTP entrypoints with their
-  paths, observed like controllers.
-
-A method with `@Observed` (on it or its class) or `@NewSpan` counts as observed only while Spring Boot processes these
-annotations: `management.observations.annotations.enabled: true` and aspectjweaver on the classpath (Boot reference,
-Observability). Without them the annotation does nothing at runtime; the tracing pack switches them on, or the method
-gets an ObservedContext like any other entrypoint.
-
-**tracing** (on by default): every inbound and outbound hop carries the trace, spans end and carry their errors, the
-traces reach a backend, and the log lines can be matched to them. `--pack tracing` works on its own (it brings the
-starter it needs).
-
-| rule | finds | fix |
-|---|---|---|
-| SETUP_OTEL_STARTER | no tracer bridge or exporter (Boot 4: `spring-boot-starter-opentelemetry`; Boot 3: actuator + `micrometer-tracing-bridge-otel` + `opentelemetry-exporter-otlp`); conflicting setups (a Boot 4 starter in a Boot 3 build, Brave next to OpenTelemetry, the OpenTelemetry Spring starter or Java agent next to Boot's) | AUTO: adds the dependencies of the Boot generation in the build; report for conflicts |
-| ENTRYPOINT_NOT_OBSERVED | an entrypoint Spring does not observe (`@EventListener` / `@TransactionalEventListener` starting a flow of its own, WebSocket handlers, batch runners and `main`, annotations from `entrypoints.extraAnnotations`, Kafka / RabbitMQ listeners until their observation is on, batch listeners): its logs have no trace id and it records no span | AUTO: `ObservedContext.entrypoint(…)` around the body (see above) |
-| OBSERVED_ANNOTATION_INACTIVE | `@Observed` / `@NewSpan` without `management.observations.annotations.enabled: true` or without aspectjweaver: the annotated methods run without an observation or span | AUTO: sets the property and adds `spring-boot-starter-aspectj` (Boot 4) / `spring-boot-starter-aop` (Boot 3); report when the build file or Boot's observation auto-configuration is missing. Also switches on `@Timed` / `@Counted`. In the metrics pack too, for `@Observed` / `@Timed` / `@Counted` (the same switch) |
-| HTTP_CLIENT_UNTRACED | `RestTemplate` / `RestClient` / `WebClient` built by hand instead of from Spring Boot's builder, JDK `HttpClient`, Apache, OkHttp, OpenFeign without `feign-micrometer`: no `traceparent` header, the called service starts a new trace | AUTO where a Boot builder can be injected; report otherwise (Feign: add `feign-micrometer`) |
-| KAFKA_OBSERVATION_DISABLED / RABBIT_OBSERVATION_DISABLED | `KafkaTemplate` / `@KafkaListener`, `@RabbitListener` without observation (off by default): the trace stops at the topic or queue | AUTO: `spring.kafka.template/listener.observation-enabled`, `spring.rabbitmq.listener.*.observation-enabled` |
-| JOB_LAUNCH_UNTRACED | a Kubernetes container (fabric8, official client) or `ProcessBuilder` started without `TRACEPARENT` in its environment: the job runs as a new, unrelated trace | AUTO: adds `TraceContextEnv.current()` to the environment (the starter's batch-trace listener continues it); report where it cannot be added |
-| TRACING_SAMPLING | `management.tracing.sampling.probability` below 1.0, or not set (Boot keeps 10 %): most trace ids in the logs lead to no trace | AUTO: 1.0 when not set (sample in the collector instead); report for a lower value |
-| SPAN_NOT_CLOSED | an `Observation` / Micrometer `Span` / `ScopedSpan` / OpenTelemetry `Span` started by hand into a local variable that is not ended in a `finally` block, records no failure (`error(e)`, `recordException`), or is never put in scope (`openScope`, `tracer.withSpan`, `makeCurrent`): leaked spans, failures shown as successes, log lines without the span | report, with the try/catch/finally form (or `observation.observe(() -> …)`); not when the variable leaves the method (returned, passed on, ended in a callback) |
-| SPAN_NAME_DYNAMIC | an observation or span name built from an id (`Observation.createNotStarted("load." + orderId, …)`, `tracer.nextSpan().name(…)`, `startScopedSpan`, `contextualName`, OpenTelemetry `spanBuilder` / `updateName`), or an id as a low-cardinality key value: Micrometer names the observation's timer after it and tags it with every low-cardinality key value ([Micrometer, Observation Handler](https://docs.micrometer.io/micrometer/reference/observation/components.html): "Only low cardinality key values are used as meter tags"), and a span name should identify a class of spans, not one call ([OpenTelemetry Tracing API](https://opentelemetry.io/docs/specs/otel/trace/api/)): one timer series and span name per value. An id is what METRIC_HIGH_CARDINALITY_TAG calls one (a vocabulary key with high cardinality, PII), or a value named `id` / `…Id` / `uuid` | report: a fixed name, the id in `highCardinalityKeyValue(…)` or a span tag; names passed in by a caller or built from bounded values are not reported |
-| MANUAL_TRACE_MDC | `traceId` / `spanId` put into MDC by hand: Micrometer Tracing maintains them | report: delete the manual MDC handling |
-| TRACING_EXPORT_UNCONFIGURED | Micrometer Tracing with OpenTelemetry, but no OTLP endpoint anywhere (`management.opentelemetry.tracing.export.otlp.endpoint`, Boot 3: `management.otlp.tracing.endpoint`, in any application*.yml or profile, or `OTEL_EXPORTER_OTLP_(TRACES_)ENDPOINT` / the property's environment variable in the project's deployment files; logast's own output kept in the tree, such as a saved scan, does not count): Spring Boot then creates no exporter and the trace ids in the logs lead nowhere; also export switched off in the base configuration | report (the endpoint is per environment) |
-| TRACE_ID_NOT_LOGGED | a `logback-spring.xml` / `logback.xml` text `<pattern>` without the trace id (`%X{traceId}`, `%correlationId`, `${LOG_CORRELATION_PATTERN}` or Boot's default pattern), or a `logging.pattern.console` / `.file` replacing Boot's pattern without it: Spring Boot adds the correlation id only through its own pattern ([Boot reference, Tracing, Logging Correlation IDs](https://docs.spring.io/spring-boot/reference/actuator/tracing.html)), so the log lines cannot be matched to a trace. Only without the logging pack: there SETUP_LOGBACK_XML replaces the file with structured logging, which writes every MDC value | report: add `%X{traceId:-} %X{spanId:-}` or `${LOG_CORRELATION_PATTERN:-}`, or switch to structured logging |
-| ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED (shared with logging) | work handed to another thread (`CompletableFuture.*Async` without an executor, raw executors, parallel streams, `@Async` without the TaskDecorator) and tasks an executor runs periodically: their logs and spans lose the trace | AUTO where a context-propagating wrapper fits (`ContextExecutors.wrap`, `ObservedContext.observed(…)`, the starter's TaskDecorator); report otherwise |
-| RUNTIME_TRACE_LOST (`logast verify`) | a test's log line on another thread without the trace id the flow had before | report |
-
-A method returning a `Mono`/`Flux` only assembles a pipeline that runs later, elsewhere: logast puts no MdcScope or
-ObservedContext around it (they would end before the work starts). Use Reactor's automatic context propagation
-(`Hooks.enableAutomaticContextPropagation()` with context-propagation on the classpath) for MDC in reactive code.
-
-Whether a logged value is the value an MDC key holds is followed back through the code, not guessed from its name:
-the variable or accessor of the key's name, a local initialised from one and never reassigned (`String code =
-runCode;`), or a parameter every caller passes one into (up to three calls up). Anything else keeps its key in the
-message.
-
-`MDC.put` / `finally { MDC.clear(); }` (which also wipes the caller's context) becomes:
-```java
-try (var mdc = MdcScope.of("audit.action", action, "tenant.id", tenantId)) {   // alias tenantId → tenant.id
-    log.info("Audit entry written");
-}
-```
-
-Context lost on a thread hand-off:
-```java
-private final ExecutorService executor = ContextExecutors.wrap(Executors.newFixedThreadPool(2));
-```
-
-Traces across services and processes:
-```java
-public ShippingClient(RestClient.Builder restClientBuilder) {         // was RestClient.builder()
-    this.client = restClientBuilder.baseUrl("http://shipping-service").build();
-}
-pb.environment().putAll(TraceContextEnv.current());                    // orchestrator → batch job pod/process
-```
-
-Messages:
-```diff
-- log.info("Placed purchase " + order.id());
-+ log.info("Placed order [order.id={}]", order.id());
-- log.warn("Refund failed for order {}", orderId);            // order.id is already in MDC; exception was lost
-+ log.warn("Refund failed", e);
-- log.info("Starting reconciliation for tenant {}", tenant);
-+ log.info("Reconciliation for tenant {} started", tenant);
-```
-
-What goes into a log line:
-```java
-log.info("Coupon batch received [couponIds={}]", couponIds);   // LOG_COLLECTION_ARGUMENT → [couponCount={}], couponIds.size()
-log.info("Order attached [order={}]", order);                  // LOG_OBJECT_ARGUMENT → order.id(): no toString of a whole
-                                                                //   DTO/entity (lazy loading = a query inside a log call)
-log.info("Loaded [customer={}]", ticket.getCustomer().getName()); // reported: navigates a lazy association, may NPE
-log.info("No Coupon entries found, won't publish");           // MESSAGE_VAGUE → "No coupon entries found, will not publish"
-log.debug("Processing...");                                    // MESSAGE_VAGUE (reported): say what started/completed/failed
-log.info("Refund started [now={}]", LocalDateTime.now());      // BUSINESS_EVENT_TIMESTAMP → "Refund started"
-LogHelper.logCollection(log, "Prepared", items);               // LOG_HELPER (reported): log at the call site instead
-```
-Collections with a fixed size (`List.of(..)`, constants, enum sets, `limit(..)`) are left alone. A value record of counts,
-or a class with its own `toString()`, is not an object dump.
-
-MDC is owned once, where the flow starts:
-```java
-try {                                     // legacy block one call below an entrypoint that scopes couponId already:
-    MDC.put(COUPON_ID, couponId);         //   MDC_NOT_CLOSEABLE + MDC_NESTED_KEY + MDC_CLEAR → the whole block goes,
-    log.info("Calculation started");      //   the log lines stay, the entrypoint's scope carries the context
-} finally {
-    MDC.clear();                          // MDC_CLEAR: never wipe the caller's context (trace ids included)
-}
-```
-`static final` key constants are understood; the generated scope keeps the constant. No new scope or observation is
-added around code that still writes MDC the old way: the MDC fix comes first, the wraps follow after the rescan.
-
-Messages that alerts or dashboards depend on are never reworded or reformatted:
-```yaml
-logging:
-  protectedMessages: ["^ALERT:", "Payment reconciliation mismatch"]   # regexes; reported, not rewritten
-  vagueMessages: ["^handled\\.?$"]                                  # added to the built-in avoid-list
-```
-
-Where logs are missing (log coverage): logast adds the line, someone writes the sentence.
-
-An entrypoint (an endpoint that changes something, a listener, a job) is "silent" when its own flow logs nothing at
-INFO on the normal path: the method itself, the service it calls and one level below. Lines deeper in shared code
-(event publishers, audit, helpers) and lines in catch blocks don't count; they don't say which flow ran. GET
-endpoints are left alone. Plain helper classes get no log lines of their own: logs belong to flows.
-```java
-@Scheduled(cron = "0 0 2 * * *")
-public void export() {
-    log.info("Invoice export started");                              // ENTRYPOINT_SILENT
-    List<Invoice> open = invoices.findBySentFalse();
-    if (open.isEmpty()) {
-        log.info("Invoice export skipped, no open invoices");        // SKIP_UNLOGGED: why nothing happened
-        return;
-    }
-    sender.sendAll(open);
-    log.info("Invoice export completed");                            // JOB_OUTCOME_MISSING
-}
-
-public void sendAll(List<Invoice> open) {
-    for (Invoice invoice : open) {
-        send(invoice);
-    }
-    log.info("Invoice batch completed [invoiceCount={}]", open.size()); // BATCH_SUMMARY_MISSING
-}
-
-public Invoice cancel(String invoiceId) {
-    var result = invoices.save(new Invoice(invoiceId, null, false)); // a returned value is extracted first,
-    log.info("Invoice cancelled [invoiceId={}]", result.id());      // STATE_CHANGE_UNLOGGED, so it can be logged
-    return result;
-}
-```
-- **Jobs and listeners** (scheduled, batch runners, Kafka/JMS/Rabbit, event and WebSocket handlers) get an outcome
-  line; scheduled and batch runs also a start line. HTTP requests are left out: access logs and `http.server.requests`
-  already show them.
-- **Skipped work**: an early `return` in a job or the methods it calls directly (INFO in scheduled/batch runs,
-  DEBUG elsewhere). Only `void` methods: an early return that hands back a value is logic, not a skip.
-- **State changes**: a repository save/delete in a method that logs nothing; the entity's id is logged.
-- **Database outcomes** (`JdbcTemplate`, `NamedParameterJdbcTemplate`, `JdbcClient`): a method running one statement
-  and logging nothing gets its outcome logged in the method itself, the one place that has the facts:
-  ```java
-  int rows = jdbcTemplate.update(CLOSE_ITEMS, orderId);
-  AfterCommit.log(() -> log.info("Order items updated [rows={}]", rows)); // logast:wording
-  ```
-  Write or read is told from the SQL (an upsert through `queryForObject` is a write). Writes: INFO, written only
-  once the transaction commits (`AfterCommit`), so a rolled-back change is never announced. Reads: INFO when only
-  low-frequency paths reach them (jobs, startup, or a `traffic.yaml` rate within `levels.volumeBudget`), DEBUG
-  otherwise. Called inside a loop: DEBUG.
-  The wording comes from the table name; `// logast:wording` marks it, and `fills.json` asks for a better one
-  (MESSAGE_SUGGESTED). Sequences and DDL are left alone.
-- **Batch summaries**: a loop on a job path that does I/O per item (repository, HTTP, messaging). Loops over a call
-  (`for (Order o : repository.findAll())`) get the call extracted into a variable first, so the count doesn't run
-  the query again.
-
-The scan's header shows the service's **log coverage**, the share of these places that already log:
-```
-log coverage 53.7% (jobs 68/214 · http 409/631 · skips 0/50 · stateChanges 174/310 · loops 14/33)
-```
-It is also a column in the fleet report. Turn single rules off with `rules: { SKIP_UNLOGGED: { enabled: false } }`.
-
-### 3. Let an LLM finish it
-
-With the skill installed (`./install.sh --skill`), ask Claude Code *"bring this service's logging to the
-standard"*. It follows [`docs/llm-workflow.md`](docs/llm-workflow.md):
-
-```bash
-logast scan .                       # also writes .logast/fills.json: the LLM fills in the empty "MSG" values
-logast apply . --auto               # dry run: diff + REJECTED reasons (uses .logast/fills.json)
-logast apply . --auto --write
-logast scan .                       # until only REPORT-ONLY remains
-```
-
-In a trial on the sample app, an LLM working only from the docs finished in one round: it wrote 4 lines of text,
-38 orders were applied, and nothing was rejected.
-
-### 4. Let a person finish it
-
-```bash
-logast review . --open
-```
-
-This opens a local page (127.0.0.1, token-protected) with one input per message. Texts already in
-`.logast/fills.json` are filled in, and what you type is saved there. It shows the code, the path
-from the entrypoint, the required phrasing and the suffix keys. *Dry run* shows the diff and any rejections;
-*Apply* writes.
-
-### 5. Check what the tests really log
-
-```
-$ logast verify .
-verify: 2 log events from tests; 2 of 23 log statements exercised (8%)
-RTL-dace69  high  REPORT-ONLY  RUNTIME_TRACE_LOST  …/notification/Mailer.java:12  Mailer.send
-  No traceId here, although the same test had one on thread 'Test worker': the work moved to thread
-  'pool-1-thread-1' without its trace
-RNV-5ecdae  medium  REPORT-ONLY  RUNTIME_NULL_VALUE  …/notification/Mailer.java:12
-  A logged value rendered as 'null'
-```
-
-It runs your existing tests (the build isn't changed; an init script adds the capture jar), records every log
-event, and reports context that existed in a test and then got lost, plus values logged as `null`.
-
-By default it runs `./gradlew test`. Services with other test tasks set them in `logast.yaml` (or pass
-`--tasks "test intTest bddTest"`):
-
-```yaml
-verify:
-  tasks: [test, intTest, bddTest]   # or [check]
-  gradleDir: ../..                  # optional: run Gradle from the repo root (service is a subproject)
-```
-
-### 6. Noise: logs in loops, and real volume
-
-INFO once per loop item is fine for 10 items and a flood for 50,000, so logast judges by where the items come from
-(`levels.infoInLoops: size`, the default):
-
-| loop over | INFO per item |
-|---|---|
-| a fixed list, enum values, a constant, up to `boundedLoopMax` (20) items | fine |
-| database rows (repository `find…`/`stream…`, JDBC queries, pages), file lines, a Kafka batch | lowered to DEBUG (LOG_LEVEL); the batch-summary rule adds one total after the loop |
-| anything else (size unknown) | reported (LOG_IN_LOOP); a comment above the loop settles it |
-
-```java
-// logast:loop-size 10       (or small): INFO stays
-// logast:loop-size large    DEBUG, plus a summary after the loop
-for (Store store : stores) { ... }
-```
-
-`never` lowers every loop that isn't known to be small, `always` turns the checks off. With rates
-in `.logast/traffic.yaml` (`logast traffic .` lists every entrypoint for you; a Prometheus query result works
-too), `LOG_VOLUME` reports lines/day per statement over your budget. logast never guesses traffic.
-
-### 7. CI
+## CI
 
 ```bash
 logast scan . --baseline --fail-on high --format summary         # only findings that aren't in the baseline
 logast scan . --since origin/main --format sarif > logast.sarif  # changed lines only, as PR annotations
 ```
 
-`--fail-on` exits with 2 on findings and with 4 when the analysis is incomplete (files that did not parse,
-no classpath): a broken analysis finds less and must not pass. Against a baseline, a known finding that covers
-more places than when it was recorded (a second unlocked `@Scheduled` job) counts as new.
+| exit code | meaning |
+|---|---|
+| 0 | nothing at or above `--fail-on` |
+| 2 | findings at or above `--fail-on` (also: an unknown `--rule`) |
+| 3 | `--baseline` given, but no baseline file |
+| 4 | `--fail-on` with an incomplete analysis (files that did not parse, no classpath): a broken analysis finds less and must not pass |
 
-A complete GitHub Actions job is in [`examples/github-actions.yml`](examples/github-actions.yml).
-
-### 8. Metrics (opt-in pack)
-
-Start with the map: what is measured and what is not, rich enough to choose metrics without reading code.
-```
-$ logast metrics .
-Export: none
-  No exporter on the classpath: meters are collected but never leave the application.
-Identity
-  spring.application.name: pos-backend
-  spring.application.version: (not set: manifest Implementation-Version, if any)
-Measured without code: 661 entrypoints
-  631 by Spring MVC, e.g. http.server.requests{method="POST", uri="/api/orders/{id}/close"}
-  30 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="…", code.function="nightly"}
-Entrypoints no metric covers: 184
-Outcomes logged but not counted: 264  failed 165, skipped 27, completed 12, …
-  src/…/BillService.java:88  BillService.close
-    INFO "Bill request closed"  outcome=closed  frequency unknown: POST /bills/{id}/close has no traffic.yaml rate
-```
-`--format json` has every entry, with the exact metric and tag values to query and, for each uncounted outcome, a
-ready snippet: an `outcome` tag on the timer that is already running, or a counter. With the metrics pack on, the
-same outcomes are METRIC_OUTCOME_UNMEASURED findings (REPORT-ONLY): logast does not decide which business metrics
-matter, the LLM or a person picks.
-
-`@Timed`, `@Counted` and `@Observed` measure only while Spring Boot processes them: the same switch as for tracing,
-`management.observations.annotations.enabled: true` plus aspectjweaver (Boot reference, Observability, "Micrometer
-Observation Annotations support"; MetricsAspectsAutoConfiguration). The metrics pack switches them on by itself
-(OBSERVED_ANNOTATION_INACTIVE, shared with the tracing pack: one order when both run); while they are off, an annotated
-method counts as unmeasured and its business event gets an observation.
-
-Some outcomes are counted by default, without a decision, best effort like the logging fixes (`metrics.defaults`
-in logast.yaml, all four on; `[]` switches them off; a metrics.json decision always wins):
-
-| category | logged outcome | counted |
-|---|---|---|
-| `failures` | "X failed" | `x{outcome=failed}` +1 |
-| `jobs` | completed / failed / skipped in a `@Scheduled` job, batch runner or message/event listener, or the methods it calls up to two levels down (HTTP is covered by `http.server.requests`) | `x{outcome=…}` +1 |
-| `skips` | "X skipped" | `x{outcome=skipped}` +1 |
-| `db-writes` | a database write's `[rows={}]` line (also at DEBUG) | `x{outcome=…}` +1, `x.rows` grows by the row count |
-
-Each such line is marked for review with how sure logast is of the metric name:
-```java
-log.info("Order shipment skipped");
-OrderMetrics.orderShipmentSkipped(); // logast:metric review, confidence: medium
-```
-A counting line goes right after the log line's statement, so a log line that does not run there and then is left to
-you (it waits in metrics.json with a `"_problem"`): inside a `return`/`throw`, in a lambda on another thread
-(`runAsync(() -> …)`), or under a condition in a lambda (`whenComplete((r, e) -> { if (e != null) log… })`).
-
-`high`: every word of the name is a vocabulary term; `medium`: the name comes from the message; `low`: the message was
-generated by logast (`// logast:wording`), so the name comes from class or method names. Remove the comment once the
-name is right.
-
-Decisions go into `.logast/metrics.json`, kept up to date by `scan` and `apply` like `fills.json`:
-```json
-"OUM-ed9954": {
-  "count": "counter",               // counter | tag | skip   (empty = not decided)
-  "name": "settlement.export", "outcome": "completed",
-  "_message": "INFO \"Settlement export completed\"", "_frequency": "low", "_tag": "not available here …"
-}
-```
-`logast apply . --auto` then writes one line after the log line: `Outcomes.count("settlement.export", "completed")` (a
-counter `settlement.export{outcome="completed"}`, created once and cached), `Outcomes.tag("completed")` (`outcome` on the
-timer already running, offered only where one is known to run), or for `skip` a `// logast:ignore
-METRIC_OUTCOME_UNMEASURED` comment, so the decision lives in the code. `Outcomes` is in logging-support (copied in
-vendor mode when Micrometer is present).
-
-Where the line also logs a number, the entry offers it (`_amounts`), and `"amount"` counts it too:
-```json
-"OUM-3f2a10": {
-  "count": "counter", "name": "orders", "outcome": "shipped",
-  "amount": "items",                // one of _amounts; empty = count how often only
-  "as": "",                         // total | per-run; empty = metrics.amounts from logast.yaml (default total)
-  "_amounts": [ "items" ], "_message": "INFO \"Orders shipped\"", …
-}
-```
-- `total`: `Outcomes.count("orders", "shipped", "items", orders.size())`: `orders{outcome}` by 1 and a counter
-  `orders.items{outcome}` that grows by the number (totals, throughput).
-- `per-run`: `Outcomes.record(…)`: `orders{outcome}` by 1 and the number as one sample of a distribution summary
-  `orders.items{outcome}` (average, maximum, percentiles where the registry has them).
-
-Only quantities are offered: numbers whose key names a count or size, not an id, number, code, date part or status
-(`batchNumber`, `supplierId` are left out). The logged expression is evaluated again in the counting line, so it must be
-free of side effects (a variable, a field, `size()`/`length()`/a getter or record accessor); otherwise the entry gets
-a `"_problem"` saying so, and `apply` reports it. `metrics.amounts: off` in logast.yaml stops offering amounts.
-
-Metric names then move into one place (METRIC_CATALOG, AUTO): call sites call a member of a catalog class and never
-name a metric or an observation.
-```java
-log.info("Orders shipped [items={}]", orders.size());
-OrderMetrics.ordersShipped(orders.size());              // was Outcomes.count("orders", "shipped", "items", …)
-ObservedContext.entrypoint(JobMetrics.CALCULATION)      // was ObservedContext.entrypoint("calculation")
-
-// logast:metrics-catalog
-public final class OrderMetrics {
-    /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */
-    public static void ordersShipped(Number items) {
-        Outcomes.count("orders", "shipped", "items", items);
-    }
-}
-```
-`metrics.catalog` in logast.yaml picks where they live: `per-package` (default; one `<Package>Metrics` class per
-package that counts, next to its code; a metric used in several packages stays in the package of its first use),
-`single` (all in `metrics.catalogClass`, default `<app package>.metrics.BusinessMetrics`) or `off` (names stay at the
-call sites). Rename or document members freely: logast recognises its catalogs by the `// logast:metrics-catalog`
-comment, keeps what is there, and adds new members at the end. Counting lines written by hand
-(`Outcomes.count("…", "…")`) move into the catalog too.
-
-Every log line and meter also says which service and version wrote it (SETUP_SERVICE_IDENTITY, AUTO): logast adds
-`spring.application.name`/`version` when missing (env vars still win at runtime; set `logging.serviceName` /
-`logging.serviceVersion` in logast.yaml to your platform's expressions, default `${APPLICATION_VERSION:unknown}`),
-`application`/`version` tags on every meter, `service.name`/`version` in Logstash JSON (ECS and GELF take them
-from `spring.application.*`), and `service.version` on the OTel resource.
-
-Turn the pack on with `packs: [logging, tracing, metrics]`. A business event that is logged but not measured gets an
-Observation, which gives a timer (count, duration, errors) and a span in one:
-```java
-public void refund(String orderId, long amountCents) {
-    ObservedContext.entrypoint("refund")
-            .quiet()                         // the method logs its own lines; this adds the timer and span
-            .run(() -> {
-                log.info("Refund started");
-                …
-                log.info("Refund completed");
-            });
-}
-```
-A business event is a method logging "X started" / "X completed" (the phrasing rules), where X names a vocabulary
-term or the method logs the full lifecycle. HTTP endpoints, `@Scheduled` methods and observed Kafka listeners are
-already timed by Spring and left alone.
-
-Tags get a vocabulary like MDC keys (aliases are renamed, `values` optionally restricts literal values):
-```yaml
-metrics:
-  tags:
-    outcome: { aliases: [result, success, succeeded], values: [success, failure] }
-```
-It also catches what silently breaks metrics: one meter name registered with different tag keys (Prometheus drops the
-later ones), gauges on objects nothing else references (they read NaN after GC), meters built per loop item, ids or
-PII as tags. `logast metrics .` lists every meter, and the fleet report compares them across services: same name with
-different types/tags, and similar names (`orders.placed` vs `order_placed`).
-
-### 9. Resilience, errors and audit (opt-in packs)
-
-Turn them on with `packs: [logging, tracing, metrics, resilience, errors, audit]` (or `scan --pack resilience`).
-They use the same entrypoint and call-path analysis, so a finding says *which request* is affected.
-
-**resilience**: what turns a slow or failing dependency into an outage.
-
-| rule | finds | fix |
-|---|---|---|
-| HTTP_CLIENT_NO_TIMEOUT | Spring HTTP clients with no connect/read timeout (Boot sets none); JDK `HttpClient` without `connectTimeout`; clients the property does not reach: `RestClient.create()`, `new RestTemplate()`, `WebClient.create()` / the static `WebClient.builder()` (no auto-configuration), Apache `HttpClients.createDefault()` / `custom()` without a `RequestConfig` / `ConnectionConfig` (no response timeout by default). Feign and OkHttp are not reported: they default to 10s connect and 60s / 10s read | AUTO: `spring.http.clients.connect-timeout` / `read-timeout` (policy `resilience.*`, default 5s / 30s) for clients built from the injected `RestClient.Builder` / `RestTemplateBuilder` / `WebClient.Builder`; on Spring Boot 3.5 `spring.http.client.*` and, for WebClient, `spring.http.reactiveclient.*` (3.4: only the former; earlier: none, reported); report for the clients the property does not reach |
-| DB_NO_TIMEOUT | JdbcTemplate / NamedParameterJdbcTemplate / JdbcClient without a query timeout (Spring Boot sets none; the driver's default is usually none); JPA (`@Entity`, `EntityManager`, `JpaRepository`) without `jakarta.persistence.query.timeout`; a JdbcTemplate created with `new` (or `JdbcClient.create(dataSource)`), which the property does not reach; `@Transactional` without a transaction timeout | AUTO: `spring.jdbc.template.query-timeout` and `spring.jpa.properties.jakarta.persistence.query.timeout` (policy `resilience.dbQueryTimeout`, default 5m: stops "forever" without cutting off batch queries); report for hand-made templates (inject Boot's, or `setQueryTimeout`) and for `spring.transaction.default-timeout` (it applies to every transaction) |
-| REMOTE_CALL_IN_TRANSACTION | a blocking HTTP call (RestTemplate, RestClient, `HttpClient.send`, a Feign / `@HttpExchange` interface) reached on the same thread from inside a `@Transactional` method: the database connection waits for the network | report, with the path (once per outermost transaction) |
-| SCHEDULED_WITHOUT_LOCK | `@Scheduled` jobs without a lock (ShedLock's `@SchedulerLock`): with more than one instance, each runs on every instance at the same time | report, one finding listing all of them; `resilience.singleInstance: true` in logast.yaml for services that never run more than once |
-| KAFKA_NO_ERROR_HANDLER | listeners on the default handling: 9 immediate retries, then the record is skipped | report: `DefaultErrorHandler` + `DeadLetterPublishingRecoverer` + backoff |
-| RABBIT_NO_ERROR_HANDLER | `@RabbitListener` on Spring Boot's defaults: a message whose listener throws is rejected and requeued, so one that always fails is redelivered without end. Not with `spring.rabbitmq.listener.<type>.retry.enabled: true` or `default-requeue-rejected: false`, a container factory that sets the requeue / an advice chain, an `ackMode` of its own, or `AmqpRejectAndDontRequeueException` thrown in the listener's class | report: listener retries plus a dead-letter exchange, or no requeue |
-| UNBOUNDED_EXECUTOR | `newCachedThreadPool`, `newFixedThreadPool` (unbounded queue), `ThreadPoolTaskExecutor` without queue capacity; `@Async` on Spring Boot's auto-configured executor (8 threads, `spring.task.execution.pool.queue-capacity` defaults to unbounded) when the service declares no `Executor` bean / `AsyncConfigurer` and no virtual threads | report |
-| SCHEDULER_SINGLE_THREAD | two or more `@Scheduled` jobs on Spring Boot's auto-configured scheduler, which has one thread (`spring.task.scheduling.pool.size` defaults to 1): one slow run delays every other job. Not with a `TaskScheduler` bean of the service's own or virtual threads | report: `spring.task.scheduling.pool.size` (jobs then run concurrently: a decision) |
-| RETRY_INACTIVE | `@Retryable` / `@ConcurrencyLimit` (Spring Framework 7) without `@EnableResilientMethods`, Spring Retry's `@Retryable` / `@CircuitBreaker` without `@EnableRetry`: the annotations are metadata only, the method runs once | AUTO: adds the enabling annotation to the `@SpringBootApplication` class (Spring Retry's only with AspectJ on the classpath); report otherwise |
-| RETRY_IN_TRANSACTION | a `@Retryable` `@Transactional` method (Spring Framework 7 or Spring Retry) called from another class inside a transaction: it joins that transaction, so its retries run in one already marked rollback-only and the caller's commit fails. Not with `REQUIRES_NEW` / `NESTED` / `NOT_SUPPORTED` | report: retry the method that starts the transaction, or `REQUIRES_NEW` |
-| ROW_BY_ROW_WRITE | a loop over a query result that writes one row per item | report: a batch update / one set-based statement |
-| SHUTDOWN_NOT_GRACEFUL | a web service with `server.shutdown: immediate` (graceful shutdown is Spring Boot's default); `spring.lifecycle.timeout-per-shutdown-phase` (30s when not set) shorter than an HTTP client read timeout, `spring.mvc.async.request-timeout` or `spring.transaction.default-timeout` the configuration sets: a rollout cuts that work off. Only with a `@SpringBootApplication` | report |
-| HEALTH_PROBE_MISCONFIGURED | `management.endpoint.health.probes.enabled: false` (switches the liveness/readiness groups off, on Kubernetes too); a database, broker or other external system in the liveness group (every instance restarts while it is down). Only with a `@SpringBootApplication` | report |
-| READINESS_WITHOUT_DATABASE | a service with a database (JDBC, JPA, `@Transactional`) and Actuator whose readiness group does not include `db` (Spring Boot adds no checks to it). The Spring Boot reference calls it a judgement call: a shared database takes every instance out of service at once | report (low): include it, or switch the rule off for the service |
-| CACHE_UNBOUNDED | `@EnableCaching` on Spring Boot's simple provider (no cache library, or `spring.cache.type: simple`: ConcurrentHashMaps that never evict), a `ConcurrentMapCacheManager` bean, Caffeine without `maximumSize` / `maximumWeight` | report |
-| BLOCKING_WAIT_UNBOUNDED | `future.get()`, `join()`, `latch.await()` without timeout on a request/message path (`orTimeout(..)` in the chain, or an earlier bounded wait such as `allOf(a, b).get(5, SECONDS)` on the same futures, counts as one) | report |
-
-**errors**: what an HTTP client sees when something goes wrong.
-
-| rule | finds | fix |
-|---|---|---|
-| ERROR_DETAILS_EXPOSED | `server.error.include-message/stacktrace/exception`; a handler for unexpected exceptions copying `e.getMessage()` into the body | AUTO for the config (set to never), report for handlers |
-| UNMAPPED_EXCEPTION | an application exception thrown on an HTTP path that no `@ExceptionHandler` or `@ResponseStatus` maps (it becomes a 500); a downstream call on an HTTP path (RestClient, RestTemplate, `@HttpExchange` / Feign interfaces, a WebClient call ending in `block()`) whose exceptions no handler maps, so another service's failure is answered as our own 500. Handlers count from the sources and from `@ControllerAdvice` classes in libraries on the classpath (outside the public groups, without a basePackages / assignableTypes selector) | report: decide its status (downstream: 502 for an error status, 504 for a timeout, or pass a 404 on) |
-| CLIENT_ERROR_AS_SERVER_ERROR | a handler answering 500 for a validation / not-found / denied exception; a catch-all `@ExceptionHandler(Exception)` answering 500 while request bodies are `@Valid`: it takes `MethodArgumentNotValidException` before Spring's default 400 | report |
-| PROBLEM_DETAILS_DISABLED | Spring MVC errors are not RFC 9457 `ProblemDetail` responses | report (changes the API's error body) |
-| ERROR_RESPONSE_UNTRACED | error responses without the trace id (Spring MVC with Micrometer Tracing) | AUTO: `logging-support.problem-trace-id.enabled: true`; logging-support then adds `"traceId"` to every `ProblemDetail` and to Spring Boot's error map, so a reported error leads straight to its log lines and trace (a traceId a handler set is kept) |
-| ASYNC_ERROR_LOST | a Future whose result is thrown away: its exception stays in the future and is never logged (`@Async void` is fine: Spring logs those) | AUTO for a `CompletableFuture` statement: a `whenComplete` that logs the failure (wording marked `// logast:wording`); report for other Futures (`executor.submit(…)`) |
-| CAUSE_DROPPED | `catch (X e) { throw new Y(e.getMessage()); }`: the new exception does not carry `e`, so the original stack trace is lost | AUTO when `Y` has a constructor taking the same arguments plus the cause (`e` is appended); report otherwise (add such a constructor, or `initCause(e)`) |
-| CATCH_ALL_DEFAULT | `catch (Exception e) { … return null; }` (or `Optional.empty()`, an empty collection, `0`, `false`, `""`): the caller cannot tell a failure from an empty result, logged or not | report (let it through, catch only what means "nothing there", or return a result type that carries the failure) |
-| UNEXPECTED_ERROR_UNLOGGED | an `@ExceptionHandler(Exception / RuntimeException / Throwable)` that does not log the exception: Spring logs nothing for a handled exception, so the failure leaves no stack trace | AUTO: `log.error(…, e)` at the top of the handler (wording marked `// logast:wording`, logger added if missing); not when it rethrows or passes the exception on (`super.handleException(…)`) |
-| ERROR_HANDLER_STATUS_OK | an `@ExceptionHandler` that answers 200: a body object without `@ResponseStatus` (on it or its class), or `ResponseEntity.ok(…)`; a returned `ProblemDetail` / `ErrorResponse` carries its own status, except a `ProblemDetail` subclass built without one (status 0: the handler fails and the client gets the default answer, usually 500) | report (the status is a decision) |
-| TX_COMMITS_ON_CHECKED | a `@Transactional` method (or class) that throws a checked exception without `rollbackFor` / `noRollbackFor`: checked exceptions do not roll back by default, so the work before the exception is committed | report (`rollbackFor` changes what is committed); not with `@EnableTransactionManagement(rollbackOn = ALL_EXCEPTIONS)` |
-| REQUEST_NOT_VALIDATED | a `@RequestBody` / `@ModelAttribute` (also on the interface method it implements) whose type has Bean Validation constraints, without `@Valid` / `@Validated`: the constraints are never checked | report (`@Valid` changes which requests are accepted); the note says whether a catch-all handler would answer the rejection 500 instead of 400, and when no Bean Validation provider is on the classpath |
-
-**audit**: actions that must leave an audit record, not just a log line.
-
-| rule | finds | fix |
-|---|---|---|
-| AUDIT_MISSING | an entrypoint matching `audit.actions` from which no audit emitter is reachable | report |
-| AUDIT_FAILURES_UNRECORDED | an auditable action that records its audit event only after its work succeeded (no audit call in a catch or finally): a rejected or failed attempt leaves no record | report (record the outcome either way, or the attempt before the work) |
-| AUDIT_RECORD_INCOMPLETE | an audit call that does not say who did it (an argument from the security context, or named like `userId`/`actor`/`principal`; or the audit method reads the security context itself) or to which record (a vocabulary id, or named like `…Id`); or an audit method in the code whose records cannot say the outcome (no outcome parameter or record field, nor every call passing one) or the request (no trace / correlation id passed, read from MDC or the tracer, or carried by a log line): both are attributes of every security event in the [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html) | report (the outcome/correlation finding once, at the audit method) |
-| AUDIT_LOG_MIXED | an audit class (named `*Audit*`, or a configured emitter) logs through a logger named after the class: its lines mix with the application log | AUTO: logs through the logger `audit` (policy `audit.logger`): `LoggerFactory.getLogger("audit")` / `@Slf4j(topic = "audit")`, so the log pipeline can route audit lines apart (own index, longer retention) |
-| DATA_CHANGES_UNAUDITED | an entity changed through a Spring Data repository with no `@LastModifiedBy` field; or `@CreatedBy`/`@LastModifiedBy` fields with no `AuditorAware` bean to fill them; or a bulk statement on an audited entity (`@Modifying @Query("update …")`, `JdbcTemplate.update`/`batchUpdate`, `JdbcClient.sql("insert into …")` on its table): Spring Data auditing only runs when the entity is saved, so `@LastModifiedBy` keeps the previous editor | report (add the fields, `@EnableJpaAuditing`/`@EnableJdbcAuditing`, an `AuditorAware` reading the current user; for a bulk statement: go through `save()`, or set the editor column in the statement). Deletes are not reported |
-| AUDIT_SECURITY_EVENTS | Spring Security in use, but failed/successful logins and denied access are not recorded durably: no listener of its authentication events and no `AuditEventRepository` bean; or only Boot's `InMemoryAuditEventRepository` outside a dev/test `@Profile` (Boot recommends it [only for development](https://docs.spring.io/spring-boot/reference/actuator/auditing.html): bounded, lost on restart); or a listener of authorization events with no `AuthorizationEventPublisher` bean, which Spring Security [requires](https://docs.spring.io/spring-security/reference/servlet/authorization/events.html) to publish them | report |
-| AUDIT_LOGGER_UNROUTED | audit records go to the logger `audit` (or AUDIT_LOG_MIXED moves them there), but the service's `logback(-spring).xml` has no `<logger name="audit">` (they reach the root appenders, mixed with the application log), or drops them (`additivity="false"` without an appender-ref, or a level above theirs); or `logging.level.audit` is above the records' level. Without a logback file Boot's structured logging carries the logger name as a field the pipeline can route on: not reported | report |
-| AUDIT_BEFORE_COMMIT | an audit call inside a transaction (`@Transactional`, or reached from one on the same thread) whose audit method writes outside it (a log line, a Kafka/Rabbit/JMS message, an HTTP call, `REQUIRES_NEW`, another thread): a rolled-back action is recorded as done. Calls in a catch block and records written through the database are not reported | report (record it in a `@TransactionalEventListener` AFTER_COMMIT / AFTER_ROLLBACK, a `TransactionSynchronization`, or through the transaction's database) |
-| AUDIT_RECORD_SECRET | a password, token, secret, PIN, full card number or IBAN passed to an audit call (an argument, a part of the record built in it, followed back through locals and callers), or an object whose class holds such a field; PII_IN_LOG's whole-word name matching with the secret terms; derived values (`tokenId`, `maskedIban`, `passwordHash`) are not secrets | report |
-| AUDIT_ACTOR_LOST_ASYNC | an audit record that reads the acting user from the security context on another thread (an `@Async` method, an executor task): Spring Security keeps the context [per thread](https://docs.spring.io/spring-security/reference/servlet/authentication/architecture.html) (`MODE_THREADLOCAL` by default) and it is [lost on a new thread](https://docs.spring.io/spring-security/reference/features/integrations/concurrency.html). Not reported when a `DelegatingSecurityContext*` executor, a TaskDecorator copying the context, or Micrometer context propagation with Spring Security 6.5+'s `SecurityContextHolderThreadLocalAccessor` carries it | report (read the user before the hand-over and pass it in, or a `DelegatingSecurityContextAsyncTaskExecutor`) |
-
-```yaml
-audit:
-  emitters: [com.example.audit.AuditService, com.example.audit.ActivityLogger#log]
-  actions:                       # defaults: DELETE endpoints, /admin/**, export/delete/grant/revoke/refund/approve… methods
-    - http: "* /api/payments/**"
-    - term: refund               # a vocabulary term in the endpoint or method name
-```
-With no emitters listed, any call on a type named `*Audit*`, or passing an `*Audit*` argument (an `AuditAction`
-value, an event implementing `AuditableDomainEvent`), counts as recording an audit event.
-
-### 10. Across all services
-
-```bash
-logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, with trend against the last run
-```
+- Record the baseline once with `logast init --baseline` or `logast scan . --update-baseline`, and commit
+  `.logast/baseline.json`.
+- Against a baseline, a known finding that covers more places than when it was recorded (a second unlocked
+  `@Scheduled` job) counts as new.
+- A complete GitHub Actions job: [examples/github-actions.yml](examples/github-actions.yml).
 
 ---
 
-## Commands
-
-| command | what it does |
-|---|---|
-| `logast init [svc]` | one-time setup: policy, .gitignore, classpath, traffic template (`--baseline` for CI) |
-| `logast why [svc] <key>` | why an MDC key is scoped where it is: every method that logs it, the decision (scope, covered, in MDC, no scope, lifted) and the reason |
-| `logast shape [svc]` | exports the code with its own names and words replaced (`.logast/shape/`, mapping back in `.logast/shape-mapping.txt`): the same findings without the content, to send a reproduction. Only known public libraries (Spring, SLF4J, Jakarta, ...) keep their names; any other library (a company one under its own group) is replaced like the code, unless named with `--public-group`. `kept-words.txt` lists every non-generic word that stayed. Read it before sending |
-| `logast metrics [svc]` | the metrics map: exporters, identity, metric per entrypoint, meters in code, outcomes not counted (`--format json`, `--format table` = meters only) |
-| `logast vocabulary [svc]` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
-| `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
-| `logast scan <svc>` | finds gaps, writes `.logast/orders.json`, prints the work orders |
-| `logast apply <svc> [--auto] [--only ids] [--write]` | applies orders on a scratch copy, rescanning between rounds; dry run unless `--write`. Message texts come from `.logast/fills.json` (or `--fills <file>`) |
-| `logast review <svc> [--open]` | local page for people to write the messages and apply |
-| `logast verify <svc>` | runs the existing tests with log capture and checks what was really logged |
-| `logast explain <svc> [--entrypoint "POST /x"]` | lists entrypoints, or the call tree below one with log/MDC/async markers |
-| `logast traffic <svc>` | writes `.logast/traffic.yaml` with every entrypoint, ready to fill in |
-| `logast fleet <svc>…` | compliance report across services |
-| `logast policy <svc>` | the effective policy after all layers, with overrides |
-| `logast rules` | every rule and its packs |
-
-Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, `--traffic <file>`.
-
-## Rules
-
-| pack | rules |
-|---|---|
-| logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · BUSINESS_EVENT_TIMESTAMP · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · DB_OUTCOME_UNLOGGED · MESSAGE_SUGGESTED · SETUP_SERVICE_IDENTITY · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
-| tracing | ENTRYPOINT_NOT_OBSERVED · OBSERVED_ANNOTATION_INACTIVE · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · RABBIT_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · SPAN_NOT_CLOSED · SPAN_NAME_DYNAMIC · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING · TRACING_EXPORT_UNCONFIGURED · TRACE_ID_NOT_LOGGED |
-| logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
-| resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · DB_NO_TIMEOUT · REMOTE_CALL_IN_TRANSACTION · SCHEDULED_WITHOUT_LOCK · SCHEDULER_SINGLE_THREAD · RETRY_INACTIVE · RETRY_IN_TRANSACTION · SHUTDOWN_NOT_GRACEFUL · HEALTH_PROBE_MISCONFIGURED · READINESS_WITHOUT_DATABASE · CACHE_UNBOUNDED · KAFKA_NO_ERROR_HANDLER · RABBIT_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED · ROW_BY_ROW_WRITE |
-| errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED · ASYNC_ERROR_LOST · CAUSE_DROPPED · CATCH_ALL_DEFAULT · UNEXPECTED_ERROR_UNLOGGED · ERROR_HANDLER_STATUS_OK · TX_COMMITS_ON_CHECKED · REQUEST_NOT_VALIDATED | · TX_COMMITS_ON_CHECKED |
-| audit (opt-in) | AUDIT_MISSING · AUDIT_FAILURES_UNRECORDED · AUDIT_RECORD_INCOMPLETE · AUDIT_LOG_MIXED · DATA_CHANGES_UNAUDITED · AUDIT_SECURITY_EVENTS · AUDIT_LOGGER_UNROUTED · AUDIT_BEFORE_COMMIT · AUDIT_RECORD_SECRET · AUDIT_ACTOR_LOST_ASYNC |
-| metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · OBSERVED_ANNOTATION_INACTIVE · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
-| runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
-
-Suppress a single finding with `// logast:ignore RULE` on the line or the line above (several rules: `RULE_A, RULE_B`;
-rule ids match exactly, a bare `// logast:ignore` silences every rule there), or a rule for a whole Java file with
-`// logast:ignore-file RULE`. Tune or disable rules in the
-policy (`rules: { LOG_FORMAT: { severity: low } }`, `{ enabled: false }`).
-
 ## The runtime starter
 
-| | `support.mode: dependency` (default) | `support.mode: vendor` |
-|---|---|---|
-| what logast does | adds `dev.logast:logging-support` to `build.gradle(.kts)` | copies its classes into `<app package>.logging` |
-| upgrades | bump the version | re-copy, or switch to the dependency later |
-| when | you publish the starter to your repository | no shared artifact yet, or the service must not take new dependencies |
+`logging-support` is a small Spring Boot starter the generated code calls: `ObservedContext`, `MdcScope`,
+`ContextExecutors`, `TraceContextEnv`, a context-propagating `TaskDecorator`, and more.
 
-Both give the same generated code. On its own the starter switches nothing on: a pack may add it for one class (the
-errors pack for `ProblemTraceId`) without changing what another pack owns, such as the log format. Each behaviour
-has a property, off unless `true`; logast writes it to `application.yml` for the pack that uses it:
+- **It switches nothing on by itself.** Each behaviour has a `logging-support.*.enabled` property, off unless
+  `true`; logast writes the ones a pack uses into `application.yml`.
+- A service either depends on it (`support.mode: dependency`, the default) or gets its classes copied in
+  (`support.mode: vendor`, until the starter is in your repository).
 
-| property | behaviour | written by |
-|---|---|---|
-| `logging-support.log-defaults.enabled` | logs default to ECS JSON with `SERVICE_NAME` / `APP_VERSION` (a format the service sets wins) | logging |
-| `logging-support.mdc-hygiene.enabled` | `MdcHygieneFilter` clears and reports MDC that leaks across requests (servlet apps) | logging |
-| `logging-support.context-propagation.enabled` | the `TaskDecorator` carries MDC and trace context into `@Async` and Spring executors | logging, tracing |
-| `logging-support.batch-trace.enabled` | batch apps continue the trace from `TRACEPARENT` / `TRACE_ID` | tracing |
-| `logging-support.problem-trace-id.enabled` | `"traceId"` in error responses | errors |
+Properties, modes and publishing it to your repository: [docs/starter.md](docs/starter.md).
 
-Upgrading a service that took an earlier starter, where the first four were on by default: run `logast apply` with
-its packs (logging and tracing by default) and it writes the properties, or set them yourself. A value the service
-already sets, `true` or `false`, is left as it is.
+---
 
-## Troubleshooting
+## Documentation
 
-| symptom | cause and fix |
+| page | what is in it |
 |---|---|
-| `WARNING: no classpath` or many unresolved calls | run `logast classpath .`; rerun it after adding dependencies (e.g. after the starter was added) |
-| `logast classpath` fails | it only resolves dependencies; run the printed Gradle command without `-q` to see why |
-| `REJECTED … must read as '{subject} failed'` | the text has to follow the lifecycle form for that log, e.g. "Payment charge failed, will retry" |
-| `REJECTED … glossary 'purchase' → use 'order'` | use the vocabulary term; `logast policy .` shows aliases |
-| `depends on [SUP-…]` | apply that order in the same run (`--auto` does) |
-| scans are slow on large services | every scan parses the whole project from source (about 30 s for 2,000 files), each apply round too: slower, but the result never depends on compiled classes |
-| why did apply take several rounds? | `.logast/apply-trace.txt`: what each round applied and which orders its rescan brought up. Steps run in order (setup, structure, lines, mdc, messages, exceptions, levels, reports), usually one round each; a second pass applies nothing in a healthy run |
-| `CHECK FAILED: … did not see its own fix` | a rule's order came back unchanged after its edit: apply applied it once and stopped there (instead of adding the same lines on every pass). A logast bug: please report the shape of the code |
-| `CHECK FAILED: … undo each other` | two fixes reverted each other; apply stopped. A logast bug: please report it with `.logast/apply-trace.txt` |
-| `N log call(s) recognised by name only` | the logger's type did not resolve (Lombok's `@Slf4j` without Lombok on the classpath): log lines are still recognised by name, but other types are probably missing too. Run `logast classpath .` |
+| [docs/commands.md](docs/commands.md) | every command, its options and example output |
+| [docs/rules.md](docs/rules.md) | packs and rules: severity, what each finds, how it is fixed |
+| [docs/configuration.md](docs/configuration.md) | every `logast.yaml` setting |
+| [docs/vocabulary.md](docs/vocabulary.md) | vocabulary, policy layers, phrasing, levels, log volume |
+| [docs/starter.md](docs/starter.md) | the runtime starter |
+| [docs/llm-workflow.md](docs/llm-workflow.md) | the loop an LLM follows (installed as the Claude Code skill) |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | symptoms and fixes, known limitations |
+| [docs/pipeline-plan.md](docs/pipeline-plan.md) | design: the ordered apply steps |
+
+---
 
 ## Development
 
 ```bash
-./gradlew build              # all modules and tests (core, logging-support, test-capture)
+./gradlew build              # all modules and unit tests
 ./gradlew :cli:installDist   # cli/build/install/logast/bin/logast
 ./gradlew :cli:distZip       # release zip with docs, examples and the Claude Code skill
 ```
@@ -910,14 +253,16 @@ already sets, `true` or `false`, is left as it is.
 | `test-capture` | log capture added to test runs by `logast verify` |
 | `fixtures/sample-app` | a shop app with planted gaps; `// expect: RULE` markers are checked exactly by the tests |
 
-## Known limitations
+**End-to-end tests.** `e2e/before` is a small service with the code shapes real services showed. Each scenario runs
+`logast apply . --auto --write` on a copy, compiles the result and compares every file and the printed output with a
+snapshot in `e2e/expected*`.
 
-- Gradle builds only. Kotlin sources and reactive (WebFlux) code are not analysed.
-- Calls into libraries end the call graph; whatever happens inside a library is not followed.
-- Existing `MDC.putCloseable` calls are left as they are (they remove instead of restore).
-- LOG_OBJECT_ARGUMENT judges by type: a project class logged whole is reported unless it is a value record or defines
-  `toString()`; library types are only flagged when they are known payloads (headers, requests, JSON, records).
-- `LOG_VOLUME` is only as good as the traffic numbers you provide.
-- AUDIT_MISSING follows direct calls only: an audit written by a listener of a published event counts when the event
-  (or what it carries) is audit-typed, but not when the listener alone decides to audit.
-- UNMAPPED_EXCEPTION treats a controller's own `@ExceptionHandler` as global, and ignores exceptions from libraries.
+```bash
+./gradlew :cli:e2e --tests "*Name*"   # the scenarios a change touches (JDK 25)
+./gradlew :cli:e2eJdk21               # the same on Java 21
+./gradlew build -Pe2e                 # build plus both e2e tasks (CI runs them on Linux and macOS)
+./gradlew :cli:e2e -Pe2e.update       # rewrite the snapshots after an intended change; review git diff e2e/
+```
+
+Rules for changes (every change comes with a test that fails without it, issues, the e2e matrix):
+[AGENTS.md](AGENTS.md).
