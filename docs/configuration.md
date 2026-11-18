@@ -25,9 +25,16 @@ built-in defaults           phrasing, levels, PII words, packs: logging + tracin
 
 ```yaml
 extends:
-  - https://git.example.com/platform/observability/raw/main/company.yaml   # a URL, or
-  - ../shared/kitchen.yaml                                                # a file relative to this one
+  - https://git.example.com/platform/observability/raw/main/company.yaml#sha256=3f2a…   # a URL, pinned, or
+  - ../shared/kitchen.yaml                                                              # a file relative to this one
 ```
+
+- **Pin a URL** with `#sha256=<hash of the file>`: when the shared file changes, the load fails and says the new hash, so
+  a change of the company rules is reviewed before it applies. An unpinned URL works, with a warning that names the
+  hash to pin.
+- **Check it in CI** with `logast policy . --check`: besides the load-time checks it warns about names that match
+  nothing in the code (an `audit.emitters` class, a vocabulary `types` entry) and `// logast:ignore RULE` comments
+  whose rule does not exist. Exit 0: fine, 1: warnings, 2: errors.
 
 ---
 

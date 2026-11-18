@@ -1,6 +1,8 @@
 package dev.logast.rules;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,6 +49,26 @@ final class Suppressions {
             if (m.group(1) != null) {
                 int eol = text.indexOf('\n', m.end());
                 out.addAll(rules(text.substring(m.end(), eol < 0 ? text.length() : eol).strip()));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * #56: rule ids in {@code logast:ignore} / {@code logast:ignore-file} comments of {@code text} that are no rule
+     * (a typo silences nothing): "line: ID".
+     */
+    static List<String> unknownIds(String text) {
+        List<String> out = new ArrayList<>();
+        Set<String> known = Rules.all();
+        Matcher m = IGNORE.matcher(text);
+        while (m.find()) {
+            int eol = text.indexOf('\n', m.end());
+            for (String id : rules(text.substring(m.end(), eol < 0 ? text.length() : eol).strip())) {
+                if (!known.contains(id)) {
+                    int line = (int) text.substring(0, m.start()).chars().filter(c -> c == '\n').count() + 1;
+                    out.add(line + ": " + id);
+                }
             }
         }
         return out;

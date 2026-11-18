@@ -18,7 +18,7 @@ examples. Output samples are illustrations; counts and ids differ per service an
 | `logast queries <svc>` | ready-made PromQL, NRQL and Splunk SPL for the service's metrics and logs, written to `.logast/reports/queries.md` (`--stdout` prints them) |
 | `logast vocabulary <svc>` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
 | `logast traffic <svc>` | writes `.logast/decisions/traffic.yaml` with every entrypoint, ready to fill in |
-| `logast policy <svc>` | the effective policy after all layers, with overrides |
+| `logast policy <svc> [--check]` | the effective policy after all layers, with overrides; `--check` (CI) checks it against the code instead: exit 0 fine, 1 warnings, 2 errors |
 | `logast rules` | every rule and its packs |
 | `logast fleet <svc>…` | compliance report across services |
 | `logast shape <svc>` | exports the code with its own names and words replaced, to send a reproduction ([below](#shape)) |
@@ -312,7 +312,8 @@ a hint.
 - `logast vocabulary .` collects the identifier keys the service uses (MDC keys, `[k=v]` keys, id-like variables)
   that the policy doesn't cover yet; `init` writes the same harvest into `logast.yaml`. How to organise it:
   [vocabulary.md](vocabulary.md#start-from-the-code).
-- `logast policy .` prints the merged result of all layers and every override.
+- `logast policy .` prints the merged result of all layers and every override. `logast policy . --check` checks the
+  policy against the code for CI ([configuration](configuration.md#how-the-configuration-is-put-together)).
 - `logast traffic .` lists every entrypoint in `.logast/decisions/traffic.yaml`; fill in calls/day (or pass a Prometheus query
   result with `--traffic`) so logast can judge log volume. Existing values are kept.
 

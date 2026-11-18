@@ -394,6 +394,12 @@ public final class Applier {
         }
         Set<String> present = new HashSet<>();
         scan.orders().forEach(o -> present.add(o.id()));
+        // #56: an --only id that matches no order is said, like a stale messages.yaml entry, not silently dropped
+        for (String id : sel.only()) {
+            if (!present.contains(id) && first && everSelected.add(id)) {
+                pending.add(id);
+            }
+        }
         for (String id : sel.fills().keySet()) {
             if (present.contains(id) || sel.lenientFills() || !first) {
                 continue;   // selected in its step above; a finished entry of .logast/decisions/messages.yaml; or already reported

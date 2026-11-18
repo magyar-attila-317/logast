@@ -160,6 +160,8 @@ public final class Main {
             try (Out.Progress p = new Out.Progress("analysing the code (parsing dominates: about 30 s for 2,000 files)")) {
                 r = Logast.scan(root(), classpath(), policy, traffic);
             }
+            // #56: names in the policy and ignore comments that match nothing (also: logast policy . --check)
+            dev.logast.rules.PolicyUsage.warnings(Logast.lastAnalysis).forEach(w -> Out.warn("policy: " + w));
             dev.logast.Traffic t = Logast.lastAnalysis.traffic;
             if (t.known()) {
                 java.util.Set<String> labels = new java.util.TreeSet<>();
@@ -327,7 +329,7 @@ public final class Main {
         @Override
         public Integer call() throws IOException {
             Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
-            if (!auto && fillMap.isEmpty()) {
+            if (!auto && fillMap.isEmpty() && only.isEmpty()) {   // #56: --only ids are a selection too
                 System.err.println("""
                         logast apply: nothing selected. Choose what to apply:
                           --auto     every fix that needs no message text
@@ -771,8 +773,27 @@ public final class Main {
 
     @Command(name = "policy", description = "Print the effective policy (all layers merged) and its overrides")
     static class PolicyCmd extends Common implements Callable<Integer> {
+        @Option(names = "--check", description = "For CI: check the policy against the code (names that match nothing, "
+                + "unknown ids in logast:ignore comments) instead of printing it. Exit 0: fine; 1: warnings; 2: errors")
+        boolean check;
+
         @Override
         public Integer call() throws IOException {
+            if (check) {
+                Policy p;
+                try {
+                    p = policy();   // load-time errors (unknown packs, rule ids, regexes, …) throw here
+                } catch (IllegalArgumentException e) {
+                    Out.warn(e.getMessage());
+                    return 2;
+                }
+                Analysis a = Logast.analyse(root(), classpath(), p);
+                List<String> warnings = new ArrayList<>(p.warnings());
+                warnings.addAll(dev.logast.rules.PolicyUsage.warnings(a));
+                warnings.forEach(w -> System.out.println("warning: " + w));
+                System.out.println(warnings.isEmpty() ? "policy ok" : warnings.size() + " warning(s)");
+                return warnings.isEmpty() ? 0 : 1;
+            }
             System.out.println(new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
                     .setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
                     .writeValueAsString(policy()));

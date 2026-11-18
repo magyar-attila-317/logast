@@ -43,6 +43,8 @@ public final class PolicyLoader {
     /** YAML path → the layer that last set it; list items appended by a later layer as {@code path[i]}. */
     private final Map<String, String> origin = new LinkedHashMap<>();
     private final Deque<String> loading = new ArrayDeque<>();
+    /** #56: extends: URLs without a #sha256= pin, with the hash to pin them to. */
+    private final List<String> unpinned = new ArrayList<>();
 
     private PolicyLoader() {
     }
@@ -80,7 +82,7 @@ public final class PolicyLoader {
     /** Errors fail the load, all of them in one message; warnings travel with the policy. */
     private Policy validate(Policy policy) {
         List<String> errors = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
+        List<String> warnings = new ArrayList<>(unpinned);
         for (PolicyValidator.Problem pr : PolicyValidator.check(policy, path -> !label(DEFAULTS).equals(source(path)))) {
             (pr.error() ? errors : warnings).add(source(pr.path()) + ": " + pr.path() + ": " + pr.message());
         }
@@ -192,7 +194,7 @@ public final class PolicyLoader {
         return p.toAbsolutePath().normalize().toString();
     }
 
-    private static JsonNode read(String location) {
+    private JsonNode read(String location) {
         try {
             if (location.startsWith("classpath:")) {
                 try (InputStream in = PolicyLoader.class.getResourceAsStream("/" + location.substring("classpath:".length()))) {
@@ -203,11 +205,23 @@ public final class PolicyLoader {
                 }
             }
             if (location.startsWith("http://") || location.startsWith("https://")) {
+                // #56: https://…/policy.yaml#sha256=<hex> pins the content: a changed file fails instead of changing rules
+                int hash = location.indexOf("#sha256=");
+                String url = hash < 0 ? location : location.substring(0, hash);
                 HttpResponse<String> r = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
-                        .send(HttpRequest.newBuilder(URI.create(location)).timeout(Duration.ofSeconds(20)).build(),
+                        .send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20)).build(),
                                 HttpResponse.BodyHandlers.ofString());
                 if (r.statusCode() / 100 != 2) {
-                    throw new IllegalArgumentException("cannot fetch policy " + location + ": HTTP " + r.statusCode());
+                    throw new IllegalArgumentException("cannot fetch policy " + url + ": HTTP " + r.statusCode());
+                }
+                String actual = sha256(r.body());
+                if (hash >= 0 && !location.substring(hash + "#sha256=".length()).equalsIgnoreCase(actual)) {
+                    throw new IllegalArgumentException("policy " + url + " changed: its sha256 is " + actual + ", extends pins "
+                            + location.substring(hash + "#sha256=".length()) + "; review the change, then pin the new hash");
+                }
+                if (hash < 0) {
+                    unpinned.add("extends: " + url + " is not pinned, so a change there changes this service's rules unseen; "
+                            + "pin it: " + url + "#sha256=" + actual);
                 }
                 return YAML.readTree(r.body());
             }
@@ -216,6 +230,15 @@ public final class PolicyLoader {
             throw new UncheckedIOException("cannot read policy " + location, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    static String sha256(String text) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
     }
