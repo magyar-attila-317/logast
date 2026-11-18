@@ -11,7 +11,8 @@ vocabulary and phrasing rules before writing anything.
 
 What a service gets out of it:
 
-- structured ECS JSON logs with `service.name` / `service.version`, and no hand-rolled `logback-spring.xml`;
+- structured JSON logs in the format you choose (`logging.structuredFormat`: ECS by default, Logstash, GELF or your own
+  formatter) with the service name and version, and no hand-rolled `logback-spring.xml`;
 - the business ids (`order.id`, `tenant.id`, …) in MDC from the entrypoint down, scoped with try-with-resources, and
   never leaking into the next request on a pooled thread;
 - traces that survive `@Async`, executors, HTTP calls between services, messaging, and orchestrator → batch-pod launches;
