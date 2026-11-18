@@ -275,8 +275,19 @@ public final class SetupRules {
     }
     private static final Pattern AUTO_CONFIGURATION = Pattern.compile("@AutoConfiguration(\\([^)]*\\))?", Pattern.DOTALL);
 
+    /** Spring Boot 4's EnvironmentPostProcessor; Boot 3 has it in org.springframework.boot.env. */
+    static final String BOOT4_EPP = "org.springframework.boot.EnvironmentPostProcessor";
+    static final String BOOT3_EPP = "org.springframework.boot.env.EnvironmentPostProcessor";
+
+    /** Boot 3's interface only when the classpath has it and not Boot 4's; else (Boot 4, or unknown) Boot 4's. */
+    static String environmentPostProcessor(boolean boot4OnClasspath, boolean boot3OnClasspath) {
+        return !boot4OnClasspath && boot3OnClasspath ? BOOT3_EPP : BOOT4_EPP;
+    }
+
     private void vendor(BuildScripts scripts) {
         String pkg = ctx.a.supportPackage;
+        // #116: the interface (and spring.factories key) of the service's Spring Boot line: Boot 4 moved it
+        String epp = environmentPostProcessor(ctx.a.project.probe().hasClass(BOOT4_EPP), ctx.a.project.probe().hasClass(BOOT3_EPP));
         Path javaRoot = ctx.a.index.classes().stream().map(c -> sourceRoot(c.file().absPath())).filter(Objects::nonNull)
                 .findFirst().orElse(root.resolve("src/main/java"));
         Path dir = javaRoot.resolve(pkg.replace('.', '/'));
@@ -300,15 +311,19 @@ public final class SetupRules {
                 b.suggestion(b.suggestion + " " + rel(target) + " already exists and was left as is.");
                 continue;
             }
-            b.edit(Edit.create(rel(target), vendoredSource(cls, pkg)));
+            String src = vendoredSource(cls, pkg);
+            if (cls.equals("LoggingDefaultsEnvironmentPostProcessor") && !epp.equals(BOOT4_EPP)) {
+                src = src.replace("import " + BOOT4_EPP + ";", "import " + epp + ";");   // #116: Spring Boot 3's package
+            }
+            b.edit(Edit.create(rel(target), src));
         }
         Path factories = resourcesDir(javaRoot.resolve("x.java")).resolve("META-INF/spring.factories");
-        String entry = "org.springframework.boot.EnvironmentPostProcessor=\\\n  " + pkg + ".LoggingDefaultsEnvironmentPostProcessor\n";
+        String entry = epp + "=\\\n  " + pkg + ".LoggingDefaultsEnvironmentPostProcessor\n";
         if (!Files.exists(factories)) {
             b.edit(Edit.create(rel(factories), entry));
         } else {
             String existing = read(factories);
-            if (existing.contains("org.springframework.boot.EnvironmentPostProcessor")) {
+            if (existing.contains(epp + "=")) {
                 b.suggestion(b.suggestion + " Add " + pkg + ".LoggingDefaultsEnvironmentPostProcessor to the existing "
                         + "EnvironmentPostProcessor entry in " + rel(factories) + ".");
             } else {
@@ -846,7 +861,18 @@ public final class SetupRules {
         boolean logstashFields = format.equals("logstash") && props.keySet().stream().noneMatch(k -> k.startsWith("logging.structured.json.add"));
         boolean meters = ctx.a.project.probe().hasClass("io.micrometer.core.instrument.MeterRegistry")
                 && props.keySet().stream().noneMatch(k -> k.startsWith("management.metrics.tags."));
-        boolean otel = ctx.a.project.probe().hasClass("io.opentelemetry.api.OpenTelemetry")
+        // #117: OpenTelemetry the build declares counts too: SETUP_OTEL_STARTER adds it in the same pass, and the classpath
+        // logast reads only has it after apply refreshes it (else the next apply adds the resource attributes)
+        Path buildFile = findBuildFile(root);
+        String build = "";
+        try {
+            build = buildFile == null ? "" : Files.readString(buildFile);
+        } catch (IOException | UncheckedIOException e) {
+            // unreadable build file: the classpath decides
+        }
+        boolean otelDeclared = build.contains("spring-boot-starter-opentelemetry") || build.contains("opentelemetry-spring-boot-starter")
+                || build.contains(OTEL_BRIDGE);
+        boolean otel = (ctx.a.project.probe().hasClass("io.opentelemetry.api.OpenTelemetry") || otelDeclared)
                 && props.keySet().stream().noneMatch(k -> k.startsWith("management.opentelemetry.resource-attributes"));
         if (logstashFields) {
             yaml.append("logging:\n  structured:\n    json:\n      add:\n")
