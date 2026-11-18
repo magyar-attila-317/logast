@@ -396,7 +396,8 @@ public final class SetupRules {
                     .replace("import org.springframework.boot.autoconfigure.AutoConfiguration;",
                             "import org.springframework.context.annotation.Configuration;");
         }
-        return "// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.\n" + src;
+        return "// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.\n"
+                + "// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)\n" + src;
     }
 
     /**
