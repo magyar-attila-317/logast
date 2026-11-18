@@ -82,4 +82,5 @@ Handle follow-ups in the next round.
   only restores MDC and the scope. `error()` in catch and `stop()` in finally are intentional:
   this is Micrometer's documented order.
   Batch jobs continue the trace from `TRACEPARENT`/`TRACE_ID`.
-- Logs are ECS JSON with `service.name`/`service.version` taken from `SERVICE_NAME`/`APP_VERSION`.
+- Logs are structured JSON in the configured format (`logging.structuredFormat`, ECS by default) with the service name
+  and version taken from `SERVICE_NAME`/`APP_VERSION`.
