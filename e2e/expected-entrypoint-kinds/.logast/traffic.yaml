@@ -40,7 +40,8 @@ entrypoints:
   "@SqsListener pledge-requests":     # sqs, PledgeQueueListener.onRequest
   # stream
   "stream pledgeNormalizer-in-0":     # stream, CodeNormalizer.normalize
-  "stream orderIntake-in-0":     # stream, IntakeDesk.accept
+  "stream orderIntake-in-0":     # stream, OrderDesk.accept
   # in-process event listeners: their rate follows whoever publishes the event (fill only if you know it)
   "@EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)":     # event, SettlementJobExecutor.onReady
+  "@TransactionalEventListener OrderLedger.onSettled(Order)":     # event, OrderLedger.onSettled
   "@TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)":     # event, OrderNotifications.onCommitted

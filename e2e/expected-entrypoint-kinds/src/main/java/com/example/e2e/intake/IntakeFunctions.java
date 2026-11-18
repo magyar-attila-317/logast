@@ -12,7 +12,7 @@ import org.springframework.messaging.Message;
 @Configuration
 public class IntakeFunctions {
     @Bean
-    public Consumer<Message<Order>> orderIntake(IntakeDesk intake) {
+    public Consumer<Message<Order>> orderIntake(OrderDesk intake) {
         return message -> intake.accept(message.getPayload());
     }
 

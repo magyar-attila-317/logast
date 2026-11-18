@@ -7,18 +7,18 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-public class IntakeDesk {
+public class OrderDesk {
     private final PledgeFeed feed;
 
-    IntakeDesk(PledgeFeed feed) {
+    OrderDesk(PledgeFeed feed) {
         this.feed = feed;
     }
 
     public void accept(Order order) {
         try (var mdc = MdcScope.of("orderId", order.id())) {
             feed.load();
-            log.info("Intake desk completed"); // logast:wording
-            IntakeMetrics.intakeDeskCompleted(); // logast:metric review, confidence: low
+            log.info("Order desk completed"); // logast:wording
+            IntakeMetrics.orderDeskCompleted(); // logast:metric review, confidence: low
         }
     }
 }

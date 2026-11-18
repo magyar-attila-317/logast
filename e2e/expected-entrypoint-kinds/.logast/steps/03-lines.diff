@@ -182,6 +182,37 @@ index 535e1fe..7bba83c 100644
 +        log.info("Pledge reload completed"); // logast:wording
      }
  }
+diff --git a/src/main/java/com/example/e2e/intake/OrderLedger.java b/src/main/java/com/example/e2e/intake/OrderLedger.java
+index 7cd5eea..de028fd 100644
+--- a/src/main/java/com/example/e2e/intake/OrderLedger.java
++++ b/src/main/java/com/example/e2e/intake/OrderLedger.java
+@@ -1,10 +1,13 @@ 
+ package com.example.e2e.intake;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import com.example.e2e.order.Order;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.stereotype.Component;
+ import org.springframework.transaction.event.TransactionalEventListener;
+ 
+ /** Its own flow after the commit: an MdcScope (the order's), which measures nothing. */
++@Slf4j
+ @Component
+ public class OrderLedger {
+     private final PledgeFeed feed;
+@@ -15,6 +18,11 @@
+ 
+     @TransactionalEventListener
+     public void onSettled(Order order) {
+-        feed.load();
++        ObservedContext.entrypoint("order.ledger")
++                .quiet()
++                .run(() -> {
++                    feed.load();
++                    log.info("Order ledger completed"); // logast:wording
++                });
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 index d5cf243..c2e5489 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
@@ -197,28 +228,6 @@ index d5cf243..c2e5489 100644
      public void onAudit(String pledgeId) {
          log.info("Pledge audit received [pledgeId={}]", pledgeId);
 +        log.info("Pledge messages completed"); // logast:wording
-     }
- }
-diff --git a/src/main/java/com/example/e2e/intake/IntakeDesk.java b/src/main/java/com/example/e2e/intake/IntakeDesk.java
-index 890a461..df76d9f 100644
---- a/src/main/java/com/example/e2e/intake/IntakeDesk.java
-+++ b/src/main/java/com/example/e2e/intake/IntakeDesk.java
-@@ -1,8 +1,10 @@ 
- package com.example.e2e.intake;
- 
- import com.example.e2e.order.Order;
-+import lombok.extern.slf4j.Slf4j;
- import org.springframework.stereotype.Component;
- 
-+@Slf4j
- @Component
- public class IntakeDesk {
-     private final PledgeFeed feed;
-@@ -13,5 +15,6 @@
- 
-     public void accept(Order order) {
-         feed.load();
-+        log.info("Intake desk completed"); // logast:wording
      }
  }
 diff --git a/src/main/java/com/example/e2e/intake/CodeNormalizer.java b/src/main/java/com/example/e2e/intake/CodeNormalizer.java
@@ -349,5 +358,27 @@ index 1ad9a72..3422916 100644
 +                    log.info("Order audit recorded [orderId={}]", event.orderId());
 +                    log.info("Order notifications completed"); // logast:wording
 +                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/intake/OrderDesk.java b/src/main/java/com/example/e2e/intake/OrderDesk.java
+index bb22752..38a532e 100644
+--- a/src/main/java/com/example/e2e/intake/OrderDesk.java
++++ b/src/main/java/com/example/e2e/intake/OrderDesk.java
+@@ -1,8 +1,10 @@ 
+ package com.example.e2e.intake;
+ 
+ import com.example.e2e.order.Order;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ public class OrderDesk {
+     private final PledgeFeed feed;
+@@ -13,5 +15,6 @@
+ 
+     public void accept(Order order) {
+         feed.load();
++        log.info("Order desk completed"); // logast:wording
      }
  }

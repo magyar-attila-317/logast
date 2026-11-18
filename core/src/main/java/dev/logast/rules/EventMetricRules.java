@@ -18,13 +18,17 @@ import java.util.regex.Pattern;
  * {@code ObservedContext} yields a timer and a count (with the error/outcome), and a span, named after the event's
  * subject in vocabulary terms ({@code refund}, {@code order.sync}).
  * <p>Skipped: entrypoints the framework already times (HTTP, @Scheduled, observed Kafka), methods an entrypoint fix
- * already wraps, methods that already create meters or observations, and events logged per loop iteration.
+ * already wraps in ObservedContext, methods that already create meters or observations, and events logged per loop iteration.
  */
 final class EventMetricRules {
     private static final Set<String> EVENTS = Set.of("started", "completed", "failed");
-    /** Already observed: by Spring (HTTP, @Scheduled, Kafka), or by the starter's BatchTraceListener (runners). */
+    /**
+     * Already observed: by Spring (HTTP, @Scheduled, Kafka, Spring Batch steps and items, @SqsListener, Cloud Stream
+     * functions; each only while {@link Entrypoint#observedByFramework()}), or by the starter's BatchTraceListener (runners).
+     */
     private static final Set<Entrypoint.Kind> TIMED_BY_FRAMEWORK = EnumSet.of(Entrypoint.Kind.HTTP, Entrypoint.Kind.SCHEDULED,
-            Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.BATCH);
+            Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.BATCH, Entrypoint.Kind.STEP,
+            Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM);
     private static final Pattern MEASURED = Pattern.compile(
             "ObservedContext|Observation\\.|MeterRegistry|meterRegistry|\\bCounter\\.|\\bTimer\\.|\\.counter\\(|\\.timer\\(");
     private static final Pattern NAME = Pattern.compile("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,3}");
@@ -50,11 +54,12 @@ final class EventMetricRules {
                 timed.add(ep.method().key());
             }
         }
-        // candidates first: a business event called from another observed method is part of that observation
+        // candidates first: a business event called from another observed method is part of that observation. Only an
+        // ObservedContext wrap of this scan measures; an MdcScope wrap does not (the rescan would not count it either)
         Map<String, Event> candidates = new LinkedHashMap<>();
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() == null || m.decl().isConstructor() || timed.contains(m.key())
-                    || ctx.wrappedMethods.contains(m.key()) || measured(m) || ctx.legacyMdc(m) || ctx.reactive(m)) {
+                    || ctx.observedWrapped.contains(m.key()) || measured(m) || ctx.legacyMdc(m) || ctx.reactive(m)) {
                 continue;
             }
             Event e = detect(m);
@@ -81,7 +86,7 @@ final class EventMetricRules {
         }
         for (CallGraph.Edge e : ctx.a.graph.in(m)) {
             MethodInfo caller = e.from();
-            if (candidates.containsKey(caller.key()) || timed.contains(caller.key()) || ctx.wrappedMethods.contains(caller.key())
+            if (candidates.containsKey(caller.key()) || timed.contains(caller.key()) || ctx.observedWrapped.contains(caller.key())
                     || caller.decl().getBody() != null && measured(caller)
                     || insideObservation(caller, candidates, timed, depth + 1, seen)) {
                 return true;

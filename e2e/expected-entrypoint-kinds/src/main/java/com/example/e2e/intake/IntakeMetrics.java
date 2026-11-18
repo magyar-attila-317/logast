@@ -22,6 +22,9 @@ public final class IntakeMetrics {
     public static final String PLEDGE_QUEUE_LISTENER_ON_BULK = "pledge-queue-listener.on-bulk";
 
     /** Observation (timer and span) name. */
+    public static final String ORDER_LEDGER = "order.ledger";
+
+    /** Observation (timer and span) name. */
     public static final String ORDER_LINE_PROCESSOR_PROCESS = "order-line-processor.process";
 
     /** code.normalizer{outcome="completed"} +1. */
@@ -29,8 +32,8 @@ public final class IntakeMetrics {
         Outcomes.count("code.normalizer", "completed");
     }
 
-    /** intake.desk{outcome="completed"} +1. */
-    public static void intakeDeskCompleted() {
-        Outcomes.count("intake.desk", "completed");
+    /** order.desk{outcome="completed"} +1. */
+    public static void orderDeskCompleted() {
+        Outcomes.count("order.desk", "completed");
     }
 }

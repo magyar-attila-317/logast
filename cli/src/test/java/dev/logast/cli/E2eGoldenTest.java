@@ -2662,7 +2662,7 @@ class E2eGoldenTest {
                 @Configuration
                 public class IntakeFunctions {
                     @Bean
-                    public Consumer<Message<Order>> orderIntake(IntakeDesk intake) {
+                    public Consumer<Message<Order>> orderIntake(OrderDesk intake) {
                         return message -> intake.accept(message.getPayload());
                     }
 
@@ -2682,21 +2682,43 @@ class E2eGoldenTest {
                     }
                 }
                 """);
-        Files.writeString(dir.resolve("IntakeDesk.java"), """
+        Files.writeString(dir.resolve("OrderDesk.java"), """
                 package com.example.e2e.intake;
 
                 import com.example.e2e.order.Order;
                 import org.springframework.stereotype.Component;
 
                 @Component
-                public class IntakeDesk {
+                public class OrderDesk {
                     private final PledgeFeed feed;
 
-                    IntakeDesk(PledgeFeed feed) {
+                    OrderDesk(PledgeFeed feed) {
                         this.feed = feed;
                     }
 
                     public void accept(Order order) {
+                        feed.load();
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("OrderLedger.java"), """
+                package com.example.e2e.intake;
+
+                import com.example.e2e.order.Order;
+                import org.springframework.stereotype.Component;
+                import org.springframework.transaction.event.TransactionalEventListener;
+
+                /** Its own flow after the commit: an MdcScope (the order's), which measures nothing. */
+                @Component
+                public class OrderLedger {
+                    private final PledgeFeed feed;
+
+                    OrderLedger(PledgeFeed feed) {
+                        this.feed = feed;
+                    }
+
+                    @TransactionalEventListener
+                    public void onSettled(Order order) {
                         feed.load();
                     }
                 }
@@ -2802,6 +2824,9 @@ class E2eGoldenTest {
      * only. The handlers of MVC router functions are HTTP endpoints with their paths (observed by Spring MVC). All
      * appear in traffic.yaml. Every file must equal e2e/expected-entrypoint-kinds; tracing alone and logging alone
      * each do their part; with the observation switched on (property, {@code @EnableBatchProcessing}) nothing wraps.
+     * #99: an observed step, item, SQS message or Stream handler whose lifecycle line names a vocabulary term ("Order desk
+     * completed") gets no second timer (BUSINESS_EVENT_UNMEASURED); a handler with only an MdcScope (OrderLedger) gets its
+     * timer in pass 1, as the rescan would decide.
      */
     @Test
     void seesBatchStepsSqsListenersStreamFunctionsAndRouterFunctions() throws IOException {
@@ -2822,7 +2847,11 @@ class E2eGoldenTest {
         assertThat(actual.get(INTAKE + "PledgeQueueListener.java")).as("SQS observation off by default; batches never")
                 .contains("ObservedContext.entrypoint(IntakeMetrics.PLEDGE_QUEUE_LISTENER_ON_REQUEST)")
                 .contains("ObservedContext.entrypoint(IntakeMetrics.PLEDGE_QUEUE_LISTENER_ON_BULK)");
-        assertThat(actual.get(INTAKE + "IntakeDesk.java")).as("observed by Spring Cloud Stream: MDC only")
+        assertThat(actual.get(".logast/apply-trace.txt")).as("#99: Stream times \"Order desk completed\": no second timer")
+                .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|PledgeQueueListener|PledgeImportTasklet|OrderLineProcessor)");
+        assertThat(actual.get(INTAKE + "OrderLedger.java")).as("#99: an MdcScope measures nothing: the timer comes in pass 1")
+                .contains("MdcScope.of(\"orderId\", order.id())").contains("ObservedContext.entrypoint(");
+        assertThat(actual.get(INTAKE + "OrderDesk.java")).as("observed by Spring Cloud Stream: MDC only")
                 .doesNotContain("ObservedContext").contains("MdcScope.of(\"orderId\", order.id())");
         assertThat(actual.get(INTAKE + "CodeNormalizer.java")).as("bound: MDC; pledgeArchive is not bound")
                 .contains("MdcScope.of(\"pledgeId\", pledgeId)").containsOnlyOnce("MdcScope.of");
@@ -2834,18 +2863,18 @@ class E2eGoldenTest {
         Map<String, String> tracing = migrate(tmp.resolve("tracing-only"), classpath, withPacks(INTAKE_ENTRYPOINTS, "[tracing]", ""));
         assertThat(tracing.get(INTAKE + "PledgeImportTasklet.java")).contains("ObservedContext.entrypoint(\"pledge-import-tasklet.execute\")");
         assertThat(tracing.get(INTAKE + "PledgeQueueListener.java")).contains("ObservedContext.entrypoint(\"pledge-queue-listener.on-bulk\")");
-        assertThat(tracing.get(INTAKE + "IntakeDesk.java")).doesNotContain("MdcScope").doesNotContain("ObservedContext");
+        assertThat(tracing.get(INTAKE + "OrderDesk.java")).doesNotContain("MdcScope").doesNotContain("ObservedContext");
 
         // the logging pack alone: MDC scopes for every kind, no ObservedContext
         Map<String, String> logging = migrate(tmp.resolve("logging-only"), classpath, withPacks(INTAKE_ENTRYPOINTS, "[logging]", ""));
-        assertThat(logging.get(INTAKE + "IntakeDesk.java")).contains("MdcScope.of(\"orderId\", order.id())");
+        assertThat(logging.get(INTAKE + "OrderDesk.java")).contains("MdcScope.of(\"orderId\", order.id())");
         assertThat(logging.get(INTAKE + "OrderLineProcessor.java")).contains("MdcScope.of(\"orderId\", order.id())")
                 .doesNotContain("ObservedContext");
         assertThat(logging.get(INTAKE + "PledgeQueueListener.java")).contains("MdcScope.of(\"pledgeId\", pledgeId)")
                 .doesNotContain("ObservedContext");
 
         // observation switched on: SQS by its property (a batch still is not observed), Batch by @EnableBatchProcessing
-        Map<String, String> observed = migrate(tmp.resolve("observed"), classpath, withPacks(app -> {
+        Map<String, String> observed = migrate(tmp.resolve("observed"), classpath, app -> {
             INTAKE_ENTRYPOINTS.run(app);
             Path yml = app.resolve("src/main/resources/application.yml");
             Files.writeString(yml, Files.readString(yml).replaceFirst("  cloud:\n", "  cloud:\n    aws:\n      sqs:\n        observation-enabled: true\n"));
@@ -2860,12 +2889,17 @@ class E2eGoldenTest {
                     public class BatchSetup {
                     }
                     """);
-        }, "[tracing]", ""));
+        });
+        // #99: every pack, so the observed step, item and SQS message log vocabulary-named lifecycle lines ("Pledge
+        // import tasklet started"): the framework's observation times them, no second timer (BUSINESS_EVENT_UNMEASURED)
         assertThat(observed.get(INTAKE + "PledgeImportTasklet.java")).doesNotContain("ObservedContext");
         assertThat(observed.get(INTAKE + "OrderLineProcessor.java")).doesNotContain("ObservedContext");
         assertThat(observed.get(INTAKE + "PledgeQueueListener.java"))
-                .doesNotContain("ObservedContext.entrypoint(\"pledge-queue-listener.on-request\")")
-                .contains("ObservedContext.entrypoint(\"pledge-queue-listener.on-bulk\")");
+                .doesNotContain("ObservedContext.entrypoint(IntakeMetrics.PLEDGE_QUEUE_LISTENER_ON_REQUEST)")
+                .as("only the batch listener, which SQS never observes, is wrapped")
+                .containsOnlyOnce("ObservedContext.entrypoint(").contains("ObservedContext.entrypoint(IntakeMetrics.PLEDGE_QUEUE_LISTENER_ON_BULK)");
+        assertThat(observed.get(".logast/apply-trace.txt")).as("no second timer on an observed handler")
+                .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|PledgeQueueListener|PledgeImportTasklet|OrderLineProcessor)");
     }
 
     /**
