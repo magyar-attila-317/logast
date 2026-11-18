@@ -84,7 +84,7 @@ What each part drives:
 | entry | effect |
 |---|---|
 | `aliases` | GLOSSARY_VIOLATION rewrites existing messages; fill validation rejects new ones |
-| `mdc.key` + `sources` | MISSING_DOMAIN_MDC adds `MdcScope.of("order.id", orderId)` at entrypoints; values already in MDC are dropped from messages |
+| `mdc.key` + `sources` | MISSING_DOMAIN_MDC adds `MdcScope.of("order.id", orderId)` at entrypoints; values already in MDC are dropped from messages; a parameter named like a source, of a configured type, or a request / message object with a getter or record accessor named like a source (`request.getOrderId()` of a protobuf request, `cmd.orderId()`: a public no-argument method of the parameter's own type returning text, a number, a UUID or an enum; not for application-event listeners) |
 | `mdc.key` (any method) | REPEATED_LOG_VALUE: logged by `mdc.extractRepeated` (default 2, `0` = off) statements of one method → one `MdcScope` there |
 | `mdc.aliases` | MDC_KEY_ALIAS renames keys in `MDC.put` / `MdcScope.of`; `[orderId={}]` becomes `[order.id={}]` |
 | `logKey` | the key name in `[k=v]` (LOG_KEY_STYLE) |

@@ -3663,6 +3663,18 @@ class E2eGoldenTest {
                     public void allot(String pledgeId) {
                         relayLog.record(pledgeId);
                     }
+
+                    @ServiceActivator(inputChannel = "pledgeReturns")
+                    public void giveBack(PledgeReturn command) {
+                        relayLog.record(command.pledgeId() + " x" + command.quantity());
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("PledgeReturn.java"), """
+                package com.example.e2e.relay;
+
+                /** A message payload: its pledgeId accessor is the MDC value. */
+                public record PledgeReturn(String pledgeId, int quantity) {
                 }
                 """);
         Files.writeString(dir.resolve("VoucherActivator.java"), """
@@ -3764,8 +3776,9 @@ class E2eGoldenTest {
      * by Spring Data Redis: ObservedContext; an adapter whose method name comes from a property is reported. A
      * {@code @ServiceActivator} method is observed only when Spring Integration's observation patterns match it (none by
      * default): ObservedContext; a {@code @Bean @ServiceActivator} is not a handler. The unary and server-streaming
-     * methods of a gRPC service are observed by Spring gRPC: MDC and lines only (here none: the flow logs, and a protobuf
-     * request is no MDC value); with its observation switched off, the
+     * methods of a gRPC service are observed by Spring gRPC: MDC and lines only (the flow logs; the pledgeId MDC
+     * comes from the protobuf request's getter, as it does from a record payload's accessor at the second
+     * {@code @ServiceActivator}); with its observation switched off, the
      * method that completes in its body is wrapped and the one that completes later on another thread is reported.
      * Client streaming (returns the request observer) is not an entrypoint. Every file must equal
      * e2e/expected-relay-entrypoints; tracing alone does its part.
@@ -3789,10 +3802,13 @@ class E2eGoldenTest {
                 .contains("ObservedContext.entrypoint(RelayMetrics.PLEDGE_RELAY_HANDLE_MESSAGE)");
         assertThat(actual.get("FINDINGS.txt")).as("an adapter method from a property is reported")
                 .contains("MessageListenerAdapter for PledgeRelay: the handler Redis calls is not known");
-        assertThat(actual.get(RELAY + "PledgeActivator.java")).as("Spring Integration observes nothing by default")
-                .contains("ObservedContext.entrypoint(");
-        assertThat(actual.get(RELAY + "PledgeGrpcService.java")).as("observed by Spring gRPC: no wrapper (its flow logs; the "
-                + "request carries no MDC key logast knows)").doesNotContain("ObservedContext");
+        assertThat(actual.get(RELAY + "PledgeActivator.java")).as("Spring Integration observes nothing by default; a record "
+                        + "payload's accessor is the MDC value").contains("ObservedContext.entrypoint(")
+                .contains(".mdc(\"pledgeId\", command.pledgeId())").doesNotContain(".mdc(\"quantity\"");
+        assertThat(actual.get(RELAY + "PledgeGrpcService.java")).as("observed by Spring gRPC: no wrapper (its flow logs), the "
+                        + "MDC scope from the protobuf request's getter").doesNotContain("ObservedContext")
+                .contains("    public void lookup(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {\n"
+                        + "        try (var mdc = MdcScope.of(\"pledgeId\", request.getPledgeId())) {\n");
         assertThat(actual.get(RELAY + "RelayLog.java")).as("RedisMessageListenerContainer logs a listener's exception: the "
                 + "logged-and-rethrown line goes").doesNotContain("Relay forward failed");
         String lifecycle = run(tmp.resolve("app"), "lifecycle", tmp.resolve("app").toString(), "--classpath-file", classpath);

@@ -314,8 +314,11 @@ class RepeatedChainTest {
                 }
                 """);
         ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
-        // request.pledgeId() is a pledgeId (accessor name), and it goes into method1's pledgeId parameter
-        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+        // request.pledgeId() is a pledgeId (accessor name): the entrypoint's own MDC scope (#15) takes it from the request,
+        // so the repeated value needs no scope of its own in method1
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.MISSING_DOMAIN_MDC)).extracting(WorkOrder::method)
                 .containsExactly("Pledges.method0");
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .doesNotContain("Pledges.method1");
     }
 }

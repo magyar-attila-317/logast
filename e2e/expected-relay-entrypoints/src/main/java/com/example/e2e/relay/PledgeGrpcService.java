@@ -1,5 +1,6 @@
 package com.example.e2e.relay;
 
+import com.example.e2e.logging.MdcScope;
 import com.example.proto.PledgeReply;
 import com.example.proto.PledgeRequest;
 import com.example.proto.PledgeServiceGrpc;
@@ -20,20 +21,24 @@ public class PledgeGrpcService extends PledgeServiceGrpc.PledgeServiceImplBase {
 
     @Override
     public void lookup(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {
-        String pledgeId = request.getPledgeId();
-        relayLog.record(pledgeId);
-        responseObserver.onNext(PledgeReply.of("found"));
-        responseObserver.onCompleted();
+        try (var mdc = MdcScope.of("pledgeId", request.getPledgeId())) {
+            String pledgeId = request.getPledgeId();
+            relayLog.record(pledgeId);
+            responseObserver.onNext(PledgeReply.of("found"));
+            responseObserver.onCompleted();
+        }
     }
 
     @Override
     public void watch(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {
-        String pledgeId = request.getPledgeId();
-        relayLog.record(pledgeId);
-        relayExecutor.execute(() -> {
-            responseObserver.onNext(PledgeReply.of("changed"));
-            responseObserver.onCompleted();
-        });
+        try (var mdc = MdcScope.of("pledgeId", request.getPledgeId())) {
+            String pledgeId = request.getPledgeId();
+            relayLog.record(pledgeId);
+            relayExecutor.execute(() -> {
+                responseObserver.onNext(PledgeReply.of("changed"));
+                responseObserver.onCompleted();
+            });
+        }
     }
 
     @Override

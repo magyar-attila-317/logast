@@ -83,6 +83,52 @@ index c2e5489..e59f84e 100644
 +        }
      }
  }
+diff --git a/src/main/java/com/example/e2e/relay/PledgeGrpcService.java b/src/main/java/com/example/e2e/relay/PledgeGrpcService.java
+index 0f29e8c..79e3ada 100644
+--- a/src/main/java/com/example/e2e/relay/PledgeGrpcService.java
++++ b/src/main/java/com/example/e2e/relay/PledgeGrpcService.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.relay;
+ 
++import com.example.e2e.logging.MdcScope;
+ import com.example.proto.PledgeReply;
+ import com.example.proto.PledgeRequest;
+ import com.example.proto.PledgeServiceGrpc;
+@@ -20,20 +21,24 @@
+ 
+     @Override
+     public void lookup(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {
+-        String pledgeId = request.getPledgeId();
+-        relayLog.record(pledgeId);
+-        responseObserver.onNext(PledgeReply.of("found"));
+-        responseObserver.onCompleted();
++        try (var mdc = MdcScope.of("pledgeId", request.getPledgeId())) {
++            String pledgeId = request.getPledgeId();
++            relayLog.record(pledgeId);
++            responseObserver.onNext(PledgeReply.of("found"));
++            responseObserver.onCompleted();
++        }
+     }
+ 
+     @Override
+     public void watch(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {
+-        String pledgeId = request.getPledgeId();
+-        relayLog.record(pledgeId);
+-        relayExecutor.execute(() -> {
+-            responseObserver.onNext(PledgeReply.of("changed"));
+-            responseObserver.onCompleted();
+-        });
++        try (var mdc = MdcScope.of("pledgeId", request.getPledgeId())) {
++            String pledgeId = request.getPledgeId();
++            relayLog.record(pledgeId);
++            relayExecutor.execute(() -> {
++                responseObserver.onNext(PledgeReply.of("changed"));
++                responseObserver.onCompleted();
++            });
++        }
+     }
+ 
+     @Override
 diff --git a/src/main/java/com/example/e2e/order/OrderEvents.java b/src/main/java/com/example/e2e/order/OrderEvents.java
 index c2fd777..2bcb184 100644
 --- a/src/main/java/com/example/e2e/order/OrderEvents.java

@@ -34,6 +34,7 @@ entrypoints:
   "redis PledgeRelay.onRefund":     # redis, PledgeRelay.onRefund
   # integration
   "@ServiceActivator pledgeRequests":     # integration, PledgeActivator.allot
+  "@ServiceActivator pledgeReturns":     # integration, PledgeActivator.giveBack
   "@ServiceActivator voucherRequests":     # integration, VoucherActivator.issue
   # grpc
   "grpc PledgeGrpcService.lookup":     # grpc, PledgeGrpcService.lookup

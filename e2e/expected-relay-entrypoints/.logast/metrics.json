@@ -146,7 +146,7 @@
     "_message" : "INFO \"Relay recorded\"",
     "_where" : "src/main/java/com/example/e2e/relay/RelayLog.java:10 RelayLog.record",
     "_frequency" : "unknown: no rate for \"@ServiceActivator pledgeRequests\" in .logast/traffic.yaml",
-    "_paths" : [ "integration @ServiceActivator pledgeRequests", "integration @ServiceActivator voucherRequests", "grpc grpc PledgeGrpcService.lookup", "grpc grpc PledgeGrpcService.watch", "redis redis PledgeChannelListener.onMessage" ],
+    "_paths" : [ "integration @ServiceActivator pledgeRequests", "integration @ServiceActivator pledgeReturns", "integration @ServiceActivator voucherRequests", "grpc grpc PledgeGrpcService.lookup", "grpc grpc PledgeGrpcService.watch" ],
     "_tag" : "available"
   }
 }

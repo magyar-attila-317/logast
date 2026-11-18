@@ -1,6 +1,6 @@
-logast · 82 files · 29 entrypoints · 93/231 methods reachable · 189 call edges
+logast · 83 files · 30 entrypoints · 94/232 methods reachable · 193 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 85.2% (jobs 15/15 · http 8/12)   (places that should log and do)
+log coverage 85.7% (jobs 16/16 · http 8/12)   (places that should log and do)
 70 orders: 0 AUTO, 21 NEEDS TEXT, 49 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
@@ -9,7 +9,7 @@ ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
   note: Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
   done when: its last argument is ContextExecutors.wrap(executor), or a Spring TaskExecutor or TaskScheduler (a TaskDecorator bean carries the context)
-ASY-13cdf3  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/relay/PledgeGrpcService.java:33  PledgeGrpcService.watch
+ASY-13cdf3  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/relay/PledgeGrpcService.java:37  PledgeGrpcService.watch
   Executor.execute runs on another thread without MDC/trace context
   path: grpc PledgeGrpcService.watch → PledgeGrpcService.watch
   note: Wrap the executor where it is created: ContextExecutors.wrap(...), or inject a Spring TaskExecutor.
@@ -400,7 +400,7 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
-Applied earlier: 108 changes in 59 files (git diff to review)
+Applied earlier: 111 changes in 60 files (git diff to review)
 
 Waiting on you — logast can't continue without these:
   21 log lines need wording        → write "MSG" in .logast/fills.json
@@ -412,4 +412,4 @@ Waiting on you — logast can't continue without these:
 Log lines: 86 — 52 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
 
 Also:
-  fill calls/day in .logast/traffic.yaml (optional)   29 of 29 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  fill calls/day in .logast/traffic.yaml (optional)   30 of 30 entrypoints have no rate: log levels and metrics frequency stay cautious there

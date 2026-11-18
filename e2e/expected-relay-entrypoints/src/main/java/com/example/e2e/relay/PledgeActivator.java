@@ -22,4 +22,14 @@ public class PledgeActivator {
                     relayLog.record(pledgeId);
                 });
     }
+
+    @ServiceActivator(inputChannel = "pledgeReturns")
+    public void giveBack(PledgeReturn command) {
+        ObservedContext.entrypoint(RelayMetrics.PLEDGE_ACTIVATOR_GIVE_BACK)
+                .mdc("pledgeId", command.pledgeId())
+                .debugOnSuccess()
+                .run(() -> {
+                    relayLog.record(command.pledgeId() + " x" + command.quantity());
+                });
+    }
 }

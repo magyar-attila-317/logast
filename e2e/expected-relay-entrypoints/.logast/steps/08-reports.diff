@@ -97,10 +97,10 @@ index 0000000..73d8b68
 +}
 diff --git a/src/main/java/com/example/e2e/relay/RelayMetrics.java b/src/main/java/com/example/e2e/relay/RelayMetrics.java
 new file mode 100644
-index 0000000..5484681
+index 0000000..dbed525
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/relay/RelayMetrics.java
-@@ -0,0 +1,30 @@ 
+@@ -0,0 +1,33 @@ 
 +package com.example.e2e.relay;
 +
 +/**
@@ -115,6 +115,9 @@ index 0000000..5484681
 +
 +    /** Observation (timer and span) name. */
 +    public static final String PLEDGE_ACTIVATOR_ALLOT = "pledge-activator.allot";
++
++    /** Observation (timer and span) name. */
++    public static final String PLEDGE_ACTIVATOR_GIVE_BACK = "pledge-activator.give-back";
 +
 +    /** Observation (timer and span) name. */
 +    public static final String PLEDGE_CHANNEL_LISTENER_ON_MESSAGE = "pledge-channel-listener.on-message";
@@ -200,7 +203,7 @@ index 765de3d..5c0b6d0 100644
                  .run(() -> {
                      log.info("Order audit recorded [orderId={}]", event.orderId());
 diff --git a/src/main/java/com/example/e2e/relay/PledgeActivator.java b/src/main/java/com/example/e2e/relay/PledgeActivator.java
-index 0ee0287..280fb3a 100644
+index 754d48e..3a9992a 100644
 --- a/src/main/java/com/example/e2e/relay/PledgeActivator.java
 +++ b/src/main/java/com/example/e2e/relay/PledgeActivator.java
 @@ -15,7 +15,7 @@ 
@@ -210,6 +213,15 @@ index 0ee0287..280fb3a 100644
 -        ObservedContext.entrypoint("pledge-activator.allot")
 +        ObservedContext.entrypoint(RelayMetrics.PLEDGE_ACTIVATOR_ALLOT)
                  .mdc("pledgeId", pledgeId)
+                 .debugOnSuccess()
+                 .run(() -> {
+@@ -25,7 +25,7 @@
+ 
+     @ServiceActivator(inputChannel = "pledgeReturns")
+     public void giveBack(PledgeReturn command) {
+-        ObservedContext.entrypoint("pledge-activator.give-back")
++        ObservedContext.entrypoint(RelayMetrics.PLEDGE_ACTIVATOR_GIVE_BACK)
+                 .mdc("pledgeId", command.pledgeId())
                  .debugOnSuccess()
                  .run(() -> {
 diff --git a/src/main/java/com/example/e2e/relay/PledgeChannelListener.java b/src/main/java/com/example/e2e/relay/PledgeChannelListener.java

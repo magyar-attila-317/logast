@@ -53,7 +53,62 @@ public final class DomainValues {
         return out;
     }
 
-    private static final Set<String> SCALARS = Set.of("java.lang.String", "java.lang.CharSequence", "java.lang.Long",
+    /**
+     * {@link #fromVars} for an entrypoint's parameters (#15), plus the values a request or message object carries: a key
+     * no parameter provides is read from a parameter's getter or record accessor named like one of the key's source
+     * parameters ({@code request.getPledgeId()} of a protobuf request, {@code cmd.orderId()} of a record). Kept narrow:
+     * registry keys only (the vocabulary's {@code sources.params} names, nothing guessed from other names), one level
+     * (no {@code a.getB().getC()}), a public no-argument instance method declared by the parameter's own type (or a
+     * record component), and a value that prints well (text, number, UUID, enum). JDK types are never searched.
+     */
+    public List<Value> fromParams(Map<String, JavaType> params) {
+        List<Value> out = new ArrayList<>(fromVars(params));
+        Set<String> found = new HashSet<>(out.stream().map(Value::key).toList());
+        for (var e : policy.mdcRegistry().entrySet()) {
+            if (found.contains(e.getKey())) {
+                continue;
+            }
+            for (var v : params.entrySet()) {
+                String accessor = accessor(v.getValue(), e.getValue().params());
+                if (accessor != null) {
+                    out.add(new Value(e.getKey(), v.getKey() + "." + accessor));
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /** {@code getPledgeId()} / {@code pledgeId()} of {@code type} for one of {@code names}, or null. */
+    static String accessor(JavaType type, Collection<String> names) {
+        JavaType.FullyQualified fq = TypeUtils.asFullyQualified(type);
+        if (fq == null || type instanceof JavaType.Unknown || fq.getFullyQualifiedName().startsWith("java.") || scalar(type)) {
+            return null;
+        }
+        for (String name : names) {
+            if (name.isEmpty()) {
+                continue;
+            }
+            String getter = "get" + Character.toUpperCase(name.charAt(0)) + name.substring(1);
+            for (JavaType.Method mt : fq.getMethods()) {
+                if ((mt.getName().equals(getter) || mt.getName().equals(name)) && mt.getParameterTypes().isEmpty()
+                        && mt.hasFlags(org.openrewrite.java.tree.Flag.Public) && !mt.hasFlags(org.openrewrite.java.tree.Flag.Static)
+                        && scalar(mt.getReturnType())) {
+                    return mt.getName() + "()";
+                }
+            }
+            if (fq.getKind() == JavaType.FullyQualified.Kind.Record) {   // implicit accessors: the components
+                for (JavaType.Variable f : fq.getMembers()) {
+                    if (f.getName().equals(name) && !f.hasFlags(org.openrewrite.java.tree.Flag.Static) && scalar(f.getType())) {
+                        return name + "()";
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static final Set<String> SCALARS =Set.of("java.lang.String", "java.lang.CharSequence", "java.lang.Long",
             "java.lang.Integer", "java.lang.Short", "java.lang.Byte", "java.lang.Character", "java.lang.Boolean",
             "java.lang.Double", "java.lang.Float", "java.util.UUID", "java.math.BigInteger", "java.math.BigDecimal");
 

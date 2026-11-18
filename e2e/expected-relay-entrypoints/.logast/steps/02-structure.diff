@@ -40,6 +40,41 @@ index 0ea8cf9..52d69be 100644
 +                });
      }
  }
+diff --git a/src/main/java/com/example/e2e/relay/PledgeActivator.java b/src/main/java/com/example/e2e/relay/PledgeActivator.java
+index 0e1748b..754d48e 100644
+--- a/src/main/java/com/example/e2e/relay/PledgeActivator.java
++++ b/src/main/java/com/example/e2e/relay/PledgeActivator.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.relay;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.integration.annotation.ServiceActivator;
+ import org.springframework.stereotype.Component;
+ 
+@@ -14,11 +15,21 @@
+ 
+     @ServiceActivator(inputChannel = "pledgeRequests")
+     public void allot(String pledgeId) {
+-        relayLog.record(pledgeId);
++        ObservedContext.entrypoint("pledge-activator.allot")
++                .mdc("pledgeId", pledgeId)
++                .debugOnSuccess()
++                .run(() -> {
++                    relayLog.record(pledgeId);
++                });
+     }
+ 
+     @ServiceActivator(inputChannel = "pledgeReturns")
+     public void giveBack(PledgeReturn command) {
+-        relayLog.record(command.pledgeId() + " x" + command.quantity());
++        ObservedContext.entrypoint("pledge-activator.give-back")
++                .mdc("pledgeId", command.pledgeId())
++                .debugOnSuccess()
++                .run(() -> {
++                    relayLog.record(command.pledgeId() + " x" + command.quantity());
++                });
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/relay/VoucherActivator.java b/src/main/java/com/example/e2e/relay/VoucherActivator.java
 index a88b830..d618c81 100644
 --- a/src/main/java/com/example/e2e/relay/VoucherActivator.java
@@ -134,30 +169,6 @@ index 4be0fa1..d5cf243 100644
      }
  
      @RabbitListener(queues = "pledge-returns")
-diff --git a/src/main/java/com/example/e2e/relay/PledgeActivator.java b/src/main/java/com/example/e2e/relay/PledgeActivator.java
-index 2fe37c7..0ee0287 100644
---- a/src/main/java/com/example/e2e/relay/PledgeActivator.java
-+++ b/src/main/java/com/example/e2e/relay/PledgeActivator.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.relay;
- 
-+import com.example.e2e.logging.ObservedContext;
- import org.springframework.integration.annotation.ServiceActivator;
- import org.springframework.stereotype.Component;
- 
-@@ -14,6 +15,11 @@
- 
-     @ServiceActivator(inputChannel = "pledgeRequests")
-     public void allot(String pledgeId) {
--        relayLog.record(pledgeId);
-+        ObservedContext.entrypoint("pledge-activator.allot")
-+                .mdc("pledgeId", pledgeId)
-+                .debugOnSuccess()
-+                .run(() -> {
-+                    relayLog.record(pledgeId);
-+                });
-     }
- }
 diff --git a/src/main/java/com/example/e2e/job/BaseRunJob.java b/src/main/java/com/example/e2e/job/BaseRunJob.java
 index e247843..b0cbfe4 100644
 --- a/src/main/java/com/example/e2e/job/BaseRunJob.java

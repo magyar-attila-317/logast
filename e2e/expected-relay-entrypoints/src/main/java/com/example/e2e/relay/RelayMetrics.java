@@ -14,6 +14,9 @@ public final class RelayMetrics {
     public static final String PLEDGE_ACTIVATOR_ALLOT = "pledge-activator.allot";
 
     /** Observation (timer and span) name. */
+    public static final String PLEDGE_ACTIVATOR_GIVE_BACK = "pledge-activator.give-back";
+
+    /** Observation (timer and span) name. */
     public static final String PLEDGE_CHANNEL_LISTENER_ON_MESSAGE = "pledge-channel-listener.on-message";
 
     /** Observation (timer and span) name. */
