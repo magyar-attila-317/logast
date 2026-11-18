@@ -1355,6 +1355,10 @@ abstract class E2eGoldenTest {
                             log.atDebug().addKeyValue("gatewayId", gatewayId).log();
                             log.info("Gateway {} charged", gatewayId); // logast:ignore LOG_FORMAT METRIC_OUTCOME_UNMEASURED
                         }
+
+                        void store(String gatewayRef) {
+                            log.atInfo().addKeyValue("gateway_ref", gatewayRef).log("Gateway reply stored");
+                        }
                     }
                     """);
             Files.writeString(dir.resolve("LegacyGateway.java"), """
@@ -1377,6 +1381,9 @@ abstract class E2eGoldenTest {
         assertThat(coverage).as("every skip reason").contains("protected message", "message not a literal", "message comes from an argument",
                 "fluent call", "no message", "TRACE level", "inside a log helper", "logging-support code",
                 "other logging API: java.util.logging");
+        assertThat(actual.get("src/main/java/com/example/e2e/ledger/GatewayCalls.java"))
+                .as("#22: a property key gets the name a [k=v] key would (keyStyle camel)")
+                .contains("log.atInfo().addKeyValue(\"gatewayRef\", gatewayRef).log(").doesNotContain("gateway_ref");
         assertThat(actual.get("FINDINGS.txt")).as("the one coverage line (#101)").containsPattern("(?m)^Log lines: \\d+ — .*\\d+ not checked \\(.logast/reports/coverage.txt\\)$");
         golden(EXPECTED.resolveSibling("expected-log-call-coverage"), actual);
     }

@@ -62,6 +62,7 @@ src/main/java/com/example/e2e/ledger/GatewayCalls.java:11             skipped  m
 src/main/java/com/example/e2e/ledger/GatewayCalls.java:12             skipped  fluent call (format and level not checked)
 src/main/java/com/example/e2e/ledger/GatewayCalls.java:13             skipped  fluent call (format and level not checked), no message
 src/main/java/com/example/e2e/ledger/GatewayCalls.java:14             ignored  LOG_FORMAT, METRIC_OUTCOME_UNMEASURED
+src/main/java/com/example/e2e/ledger/GatewayCalls.java:18             fixed    LOG_KEY_STYLE LKS-55dc53; reported METRIC_OUTCOME_UNMEASURED OUM-173a2f; skipped fluent call (format and level not checked)
 src/main/java/com/example/e2e/ledger/LegacyGateway.java:9             skipped  other logging API: java.util.logging
 src/main/java/com/example/e2e/logging/MdcHygiene.java:53              skipped  logging-support code
 src/main/java/com/example/e2e/logging/ObservedContext.java:144        skipped  logging-support code
@@ -109,6 +110,7 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             reported M
 # src/main/java/com/example/e2e/job/ExportJob.java 3cac394b1312
 # src/main/java/com/example/e2e/job/PreloadJob.java 3eec3af4278e
 # src/main/java/com/example/e2e/job/PublishRunJob.java 1d943ba9db11
+# src/main/java/com/example/e2e/ledger/GatewayCalls.java 4e67d6337a73
 # src/main/java/com/example/e2e/messaging/PledgeMessages.java f9f79ba06f96
 # src/main/java/com/example/e2e/order/OrderNotifications.java 64c604f572ef
 # src/main/java/com/example/e2e/order/OrderService.java 3e84740bdd33

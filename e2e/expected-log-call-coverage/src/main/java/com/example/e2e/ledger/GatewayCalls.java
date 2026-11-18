@@ -13,4 +13,8 @@ class GatewayCalls {
         log.atDebug().addKeyValue("gatewayId", gatewayId).log();
         log.info("Gateway {} charged", gatewayId); // logast:ignore LOG_FORMAT METRIC_OUTCOME_UNMEASURED
     }
+
+    void store(String gatewayRef) {
+        log.atInfo().addKeyValue("gatewayRef", gatewayRef).log("Gateway reply stored");
+    }
 }

@@ -1,7 +1,7 @@
-logast · 76 files · 21 entrypoints · 83/210 methods reachable · 160 call edges
+logast · 76 files · 21 entrypoints · 83/211 methods reachable · 160 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
-67 orders: 0 AUTO, 21 NEEDS TEXT, 46 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+68 orders: 0 AUTO, 21 NEEDS TEXT, 47 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -324,6 +324,10 @@ MVG-4a4ce2  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/P
   why: the text matches '^(publishing|completed publishing|finished publishing)\b' (policy logging.vagueMessages)
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
   done when: the message matches no logging.vagueMessages pattern
+OUM-173a2f  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/ledger/GatewayCalls.java:18  GatewayCalls.store
+  "Gateway reply stored" is logged but not counted (outcome=stored, frequency unknown: no entrypoint is known to reach it)
+  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("gateway.reply", "stored")) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
 SUG-1fede7  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/messaging/PledgeMessages.java:31  PledgeMessages.onReturn
   Generated wording "Pledge messages completed": say it in domain terms
   path: @RabbitListener pledge-returns → PledgeMessages.onReturn
@@ -387,16 +391,16 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 100 changes in 53 files (git diff to review)
+Applied earlier: 101 changes in 54 files (git diff to review)
 
 Waiting on you — logast can't continue without these:
   21 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
-  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
+  13 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
   34 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
-Log lines: 91 — 51 fixed, 15 with a finding, 11 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
+Log lines: 92 — 52 fixed, 15 with a finding, 11 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
 
 Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
