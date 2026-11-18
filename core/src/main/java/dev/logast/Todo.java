@@ -14,7 +14,8 @@ import java.util.*;
 
 /**
  * What is left for a person after scan/apply, one line per action: the files to fill, the decisions to make, the
- * checks to run. Also creates .logast/traffic.yaml when it is missing, so every file to fill exists.
+ * checks to run. Also creates .logast/traffic.yaml when it is missing and a selected pack uses it, so every file to
+ * fill exists.
  */
 public final class Todo {
     /** @param action what to do (a file to edit or a command); {@code why} one short reason */
@@ -58,7 +59,8 @@ public final class Todo {
                     : auto > 0 ? plural(auto, "fix") + " that need nothing from you" : "after filling them in: writes your texts and decisions";
             out.add(new Item("logast apply . --auto --write", what + " (on this code: don't revert it)"));
         }
-        if (a != null && !a.entrypoints.isEmpty()) {
+        // the rates set log levels (logging) and metrics frequency: other packs alone have no use for them (#88)
+        if (a != null && !a.entrypoints.isEmpty() && (policy.packSelected("logging") || policy.packSelected("metrics"))) {
             Path file = root.resolve(".logast/traffic.yaml");
             Traffic existing = Files.exists(file) ? Traffic.load(root, file) : Traffic.none();
             if (!Files.exists(file)) {

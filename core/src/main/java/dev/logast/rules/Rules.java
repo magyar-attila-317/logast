@@ -638,7 +638,9 @@ public final class Rules {
         new LogCallRules(ctx).run();
         new LogArgumentRules(ctx).run();
         new MessageRules(ctx).run();
-        dev.logast.orders.LogCoverage coverage = new CoverageRules(ctx).run();
+        dev.logast.orders.LogCoverage measured = new CoverageRules(ctx).run();
+        // the logging pack's measure: a run without it does not report it (#88)
+        dev.logast.orders.LogCoverage coverage = ctx.policy.packSelected("logging") ? measured : null;
         new DbRules(ctx).run();
         new FamilyRules(ctx).run();
         new RowLoopRules(ctx).run();

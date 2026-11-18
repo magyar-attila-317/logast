@@ -1,6 +1,5 @@
 logast · 53 files · 21 entrypoints · 61/106 methods reachable · 64 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 38.1% (jobs 1/9 · http 7/12)   (places that should log and do)
 4 orders: 0 AUTO, 0 NEEDS TEXT, 4 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: coupon, order, agreement
 
@@ -24,5 +23,4 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
   done when: spring.mvc.problemdetails.enabled: true, or a class extends ResponseEntityExceptionHandler
 
 Next steps
-  1. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  2. logast scan . --format summary                      4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
+  1. logast scan . --format summary   4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
