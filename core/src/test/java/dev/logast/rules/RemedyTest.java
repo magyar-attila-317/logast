@@ -2746,6 +2746,49 @@ class RemedyTest {
                         """));
     }
 
+    // ---- SSE_BROADCAST_CONTEXT -------------------------------------------------------------------------------------
+
+    /**
+     * #17: a broadcast to the stored emitters whose per-subscriber line names the subscriber, or that leaves the
+     * per-subscriber outcome to the emitter's own callback (registered at subscribe, with the subscriber's context).
+     */
+    @Test
+    void broadcastLinesNameTheSubscriber() throws IOException {
+        String feed = """
+                package x;
+
+                import java.io.IOException;
+                import java.util.Map;
+                import java.util.concurrent.ConcurrentHashMap;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+                @Component
+                public class Feed {
+                    private static final Logger log = LoggerFactory.getLogger(Feed.class);
+                    private final Map<String, SseEmitter> emitters = new ConcurrentHashMap<>();
+
+                    public void publish(String item) {
+                        emitters.forEach((subscriberId, emitter) -> {
+                            try {
+                                emitter.send(item);
+                            } catch (IOException e) {
+                                %s
+                            }
+                        });
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(java("Feed"), feed.formatted("log.warn(\"Push failed\", e);"));
+        fires(Rules.SSE_BROADCAST_CONTEXT, before);
+        gone(Rules.SSE_BROADCAST_CONTEXT, "the subscriber named in the line",
+                with(before, java("Feed"), feed.formatted("log.warn(\"Push to {} failed\", subscriberId, e);")));
+        gone(Rules.SSE_BROADCAST_CONTEXT, "the outcome left to the emitter's onError callback",
+                with(before, java("Feed"), feed.formatted("emitters.remove(subscriberId);")));
+    }
+
     // ---- REQUEST_NOT_VALIDATED / #52 library advice ---------------------------------------------------------------
 
     private static final Map<String, String> LABEL_REQUEST = Map.of(java("LabelRequest"), """

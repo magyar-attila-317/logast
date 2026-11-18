@@ -2417,6 +2417,199 @@ class E2eGoldenTest {
                 .contains("ObservedContext.entrypoint(DispatchMetrics.DISPATCH_PLANNING)");
     }
 
+    /** #17: an SSE departure feed broadcasting to the emitters of its subscribers, and a STOMP inbound interceptor. */
+    private static final IoAction DEPARTURE_FEED = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/departure");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("DepartureFeed.java"), """
+                package com.example.e2e.departure;
+
+                import java.io.IOException;
+                import java.util.Map;
+                import java.util.concurrent.ConcurrentHashMap;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.messaging.simp.SimpMessagingTemplate;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+                @Component
+                public class DepartureFeed {
+                    private static final Logger log = LoggerFactory.getLogger(DepartureFeed.class);
+                    private final Map<String, SseEmitter> emitters = new ConcurrentHashMap<>();
+                    private final SimpMessagingTemplate messaging;
+
+                    public DepartureFeed(SimpMessagingTemplate messaging) {
+                        this.messaging = messaging;
+                    }
+
+                    public SseEmitter subscribe(String subscriberId) {
+                        SseEmitter emitter = new SseEmitter(0L);
+                        emitters.put(subscriberId, emitter);
+                        emitter.onCompletion(() -> emitters.remove(subscriberId));
+                        return emitter;
+                    }
+
+                    public void publish(String departure) {
+                        emitters.forEach((subscriberId, emitter) -> {
+                            try {
+                                emitter.send(departure);
+                            } catch (IOException e) {
+                                log.warn("Departure push failed", e);
+                                emitters.remove(subscriberId);
+                            }
+                        });
+                        messaging.convertAndSend("/topic/departures", departure);
+                    }
+
+                    public void delay(String departure) {
+                        for (Map.Entry<String, SseEmitter> entry : emitters.entrySet()) {
+                            try {
+                                entry.getValue().send(departure);
+                            } catch (IOException e) {
+                                log.warn("Delay push to subscriber {} failed", entry.getKey(), e);
+                            }
+                        }
+                    }
+
+                    public void cancel(String departure) {
+                        for (SseEmitter emitter : emitters.values()) {
+                            try {
+                                emitter.send(departure);
+                            } catch (IOException e) {
+                                log.warn("Cancellation push failed for {}", emitter, e);
+                            }
+                        }
+                    }
+
+                    public void heartbeat() throws IOException {
+                        for (SseEmitter emitter : emitters.values()) {
+                            emitter.send(SseEmitter.event().comment("ping"));
+                        }
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("DepartureController.java"), """
+                package com.example.e2e.departure;
+
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+                import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+                @RestController
+                public class DepartureController {
+                    private final DepartureFeed feed;
+
+                    public DepartureController(DepartureFeed feed) {
+                        this.feed = feed;
+                    }
+
+                    @GetMapping("/departures/{subscriberId}/stream")
+                    public SseEmitter stream(@PathVariable String subscriberId) {
+                        return feed.subscribe(subscriberId);
+                    }
+
+                    @PostMapping("/departures")
+                    public void announce(@RequestBody String departure) {
+                        feed.publish(departure);
+                    }
+
+                    @PostMapping("/departures/delays")
+                    public void delay(@RequestBody String departure) {
+                        feed.delay(departure);
+                    }
+
+                    @PostMapping("/departures/cancellations")
+                    public void cancel(@RequestBody String departure) {
+                        feed.cancel(departure);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("DepartureSocketConfig.java"), """
+                package com.example.e2e.departure;
+
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.messaging.simp.config.ChannelRegistration;
+                import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+                import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+                @Configuration
+                @EnableWebSocketMessageBroker
+                public class DepartureSocketConfig implements WebSocketMessageBrokerConfigurer {
+                    @Override
+                    public void configureClientInboundChannel(ChannelRegistration registration) {
+                        registration.interceptors(new StationInterceptor());
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("StationInterceptor.java"), """
+                package com.example.e2e.departure;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.messaging.Message;
+                import org.springframework.messaging.MessageChannel;
+                import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+                import org.springframework.messaging.support.ChannelInterceptor;
+
+                /** Runs on the WebSocket session's thread before the inbound channel hands the frame to its executor. */
+                public class StationInterceptor implements ChannelInterceptor {
+                    private static final Logger log = LoggerFactory.getLogger(StationInterceptor.class);
+
+                    @Override
+                    public Message<?> preSend(Message<?> message, MessageChannel channel) {
+                        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+                        log.debug("Inbound frame {} for {}", accessor.getCommand(), accessor.getDestination());
+                        return message;
+                    }
+                }
+                """);
+    };
+
+    private static final String DEPARTURE = "src/main/java/com/example/e2e/departure/";
+
+    /**
+     * #17: {@code SseEmitter.send} writes on the calling thread, so a broadcast to the emitters of every subscriber logs
+     * with the sender's MDC and trace (no executor hop the TaskDecorator could carry). A line in such a loop that does not
+     * name the subscriber cannot be matched to it (SSE_BROADCAST_CONTEXT): the forEach over the map (publish) and the loop
+     * over its values (cancel; logging the emitter does not name anyone) are reported; the loop over the entries that logs
+     * the key (delay) and the loop that logs nothing (heartbeat) are not. The onCompletion callback registered at subscribe
+     * gets the subscriber's context (ASYNC_CONTEXT_LOSS, as before). STOMP: the inbound ChannelInterceptor's preSend and
+     * the SimpMessagingTemplate broadcast are left alone (preSend runs on the sending thread before any hop; Boot routes
+     * the channels' executors through applicationTaskExecutor, which the TaskDecorator decorates). Every file must equal
+     * e2e/expected-sse-broadcast; the tracing pack alone reports the same; switched off, the findings go.
+     */
+    @Test
+    void reportsBroadcastLinesThatDoNotNameTheSubscriber() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, DEPARTURE_FEED);
+        String findings = actual.get("FINDINGS.txt");
+        assertThat(findings).as("forEach over the map and loop over its values: per-subscriber lines without the subscriber")
+                .contains("SseEmitter.send to every subscriber in DepartureFeed.publish")
+                .contains("SseEmitter.send to every subscriber in DepartureFeed.cancel")
+                .as("the key logged, or nothing logged").doesNotContain("subscriber in DepartureFeed.delay")
+                .doesNotContain("subscriber in DepartureFeed.heartbeat")
+                .as("STOMP preSend runs before any hop: nothing to carry")
+                .doesNotContainPattern("(SSE_BROADCAST_CONTEXT|ASYNC_CONTEXT_LOSS)\\s+\\S+StationInterceptor");
+        assertThat(actual.get(DEPARTURE + "DepartureFeed.java")).as("the subscriber's callback carries its context")
+                .contains("emitter.onCompletion(ContextPropagation.wrapRunnable(() -> emitters.remove(subscriberId)))");
+        golden(EXPECTED.resolveSibling("expected-sse-broadcast"), actual);
+
+        // the tracing pack alone reports the same broadcasts
+        Path tracingOnly = tmp.resolve("tracing-only");
+        Map<String, String> tracing = migrate(tracingOnly, CLASSPATH, withPacks(DEPARTURE_FEED, "[tracing]", ""));
+        assertThat(tracing.get("FINDINGS.txt")).contains("SseEmitter.send to every subscriber in DepartureFeed.publish")
+                .contains("SseEmitter.send to every subscriber in DepartureFeed.cancel");
+
+        // switched off: its findings go (knock-out)
+        Path yml = tracingOnly.resolve("logast.yml");
+        Files.writeString(yml, Files.readString(yml) + "rules:\n  SSE_BROADCAST_CONTEXT:\n    enabled: false\n");
+        assertThat(run(tracingOnly, "scan", tracingOnly.toString(), "--classpath-file", CLASSPATH))
+                .doesNotContain("SSE_BROADCAST_CONTEXT").doesNotContain("SseEmitter.send to every subscriber");
+    }
+
     /** #95: business events measured only by {@code @Timed} / {@code @Counted}. */
     private static final IoAction SHELF_METERS = app -> {
         Path dir = app.resolve("src/main/java/com/example/e2e/shelf");

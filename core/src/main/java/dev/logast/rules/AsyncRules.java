@@ -1,9 +1,12 @@
 package dev.logast.rules;
 
 import dev.logast.model.AsyncHop;
+import dev.logast.model.LogCall;
 import dev.logast.model.MethodInfo;
 import dev.logast.orders.Edit;
 import dev.logast.parse.Pos;
+import org.openrewrite.Cursor;
+import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.TypeUtils;
@@ -24,6 +27,9 @@ final class AsyncRules {
     }
 
     void run() {
+        if (ctx.enabled(Rules.SSE_BROADCAST_CONTEXT)) {
+            ctx.methods().forEach(this::broadcasts);
+        }
         boolean scheduled = ctx.enabled(Rules.SCHEDULED_TASK_UNTRACED);
         if (!ctx.enabled(Rules.ASYNC_CONTEXT_LOSS) && !scheduled) {
             return;
@@ -202,5 +208,156 @@ final class AsyncRules {
             }
         }
         return null;
+    }
+
+    /**
+     * SSE_BROADCAST_CONTEXT (#17): {@code emitter.send(..)} to every subscriber's emitter held in a field (a for-each
+     * over it, or a lambda handed to its {@code forEach} / {@code removeIf}). {@code ResponseBodyEmitter.send} writes on the
+     * calling thread (Spring Framework 7.0 ResponseBodyEmitter: under its write lock, straight to the response), so the
+     * lines logged per subscriber carry the sender's MDC and trace: no executor hop, nothing a TaskDecorator or
+     * ContextExecutors could carry. The subscriber's own request observation stays open until the async request ends
+     * (ServerHttpObservationFilter), and its context reaches only the emitter callbacks registered when it subscribed
+     * (onCompletion / onTimeout / onError, wrapped by ASYNC_CONTEXT_LOSS). A line in the loop that does not name the
+     * subscriber (the map key, or another part of the loop variable than the emitter) cannot be matched to it.
+     * Report only: which value identifies a subscriber is the service's decision.
+     */
+    private void broadcasts(MethodInfo m) {
+        if (m.decl().getBody() == null || m.facts().logs.isEmpty()) {
+            return;
+        }
+        Set<J> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration c, Integer p) {
+                return c;
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                if (mi.getSimpleName().equals("send") && mi.getMethodType() != null && TypeUtils.isAssignableTo(
+                        "org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter", mi.getMethodType().getDeclaringType())) {
+                    String root = rootName(mi.getSelect());
+                    for (Cursor c = getCursor().getParent(); root != null && c != null; c = c.getParent()) {
+                        Object v = c.getValue();
+                        if (v instanceof J.MethodDeclaration || v instanceof J.ClassDeclaration) {
+                            break;
+                        }
+                        List<String> bound = v instanceof J.ForEachLoop loop && fieldRooted(loop.getControl().getIterable())
+                                && loop.getControl().getVariable() instanceof J.VariableDeclarations vd
+                                ? vd.getVariables().stream().map(J.VariableDeclarations.NamedVariable::getSimpleName).toList()
+                                : v instanceof J.Lambda lambda && overField(c) ? lambdaParams(lambda) : List.of();
+                        if (bound.contains(root)) {
+                            if (seen.add((J) v)) {
+                                broadcast(m, mi, (J) v, v instanceof J.ForEachLoop loop ? loop.getBody() : ((J.Lambda) v).getBody(), bound);
+                            }
+                            break;
+                        }
+                    }
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(m.decl().getBody(), 0, new Cursor(new Cursor(null, Cursor.ROOT_VALUE), m.decl()));
+    }
+
+    private void broadcast(MethodInfo m, J.MethodInvocation send, J loop, J body, List<String> bound) {
+        String emitter = send.getSelect().printTrimmed();
+        int from = Pos.start(body);
+        int to = Pos.end(body);
+        List<LogCall> unnamed = m.facts().logs.stream()
+                .filter(l -> Pos.start(l.call()) >= from && Pos.end(l.call()) <= to)
+                .filter(l -> !namesSubscriber(l, emitter, bound))
+                .toList();
+        int line = Pos.line(send.getName());
+        if (unnamed.isEmpty() || ctx.ignored(m.file(), line, Rules.SSE_BROADCAST_CONTEXT)) {
+            return;
+        }
+        ctx.orderNth(Rules.SSE_BROADCAST_CONTEXT, m, line, "broadcast")
+                .title("SseEmitter.send to every subscriber in " + m.label() + ": the lines logged per subscriber carry the "
+                        + "sender's MDC and trace and do not name the subscriber")
+                .suggestion("send() writes on the calling thread, so no TaskDecorator or ContextExecutors carries the subscriber's "
+                        + "context here. Name the subscriber in each line (iterate the map's entries and log the key, or keep the "
+                        + "subscriber's id next to its emitter), or log the per-subscriber outcome in the emitter's "
+                        + "onError/onCompletion callback registered when it subscribed, which runs with the subscriber's context.")
+                .doneWhen("every log line inside the loop names the subscriber (a loop variable other than the emitter), or the loop logs nothing")
+                .basis("logged per subscriber without naming it: line " + String.join(", ",
+                        unnamed.stream().map(l -> String.valueOf(Pos.line(l.call()))).toList()))
+                .about(m.file().relPath(), loop)
+                .context(ctx.context(m, Pos.start(send), Text.oneLine(send.printTrimmed(), 160), null));
+    }
+
+    /** A log argument (or the message) uses a loop variable other than through the emitter expression itself. */
+    private static boolean namesSubscriber(LogCall l, String emitter, List<String> bound) {
+        List<Expression> parts = new ArrayList<>(l.args());
+        if (l.template() != null) {
+            parts.add(l.template());
+        }
+        boolean[] named = {false};
+        for (Expression e : parts) {
+            new JavaIsoVisitor<Integer>() {
+                @Override
+                public J.FieldAccess visitFieldAccess(J.FieldAccess fa, Integer p) {
+                    return fa.printTrimmed().equals(emitter) ? fa : super.visitFieldAccess(fa, p);
+                }
+
+                @Override
+                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                    return mi.printTrimmed().equals(emitter) ? mi : super.visitMethodInvocation(mi, p);
+                }
+
+                @Override
+                public J.Identifier visitIdentifier(J.Identifier id, Integer p) {
+                    if (!id.printTrimmed().equals(emitter) && bound.contains(id.getSimpleName())) {
+                        named[0] = true;
+                    }
+                    return id;
+                }
+            }.visit(e, 0);
+        }
+        return named[0];
+    }
+
+    /** {@code e} in {@code e.send(..)}, {@code entry.getValue().send(..)}, {@code subscriber.emitter().send(..)}. */
+    private static String rootName(Expression e) {
+        while (e instanceof J.MethodInvocation mi && mi.getSelect() != null) {
+            e = mi.getSelect();
+        }
+        while (e instanceof J.FieldAccess fa) {
+            e = fa.getTarget();
+        }
+        return e instanceof J.Identifier id && !isField(id) ? id.getSimpleName() : null;
+    }
+
+    /** {@code emitters}, {@code this.emitters}, {@code emitters.values()}, {@code emitters.entrySet()}: a field of the class. */
+    private static boolean fieldRooted(Expression e) {
+        while (e instanceof J.MethodInvocation mi && mi.getSelect() != null) {
+            e = mi.getSelect();
+        }
+        if (e instanceof J.FieldAccess fa && fa.getTarget() instanceof J.Identifier t && t.getSimpleName().equals("this")) {
+            return true;
+        }
+        return e instanceof J.Identifier id && isField(id);
+    }
+
+    private static boolean isField(J.Identifier id) {
+        return id.getFieldType() != null && id.getFieldType().getOwner() instanceof org.openrewrite.java.tree.JavaType.FullyQualified;
+    }
+
+    /** The lambda is an argument of a call on a field: {@code emitters.forEach((id, e) -> ..)}, {@code emitters.values().removeIf(..)}. */
+    private static boolean overField(Cursor lambda) {
+        Cursor c = lambda.getParentTreeCursor();
+        return c.getValue() instanceof J.MethodInvocation call && call.getSelect() != null && fieldRooted(call.getSelect())
+                && call.getArguments().stream().anyMatch(a -> a == lambda.getValue());
+    }
+
+    private static List<String> lambdaParams(J.Lambda lambda) {
+        List<String> out = new ArrayList<>();
+        for (J p : lambda.getParameters().getParameters()) {
+            if (p instanceof J.VariableDeclarations vd) {
+                vd.getVariables().forEach(v -> out.add(v.getSimpleName()));
+            } else if (p instanceof J.Identifier id) {
+                out.add(id.getSimpleName());
+            }
+        }
+        return out;
     }
 }

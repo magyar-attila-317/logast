@@ -19,7 +19,7 @@ Rules in more than one pack (a pack selected on its own brings them along):
 |---|---|
 | SETUP_SUPPORT_STARTER | logging, tracing, metrics, errors (every pack whose fixes use the [runtime starter](starter.md)) |
 | SETUP_SERVICE_IDENTITY | logging, tracing, metrics |
-| ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED | logging, tracing |
+| ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED, SSE_BROADCAST_CONTEXT | logging, tracing |
 | OBSERVED_ANNOTATION_INACTIVE | tracing, metrics |
 
 The RUNTIME_* rules come from `logast verify` (what the tests really logged), not from `scan`: RUNTIME_MDC_LOST and
