@@ -59,12 +59,14 @@ final class ResilienceRules {
     private final boolean clients;
     private final boolean executors;
     private final boolean waits;
+    private final boolean jdbc;
 
     ResilienceRules(RuleContext ctx) {
         this.ctx = ctx;
         this.clients = ctx.enabled(Rules.HTTP_CLIENT_NO_TIMEOUT);
         this.executors = ctx.enabled(Rules.UNBOUNDED_EXECUTOR);
         this.waits = ctx.enabled(Rules.BLOCKING_WAIT_UNBOUNDED);
+        this.jdbc = ctx.enabled(Rules.DB_NO_TIMEOUT);
     }
 
     void run() {
@@ -77,7 +79,16 @@ final class ResilienceRules {
         if (ctx.enabled(Rules.SCHEDULED_WITHOUT_LOCK) && !ctx.policy.resilience().singleInstance()) {
             scheduledWithoutLock();
         }
-        if (!clients && !executors && !waits && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
+        if (ctx.enabled(Rules.RETRY_INACTIVE)) {
+            retryInactive();
+        }
+        if (executors) {
+            bootTaskExecutor();
+        }
+        if (ctx.enabled(Rules.SCHEDULER_SINGLE_THREAD)) {
+            singleThreadScheduler();
+        }
+        if (!clients && !executors && !waits && !jdbc && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
             return;
         }
         Set<String> onRequestPath = new HashSet<>();
@@ -135,6 +146,10 @@ final class ResilienceRules {
                                 ? "creates threads without limit: a burst of tasks becomes a burst of threads"
                                 : "queues tasks without limit: under load the queue grows until memory runs out, and latency with it");
                     }
+                    if (jdbc && owner.equals("org.springframework.jdbc.core.simple.JdbcClient") && name.equals("create")
+                            && mi.getArguments().size() == 1 && !wrapsTemplate(mi.getArguments().getFirst())) {
+                        handMadeJdbc(site, mi, "JdbcClient.create(..)");
+                    }
                     if (waits && requestPath && mi.getArguments().stream().allMatch(a -> a instanceof J.Empty) && unboundedWait(owner, name)
                             && !timed(mi.getSelect()) && !completedBefore(mi, getCursor())) {
                         unboundedWaitOrder(site, mi, simpleName(owner) + "." + name + "()");
@@ -152,6 +167,11 @@ final class ResilienceRules {
                 if (executors && TypeUtils.isOfClassType(nc.getType(), "org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor")
                         && !site.text().contains("setQueueCapacity")) {
                     executor(site, nc, "has an unbounded queue (queueCapacity defaults to Integer.MAX_VALUE), so maxPoolSize never takes effect");
+                }
+                if (jdbc && (TypeUtils.isOfClassType(nc.getType(), "org.springframework.jdbc.core.JdbcTemplate")
+                        || TypeUtils.isOfClassType(nc.getType(), "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")
+                        && nc.getArguments().size() == 1 && !wrapsTemplate(nc.getArguments().getFirst()))) {
+                    handMadeJdbc(site, nc, "new " + simpleName(TypeUtils.asFullyQualified(nc.getType()).getFullyQualifiedName()) + "(..)");
                 }
                 if (executors && TypeUtils.isOfClassType(nc.getType(), "java.util.concurrent.ThreadPoolExecutor")
                         && nc.getArguments().stream().anyMatch(a -> a instanceof J.NewClass q
@@ -480,6 +500,7 @@ final class ResilienceRules {
             ServiceYaml.merge(ctx, b, "spring:\n  jdbc:\n    template:\n      query-timeout: " + timeout + "\n");
             users.stream().skip(1).forEach(u -> b.location(u[0], Integer.parseInt(u[1]), Rules.DB_NO_TIMEOUT));
         }
+        jpaQueryTimeout();
         // not tied to a JdbcTemplate: a JPA-only service's transactions have no timeout either (#85)
         List<MethodInfo> untimed = ctx.methods().stream().filter(m -> TRANSACTIONAL.stream().anyMatch(m::hasAnnotation))
                 .filter(m -> !transactionTimeout(m)).toList();
@@ -495,6 +516,107 @@ final class ResilienceRules {
                             + ") and no Spring configuration file sets spring.transaction.default-timeout")
                     .doneWhen("spring.transaction.default-timeout is set in the Spring configuration, or every @Transactional "
                             + "method (or its class) has a timeout");
+        }
+    }
+
+    /** An expression that is itself a JdbcTemplate (the new one wraps it, timeout included): not a template of its own. */
+    private static boolean wrapsTemplate(Expression arg) {
+        return arg.getType() != null && JDBC_TYPES.stream().anyMatch(t -> TypeUtils.isAssignableTo(t, arg.getType()));
+    }
+
+    /**
+     * DB_NO_TIMEOUT, a JdbcTemplate created by hand (#41): Spring Boot applies spring.jdbc.template.* only to the
+     * JdbcTemplate it auto-configures and the NamedParameterJdbcTemplate / JdbcClient built on it (Spring Boot
+     * reference, "SQL Databases", "Using JdbcTemplate" / "Using JdbcClient",
+     * docs.spring.io/spring-boot/reference/data/sql.html). One made with {@code new} keeps the driver's default, usually
+     * no timeout. Report: the property, set or not, does not reach it.
+     */
+    private void handMadeJdbc(Site site, J tree, String what) {
+        int line = tree instanceof J.MethodInvocation mi ? Pos.line(mi.getName()) : Pos.line(tree);
+        String scope = site.method() != null ? site.text() : site.file().text();
+        if (scope.contains("setQueryTimeout") || ctx.ignored(site.file(), line, Rules.DB_NO_TIMEOUT)) {
+            return;
+        }
+        OrderBuilder b = site.orderNth(ctx, Rules.DB_NO_TIMEOUT, line, "hand-made-jdbc")
+                .title(what + " creates a JdbcTemplate of its own: spring.jdbc.template.query-timeout does not reach it "
+                        + "(Spring Boot configures only the template it provides), so a hanging query holds its connection "
+                        + "and thread forever")
+                .suggestion("Inject Spring Boot's JdbcTemplate / NamedParameterJdbcTemplate / JdbcClient instead "
+                        + "(spring.jdbc.template.* applies to it), or call setQueryTimeout(seconds) on this one.")
+                .doneWhen("the template is injected instead of created here, or setQueryTimeout(..) is called "
+                        + (site.method() != null ? "in the same method" : "in the same class"));
+        site.context(ctx, b, tree, tree.printTrimmed());
+    }
+
+    /**
+     * DB_NO_TIMEOUT for JPA (#41): Spring Boot passes spring.jpa.properties.* on "(the prefix is stripped before adding
+     * them to the entity manager)", Spring Boot reference, "SQL Databases", "Creating and Dropping JPA Databases"
+     * (docs.spring.io/spring-boot/reference/data/sql.html); Hibernate keeps jakarta.persistence.query.timeout
+     * (milliseconds) from there as a default session property and sets it as the timeout hint of every query a session
+     * creates (SessionFactoryOptionsBuilder#initializeDefaultSessionProperties, SessionImpl#applyQuerySettingsAndHints:
+     * the same in Hibernate 6.2, 6.6 and 7.1, i.e. Spring Boot 3.1+ and 4.x). It has no default. AUTO, with the
+     * policy's generous DB timeout. It does not cover {@code find()} or the statements a flush runs; the transaction
+     * timeout (reported below) does.
+     */
+    private void jpaQueryTimeout() {
+        if (property("spring.jpa.properties.jakarta.persistence.query.timeout")
+                || property("spring.jpa.properties.javax.persistence.query.timeout")) {
+            return;
+        }
+        List<ClassInfo> jpa = ctx.methodsOwners().stream().filter(this::usesJpa)
+                .sorted(Comparator.comparing((ClassInfo c) -> c.file().relPath()).thenComparingInt(c -> Pos.line(c.decl().getName())))
+                .toList();
+        Long millis = millis(ctx.policy.resilience().dbQueryTimeout());
+        if (jpa.isEmpty() || millis == null) {
+            return;
+        }
+        ClassInfo first = jpa.getFirst();
+        OrderBuilder b = ctx.order(Rules.DB_NO_TIMEOUT, "jpa-query-timeout").at(first.file().relPath(), Pos.line(first.decl().getName()))
+                .title("JPA queries without a timeout: jakarta.persistence.query.timeout has no default, so a hanging query "
+                        + "holds its connection and thread forever")
+                .suggestion("Sets spring.jpa.properties.jakarta.persistence.query.timeout=" + millis + " (milliseconds, policy "
+                        + "resilience.dbQueryTimeout): Hibernate applies it to every query a session creates. Generous on "
+                        + "purpose; lower it where queries are known to be short.");
+        ServiceYaml.merge(ctx, b, "spring:\n  jpa:\n    properties:\n      jakarta.persistence.query.timeout: " + millis + "\n");
+        jpa.stream().skip(1).forEach(c -> b.location(c.file().relPath(), Pos.line(c.decl().getName()), Rules.DB_NO_TIMEOUT));
+    }
+
+    /** An @Entity, a class holding an EntityManager, or a Spring Data JPA repository. */
+    private boolean usesJpa(ClassInfo c) {
+        String text = c.file().text();
+        boolean imported = text.contains("import jakarta.persistence.") || text.contains("import javax.persistence.");
+        boolean entity = c.decl().getLeadingAnnotations().stream().anyMatch(a -> (Annotations.is(a, "jakarta.persistence.Entity")
+                || Annotations.is(a, "javax.persistence.Entity"))
+                && (imported || a.getType() != null && !(a.getType() instanceof JavaType.Unknown)));
+        if (entity || c.type() != null && TypeUtils.isAssignableTo("org.springframework.data.jpa.repository.JpaRepository", c.type())) {
+            return true;
+        }
+        return c.decl().getBody().getStatements().stream().anyMatch(s -> s instanceof J.VariableDeclarations vd
+                && (TypeUtils.isOfClassType(vd.getType(), "jakarta.persistence.EntityManager")
+                || imported && vd.getTypeExpression() != null && vd.getTypeExpression().printTrimmed().equals("EntityManager")));
+    }
+
+    /** A duration as Spring Boot writes it (5m, 30s, 500ms, PT5M; no unit = seconds) in milliseconds; null if unreadable. */
+    static Long millis(String duration) {
+        String d = duration.strip().toLowerCase(Locale.ROOT);
+        try {
+            if (d.startsWith("p")) {
+                return java.time.Duration.parse(d.toUpperCase(Locale.ROOT)).toMillis();
+            }
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)\\s*(ms|s|m|h|d)?").matcher(d);
+            if (!m.matches()) {
+                return null;
+            }
+            long n = Long.parseLong(m.group(1));
+            return switch (m.group(2) == null ? "s" : m.group(2)) {
+                case "ms" -> n;
+                case "m" -> n * 60_000;
+                case "h" -> n * 3_600_000;
+                case "d" -> n * 86_400_000;
+                default -> n * 1000;
+            };
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 
@@ -621,6 +743,264 @@ final class ResilienceRules {
             }
         }
         return null;
+    }
+
+    // ---- retry annotations that do nothing ------------------------------------------------------
+
+    private static final String RESILIENCE_PKG = "org.springframework.resilience.annotation.";
+    private static final String SPRING_RETRY_PKG = "org.springframework.retry.annotation.";
+    private static final String ENABLE_RESILIENT = RESILIENCE_PKG + "EnableResilientMethods";
+    private static final String ENABLE_RETRY = SPRING_RETRY_PKG + "EnableRetry";
+
+    /** A method (or class) carrying a retry annotation: where it is reported. */
+    private record RetrySite(SourceFileInfo file, int line, String label) {
+    }
+
+    /**
+     * RETRY_INACTIVE (#90): Spring Framework 7's {@code @Retryable} / {@code @ConcurrencyLimit} are "metadata" until
+     * {@code @EnableResilientMethods} (or a RetryAnnotationBeanPostProcessor / ConcurrencyLimitBeanPostProcessor bean)
+     * turns their processing on (Framework reference, "Resilience Features",
+     * docs.spring.io/spring-framework/reference/core/resilience.html); Spring Boot does not enable them. Spring Retry's
+     * {@code @Retryable} / {@code @CircuitBreaker} need {@code @EnableRetry} on a configuration class (spring-retry
+     * README, "Java Configuration for Retry Proxies"). Without it the method runs once and the first failure is final.
+     * AUTO: the enabling annotation goes onto the @SpringBootApplication class (a configuration class); Spring Retry's
+     * only when AOP is on the classpath (its declarative retry needs it, README "Additional Dependencies"). Else report.
+     */
+    private void retryInactive() {
+        List<RetrySite> retry = new ArrayList<>();
+        List<RetrySite> limit = new ArrayList<>();
+        List<RetrySite> springRetry = new ArrayList<>();
+        for (ClassInfo c : ctx.methodsOwners()) {
+            collectRetry(c.file(), c.decl().getLeadingAnnotations(), Pos.line(c.decl().getName()), c.simpleName(),
+                    retry, limit, springRetry);
+        }
+        for (MethodInfo m : ctx.methods()) {
+            collectRetry(m.file(), m.decl().getLeadingAnnotations(), m.line(), m.label(), retry, limit, springRetry);
+        }
+        boolean resilientOn = annotatedAnywhere(ENABLE_RESILIENT);
+        Set<String> missing = new TreeSet<>();
+        List<RetrySite> sites = new ArrayList<>();
+        List<String> what = new ArrayList<>();
+        if (!retry.isEmpty() && !resilientOn && !mentioned("RetryAnnotationBeanPostProcessor")) {
+            missing.add(ENABLE_RESILIENT);
+            sites.addAll(retry);
+            what.add("@Retryable");
+        }
+        if (!limit.isEmpty() && !resilientOn && !mentioned("ConcurrencyLimitBeanPostProcessor")) {
+            missing.add(ENABLE_RESILIENT);
+            sites.addAll(limit);
+            what.add("@ConcurrencyLimit");
+        }
+        if (!springRetry.isEmpty() && !annotatedAnywhere(ENABLE_RETRY)) {
+            missing.add(ENABLE_RETRY);
+            sites.addAll(springRetry);
+            what.add("Spring Retry's @Retryable");
+        }
+        sites.removeIf(s -> ctx.ignored(s.file(), s.line(), Rules.RETRY_INACTIVE));
+        if (sites.isEmpty()) {
+            return;
+        }
+        sites.sort(Comparator.comparing((RetrySite s) -> s.file().relPath()).thenComparingInt(RetrySite::line));
+        String enablers = String.join(" and ", missing.stream().map(f -> "@" + simpleName(f)).toList());
+        RetrySite first = sites.getFirst();
+        OrderBuilder b = ctx.order(Rules.RETRY_INACTIVE, "retry-inactive").at(first.file().relPath(), first.line())
+                .title(String.join(" / ", what) + " without " + enablers + ": the annotation is metadata only, so "
+                        + String.join(", ", sites.stream().map(RetrySite::label).distinct().toList())
+                        + " run once and the first failure is final")
+                .basis("no class is annotated with " + enablers + (missing.contains(ENABLE_RESILIENT)
+                        ? " and no source declares a RetryAnnotationBeanPostProcessor / ConcurrencyLimitBeanPostProcessor bean" : ""))
+                .doneWhen("a class is annotated with " + enablers + (missing.contains(ENABLE_RESILIENT)
+                        ? " (or the post-processor beans are declared)" : ""));
+        sites.stream().skip(1).forEach(s -> b.location(s.file().relPath(), s.line(), Rules.RETRY_INACTIVE));
+        ClassInfo app = ctx.a.index.classes().stream()
+                .filter(c -> c.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, SPRING_BOOT_APPLICATION)))
+                .min(Comparator.comparing(c -> c.file().relPath())).orElse(null);
+        boolean aop = !missing.contains(ENABLE_RETRY) || ctx.a.project.probe().hasClass("org.aspectj.weaver.tools.PointcutParser");
+        if (app == null || !aop) {
+            b.suggestion("Add " + enablers + " to a @Configuration class"
+                    + (aop ? "" : "; Spring Retry's annotations also need AOP at runtime (spring-boot-starter-aop on "
+                    + "Spring Boot 3, spring-boot-starter-aspectj on 4), or move to Spring Framework 7's own @Retryable")
+                    + ". Not applied automatically: " + (app == null ? "no @SpringBootApplication class found." : "AspectJ is not on the classpath."));
+            return;
+        }
+        J.Annotation boot = app.decl().getLeadingAnnotations().stream().filter(a -> Annotations.is(a, SPRING_BOOT_APPLICATION))
+                .findFirst().orElseThrow();
+        SourceFileInfo f = app.file();
+        int at = Pos.start(boot);
+        String indent = Text.indentAt(f.text(), at);
+        StringBuilder added = new StringBuilder();
+        missing.forEach(fqn -> added.append('@').append(simpleName(fqn)).append('\n').append(indent));
+        b.suggestion("Adds " + enablers + " to " + app.simpleName() + " (the @SpringBootApplication class): exactly what the "
+                + "annotations ask for. Check the retry settings (maxRetries, delay, includes) now that they take effect.");
+        b.edits(JavaEdits.imports(f, missing.toArray(String[]::new)));
+        b.edit(dev.logast.orders.Edit.insert(f.relPath(), at, added.toString()));
+    }
+
+    private static final String SPRING_BOOT_APPLICATION = "org.springframework.boot.autoconfigure.SpringBootApplication";
+
+    private static void collectRetry(SourceFileInfo f, List<J.Annotation> annotations, int line, String label,
+                                     List<RetrySite> retry, List<RetrySite> limit, List<RetrySite> springRetry) {
+        for (J.Annotation a : annotations) {
+            String fqn = annotationFqn(a, f);
+            if (fqn == null) {
+                continue;
+            }
+            RetrySite site = new RetrySite(f, line, label);
+            switch (fqn) {
+                case RESILIENCE_PKG + "Retryable" -> retry.add(site);
+                case RESILIENCE_PKG + "ConcurrencyLimit" -> limit.add(site);
+                case SPRING_RETRY_PKG + "Retryable", SPRING_RETRY_PKG + "CircuitBreaker" -> springRetry.add(site);
+                default -> {
+                }
+            }
+        }
+    }
+
+    /**
+     * The annotation's fully qualified name: its resolved type, else (the library is not on the classpath) the package
+     * the file imports it from. Both libraries name their annotation {@code @Retryable}, so the simple name is not enough.
+     */
+    private static String annotationFqn(J.Annotation a, SourceFileInfo f) {
+        JavaType.FullyQualified t = TypeUtils.asFullyQualified(a.getType());
+        if (t != null && !(a.getType() instanceof JavaType.Unknown)) {
+            return t.getFullyQualifiedName();
+        }
+        String simple = a.getSimpleName();
+        String written = a.getAnnotationType().printTrimmed();
+        for (String pkg : List.of(RESILIENCE_PKG, SPRING_RETRY_PKG)) {
+            if (written.equals(pkg + simple) || f.text().contains("import " + pkg + simple + ";")
+                    || f.text().contains("import " + pkg + "*;")) {
+                return pkg + simple;
+            }
+        }
+        return null;
+    }
+
+    private boolean annotatedAnywhere(String fqn) {
+        return ctx.a.index.classes().stream().anyMatch(c -> c.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, fqn)));
+    }
+
+    /** Some source file of the service names {@code word} (a bean type declared by hand). */
+    private boolean mentioned(String word) {
+        return ctx.a.index.classes().stream().anyMatch(c -> c.file().text().contains(word));
+    }
+
+    // ---- Spring Boot's own executor and scheduler -----------------------------------------------
+
+    private static final String ASYNC = "org.springframework.scheduling.annotation.Async";
+
+    /** The Spring configuration sets {@code key} (relaxed binding: kebab-case, camelCase). */
+    private boolean property(String key) {
+        String want = key.replace("-", "").toLowerCase(Locale.ROOT);
+        // a map key may be written in brackets ("[jakarta.persistence.query.timeout]")
+        return ctx.a.springProperties.keySet().stream()
+                .anyMatch(k -> k.replaceAll("[-\\[\\]\"']", "").toLowerCase(Locale.ROOT).equals(want));
+    }
+
+    private boolean virtualThreads() {
+        return ctx.a.springProperties.entrySet().stream().anyMatch(e -> e.getKey().replace("-", "").equalsIgnoreCase("spring.threads.virtual.enabled")
+                && e.getValue().equalsIgnoreCase("true"));
+    }
+
+    /** A @Bean method of the service returns one of {@code types}. */
+    private boolean declaresBean(String... types) {
+        return ctx.methods().stream().filter(m -> m.decl().getLeadingAnnotations().stream()
+                        .anyMatch(a -> Annotations.is(a, "org.springframework.context.annotation.Bean")))
+                .map(m -> m.decl().getReturnTypeExpression() == null ? null : m.decl().getReturnTypeExpression().getType())
+                .filter(Objects::nonNull)
+                .anyMatch(t -> Arrays.stream(types).anyMatch(x -> TypeUtils.isAssignableTo(x, t)));
+    }
+
+    private boolean implemented(String type) {
+        return ctx.methodsOwners().stream().anyMatch(c -> c.type() != null && TypeUtils.isAssignableTo(type, c.type()));
+    }
+
+    /**
+     * UNBOUNDED_EXECUTOR, Boot's own executor (#90): with {@code @EnableAsync} and no Executor bean of the service's own,
+     * {@code @Async} methods run on the auto-configured ThreadPoolTaskExecutor: "8 core threads" (Spring Boot reference,
+     * "Task Execution and Scheduling", docs.spring.io/spring-boot/reference/features/task-execution-and-scheduling.html,
+     * same in 3.5 and 4.x) and spring.task.execution.pool.queue-capacity defaulting to Integer.MAX_VALUE ("An unbounded
+     * capacity does not increase the pool and therefore ignores the 'max-size' property", application properties
+     * appendix). The auto-configuration backs off for an Executor bean unless spring.task.execution.mode=force; with
+     * spring.threads.virtual.enabled it is a SimpleAsyncTaskExecutor without a pool. Report: the bound is a decision.
+     */
+    private void bootTaskExecutor() {
+        boolean forced = ctx.a.springProperties.entrySet().stream().anyMatch(e -> e.getKey().equals("spring.task.execution.mode")
+                && e.getValue().equalsIgnoreCase("force"));
+        if (property("spring.task.execution.pool.queue-capacity") || virtualThreads()
+                || !annotatedAnywhere("org.springframework.scheduling.annotation.EnableAsync")
+                || !forced && declaresBean("java.util.concurrent.Executor")
+                || implemented("org.springframework.scheduling.annotation.AsyncConfigurer")) {
+            return;
+        }
+        List<MethodInfo> async = ctx.methods().stream().filter(this::onBootExecutor)
+                .filter(m -> !ctx.ignored(m.file(), m.line(), Rules.UNBOUNDED_EXECUTOR))
+                .sorted(Comparator.comparing((MethodInfo m) -> m.file().relPath()).thenComparingInt(MethodInfo::line)).toList();
+        if (async.isEmpty()) {
+            return;
+        }
+        MethodInfo first = async.getFirst();
+        OrderBuilder b = ctx.order(Rules.UNBOUNDED_EXECUTOR, "boot-task-executor").at(first.file().relPath(), first.line())
+                .title("@Async methods run on Spring Boot's auto-configured executor, whose queue is unbounded "
+                        + "(spring.task.execution.pool.queue-capacity defaults to Integer.MAX_VALUE): under load tasks pile up "
+                        + "behind 8 threads until memory runs out, and max-size never takes effect ("
+                        + String.join(", ", async.stream().map(MethodInfo::label).toList()) + ")")
+                .suggestion("Bound it: spring.task.execution.pool.queue-capacity (with max-size above the 8 core threads), "
+                        + "and decide what a full queue means for the callers (a TaskRejectedException, or a rejection "
+                        + "policy on your own executor); or run @Async on virtual threads (spring.threads.virtual.enabled: true).")
+                .basis("@EnableAsync is present, no Executor bean or AsyncConfigurer of the service's own replaces Spring "
+                        + "Boot's executor, and the Spring configuration sets neither spring.task.execution.pool.queue-capacity "
+                        + "nor spring.threads.virtual.enabled: true")
+                .doneWhen("spring.task.execution.pool.queue-capacity or spring.threads.virtual.enabled: true is set in the "
+                        + "Spring configuration, or the service declares its own Executor bean / AsyncConfigurer");
+        async.stream().skip(1).forEach(m -> b.location(m.file().relPath(), m.line(), Rules.UNBOUNDED_EXECUTOR));
+    }
+
+    /** {@code @Async} (on the method or its class) without a qualifier, or naming Boot's executor bean. */
+    private boolean onBootExecutor(MethodInfo m) {
+        J.Annotation a = m.decl().getLeadingAnnotations().stream().filter(x -> Annotations.is(x, ASYNC)).findFirst()
+                .orElse(m.owner().decl().getLeadingAnnotations().stream().filter(x -> Annotations.is(x, ASYNC)).findFirst().orElse(null));
+        if (a == null || m.decl().getBody() == null) {
+            return false;
+        }
+        String name = Annotations.stringAttribute(a, "value").orElse("");
+        return name.isEmpty() || name.equals("applicationTaskExecutor") || name.equals("taskExecutor");
+    }
+
+    /**
+     * SCHEDULER_SINGLE_THREAD (#90): "The ThreadPoolTaskScheduler uses one thread by default" (Spring Boot reference,
+     * "Task Execution and Scheduling", 3.5 and 4.x; spring.task.scheduling.pool.size defaults to 1), so with two or more
+     * @Scheduled jobs one slow run delays every other job. Boot's scheduler backs off for a TaskScheduler or
+     * ScheduledExecutorService bean (TaskSchedulingConfigurations, 3.5 and 4.0), and with virtual threads it is a
+     * SimpleAsyncTaskScheduler without a pool. Report: more threads let jobs run concurrently, a decision.
+     */
+    private void singleThreadScheduler() {
+        if (property("spring.task.scheduling.pool.size") || virtualThreads()
+                || !annotatedAnywhere("org.springframework.scheduling.annotation.EnableScheduling")
+                || declaresBean("org.springframework.scheduling.TaskScheduler", "java.util.concurrent.ScheduledExecutorService")
+                || implemented("org.springframework.scheduling.annotation.SchedulingConfigurer")) {
+            return;
+        }
+        List<MethodInfo> jobs = ctx.a.entrypoints.stream().filter(ep -> ep.kind() == Entrypoint.Kind.SCHEDULED)
+                .map(Entrypoint::method).distinct()
+                .sorted(Comparator.comparing((MethodInfo m) -> m.file().relPath()).thenComparingInt(MethodInfo::line)).toList();
+        if (jobs.size() < 2 || jobs.stream().allMatch(m -> ctx.ignored(m.file(), m.line(), Rules.SCHEDULER_SINGLE_THREAD))) {
+            return;
+        }
+        jobs = jobs.stream().filter(m -> !ctx.ignored(m.file(), m.line(), Rules.SCHEDULER_SINGLE_THREAD)).toList();
+        MethodInfo first = jobs.getFirst();
+        OrderBuilder b = ctx.order(Rules.SCHEDULER_SINGLE_THREAD, "scheduler-pool").at(first.file().relPath(), first.line())
+                .title(jobs.size() + " @Scheduled jobs share Spring Boot's scheduler, which has one thread by default: one slow "
+                        + "or stuck run delays every other job (" + String.join(", ", jobs.stream().map(MethodInfo::label).toList()) + ")")
+                .suggestion("Set spring.task.scheduling.pool.size to the number of jobs that may run at the same time (they "
+                        + "then run concurrently: check that they do not share state), or run them on virtual threads "
+                        + "(spring.threads.virtual.enabled: true).")
+                .basis("@EnableScheduling is present, no TaskScheduler / ScheduledExecutorService bean or SchedulingConfigurer "
+                        + "of the service's own replaces Spring Boot's scheduler, and the Spring configuration sets neither "
+                        + "spring.task.scheduling.pool.size nor spring.threads.virtual.enabled: true")
+                .doneWhen("spring.task.scheduling.pool.size or spring.threads.virtual.enabled: true is set in the Spring "
+                        + "configuration, or the service declares its own TaskScheduler bean / SchedulingConfigurer");
+        jobs.stream().skip(1).forEach(m -> b.location(m.file().relPath(), m.line(), Rules.SCHEDULER_SINGLE_THREAD));
     }
 
     // ---- Kafka ----------------------------------------------------------------------------------

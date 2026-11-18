@@ -2432,6 +2432,117 @@ class E2eGoldenTest {
     }
 
     /**
+     * #90, Spring's own resilience switches. {@code @Retryable} / {@code @ConcurrencyLimit} (Spring Framework 7) do
+     * nothing without {@code @EnableResilientMethods}: logast adds it to the @SpringBootApplication class. With
+     * {@code @EnableAsync} and {@code @EnableScheduling}, @Async runs on Boot's executor (unbounded queue) and the
+     * @Scheduled jobs of the fixture share Boot's one-thread scheduler: both reported. An @Async naming its own executor
+     * is not on Boot's. #41: an @Entity gets spring.jpa.properties.jakarta.persistence.query.timeout; a JdbcTemplate
+     * created with {@code new} stays reported (spring.jdbc.template.* does not reach it), one that only wraps an
+     * existing template does not. Every file must equal e2e/expected-spring-resilience.
+     */
+    @Test
+    void springResilienceSwitchesAreTurnedOnOrReported() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/carrier"));
+            Files.writeString(dir.resolve("CarrierClient.java"), """
+                    package com.example.e2e.carrier;
+
+                    import org.springframework.resilience.annotation.ConcurrencyLimit;
+                    import org.springframework.resilience.annotation.Retryable;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class CarrierClient {
+                        @Retryable(maxRetries = 2)
+                        public String track(String parcelId) {
+                            return "in transit";
+                        }
+
+                        @ConcurrencyLimit(4)
+                        public String quote(String parcelId) {
+                            return "4.20";
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("CarrierLabels.java"), """
+                    package com.example.e2e.carrier;
+
+                    import org.springframework.scheduling.annotation.Async;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class CarrierLabels {
+                        @Async
+                        public void print(String parcelId) {
+                            System.out.println(parcelId);
+                        }
+
+                        @Async("labelExecutor")
+                        public void reprint(String parcelId) {
+                            System.out.println(parcelId);
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("CarrierConfig.java"), """
+                    package com.example.e2e.carrier;
+
+                    import org.springframework.context.annotation.Configuration;
+                    import org.springframework.scheduling.annotation.EnableAsync;
+                    import org.springframework.scheduling.annotation.EnableScheduling;
+
+                    @Configuration
+                    @EnableAsync
+                    @EnableScheduling
+                    public class CarrierConfig {
+                    }
+                    """);
+            // #41: JPA gets its query timeout as a JPA property; a JdbcTemplate made by hand is out of the property's reach
+            Files.writeString(dir.resolve("Consignment.java"), """
+                    package com.example.e2e.carrier;
+
+                    import jakarta.persistence.Entity;
+
+                    @Entity
+                    public class Consignment {
+                        private String consignmentId;
+                    }
+                    """);
+            Files.writeString(dir.resolve("CarrierRates.java"), """
+                    package com.example.e2e.carrier;
+
+                    import javax.sql.DataSource;
+                    import org.springframework.jdbc.core.JdbcTemplate;
+                    import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+                    import org.springframework.stereotype.Repository;
+
+                    @Repository
+                    public class CarrierRates {
+                        private final JdbcTemplate jdbc;
+                        private final NamedParameterJdbcTemplate named;
+
+                        public CarrierRates(DataSource dataSource) {
+                            this.jdbc = new JdbcTemplate(dataSource);
+                            this.named = new NamedParameterJdbcTemplate(jdbc);
+                        }
+
+                        public Integer rate(String zone) {
+                            return jdbc.queryForObject("SELECT rate FROM carrier_rate WHERE zone = ?", Integer.class, zone);
+                        }
+                    }
+                    """);
+        });
+        assertThat(actual.get("src/main/resources/application.yml")).contains("jakarta.persistence.query.timeout: 300000");
+        assertThat(actual.get("FINDINGS.txt")).contains("new JdbcTemplate(..) creates a JdbcTemplate of its own")
+                .doesNotContain("new NamedParameterJdbcTemplate(..)");
+        assertThat(actual.get("src/main/java/com/example/e2e/E2eApplication.java"))
+                .contains("@EnableResilientMethods\n@SpringBootApplication");
+        assertThat(actual.get("FINDINGS.txt")).contains("SCHEDULER_SINGLE_THREAD")
+                .contains("Spring Boot's auto-configured executor").contains("CarrierLabels.print)")
+                .doesNotContain("RETRY_INACTIVE");
+        golden(EXPECTED.resolveSibling("expected-spring-resilience"), actual);
+    }
+
+    /**
      * Java 22+ unnamed catch parameters (#44): {@code catch (X _)} cannot be passed on as a cause or logged, so neither
      * fix may write {@code _} into the code. Needs JDK 22+ to compile.
      */

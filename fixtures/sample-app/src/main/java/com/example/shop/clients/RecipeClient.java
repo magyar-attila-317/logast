@@ -2,6 +2,7 @@ package com.example.shop.clients;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -24,7 +25,8 @@ public class RecipeClient {
         sweeper.scheduleAtFixedRate(this::sweep, 1, 1, TimeUnit.MINUTES); // expect: SCHEDULED_TASK_UNTRACED, ASYNC_ERROR_LOST
     }
 
-    public String fetch(String recipeId) throws IOException, InterruptedException {
+    @Retryable(maxRetries = 2)
+    public String fetch(String recipeId) throws IOException, InterruptedException { // expect: RETRY_INACTIVE
         HttpRequest request = HttpRequest.newBuilder(URI.create("https://recipes.example.com/" + recipeId)).build();
         return http.send(request, HttpResponse.BodyHandlers.ofString()).body();
     }
