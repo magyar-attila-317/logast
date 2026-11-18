@@ -1072,7 +1072,7 @@ class E2eGoldenTest {
         assertThat(coverage).as("every skip reason").contains("protected message", "message not a literal", "message comes from an argument",
                 "fluent call", "no message", "TRACE level", "inside a log helper", "logging-support code",
                 "other logging API: java.util.logging");
-        assertThat(actual.get("FINDINGS.txt")).as("the summary per outcome").contains("log calls ", "  skipped  ");
+        assertThat(actual.get("FINDINGS.txt")).as("the one coverage line (#101)").containsPattern("(?m)^Log lines: \\d+ — .*\\d+ not checked \\(.logast/coverage.txt\\)$");
         golden(EXPECTED.resolveSibling("expected-log-call-coverage"), actual);
     }
 
@@ -5346,9 +5346,18 @@ class E2eGoldenTest {
             }
         }
         compile(shape, "UTF-8", platformAsExported(app.resolve(".logast/shape-mapping.txt")));
-        java.util.function.Function<Path, List<String>> rules = root -> run(root, "scan", root.toString(), "--format", "summary",
-                "--classpath-file", CLASSPATH).lines().map(String::strip).filter(l -> l.matches("[A-Z_]+ +\\d+.*"))
-                .map(l -> l.replaceAll("^([A-Z_]+ +\\d+).*", "$1")).filter(l -> !l.startsWith("SETUP_SUPPORT_STARTER")).sorted().toList();
+        // findings per rule, from the json orders (the summary no longer lists rules, #101)
+        java.util.function.Function<Path, List<String>> rules = root -> {
+            Map<String, Integer> perRule = new TreeMap<>();
+            try {
+                dev.logast.orders.OrderJson.MAPPER.readTree(run(root, "scan", root.toString(), "--format", "json", "--classpath-file", CLASSPATH))
+                        .forEach(o -> o.path("fixes").forEach(f -> perRule.merge(f.asText(), 1, Integer::sum)));
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            return perRule.entrySet().stream().filter(e -> !e.getKey().equals("SETUP_SUPPORT_STARTER"))
+                    .map(e -> e.getKey() + " " + e.getValue()).toList();
+        };
         assertThat(rules.apply(shape)).as("the export finds what the original finds").isEqualTo(rules.apply(app));
     }
 

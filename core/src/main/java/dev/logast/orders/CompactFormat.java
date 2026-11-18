@@ -186,31 +186,6 @@ public final class CompactFormat {
         }
     }
 
-    /** Findings per rule: count, worst severity and how they get fixed; then the totals. */
-    public static String summary(List<WorkOrder> orders) {
-        StringBuilder sb = new StringBuilder();
-        Map<String, List<WorkOrder>> byRule = new TreeMap<>();
-        orders.forEach(o -> o.fixes().forEach(f -> byRule.computeIfAbsent(f, k -> new ArrayList<>()).add(o)));
-        int w = Math.max(26, byRule.keySet().stream().mapToInt(String::length).max().orElse(0) + 2);
-        for (var e : byRule.entrySet()) {
-            List<WorkOrder> os = e.getValue();
-            String worst = os.stream().map(WorkOrder::severity).max(Comparator.comparingInt(Rules::rank)).orElse("low");
-            long auto = os.stream().filter(WorkOrder::mechanical).count();
-            long text = os.stream().filter(o -> !o.slots().isEmpty()).count();
-            long report = os.stream().filter(WorkOrder::reportOnly).count();
-            List<String> how = new ArrayList<>();
-            if (auto > 0) how.add(Ansi.green(auto + " auto"));
-            if (text > 0) how.add(Ansi.cyan(text + " text"));
-            if (report > 0) how.add(Ansi.magenta(report + " report"));
-            sb.append(String.format("%-" + w + "s %4d", e.getKey(), os.size())).append("  ")
-                    .append(Ansi.severity(worst)).append(" ".repeat(Math.max(0, 6 - worst.length()))).append("  ").append(String.join(Ansi.dim(" · "), how)).append('\n');
-        }
-        Map<String, Long> bySev = orders.stream().collect(Collectors.groupingBy(WorkOrder::severity, Collectors.counting()));
-        sb.append("high=").append(bySev.getOrDefault("high", 0L)).append(" medium=").append(bySev.getOrDefault("medium", 0L))
-                .append(" low=").append(bySev.getOrDefault("low", 0L)).append('\n');
-        return sb.toString();
-    }
-
     public static boolean atLeast(WorkOrder o, String severity) {
         return Rules.rank(o.severity()) >= Rules.rank(severity);
     }

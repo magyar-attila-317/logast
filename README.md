@@ -100,7 +100,8 @@ git diff                         # 6. review
 - `apply` without `--write` only previews the diff.
 - One `apply` does everything automatic; the second is only for what you filled in. Don't revert the code before
   it: the entries in the files point at the migrated code.
-- `init`, `apply` and `scan` print a numbered **Next steps** list: what is left and the command for each.
+- `init` prints a numbered **Next steps** list; `apply` and `scan` end with what is left, grouped by what you do
+  about it ([what happens next](docs/commands.md#what-happens-next)).
 - More packs from the start: `logast init . --pack logging,tracing,metrics,resilience,errors,audit`.
 
 ---

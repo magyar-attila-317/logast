@@ -52,7 +52,11 @@ OUM-e105e9  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
   note: Decide in .logast/metrics.json: "count": "counter" (Outcomes.count("shelf.inspection", "completed")) or "skip"; then logast apply . --auto. Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/metrics.json is applied (logast apply . --auto)
 
-Next steps
-  1. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
-  2. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  3. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+Applied earlier: 13 changes in 29 files (git diff to review)
+
+Waiting on you — logast can't continue without these:
+  12 outcomes: count, tag or skip  → .logast/metrics.json
+  then run: logast apply . --auto --write   (on this code: don't revert it)
+
+Also:
+  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there

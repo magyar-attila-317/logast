@@ -31,6 +31,16 @@ public record LogCoverage(Map<String, int[]> parts) {
         return total() == 0 ? 100.0 : Math.round(1000.0 * covered() / total()) / 10.0;
     }
 
+    private static final Map<String, String> PLAIN = Map.of("jobs", "jobs", "http", "endpoints", "stateChanges", "data changes",
+            "skips", "early returns", "loops", "loops");
+
+    /** For a person (#101): "Places that should log: 17 of 21 do (jobs 9/9, endpoints 8/12)". */
+    public String plainLine() {
+        StringBuilder sb = new StringBuilder();
+        parts.forEach((k, c) -> sb.append(sb.isEmpty() ? "" : ", ").append(PLAIN.getOrDefault(k, k)).append(' ').append(c[0]).append('/').append(c[1]));
+        return "Places that should log: " + covered() + " of " + total() + " do" + (sb.isEmpty() ? "" : " (" + sb + ")");
+    }
+
     /** "71% (jobs 3/4 · http 12/14 · stateChanges 5/9 · skips 2/6 · loops 1/3)" */
     public String line() {
         StringBuilder sb = new StringBuilder();

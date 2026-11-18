@@ -2,18 +2,25 @@
 applied (5): SUP-6dc594 ERT-0d5559 AEL-63267a AEL-bb56e0 CDR-2fa891
 files (5): build.gradle.kts, src/main/java/com/example/e2e/edge/EdgeFlow.java, src/main/java/com/example/e2e/order/PaymentClient.java, src/main/java/com/example/e2e/web/QuoteController.java, src/main/resources/application.yml  ·  3 rounds, <t>
 
-Next steps
-  1. logast classpath .                                dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
-  2. git diff                                          review the changes
-  3. logast scan . --format summary                    4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
-  4. check dev.logast:logging-support:0.1.0 resolves   the build now depends on it; or set support.mode: vendor in logast.yaml
-  5. logast verify .                                   build and run the tests with log capture: does the result really log what it should?
+Waiting on you — logast can't continue without these:
+  4 decisions  → logast scan .   (each says what to decide)
+    mostly: failure turned into a default value 1, exception cause dropped 1, error responses not ProblemDetail 1, …
+  logast applies nothing for these: change the code, and the next scan drops what is done
+
+Also:
+  logast classpath .                                dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
+  git diff                                          review the changes (one diff per kind of change in .logast/steps/)
+  check dev.logast:logging-support:0.1.0 resolves   the build now depends on it; or set support.mode: vendor in logast.yaml
+  logast verify .                                   build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)
 applied (0):
 files (0):   ·  0 rounds, <t>
-nothing to apply without text: the remaining orders need message text (`logast scan .` lists them; fill them via --fills or `logast review .`)
 
-Next steps
-  1. logast scan . --format summary   4 findings are decisions for a person (CATCH_ALL_DEFAULT 1, CAUSE_DROPPED 1, PROBLEM_DETAILS_DISABLED 1, …); each says what to decide
-  2. logast verify .                  build and run the tests with log capture: does the result really log what it should?
+Waiting on you — logast can't continue without these:
+  4 decisions  → logast scan .   (each says what to decide)
+    mostly: failure turned into a default value 1, exception cause dropped 1, error responses not ProblemDetail 1, …
+  logast applies nothing for these: change the code, and the next scan drops what is done
+
+Also:
+  logast verify .   build and run the tests with log capture: does the result really log what it should?

@@ -91,7 +91,7 @@ class PackOutputTest {
             assertThat(run("scan", app.toString(), "--pack", pack, "--classpath-file", cp)).as("--pack " + pack)
                     .doesNotContain("log coverage").doesNotContain(TRAFFIC_HINT);
             assertThat(run("scan", app.toString(), "--pack", pack, "--format", "summary", "--classpath-file", cp))
-                    .as("--pack " + pack + " --format summary").doesNotContain("log coverage");
+                    .as("--pack " + pack + " --format summary").doesNotContain("log coverage").doesNotContain("Places that should log");
         }
     }
 
@@ -103,11 +103,11 @@ class PackOutputTest {
         Path coverage = app.resolve(".logast/coverage.txt");
         for (String pack : new String[]{"tracing", "metrics", "resilience", "errors", "audit"}) {
             assertThat(run("scan", app.toString(), "--pack", pack, "--classpath-file", cp)).as("--pack " + pack)
-                    .doesNotContain("log calls ");
+                    .doesNotContain("Log lines: ");
             assertThat(coverage).as("--pack " + pack).doesNotExist();
         }
         assertThat(run("scan", app.toString(), "--pack", "metrics,logging", "--format", "summary", "--classpath-file", cp))
-                .contains("log calls 0, each accounted for in .logast/coverage.txt");
+                .contains("Log lines: 0 (.logast/coverage.txt)");
         assertThat(coverage).exists();
     }
 

@@ -148,15 +148,12 @@ public final class Main {
             Path target = out != null ? out : root().resolve(".logast/orders.json");
             Files.createDirectories(target.toAbsolutePath().getParent());
             OrderJson.MAPPER.writeValue(target.toFile(), r);
+            dev.logast.apply.FillsFile.Update fu = null;
+            dev.logast.apply.FillsFile.Update mu = null;
             if (out == null) {
-                var fu = dev.logast.apply.FillsFile.update(root(), r.orders());
-                if ((fu.entries() > 0 || fu.written()) && (format.equals("compact") || format.equals("summary"))) {
-                    Out.progress(fillsLine(fu));
-                }
-                var mu = dev.logast.apply.MetricsFile.update(root(), r.orders());
-                if (mu.written() && (format.equals("compact") || format.equals("summary"))) {
-                    Out.progress(metricsLine(mu));
-                }
+                // their state is part of the "waiting on you" block (#101)
+                fu = dev.logast.apply.FillsFile.update(root(), r.orders());
+                mu = dev.logast.apply.MetricsFile.update(root(), r.orders());
                 if (policy.packSelected("logging")) {   // the logging pack's account of every log call (#72, as #88)
                     ledger = Logast.lastAnalysis.ledger.write(root(), Logast.lastAnalysis, r.orders(), Map.of());
                 }
@@ -220,28 +217,29 @@ public final class Main {
                     if (r.stats().logCallsByName() > 0) {
                         Out.warn(loggersByNameLine(r.stats().logCallsByName()));
                     }
-                    System.out.print(CompactFormat.summary(shown));
-                    if (r.coverage() != null && r.coverage().total() > 0) {
-                        System.out.println("log coverage " + r.coverage().line());
-                    }
-                    printLedger(ledger);
+                    dev.logast.Todo todo = dev.logast.Todo.of(root(), r, policy, Logast.lastAnalysis, List.of(), false);
+                    List<String> places = r.coverage() != null && r.coverage().total() > 0 ? List.of(r.coverage().plainLine()) : List.of();
+                    printBlocks(appliedEarlier(root()),
+                            todo.lines(new dev.logast.Todo.View(null, "logast scan .", fu, mu)),
+                            dev.logast.Todo.fixFirst(shown, 8),
+                            ledgerLines(ledger, places),
+                            dev.logast.Todo.alsoLines(todo.also()));
                 }
                 default -> {
                     System.out.print(CompactFormat.render(r, shown, policy.terms()));
-                    printLedger(ledger);
                     if (!policy.overrides().isEmpty()) {
                         System.out.println(Ansi.dim("\npolicy overrides (" + policy.overrides().size() + "): "
                                 + String.join("; ", policy.overrides().stream().limit(8).toList())));
                     }
                 }
             }
-            if (format.equals("compact") || format.equals("summary")) {
-                List<String[]> next = new ArrayList<>();
-                dev.logast.Todo.of(root(), r, policy, Logast.lastAnalysis, List.of(), false)
-                        .forEach(item -> next.add(new String[]{item.action(), item.why()}));
-                if (!next.isEmpty()) {
-                    Out.next(next);
-                }
+            if (format.equals("compact")) {
+                // the listing above is the detail: the footer says what happens next (#101)
+                dev.logast.Todo todo = dev.logast.Todo.of(root(), r, policy, Logast.lastAnalysis, List.of(), false);
+                printBlocks(appliedEarlier(root()),
+                        todo.lines(new dev.logast.Todo.View(null, "the REPORT-ONLY orders above", fu, mu)),
+                        ledgerLines(ledger, List.of()),
+                        dev.logast.Todo.alsoLines(todo.also()));
             }
             if (failOn != null && !gaps.isEmpty()) {
                 // a broken analysis finds less: it must not turn a CI gate green (#55)
@@ -332,16 +330,19 @@ public final class Main {
                 applier.onProgress(p::update);
                 r = applier.apply(root(), new Applier.Selection(auto, only, fillMap, fills == null), write);
             }
+            dev.logast.apply.FillsFile.Update fu = null;
+            dev.logast.apply.FillsFile.Update mu = null;
             if (fills == null) {
-                // the automatic file follows the code: created if missing, finished entries out, new ones in
-                var fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders());
-                if (fu.written() && !format.equals("json")) {
-                    Out.progress(fillsLine(fu));
-                }
-                var mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders());
-                if (mu.written() && !format.equals("json")) {
-                    Out.progress(metricsLine(mu));
-                }
+                // the automatic file follows the code: created if missing, finished entries out, new ones in;
+                // their state is part of the "waiting on you" block (#101)
+                fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders());
+                mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders());
+            }
+            // what the last apply that changed files did: a later scan starts with it ("Applied earlier", #101)
+            if (write && !r.applied().isEmpty() && !r.changedFiles().isEmpty()) {
+                Files.createDirectories(root().resolve(".logast"));
+                Files.writeString(root().resolve(LAST_APPLY), dev.logast.Todo.plural(r.applied().size(), "change") + " in "
+                        + dev.logast.Todo.plural(r.changedFiles().size(), "file") + "\n");
             }
             // every log call of the result, with the ones this run fixed (#72); the logging pack's report, as in scan
             List<dev.logast.LogLedger.Entry> ledger = null;
@@ -387,15 +388,10 @@ public final class Main {
                     + Ansi.dim(String.join(" ", r.applied())));
             System.out.println(Ansi.dim("files (" + r.changedFiles().size() + "): " + String.join(", ", r.changedFiles())
                     + "  ·  " + r.rounds() + " rounds, " + Out.seconds(t0)));
-            if (r.applied().isEmpty() && fillMap.isEmpty()) {
-                System.out.println("nothing to apply without text: the remaining orders need message text "
-                        + "(`logast scan .` lists them; fill them via --fills or `logast review .`)");
-            }
             if (!r.resolvedIndirectly().isEmpty()) {
                 System.out.println(Ansi.dim("resolved by other changes: " + String.join(" ", r.resolvedIndirectly())));
             }
             r.rejected().forEach((id, why) -> System.out.println(Ansi.red("REJECTED " + id) + ": " + why));
-            printLedger(ledger);
             if (r.before() != null && r.before().stats() != null && r.before().stats().logCallsByName() > 0) {
                 System.out.println(Ansi.warn(loggersByNameLine(r.before().stats().logCallsByName())));
             }
@@ -403,10 +399,11 @@ public final class Main {
                 System.out.println(Ansi.warn("CHECK FAILED (" + r.violations().size() + "): the result breaks a rule every migrated file must follow"));
                 r.violations().forEach(v -> System.out.println("  " + v));
             }
-            List<String[]> next = new ArrayList<>();
+            List<dev.logast.Todo.Item> also = new ArrayList<>();
+            dev.logast.Todo.Item next = null;
             if (!write && !r.applied().isEmpty()) {
-                next.add(new String[]{"logast apply . " + (auto ? "--auto " : "") + (fills != null ? "--fills " + fills + " " : "") + "--write",
-                        "make these " + r.applied().size() + " changes"});
+                next = new dev.logast.Todo.Item("logast apply . " + (auto ? "--auto " : "") + (fills != null ? "--fills " + fills + " " : "") + "--write",
+                        "make these " + r.applied().size() + " changes");
             }
             if (write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith(".gradle") || fn.endsWith(".gradle.kts"))) {
                 // a build file, or a script it applies (gradle/dependencies.gradle, #80)
@@ -421,67 +418,72 @@ public final class Main {
                 if (cpr.exitCode() == 0) {
                     Out.progress("classpath refreshed (" + cpr.entries() + " entries)");
                 } else {
-                    next.add(new String[]{"logast classpath .", "dependencies changed and Gradle failed (exit " + cpr.exitCode()
-                            + "): fix the build, then refresh the classpath"});
+                    also.add(new dev.logast.Todo.Item("logast classpath .", "dependencies changed and Gradle failed (exit " + cpr.exitCode()
+                            + "): fix the build, then refresh the classpath"));
                 }
             }
-            if (write && !r.changedFiles().isEmpty()) {
-                next.add(new String[]{"git diff", "review the changes"});
-            }
             if (!r.violations().isEmpty()) {
-                next.add(new String[]{"read the CHECK FAILED lines above", r.violations().size() + " places break a migration invariant: "
-                        + "a logast bug, please report the shape of the code"});
+                also.add(new dev.logast.Todo.Item("read the CHECK FAILED lines above", r.violations().size() + " places break a migration invariant: "
+                        + "a logast bug, please report the shape of the code"));
             }
             if (!r.rejected().isEmpty()) {
-                next.add(new String[]{"read the REJECTED lines above", (r.rejected().size() == 1 ? "1 fix" : r.rejected().size() + " fixes")
-                        + " could not be applied; each says why"});
+                also.add(new dev.logast.Todo.Item("read the REJECTED lines above", (r.rejected().size() == 1 ? "1 fix" : r.rejected().size() + " fixes")
+                        + " could not be applied; each says why"));
             }
-            // what is left after this run: the files to fill and the decisions to make
+            if (write && !r.changedFiles().isEmpty()) {
+                also.add(new dev.logast.Todo.Item("git diff", "review the changes (one diff per kind of change in .logast/steps/)"));
+            }
+            // what is left after this run: what logast still applies, what waits on the person, the optional checks (#101)
             dev.logast.orders.ScanResult left = write ? r.after() : r.before();
-            dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, r.applied(), write).stream()
-                    .filter(t -> write || !t.action().startsWith("logast apply"))
-                    .forEach(t -> next.add(new String[]{t.action(), t.why()}));
-            if (!next.isEmpty()) {
-                Out.next(next);
-            }
+            dev.logast.Todo todo = dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, r.applied(), write);
+            also.addAll(todo.also());
+            printBlocks(List.of(), todo.lines(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
+                    ledgerLines(ledger, List.of()), dev.logast.Todo.alsoLines(also));
             return r.rejected().isEmpty() ? 0 : 1;
         }
     }
 
-    /** One line per outcome of coverage.txt (#72); nothing when it was not written. */
-    static void printLedger(List<dev.logast.LogLedger.Entry> ledger) {
+    /** Where apply records what it changed, for the "Applied earlier" line of a later scan (#101). */
+    static final String LAST_APPLY = ".logast/last-apply.txt";
+
+    /** "Applied earlier: 38 changes in 12 files (git diff to review)" when an apply left its record; else nothing. */
+    static List<String> appliedEarlier(Path root) {
+        try {
+            Path f = root.resolve(LAST_APPLY);
+            if (!Files.isRegularFile(f)) {
+                return List.of();
+            }
+            String what = Files.readString(f).strip();
+            return what.isEmpty() ? List.of() : List.of(Ansi.bold("Applied earlier: ") + what + Ansi.dim(" (git diff to review)"));
+        } catch (IOException e) {
+            return List.of();
+        }
+    }
+
+    /** The one coverage line of a run (#72, #101), and the places-that-should-log line when given; nothing without a ledger. */
+    static List<String> ledgerLines(List<dev.logast.LogLedger.Entry> ledger, List<String> places) {
+        List<String> out = new ArrayList<>();
         if (ledger != null) {
-            System.out.println();
-            dev.logast.LogLedger.summary(ledger).forEach(System.out::println);
+            out.add(dev.logast.LogLedger.line(ledger));
+        }
+        out.addAll(places);
+        return out;
+    }
+
+    /** The footer blocks in order, an empty line before each non-empty one. */
+    @SafeVarargs
+    static void printBlocks(List<String>... blocks) {
+        for (List<String> b : blocks) {
+            if (!b.isEmpty()) {
+                System.out.println();
+                b.forEach(System.out::println);
+            }
         }
     }
 
     static String loggersByNameLine(int n) {
         return n + " log call(s) recognised by name only: the logger's type did not resolve, so types around them are "
                 + "missing too. Lombok on the classpath? Run `logast classpath .` (or add the Lombok jar to .logast/classpath*.txt).";
-    }
-
-    static String metricsLine(dev.logast.apply.FillsFile.Update mu) {
-        return dev.logast.apply.MetricsFile.PATH + ": " + mu.entries() + " outcomes not counted, " + mu.filled() + " decided"
-                + (mu.problems() > 0 ? " (" + mu.problems() + " cannot be written: see \"_problem\" there)" : "")
-                + (mu.added() > 0 ? ", " + mu.added() + " new" : "") + (mu.removed() > 0 ? ", " + mu.removed() + " finished removed" : "")
-                + "; set \"count\": counter | tag | skip, then `logast apply . --auto`";
-    }
-
-    static String fillsLine(dev.logast.apply.FillsFile.Update fu) {
-        List<String> parts = new ArrayList<>();
-        if (fu.added() > 0) {
-            parts.add(fu.added() + " new");
-        }
-        if (fu.removed() > 0) {
-            parts.add(fu.removed() + " finished removed");
-        }
-        if (fu.entries() == 0) {
-            return dev.logast.apply.FillsFile.PATH + ": nothing needs a message text right now"
-                    + (fu.removed() > 0 ? " (" + fu.removed() + " finished removed)" : "");
-        }
-        return dev.logast.apply.FillsFile.PATH + ": " + fu.entries() + " orders need a message text, " + fu.filled() + " written"
-                + (parts.isEmpty() ? "" : " (" + String.join(", ", parts) + ")") + "; `logast apply . --auto` uses the ones you fill in";
     }
 
     /** Unified diff with the usual colours: file headers bold, hunks cyan, removed red, added green. */
