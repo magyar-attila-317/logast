@@ -196,7 +196,8 @@ final class LogCallRules {
                             return "@ExceptionHandler " + handler.label() + " (maps it without logging)";
                         }
                     }
-                    case SCHEDULED, KAFKA, JMS, RABBIT, BATCH, MAIN -> {
+                    // Spring Batch (AbstractStep) and Spring Cloud AWS (the listener sink) log what a step or message throws
+                    case SCHEDULED, KAFKA, JMS, RABBIT, BATCH, MAIN, STEP, ITEM, SQS -> {
                     }
                     default -> {
                         return ep.label() + " (" + ep.kind().name().toLowerCase(java.util.Locale.ROOT) + ": not known to log it)";

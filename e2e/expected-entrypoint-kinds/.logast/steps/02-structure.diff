@@ -1,0 +1,166 @@
+diff --git a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
+index b09d628..8e05f57 100644
+--- a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
++++ b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.boot.context.event.ApplicationReadyEvent;
+ import org.springframework.context.event.EventListener;
+ import org.springframework.stereotype.Component;
+@@ -14,6 +15,10 @@
+ 
+     @EventListener(ApplicationReadyEvent.class)
+     public void onReady() {
+-        job.execute();
++        ObservedContext.entrypoint("settlement-job-executor.on-ready")
++                .failureLoggedByCaller()
++                .run(() -> {
++                    job.execute();
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/intake/OrderLineProcessor.java b/src/main/java/com/example/e2e/intake/OrderLineProcessor.java
+index a6545b0..abf6c40 100644
+--- a/src/main/java/com/example/e2e/intake/OrderLineProcessor.java
++++ b/src/main/java/com/example/e2e/intake/OrderLineProcessor.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.intake;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import com.example.e2e.order.Order;
+ import org.springframework.batch.item.ItemProcessor;
+ import org.springframework.stereotype.Component;
+@@ -15,7 +16,12 @@
+ 
+     @Override
+     public String process(Order order) {
+-        feed.load();
+-        return order.customerId() + ":" + order.amountCents();
++        return ObservedContext.entrypoint("order-line-processor.process")
++                .mdc("orderId", order.id())
++                .debugOnSuccess()
++                .call(() -> {
++                    feed.load();
++                    return order.customerId() + ":" + order.amountCents();
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/intake/PledgeQueueListener.java b/src/main/java/com/example/e2e/intake/PledgeQueueListener.java
+index 5a1cf7c..6e45e1e 100644
+--- a/src/main/java/com/example/e2e/intake/PledgeQueueListener.java
++++ b/src/main/java/com/example/e2e/intake/PledgeQueueListener.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.intake;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import io.awspring.cloud.sqs.annotation.SqsListener;
+ import java.util.List;
+ import org.springframework.stereotype.Component;
+@@ -15,11 +16,20 @@
+ 
+     @SqsListener("pledge-requests")
+     public void onRequest(String pledgeId) {
+-        feed.load();
++        ObservedContext.entrypoint("pledge-queue-listener.on-request")
++                .mdc("pledgeId", pledgeId)
++                .debugOnSuccess()
++                .run(() -> {
++                    feed.load();
++                });
+     }
+ 
+     @SqsListener(queueNames = "pledge-bulk")
+     public void onBulk(List<String> pledgeIds) {
+-        feed.load();
++        ObservedContext.entrypoint("pledge-queue-listener.on-bulk")
++                .debugOnSuccess()
++                .run(() -> {
++                    feed.load();
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/intake/PledgeImportTasklet.java b/src/main/java/com/example/e2e/intake/PledgeImportTasklet.java
+index 467b3e1..6588794 100644
+--- a/src/main/java/com/example/e2e/intake/PledgeImportTasklet.java
++++ b/src/main/java/com/example/e2e/intake/PledgeImportTasklet.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.intake;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.batch.core.StepContribution;
+ import org.springframework.batch.core.scope.context.ChunkContext;
+ import org.springframework.batch.core.step.tasklet.Tasklet;
+@@ -17,7 +18,10 @@
+ 
+     @Override
+     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
+-        feed.load();
+-        return RepeatStatus.FINISHED;
++        return ObservedContext.entrypoint("pledge-import-tasklet.execute")
++                .call(() -> {
++                    feed.load();
++                    return RepeatStatus.FINISHED;
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+index 4be0fa1..d5cf243 100644
+--- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
++++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.messaging;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import java.util.List;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -15,7 +16,11 @@
+ 
+     @KafkaListener(topics = "pledge-batches", batch = "true")
+     public void onBatch(List<String> pledgeIds) {
+-        log.info("Pledge batch received [count={}]", pledgeIds.size());
++        ObservedContext.entrypoint("pledge-messages.on-batch")
++                .debugOnSuccess()
++                .run(() -> {
++                    log.info("Pledge batch received [count={}]", pledgeIds.size());
++                });
+     }
+ 
+     @RabbitListener(queues = "pledge-returns")
+diff --git a/src/main/java/com/example/e2e/job/BaseRunJob.java b/src/main/java/com/example/e2e/job/BaseRunJob.java
+index e247843..b0cbfe4 100644
+--- a/src/main/java/com/example/e2e/job/BaseRunJob.java
++++ b/src/main/java/com/example/e2e/job/BaseRunJob.java
+@@ -1,7 +1,7 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.orchardlib.Week;
+-import org.slf4j.MDC;
+ 
+ /** A job base that puts its own context key (outside the vocabulary) into MDC around the abstract step. */
+ public abstract class BaseRunJob extends SettlementJob {
+@@ -9,7 +9,7 @@
+     protected void doExecute() {
+         String runCode = resolveRunCode();
+         Week week = Week.current();
+-        try (var mdc = MDC.putCloseable("runCode", runCode)) {
++        try (var mdc = MdcScope.of("runCode", runCode)) {
+             doRun(runCode, week);   // a value of a library type logast cannot see: the call must still resolve
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
+index e6d521d..52e0cde 100644
+--- a/src/main/java/com/example/e2e/edge/Audited.java
++++ b/src/main/java/com/example/e2e/edge/Audited.java
+@@ -5,7 +5,7 @@ 
+ 
+ /** A default method that logs: the template sits in the interface. */
+ public interface Audited {
+-    Logger AUDIT_LOG = LoggerFactory.getLogger(Audited.class);
++    Logger AUDIT_LOG = LoggerFactory.getLogger("audit");
+ 
+     default void audit(String pledgeId) {
+         AUDIT_LOG.info("Pledge audited [pledgeId={}]", pledgeId);

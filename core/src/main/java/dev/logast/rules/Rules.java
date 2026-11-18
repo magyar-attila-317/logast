@@ -510,7 +510,8 @@ public final class Rules {
     private static final Set<dev.logast.model.Entrypoint.Kind> JOB_KINDS = EnumSet.of(dev.logast.model.Entrypoint.Kind.SCHEDULED,
             dev.logast.model.Entrypoint.Kind.BATCH, dev.logast.model.Entrypoint.Kind.MAIN, dev.logast.model.Entrypoint.Kind.KAFKA,
             dev.logast.model.Entrypoint.Kind.JMS, dev.logast.model.Entrypoint.Kind.RABBIT, dev.logast.model.Entrypoint.Kind.EVENT,
-            dev.logast.model.Entrypoint.Kind.WEBSOCKET);
+            dev.logast.model.Entrypoint.Kind.WEBSOCKET, dev.logast.model.Entrypoint.Kind.STEP, dev.logast.model.Entrypoint.Kind.ITEM,
+            dev.logast.model.Entrypoint.Kind.SQS, dev.logast.model.Entrypoint.Kind.STREAM);
 
     /**
      * How sure the metric name is: high when every word of it is a vocabulary term, low when the log line's wording was

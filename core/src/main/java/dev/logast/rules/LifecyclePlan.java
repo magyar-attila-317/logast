@@ -48,7 +48,7 @@ public final class LifecyclePlan {
 
     public static Kind kindOf(Entrypoint ep) {
         return switch (ep.kind()) {
-            case SCHEDULED, BATCH, MAIN -> Kind.RUN;
+            case SCHEDULED, BATCH, MAIN, STEP -> Kind.RUN;
             case HTTP -> Kind.HTTP;
             default -> Kind.MESSAGE;
         };

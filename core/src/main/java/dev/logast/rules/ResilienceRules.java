@@ -37,7 +37,8 @@ import java.util.stream.Stream;
  */
 final class ResilienceRules {
     private static final Set<Entrypoint.Kind> REQUEST_KINDS = EnumSet.of(Entrypoint.Kind.HTTP, Entrypoint.Kind.KAFKA,
-            Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.WEBSOCKET, Entrypoint.Kind.EVENT, Entrypoint.Kind.CUSTOM);
+            Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.WEBSOCKET, Entrypoint.Kind.EVENT, Entrypoint.Kind.CUSTOM,
+            Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM);
 
     /** Where a construct sits: a method body, or a field initializer of {@code owner}. */
     private record Site(SourceFileInfo file, MethodInfo method, ClassInfo owner, String text) {

@@ -38,7 +38,8 @@ import java.util.stream.Stream;
 final class CoverageRules {
     private static final Set<Entrypoint.Kind> JOBS = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
             Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.EVENT,
-            Entrypoint.Kind.CUSTOM, Entrypoint.Kind.WEBSOCKET);
+            Entrypoint.Kind.CUSTOM, Entrypoint.Kind.WEBSOCKET, Entrypoint.Kind.STEP, Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS,
+            Entrypoint.Kind.STREAM);
     private static final Set<String> REPO_WRITES = Set.of("save", "saveAll", "saveAndFlush", "saveAllAndFlush", "delete",
             "deleteById", "deleteAll", "deleteAllById", "deleteAllInBatch");
     private static final Set<String> EM_WRITES = Set.of("persist", "merge", "remove");
@@ -60,7 +61,7 @@ final class CoverageRules {
             anyPath.addAll(ctx.a.paths.reachableFrom(ep));
             if (JOBS.contains(ep.kind()) && !ep.method().owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
                 jobMethods.add(ep.method().key());
-                if (ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH) {
+                if (ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.STEP) {
                     runMethods.add(ep.method().key());
                 }
                 nearJob.add(ep.method().key());
@@ -386,10 +387,24 @@ final class CoverageRules {
                     && vd.getTypeExpression() != null && vd.getTypeExpression().printTrimmed().endsWith("ObservedContext")
                     && s.get(1) instanceof J.Try t) {
                 block = t.getBody();
+            } else if (s.size() == 1 && observedLambda(s.getFirst()) != null) {
+                block = observedLambda(s.getFirst());   // inside the observation: the started line carries its trace (#15)
             } else {
                 return block;
             }
         }
+    }
+
+    /** The lambda body of {@code ObservedContext.entrypoint(..)…run(() -> {..})} / {@code return …call(() -> {..})}. */
+    private static J.Block observedLambda(Statement s) {
+        J.MethodInvocation mi = s instanceof J.Return r && r.getExpression() instanceof J.MethodInvocation call ? call
+                : s instanceof J.MethodInvocation call ? call : null;
+        if (mi == null || !(mi.getSimpleName().equals("run") || mi.getSimpleName().equals("call")) || mi.getArguments().size() != 1
+                || !(mi.getArguments().getFirst() instanceof J.Lambda l) || !(l.getBody() instanceof J.Block body)
+                || mi.getSelect() == null || !mi.getSelect().printTrimmed().startsWith("ObservedContext.entrypoint(")) {
+            return null;
+        }
+        return body;
     }
 
     // ---- SKIP_UNLOGGED --------------------------------------------------------------------------
