@@ -33,6 +33,9 @@ on real services; the background is in issue #7.
   Rule tables, per-rule details, property tables and anything that drifts (counts, timings, version lists) belong in
   `docs/` (`docs/packs/<pack>.md`, `docs/rules.md`, `docs/starter.md`, `docs/configuration.md`): a new or changed rule
   updates its pack page, not the README.
+- `docs/examples.md` shows real before/after code from the e2e scenarios: when what `logast apply` writes changes,
+  update the affected snippet; a new editing rule adds an example there.
+- Issues and PRs use the templates in `.github/` (their checklists repeat these rules).
 
 ## Before pushing
 - `./gradlew build` (unit tests, a few seconds) and the targeted e2e scenarios must pass. CI builds every push from a

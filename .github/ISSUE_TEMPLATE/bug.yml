@@ -1,0 +1,38 @@
+name: Bug
+description: logast did something wrong on a service (wrong edit, crash, CHECK FAILED, a result that does not compile or settle)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public: no company names, company code or internal identifiers. Reduce the code to a
+        neutral shape (`logast shape` helps); real exports stay local.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command, what logast did, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: shape
+    attributes:
+      label: Code shape that shows it
+      description: The smallest neutral snippet (before, and after `apply` if relevant).
+      render: java
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Output, `.logast/apply-trace.txt` excerpt, `LOGAST_DEBUG_COMPILE=1` diagnostics, `logast why . <key>`.
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: logast version (commit), JDK, Spring Boot version, Lombok yes/no, packs used, OS.
+  - type: textarea
+    id: known
+    attributes:
+      label: Cause and what was ruled out
+      description: Anything known so far, so the work can be picked up later.

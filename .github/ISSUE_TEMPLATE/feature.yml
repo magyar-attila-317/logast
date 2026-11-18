@@ -1,0 +1,41 @@
+name: Rule or improvement
+description: A new or changed rule, a pack gap, or a tool improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Public repository: neutral names only. Check framework behaviour in the official documentation and link it.
+  - type: dropdown
+    id: pack
+    attributes:
+      label: Pack
+      options: [logging, tracing, metrics, resilience, errors, audit, several / tool itself]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What goes wrong in a service today, and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Edit (AUTO), needs text, or report-only? Before/after snippet if logast edits code.
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: Official docs (Spring Boot properties, Micrometer, …) the behaviour relies on.
+  - type: checkboxes
+    id: done
+    attributes:
+      label: Done means
+      options:
+        - label: An e2e scenario covers it, and it fails with the change switched off
+        - label: The pack works standalone (`--pack <pack>` alone compiles and settles)
+        - label: "`docs/packs/<pack>.md` (and `docs/rules.md`) describe it"
+        - label: "`docs/examples.md` has a before/after example if logast edits code"
