@@ -1,0 +1,24 @@
+# Every retry decision of the service. Then run: logast apply . --auto --write
+#
+# usages: the existing retries (@Retryable). By default a usage reads the shared block of its kind in
+# application.yml: resilience.retry.defaults (Spring Framework) or resilience.retry.spring-retry-defaults
+# (Spring Retry). specific: true gives it its own block, resilience.retry.usages.<class>.<method>, starting
+# from the shared values or from values: given here; the next `logast apply` moves it. false points it back to
+# the shared block (its own block stays in application.yml, unused). Empty: logast decides (a usage whose
+# settings differ from the shared ones keeps them in a block of its own).
+#
+# candidates: idempotent HTTP calls nothing retries (GET / HEAD / PUT / DELETE / OPTIONS, no retry on any path to
+# them). retry: yes adds @Retryable (a request: one quick retry; a job or consumer: retries with backoff; the
+# settings then move into application.yml like any usage's); no: not recommended again. Say no when a gateway
+# or service mesh already retries, or the remote side must not see the call twice.
+usages:
+  RateClient.history:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:20
+    specific: true
+  RateClient.margin:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:25
+    specific: false
+  RateLedger.record:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateLedger.java:15
+    # retries inside RateClient.margin, which retries too: the attempts multiply (NESTED_RETRY); keep one of them
+    specific: false
+candidates:
+  RateClient.current:
+    retry: "no"

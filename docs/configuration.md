@@ -237,27 +237,40 @@ resilience:
 
 What each setting does in detail: [the metrics pack](packs/metrics.md) and [the resilience pack](packs/resilience.md).
 
-#### `.logast/decisions/retry.yaml`: retry settings per usage
+#### `.logast/decisions/retry.yaml`: every retry decision
 
 (Before #108 this file was `.logast/retry.yaml`; the next command moves it.)
 
-With the resilience pack, logast keeps `.logast/decisions/retry.yaml` up to date. It lists every `@Retryable` usage it manages
-(RETRY_SETTINGS_HARDCODED), the way `.logast/decisions/traffic.yaml` lists the entrypoints. Keep it in git. Filling it in is
-optional.
+With the resilience pack, logast keeps `.logast/decisions/retry.yaml` up to date, the way `.logast/decisions/traffic.yaml`
+lists the entrypoints. Keep it in git. It holds every retry decision of the service (#109):
 
 ```yaml
-usages:
+usages:                  # the existing retries (RETRY_SETTINGS_HARDCODED)
   ParcelClient.track:    # Spring Framework @Retryable, src/main/java/com/example/parcel/ParcelClient.java:11
     specific: true       # its own block: resilience.retry.usages.parcel-client.track.*
     values:              # optional: what the new block starts with (default: the shared values)
       max-retries: 5
-  ParcelClient.quote:    # Spring Framework @Retryable, src/main/java/com/example/parcel/ParcelClient.java:16
+  ParcelLedger.record:   # Spring Framework @Retryable, src/main/java/com/example/parcel/ParcelLedger.java:15
+    # retries inside ParcelClient.track, which retries too: the attempts multiply (NESTED_RETRY); keep one of them
     specific: false      # the shared block: resilience.retry.defaults.*
+candidates:              # idempotent HTTP calls nothing retries (RETRY_RECOMMENDED)
+  ParcelClient.quote:    # src/…/ParcelClient.java:16, reached from GET /parcels/{id}/quote (request)
+    retry: "yes"         # yes: one quick retry (maxRetries 1, delay 100 ms) · no
+  ParcelClient.status:
+    retry: "no"          # not recommended again
 ```
 
-The next `logast apply` follows it. Empty means logast decides: the shared block, unless the usage's settings differ
-from it. Then the usage keeps them in a block of its own. Marking a usage `false` again points it back to the shared
-block; its own block stays in `application.yml`, unused. Details: [the resilience pack](packs/resilience.md#retry-settings-in-configuration).
+The next `logast apply` follows it:
+
+- **usages:** empty means logast decides: the shared block, unless the usage's settings differ from it. Then the usage
+  keeps them in a block of its own. Marking a usage `false` again points it back to the shared block; its own block
+  stays in `application.yml`, unused.
+- **candidates:** `yes` adds Spring Framework 7's `@Retryable` (from a request one quick retry, from a job or consumer
+  retries with backoff), enables it where needed and moves its values into `application.yml`, in one apply; the
+  method is then listed under `usages`. `no` stops the recommendation; the entry stays so it can be changed back.
+  Say no when a gateway or service mesh already retries, or the remote side must not see the call twice.
+
+Details: [the resilience pack](packs/resilience.md#retry-settings-in-configuration).
 
 ### `audit` (pack `audit`)
 

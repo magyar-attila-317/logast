@@ -28,7 +28,7 @@ import java.util.*;
  * @param first     what has to happen before anything else (refresh the classpath), or null
  * @param also      the optional and follow-up checks, one line each
  */
-public record Todo(long auto, long text, long outcomes, Map<String, Long> decisions, Item first, List<Item> also) {
+public record Todo(long auto, long text, long outcomes, long retries, Map<String, Long> decisions, Item first, List<Item> also) {
     /** @param action what to do (a file to edit or a command); {@code why} one short reason */
     public record Item(String action, String why) {
     }
@@ -54,8 +54,11 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
         long auto = orders.stream().filter(WorkOrder::mechanical).filter(o -> o.dependsOn().stream().noneMatch(textIds::contains)).count();
         long text = textIds.size();
         long outcomes = orders.stream().filter(o -> o.rule().equals(MetricsFile.RULE) && o.reportOnly()).count();
+        // retry candidates are answered in retry.yaml (#109), like outcomes in metrics.yaml: not a decision to read up on
+        long retries = orders.stream().filter(o -> o.rule().equals(dev.logast.rules.Rules.RETRY_RECOMMENDED) && o.reportOnly()).count();
         Map<String, Long> decisions = new TreeMap<>();
-        orders.stream().filter(WorkOrder::reportOnly).filter(o -> !o.rule().equals(MetricsFile.RULE))
+        orders.stream().filter(WorkOrder::reportOnly).filter(o -> !o.rule().equals(MetricsFile.RULE)
+                        && !o.rule().equals(dev.logast.rules.Rules.RETRY_RECOMMENDED))
                 .forEach(o -> decisions.merge(o.rule(), 1L, Long::sum));
         List<Item> also = new ArrayList<>();
         // the rates set log levels (logging) and metrics frequency: other packs alone have no use for them (#88)
@@ -79,8 +82,9 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
             }
         }
         // retry usages: shared settings by default, settings of their own where the person marks it (#104)
-        if (a != null && dev.logast.rules.Rules.enabled(policy, dev.logast.rules.Rules.RETRY_SETTINGS_HARDCODED)
-                && dev.logast.rules.RetrySettingsRules.writeWorkFile(root, a)) {
+        if (a != null && (dev.logast.rules.Rules.enabled(policy, dev.logast.rules.Rules.RETRY_SETTINGS_HARDCODED)
+                || dev.logast.rules.Rules.enabled(policy, dev.logast.rules.Rules.RETRY_RECOMMENDED))
+                && dev.logast.rules.RetrySettingsRules.writeWorkFile(root, a, orders) && retries == 0) {
             also.add(new Item("mark retry usages that need settings of their own in " + dev.logast.rules.RetrySettingsRules.WORK_FILE
                     + " (optional)", "every @Retryable reads the shared resilience.retry.* settings unless marked specific there"));
         }
@@ -94,12 +98,12 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
         if (wrote) {
             also.add(new Item("logast verify .", "build and run the tests with log capture: does the result really log what it should?"));
         }
-        return new Todo(auto, text, outcomes, decisions, first, also);
+        return new Todo(auto, text, outcomes, retries, decisions, first, also);
     }
 
     /** Nothing to apply and nothing waits on a person. */
     public boolean done() {
-        return auto == 0 && text == 0 && outcomes == 0 && decisions.isEmpty();
+        return auto == 0 && text == 0 && outcomes == 0 && retries == 0 && decisions.isEmpty();
     }
 
     /**
@@ -128,7 +132,7 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
             out.add(Ansi.bold("Next: ") + Ansi.cyan(next.action()) + Ansi.dim("   " + next.why()));
         }
         long decided = decisions.values().stream().mapToLong(Long::longValue).sum();
-        if (text == 0 && outcomes == 0 && decided == 0) {
+        if (text == 0 && outcomes == 0 && retries == 0 && decided == 0) {
             if (next == null && first == null) {
                 out.add(Ansi.green("Nothing left: no fixes pending and nothing waits on you."));
             }
@@ -151,6 +155,10 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
             rows.add(new String[]{String.valueOf(outcomes), (outcomes == 1 ? "outcome" : "outcomes") + ": count, tag or skip",
                     MetricsFile.PATH + state});
         }
+        if (retries > 0) {
+            rows.add(new String[]{String.valueOf(retries), (retries == 1 ? "call" : "calls") + " to retry: yes or no",
+                    dev.logast.rules.RetrySettingsRules.WORK_FILE});
+        }
         if (decided > 0) {
             rows.add(new String[]{String.valueOf(decided), decided == 1 ? "decision" : "decisions",
                     v.decisionsHint() + "   (each says what to decide)"});
@@ -169,7 +177,7 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
                 out.add(Ansi.dim(indent + RuleLabels.of(decisions.keySet().iterator().next())));
             }
         }
-        if (text > 0 || outcomes > 0) {
+        if (text > 0 || outcomes > 0 || retries > 0) {
             out.add("  then run: " + Ansi.cyan(APPLY) + Ansi.dim("   (on this code: don't revert it)"));
         } else {
             out.add(Ansi.dim("  logast applies nothing for these: change the code, and the next scan drops what is done"));
