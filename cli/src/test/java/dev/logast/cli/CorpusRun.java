@@ -68,8 +68,12 @@ class CorpusRun {
         String trace = Files.readString(app.resolve(".logast/reports/apply-trace.txt"));
         String afterPass1 = trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "";
         assertThat(afterPass1).as(name + ": pass 2 of the first apply applies nothing\n" + trace).doesNotContain("applying");
+        // the first apply's result as a commit of the throwaway clone: what a second apply changes is then a plain diff
+        exec(clone, "git", "-c", "user.name=corpus", "-c", "user.email=corpus@localhost", "add", "-A");
+        exec(clone, "git", "-c", "user.name=corpus", "-c", "user.email=corpus@localhost", "commit", "--quiet", "-m", "first apply");
         String second = cli("apply", app.toString(), "--auto", "--write");
-        assertThat(second).as(name + ": a second apply changes nothing\n" + second).contains("applied (0):");
+        String diff = exec(clone, "git", "diff");
+        assertThat(second).as(name + ": a second apply changes nothing\n" + second + "\nwhat it changed:\n" + diff).contains("applied (0):");
         assertThat(first + second).as(name + ": no CHECK FAILED").doesNotContain("CHECK FAILED");
 
         Path gradlew = app.resolve("gradlew");
