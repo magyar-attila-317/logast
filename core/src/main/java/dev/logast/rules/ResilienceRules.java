@@ -31,7 +31,8 @@ import java.util.stream.Stream;
  *       request/message path: one stuck dependency holds the request thread forever;</li>
  *   <li>SHUTDOWN_NOT_GRACEFUL, HEALTH_PROBE_MISCONFIGURED, READINESS_WITHOUT_DATABASE: rollouts that cut work off and
  *       traffic that reaches instances that cannot serve it (service-level: only with a @SpringBootApplication);</li>
- *   <li>CACHE_UNBOUNDED: Spring caches without a size bound.</li>
+ *   <li>CACHE_UNBOUNDED: Spring caches without a size bound;</li>
+ *   <li>RETRY_SETTINGS_HARDCODED: retry attempts and delays written into @Retryable ({@link RetrySettingsRules}).</li>
  * </ul>
  * Method bodies and field initializers are both scanned (executors and clients usually live in fields).
  */
@@ -111,6 +112,9 @@ final class ResilienceRules {
         }
         if (ctx.enabled(Rules.RETRY_IN_TRANSACTION)) {
             retryInTransaction();
+        }
+        if (ctx.enabled(Rules.RETRY_SETTINGS_HARDCODED)) {
+            new RetrySettingsRules(ctx).run();
         }
         if (!clients && !executors && !waits && !jdbc && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
             return;
@@ -917,8 +921,8 @@ final class ResilienceRules {
 
     // ---- retry annotations that do nothing ------------------------------------------------------
 
-    private static final String RESILIENCE_PKG = "org.springframework.resilience.annotation.";
-    private static final String SPRING_RETRY_PKG = "org.springframework.retry.annotation.";
+    static final String RESILIENCE_PKG = "org.springframework.resilience.annotation.";
+    static final String SPRING_RETRY_PKG = "org.springframework.retry.annotation.";
     private static final String ENABLE_RESILIENT = RESILIENCE_PKG + "EnableResilientMethods";
     private static final String ENABLE_RETRY = SPRING_RETRY_PKG + "EnableRetry";
 
@@ -1006,7 +1010,7 @@ final class ResilienceRules {
         b.edit(dev.logast.orders.Edit.insert(f.relPath(), at, added.toString()));
     }
 
-    private static final String SPRING_BOOT_APPLICATION = "org.springframework.boot.autoconfigure.SpringBootApplication";
+    static final String SPRING_BOOT_APPLICATION = "org.springframework.boot.autoconfigure.SpringBootApplication";
 
     private static void collectRetry(SourceFileInfo f, List<J.Annotation> annotations, int line, String label,
                                      List<RetrySite> retry, List<RetrySite> limit, List<RetrySite> springRetry) {
@@ -1030,7 +1034,7 @@ final class ResilienceRules {
      * The annotation's fully qualified name: its resolved type, else (the library is not on the classpath) the package
      * the file imports it from. Both libraries name their annotation {@code @Retryable}, so the simple name is not enough.
      */
-    private static String annotationFqn(J.Annotation a, SourceFileInfo f) {
+    static String annotationFqn(J.Annotation a, SourceFileInfo f) {
         JavaType.FullyQualified t = TypeUtils.asFullyQualified(a.getType());
         if (t != null && !(a.getType() instanceof JavaType.Unknown)) {
             return t.getFullyQualifiedName();
@@ -1227,7 +1231,7 @@ final class ResilienceRules {
     }
 
     /** A Spring Boot duration in milliseconds: {@code secondsByDefault} for properties declared with @DurationUnit(SECONDS). */
-    private static Long durationMillis(String value, boolean secondsByDefault) {
+    static Long durationMillis(String value, boolean secondsByDefault) {
         if (value == null) {
             return null;
         }

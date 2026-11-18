@@ -80,3 +80,84 @@ index e6d521d..52e0cde 100644
  
      default void audit(String pledgeId) {
          AUDIT_LOG.info("Pledge audited [pledgeId={}]", pledgeId);
+diff --git a/src/main/java/com/example/e2e/carrier/CarrierClient.java b/src/main/java/com/example/e2e/carrier/CarrierClient.java
+index 42705a5..8f3a74d 100644
+--- a/src/main/java/com/example/e2e/carrier/CarrierClient.java
++++ b/src/main/java/com/example/e2e/carrier/CarrierClient.java
+@@ -6,7 +6,7 @@ 
+ 
+ @Component
+ public class CarrierClient {
+-    @Retryable(maxRetries = 2)
++    @Retryable(maxRetriesString = "${resilience.retry.defaults.max-retries}", delayString = "${resilience.retry.defaults.delay}")
+     public String track(String parcelId) {
+         return "in transit";
+     }
+diff --git a/src/main/java/com/example/e2e/RetrySettings.java b/src/main/java/com/example/e2e/RetrySettings.java
+new file mode 100644
+index 0000000..cb63547
+--- /dev/null
++++ b/src/main/java/com/example/e2e/RetrySettings.java
+@@ -0,0 +1,33 @@ 
++package com.example.e2e;
++
++import java.time.Duration;
++import java.util.Map;
++import org.springframework.boot.context.properties.ConfigurationProperties;
++
++/**
++ * Retry settings of the service's @Retryable methods (application.yml, resilience.retry.*). The annotations read
++ * the same keys through placeholders, so a changed value takes effect on restart, without a rebuild; this class
++ * makes them typed and lists them in one place.
++ *
++ * @param defaults            what Spring Framework's @Retryable usages share
++ * @param springRetryDefaults what Spring Retry's @Retryable usages share
++ * @param usages              usages with settings of their own: class, then method (kebab case); which ones is
++ *                            decided in .logast/retry.yaml
++ */
++@ConfigurationProperties("resilience.retry")
++public record RetrySettings(Retry defaults, Retry springRetryDefaults, Map<String, Map<String, Retry>> usages) {
++    /**
++     * One block of settings.
++     *
++     * @param maxRetries  Spring Framework: retries after the first call
++     * @param maxAttempts Spring Retry: calls in all, the first one included
++     * @param delay       the delay before the first retry (Spring Retry: plain milliseconds)
++     * @param jitter      Spring Framework: a random part added to or taken from each delay
++     * @param multiplier  each delay is the previous one times this
++     * @param maxDelay    the longest delay (Spring Retry: plain milliseconds)
++     * @param timeout     Spring Framework: the longest time all attempts together may take
++     */
++    public record Retry(Long maxRetries, Integer maxAttempts, Duration delay, Duration jitter, Double multiplier,
++                        Duration maxDelay, Duration timeout) {
++    }
++}
+diff --git a/src/main/java/com/example/e2e/E2eApplication.java b/src/main/java/com/example/e2e/E2eApplication.java
+index b4a4400..cbad30e 100644
+--- a/src/main/java/com/example/e2e/E2eApplication.java
++++ b/src/main/java/com/example/e2e/E2eApplication.java
+@@ -2,9 +2,11 @@ 
+ 
+ import org.springframework.boot.SpringApplication;
+ import org.springframework.boot.autoconfigure.SpringBootApplication;
++import org.springframework.boot.context.properties.EnableConfigurationProperties;
+ import org.springframework.resilience.annotation.EnableResilientMethods;
+ 
+ @EnableResilientMethods
++@EnableConfigurationProperties(RetrySettings.class)
+ @SpringBootApplication
+ public class E2eApplication {
+     public static void main(String[] args) {
+diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
+index 0665059..4171ff2 100644
+--- a/src/main/resources/application.yml
++++ b/src/main/resources/application.yml
+@@ -51,3 +51,8 @@ 
+   tracing:
+     sampling:
+       probability: 1.0
++resilience:
++  retry:
++    defaults:
++      max-retries: 2
++      delay: 1000ms

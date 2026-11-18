@@ -24,9 +24,45 @@ Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
 | SCHEDULER_SINGLE_THREAD | medium | two or more `@Scheduled` jobs on Spring Boot's auto-configured scheduler, which has one thread (`spring.task.scheduling.pool.size` defaults to 1): one slow run delays every other job. Not with a `TaskScheduler` bean of the service's own or virtual threads | report: `spring.task.scheduling.pool.size` (jobs then run concurrently: a decision) |
 | RETRY_INACTIVE | high | `@Retryable` / `@ConcurrencyLimit` (Spring Framework 7) without `@EnableResilientMethods`, Spring Retry's `@Retryable` / `@CircuitBreaker` without `@EnableRetry`: the annotations are metadata only, the method runs once | AUTO: adds the enabling annotation to the `@SpringBootApplication` class (Spring Retry's only with AspectJ on the classpath); report otherwise |
 | RETRY_IN_TRANSACTION | medium | a `@Retryable` `@Transactional` method (Spring Framework 7 or Spring Retry) called from another class inside a transaction: it joins that transaction, so its retries run in one already marked rollback-only and the caller's commit fails. Not with `REQUIRES_NEW` / `NESTED` / `NOT_SUPPORTED` | report: retry the method that starts the transaction, or `REQUIRES_NEW` |
+| RETRY_SETTINGS_HARDCODED | low | `@Retryable` (Spring Framework 7 or Spring Retry) with its attempts and delays written into the annotation (literals or the library defaults): changing them needs a rebuild and a release | AUTO: the settings move into `application.yml` (`resilience.retry.*`), bound by a generated `RetrySettings` record, and the annotation reads them through placeholders. See [Retry settings](#retry-settings-in-configuration) |
 | ROW_BY_ROW_WRITE | medium | a loop over a query result that writes one row per item | report: a batch update / one set-based statement |
 | SHUTDOWN_NOT_GRACEFUL | medium | a web service with `server.shutdown: immediate` (graceful shutdown is Spring Boot's default); `spring.lifecycle.timeout-per-shutdown-phase` (30s when not set) shorter than an HTTP client read timeout, `spring.mvc.async.request-timeout` or `spring.transaction.default-timeout` the configuration sets: a rollout cuts that work off. Only with a `@SpringBootApplication` | report |
 | HEALTH_PROBE_MISCONFIGURED | medium | `management.endpoint.health.probes.enabled: false` (switches the liveness/readiness groups off, on Kubernetes too); a database, broker or other external system in the liveness group (every instance restarts while it is down). Only with a `@SpringBootApplication` | report |
 | READINESS_WITHOUT_DATABASE | low | a service with a database (JDBC, JPA, `@Transactional`) and Actuator whose readiness group does not include `db` (Spring Boot adds no checks to it). The Spring Boot reference calls it a judgement call: a shared database takes every instance out of service at once | report (low): include it, or switch the rule off for the service |
 | CACHE_UNBOUNDED | medium | `@EnableCaching` on Spring Boot's simple provider (no cache library, or `spring.cache.type: simple`: ConcurrentHashMaps that never evict), a `ConcurrentMapCacheManager` bean, Caffeine without `maximumSize` / `maximumWeight` | report |
 | BLOCKING_WAIT_UNBOUNDED | medium | `future.get()`, `join()`, `latch.await()` without timeout on a request/message path (`orTimeout(..)` in the chain, or an earlier bounded wait such as `allOf(a, b).get(5, SECONDS)` on the same futures, counts as one) | report |
+
+## Retry settings in configuration
+
+RETRY_SETTINGS_HARDCODED moves the attempts and delays of every `@Retryable` into `application.yml`, so they can be
+changed per environment and without a rebuild.
+
+- **Shared by default.** Usages of one kind read one block: `resilience.retry.defaults` (Spring Framework 7) and
+  `resilience.retry.spring-retry-defaults` (Spring Retry). Its values are the settings most usages have (a tie: the
+  first in the code). The library defaults fill in what an annotation leaves out (Framework: 3 retries, 1000 ms delay;
+  Spring Retry: 3 attempts, 1000 ms). Once the block is in `application.yml`, its values there are the shared ones.
+- **Nothing changes silently.** A usage whose settings differ from the shared ones gets a block of its own,
+  `resilience.retry.usages.<class>.<method>` (kebab case), with its current values. Sharing would change how it
+  retries, so it is kept and the apply output names it.
+- **Per usage on request.** `.logast/retry.yaml` lists every usage (see [configuration.md](../configuration.md#logastretryyaml-retry-settings-per-usage)).
+  `specific: true` gives it a block of its own on the next `apply`, starting from the shared values (or from
+  `values:` given there). `false` points it back to the shared block. Its own block stays in `application.yml`,
+  unused, so no value you set is lost.
+- **The annotation reads the settings.**
+  - Spring Framework 7: `maxRetriesString`, `delayString`, `jitterString`, `multiplierString`, `maxDelayString` and
+    `timeoutString` take `${...}` placeholders and SpEL. The javadoc of each attribute says: "This supports
+    Spring-style "${...}" placeholders as well as SpEL expressions" (`org.springframework.resilience.annotation.Retryable`,
+    spring-context 7.0). Durations are written with a unit (`500ms`), which overrides the annotation's `timeUnit`.
+  - Spring Retry 2.x: `maxAttemptsExpression` and `@Backoff(delayExpression, maxDelayExpression, multiplierExpression)`.
+    The javadoc says "Use `#{...}` for one-time evaluation during initialization". `AnnotationAwareRetryOperationsInterceptor`
+    resolves `${...}` in them first, so `#{${key}}` reads the property once at startup. The values are numbers: delays
+    in plain milliseconds.
+- **Typed and in one place.** `RetrySettings` (`@ConfigurationProperties("resilience.retry")`, a record in the package
+  of the `@SpringBootApplication` class) binds every block. It is registered with
+  `@EnableConfigurationProperties(RetrySettings.class)` on the application class. If an `@EnableConfigurationProperties`
+  is already there, the class is added to it. With `@ConfigurationPropertiesScan` nothing is added. It needs Spring
+  Boot 3 or later (record binding). Earlier versions get a report.
+- **Left alone:** class lists (`includes`, `retryFor`, `value`), predicates, `random`, an annotation on a class,
+  overloaded methods (they would share a block), a setting that is not a literal (a constant, or a placeholder or
+  expression of the team's own), and a `timeUnit` below milliseconds. Existing keys in `application.yml` are never
+  overwritten.

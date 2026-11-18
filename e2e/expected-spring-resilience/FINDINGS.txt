@@ -1,4 +1,4 @@
-logast · 79 files · 21 entrypoints · 83/214 methods reachable · 160 call edges
+logast · 80 files · 21 entrypoints · 83/214 methods reachable · 160 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
 71 orders: 0 AUTO, 22 NEEDS TEXT, 49 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
@@ -408,7 +408,7 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
-Applied earlier: 103 changes in 55 files (git diff to review)
+Applied earlier: 104 changes in 57 files (git diff to review)
 
 Waiting on you — logast can't continue without these:
   22 log lines need wording        → write "MSG" in .logast/fills.json

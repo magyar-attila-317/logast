@@ -101,6 +101,7 @@ public final class Rules {
     public static final String CACHE_UNBOUNDED = "CACHE_UNBOUNDED";
     public static final String RABBIT_NO_ERROR_HANDLER = "RABBIT_NO_ERROR_HANDLER";
     public static final String RETRY_IN_TRANSACTION = "RETRY_IN_TRANSACTION";
+    public static final String RETRY_SETTINGS_HARDCODED = "RETRY_SETTINGS_HARDCODED";
     // errors
     public static final String ERROR_DETAILS_EXPOSED = "ERROR_DETAILS_EXPOSED";
     public static final String ERROR_RESPONSE_UNTRACED = "ERROR_RESPONSE_UNTRACED";
@@ -176,7 +177,7 @@ public final class Rules {
         for (String r : List.of(HTTP_CLIENT_NO_TIMEOUT, KAFKA_NO_ERROR_HANDLER, UNBOUNDED_EXECUTOR, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE,
                 DB_NO_TIMEOUT, REMOTE_CALL_IN_TRANSACTION, SCHEDULED_WITHOUT_LOCK, RETRY_INACTIVE, SCHEDULER_SINGLE_THREAD,
                 SHUTDOWN_NOT_GRACEFUL, HEALTH_PROBE_MISCONFIGURED, READINESS_WITHOUT_DATABASE, CACHE_UNBOUNDED,
-                RABBIT_NO_ERROR_HANDLER, RETRY_IN_TRANSACTION)) {
+                RABBIT_NO_ERROR_HANDLER, RETRY_IN_TRANSACTION, RETRY_SETTINGS_HARDCODED)) {
             PACKS.put(r, Set.of("resilience"));
         }
         for (String r : List.of(ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED,
@@ -220,7 +221,7 @@ public final class Rules {
             STEPS.put(r, Step.SETUP);
         }
         for (String r : List.of(MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NOT_OWNER, ENTRYPOINT_NOT_OBSERVED, SCHEDULED_TASK_UNTRACED,
-                ASYNC_CONTEXT_LOSS, AUDIT_LOG_MIXED)) {
+                ASYNC_CONTEXT_LOSS, AUDIT_LOG_MIXED, RETRY_SETTINGS_HARDCODED)) {
             STEPS.put(r, Step.STRUCTURE);
         }
         // BUSINESS_EVENT_UNMEASURED reads the lifecycle lines: it goes with the step that adds them (a job outcome
@@ -310,7 +311,7 @@ public final class Rules {
             Map.entry(METRIC_TAG_KEYS_MISMATCH, "high"),
             Map.entry(HTTP_CLIENT_NO_TIMEOUT, "high"), Map.entry(KAFKA_NO_ERROR_HANDLER, "medium"),
             Map.entry(UNBOUNDED_EXECUTOR, "medium"), Map.entry(BLOCKING_WAIT_UNBOUNDED, "medium"),
-            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(DB_NO_TIMEOUT, "high"), Map.entry(REMOTE_CALL_IN_TRANSACTION, "medium"), Map.entry(SCHEDULED_WITHOUT_LOCK, "medium"), Map.entry(RETRY_INACTIVE, "high"), Map.entry(SCHEDULER_SINGLE_THREAD, "medium"), Map.entry(SHUTDOWN_NOT_GRACEFUL, "medium"), Map.entry(HEALTH_PROBE_MISCONFIGURED, "medium"), Map.entry(READINESS_WITHOUT_DATABASE, "low"), Map.entry(CACHE_UNBOUNDED, "medium"), Map.entry(RABBIT_NO_ERROR_HANDLER, "medium"), Map.entry(RETRY_IN_TRANSACTION, "medium"), Map.entry(ASYNC_ERROR_LOST, "high"), Map.entry(CAUSE_DROPPED, "medium"), Map.entry(CATCH_ALL_DEFAULT, "medium"), Map.entry(AUDIT_FAILURES_UNRECORDED, "medium"), Map.entry(AUDIT_RECORD_INCOMPLETE, "medium"), Map.entry(AUDIT_LOG_MIXED, "low"), Map.entry(DATA_CHANGES_UNAUDITED, "low"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
+            Map.entry(ERROR_DETAILS_EXPOSED, "high"), Map.entry(ERROR_RESPONSE_UNTRACED, "medium"), Map.entry(DB_NO_TIMEOUT, "high"), Map.entry(REMOTE_CALL_IN_TRANSACTION, "medium"), Map.entry(SCHEDULED_WITHOUT_LOCK, "medium"), Map.entry(RETRY_INACTIVE, "high"), Map.entry(SCHEDULER_SINGLE_THREAD, "medium"), Map.entry(SHUTDOWN_NOT_GRACEFUL, "medium"), Map.entry(HEALTH_PROBE_MISCONFIGURED, "medium"), Map.entry(READINESS_WITHOUT_DATABASE, "low"), Map.entry(CACHE_UNBOUNDED, "medium"), Map.entry(RABBIT_NO_ERROR_HANDLER, "medium"), Map.entry(RETRY_IN_TRANSACTION, "medium"), Map.entry(RETRY_SETTINGS_HARDCODED, "low"), Map.entry(ASYNC_ERROR_LOST, "high"), Map.entry(CAUSE_DROPPED, "medium"), Map.entry(CATCH_ALL_DEFAULT, "medium"), Map.entry(AUDIT_FAILURES_UNRECORDED, "medium"), Map.entry(AUDIT_RECORD_INCOMPLETE, "medium"), Map.entry(AUDIT_LOG_MIXED, "low"), Map.entry(DATA_CHANGES_UNAUDITED, "low"), Map.entry(UNMAPPED_EXCEPTION, "medium"),
             Map.entry(CLIENT_ERROR_AS_SERVER_ERROR, "medium"), Map.entry(PROBLEM_DETAILS_DISABLED, "low"),
             Map.entry(UNEXPECTED_ERROR_UNLOGGED, "high"), Map.entry(ERROR_HANDLER_STATUS_OK, "medium"), Map.entry(TX_COMMITS_ON_CHECKED, "medium"),
             Map.entry(REQUEST_NOT_VALIDATED, "medium"),

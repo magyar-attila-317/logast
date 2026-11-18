@@ -26,13 +26,13 @@ public class SeatReservation {
     public static class SeatStore {
         @Retryable(maxRetries = 2)
         @Transactional
-        public int hold(String orderId) { // expect: RETRY_IN_TRANSACTION, RETRY_INACTIVE
+        public int hold(String orderId) { // expect: RETRY_IN_TRANSACTION, RETRY_INACTIVE, RETRY_SETTINGS_HARDCODED
             return 1;
         }
 
         @Retryable(maxRetries = 2)
         @Transactional(propagation = Propagation.REQUIRES_NEW)
-        public int confirm(String orderId) { // expect: RETRY_INACTIVE // expect-not: RETRY_IN_TRANSACTION
+        public int confirm(String orderId) { // expect: RETRY_INACTIVE, RETRY_SETTINGS_HARDCODED // expect-not: RETRY_IN_TRANSACTION
             return 2;
         }
     }

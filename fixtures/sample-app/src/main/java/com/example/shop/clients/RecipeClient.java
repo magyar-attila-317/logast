@@ -26,7 +26,7 @@ public class RecipeClient {
     }
 
     @Retryable(maxRetries = 2)
-    public String fetch(String recipeId) throws IOException, InterruptedException { // expect: RETRY_INACTIVE
+    public String fetch(String recipeId) throws IOException, InterruptedException { // expect: RETRY_INACTIVE, RETRY_SETTINGS_HARDCODED
         HttpRequest request = HttpRequest.newBuilder(URI.create("https://recipes.example.com/" + recipeId)).build();
         return http.send(request, HttpResponse.BodyHandlers.ofString()).body();
     }

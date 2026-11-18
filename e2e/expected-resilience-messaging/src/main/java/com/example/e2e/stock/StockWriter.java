@@ -7,19 +7,19 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class StockWriter {
-    @Retryable(maxRetries = 2)
+    @Retryable(maxRetriesString = "${resilience.retry.defaults.max-retries}", delayString = "${resilience.retry.defaults.delay}")
     @Transactional
     public int reserve(String itemId, int quantity) {
         return quantity;
     }
 
-    @Retryable(maxRetries = 2)
+    @Retryable(maxRetriesString = "${resilience.retry.defaults.max-retries}", delayString = "${resilience.retry.defaults.delay}")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int release(String itemId) {
         return 0;
     }
 
-    @Retryable(maxRetries = 2)
+    @Retryable(maxRetriesString = "${resilience.retry.defaults.max-retries}", delayString = "${resilience.retry.defaults.delay}")
     @Transactional
     public int restock(String itemId) {
         return 1;

@@ -18,7 +18,8 @@ import java.util.*;
 /**
  * What is left after scan/apply, grouped by what has to happen next (#101): the fixes logast makes itself, then what
  * waits on a person (wording, metric decisions, other decisions), then the optional checks. Also creates
- * .logast/traffic.yaml when it is missing and a selected pack uses it, so every file to fill exists.
+ * .logast/traffic.yaml when it is missing and a selected pack uses it, and keeps .logast/retry.yaml listing the
+ * retry usages (resilience pack), so every file to fill exists.
  *
  * @param auto      fixes that need nothing from a person
  * @param text      orders waiting for a message text in fills.json
@@ -76,6 +77,12 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
                 also.add(new Item("fill calls/day in .logast/traffic.yaml (optional)", (labels.size() - known) + " of " + labels.size()
                         + " entrypoints have no rate: log levels and metrics frequency stay cautious there"));
             }
+        }
+        // retry usages: shared settings by default, settings of their own where the person marks it (#104)
+        if (a != null && dev.logast.rules.Rules.enabled(policy, dev.logast.rules.Rules.RETRY_SETTINGS_HARDCODED)
+                && dev.logast.rules.RetrySettingsRules.writeWorkFile(root, a)) {
+            also.add(new Item("mark retry usages that need settings of their own in " + dev.logast.rules.RetrySettingsRules.WORK_FILE
+                    + " (optional)", "every @Retryable reads the shared resilience.retry.* settings unless marked specific there"));
         }
         if (policy.terms().isEmpty() && policy.vocabulary().isEmpty()) {
             also.add(new Item("logast vocabulary .", "no business terms in logast.yaml yet: MDC keys and wording checks need them"));

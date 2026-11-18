@@ -103,6 +103,7 @@ public final class RuleLabels {
             Map.entry(CACHE_UNBOUNDED, "cache without a limit"),
             Map.entry(RABBIT_NO_ERROR_HANDLER, "RabbitMQ without an error handler"),
             Map.entry(RETRY_IN_TRANSACTION, "retry inside a transaction"),
+            Map.entry(RETRY_SETTINGS_HARDCODED, "retry settings in code"),
             // errors
             Map.entry(ERROR_DETAILS_EXPOSED, "error details sent to clients"),
             Map.entry(ERROR_RESPONSE_UNTRACED, "error response without a trace id"),
