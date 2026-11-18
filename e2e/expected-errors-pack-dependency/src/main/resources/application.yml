@@ -1,10 +1,6 @@
 spring:
   application:
     name: e2e-shop
-logging:
-  structured:
-    format:
-      console: ecs
 logging-support:
   problem-trace-id:
     enabled: true

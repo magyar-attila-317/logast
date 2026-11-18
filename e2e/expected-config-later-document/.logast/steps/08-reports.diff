@@ -1,8 +1,8 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index 9323dd0..23435dc 100644
+index 1b047b8..3efd6b3 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -43,7 +43,7 @@ 
+@@ -51,7 +51,7 @@ 
  ---
  server:
    error:

@@ -64,7 +64,9 @@ public final class Analysis {
         this.supportStarterPresent = policy.support().vendor()
                 ? index.clazz(supportPackage + ".ObservedContext") != null
                 : project.probe().hasClass(supportPackage + ".ObservedContext");
-        this.decoratorPresent = supportStarterPresent || hasTaskDecorator(index);
+        // the starter's TaskDecorator (or its copy) is on only with its property (#93)
+        this.decoratorPresent = supportStarterPresent && "true".equalsIgnoreCase(springProperties.get("logging-support.context-propagation.enabled"))
+                || hasTaskDecorator(index, supportPackage);
         this.paths = new PathContext(graph, entrypoints, new TreeSet<>(policy.mdc().ambientKeys()),
                 httpFilterKeys, decoratorPresent)
                 .withCanonicalKeys(canonicalKeys(policy), new TreeSet<>(policy.mdc().ambientKeys()), httpFilterKeys, decoratorPresent);
@@ -157,10 +159,13 @@ public final class Analysis {
         return false;
     }
 
-    private static boolean hasTaskDecorator(CodeIndex index) {
+    /** A TaskDecorator of the service's own; the copied support classes' one counts only with its property. */
+    private static boolean hasTaskDecorator(CodeIndex index, String supportPackage) {
         String td = "org.springframework.core.task.TaskDecorator";
-        return index.classes().stream().anyMatch(c -> TypeUtils.isAssignableTo(td, c.type()))
-                || index.methods().stream().anyMatch(m -> TypeUtils.isAssignableTo(td, m.type().getReturnType()));
+        String copied = supportPackage + ".";
+        return index.classes().stream().filter(c -> !c.fqn().startsWith(copied)).anyMatch(c -> TypeUtils.isAssignableTo(td, c.type()))
+                || index.methods().stream().filter(m -> !m.owner().fqn().startsWith(copied))
+                .anyMatch(m -> TypeUtils.isAssignableTo(td, m.type().getReturnType()));
     }
 
     public Stats stats() {

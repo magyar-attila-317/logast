@@ -72,9 +72,12 @@ class MdcHygieneFilterTest {
     @Test
     void registeredFirstInServletApps() {
         new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(MdcHygieneConfiguration.class))
+                .withPropertyValues("logging-support.mdc-hygiene.enabled=true")
                 .run(ctx -> assertThat(ctx.getBean(FilterRegistrationBean.class).getOrder()).isEqualTo(Integer.MIN_VALUE));
         new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(MdcHygieneConfiguration.class))
                 .withPropertyValues("logging-support.mdc-hygiene.enabled=false")
                 .run(ctx -> assertThat(ctx).doesNotHaveBean(FilterRegistrationBean.class));
+        new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(MdcHygieneConfiguration.class))
+                .run(ctx -> assertThat(ctx).as("off unless switched on (#93)").doesNotHaveBean(FilterRegistrationBean.class));
     }
 }

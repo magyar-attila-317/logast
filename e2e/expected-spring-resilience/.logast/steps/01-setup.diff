@@ -1,8 +1,8 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index 6bd81fc..5a47f57 100644
+index 6bd81fc..0665059 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -1,7 +1,45 @@ 
+@@ -1,7 +1,53 @@ 
  spring:
    application:
      name: e2e-shop
@@ -35,6 +35,14 @@ index 6bd81fc..5a47f57 100644
 +          name: ${spring.application.name}
 +          version: ${spring.application.version}
 +logging-support:
++  log-defaults:
++    enabled: true
++  mdc-hygiene:
++    enabled: true
++  context-propagation:
++    enabled: true
++  batch-trace:
++    enabled: true
 +  problem-trace-id:
 +    enabled: true
 +management:
@@ -338,10 +346,10 @@ index 0000000..7642827
 +}
 diff --git a/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java b/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java
 new file mode 100644
-index 0000000..c433a14
+index 0000000..c6fa034
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java
-@@ -0,0 +1,29 @@ 
+@@ -0,0 +1,33 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
 +package com.example.e2e.logging;
 +
@@ -356,13 +364,17 @@ index 0000000..c433a14
 + * Lowest-precedence defaults: ECS JSON console logs whose {@code service.name}/{@code service.version} come from
 + * the {@code SERVICE_NAME}/{@code APP_VERSION} environment variables, falling back to {@code spring.application.name}
 + * and {@code spring.application.version}. Anything set in application.yml or the environment wins.
++ * <p>Only with {@code logging-support.log-defaults.enabled=true} (logast's logging pack writes it): the log format
++ * belongs to the service, so the starter alone does not change it. Runs after the config data is loaded (no order
++ * set, so after Spring Boot's ConfigDataEnvironmentPostProcessor), so application.yml can switch it on.
 + */
 +public final class LoggingDefaultsEnvironmentPostProcessor implements EnvironmentPostProcessor {
 +    static final String SOURCE = "logging-support-defaults";
++    static final String ENABLED = "logging-support.log-defaults.enabled";
 +
 +    @Override
 +    public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-+        if (environment.getPropertySources().contains(SOURCE)) {
++        if (environment.getPropertySources().contains(SOURCE) || !"true".equalsIgnoreCase(environment.getProperty(ENABLED))) {
 +            return;
 +        }
 +        environment.getPropertySources().addLast(new MapPropertySource(SOURCE, Map.of(
@@ -373,10 +385,10 @@ index 0000000..c433a14
 +}
 diff --git a/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java b/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java
 new file mode 100644
-index 0000000..df478fc
+index 0000000..5a04188
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java
-@@ -0,0 +1,38 @@ 
+@@ -0,0 +1,42 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
 +package com.example.e2e.logging;
 +
@@ -394,12 +406,16 @@ index 0000000..df478fc
 + * Registers the MDC/trace propagating {@link TaskDecorator} (picked up by Spring Boot's task executors, so
 + * {@code @Async} and injected executors keep context), publishes the ObservationRegistry for
 + * {@link ObservedContext}, and traces batch runs.
++ * <p>The decorator and the batch trace change behaviour, so each is off until its property is {@code true}
++ * ({@code logging-support.context-propagation.enabled}, {@code logging-support.batch-trace.enabled}): the starter
++ * alone changes nothing; logast writes the property for the pack that uses the feature.
 + */
 +@Configuration(proxyBeanMethods = false)
 +public class LoggingSupportAutoConfiguration {
 +
 +    @Bean
 +    @ConditionalOnMissingBean(TaskDecorator.class)
++    @ConditionalOnProperty(name = "logging-support.context-propagation.enabled", havingValue = "true")
 +    public TaskDecorator contextPropagatingTaskDecorator() {
 +        return ContextPropagation::wrap;
 +    }
@@ -410,7 +426,7 @@ index 0000000..df478fc
 +    }
 +
 +    @Bean
-+    @ConditionalOnProperty(name = "logging-support.batch-trace.enabled", matchIfMissing = true)
++    @ConditionalOnProperty(name = "logging-support.batch-trace.enabled", havingValue = "true")
 +    public BatchTraceListener batchTraceListener(ObjectProvider<ObservationRegistry> registry, Environment environment) {
 +        return new BatchTraceListener(registry.getIfAvailable(() -> ObservationRegistry.NOOP), environment);
 +    }
@@ -979,10 +995,10 @@ index 0000000..87e2cfb
 +}
 diff --git a/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java b/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java
 new file mode 100644
-index 0000000..dbfa1d6
+index 0000000..29a368c
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java
-@@ -0,0 +1,24 @@ 
+@@ -0,0 +1,27 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
 +package com.example.e2e.logging;
 +
@@ -993,10 +1009,13 @@ index 0000000..dbfa1d6
 +import org.springframework.context.annotation.Bean;
 +import org.springframework.core.Ordered;
 +
-+/** Registers {@link MdcHygieneFilter} before every other filter in servlet applications. */
++/**
++ * Registers {@link MdcHygieneFilter} before every other filter in servlet applications, when
++ * {@code logging-support.mdc-hygiene.enabled} is {@code true} (off by default: the starter alone changes nothing).
++ */
 +@Configuration(proxyBeanMethods = false)
 +@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-+@ConditionalOnProperty(name = "logging-support.mdc-hygiene.enabled", matchIfMissing = true)
++@ConditionalOnProperty(name = "logging-support.mdc-hygiene.enabled", havingValue = "true")
 +public class MdcHygieneConfiguration {
 +
 +    @Bean
