@@ -27,6 +27,7 @@ public final class Rules {
     public static final String ENTRYPOINT_NOT_OBSERVED = "ENTRYPOINT_NOT_OBSERVED";
     public static final String ENTRYPOINT_SILENT = "ENTRYPOINT_SILENT";
     public static final String ASYNC_CONTEXT_LOSS = "ASYNC_CONTEXT_LOSS";
+    public static final String REACTIVE_CONTEXT_LOSS = "REACTIVE_CONTEXT_LOSS";
     public static final String SETUP_OTEL_STARTER = "SETUP_OTEL_STARTER";
     public static final String SETUP_SUPPORT_STARTER = "SETUP_SUPPORT_STARTER";
     public static final String SETUP_LOGBACK_XML = "SETUP_LOGBACK_XML";
@@ -166,6 +167,8 @@ public final class Rules {
         // a broadcast's per-subscriber lines: the subscriber is missing from MDC (logging) and the line sits in the
         // sender's trace, not the subscriber's (tracing)
         PACKS.put(SSE_BROADCAST_CONTEXT, Set.of("logging", "tracing"));
+        // one switch makes the trace (tracing) and the trace ids in log lines (logging) follow a Reactor pipeline (#14)
+        PACKS.put(REACTIVE_CONTEXT_LOSS, Set.of("logging", "tracing"));
         for (String r : List.of(METRIC_NAMING, METRIC_HIGH_CARDINALITY_TAG, METRIC_DIRECT_REGISTRY, METRIC_TAG_KEY,
                 METRIC_TAG_VALUE, METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, BUSINESS_EVENT_UNMEASURED, METRIC_TAG_KEYS_MISMATCH)) {
             PACKS.put(r, Set.of("metrics"));
@@ -213,7 +216,7 @@ public final class Rules {
     static {
         for (String r : List.of(SETUP_SUPPORT_STARTER, SETUP_OTEL_STARTER, SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING,
                 SETUP_SERVICE_IDENTITY, TRACING_SAMPLING, KAFKA_OBSERVATION_DISABLED, RABBIT_OBSERVATION_DISABLED, ERROR_RESPONSE_UNTRACED, DB_NO_TIMEOUT, HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT,
-                JOB_LAUNCH_UNTRACED, RETRY_INACTIVE, OBSERVED_ANNOTATION_INACTIVE)) {
+                JOB_LAUNCH_UNTRACED, RETRY_INACTIVE, OBSERVED_ANNOTATION_INACTIVE, REACTIVE_CONTEXT_LOSS)) {
             STEPS.put(r, Step.SETUP);
         }
         for (String r : List.of(MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NOT_OWNER, ENTRYPOINT_NOT_OBSERVED, SCHEDULED_TASK_UNTRACED,
@@ -284,6 +287,7 @@ public final class Rules {
 
     private static final Map<String, String> SEVERITY = Map.ofEntries(
             Map.entry(SWALLOWED_EXCEPTION, "high"), Map.entry(PII_IN_LOG, "high"), Map.entry(ASYNC_CONTEXT_LOSS, "high"),
+            Map.entry(REACTIVE_CONTEXT_LOSS, "high"),
             Map.entry(SETUP_SUPPORT_STARTER, "high"), Map.entry(SETUP_OTEL_STARTER, "high"),
             Map.entry(ENTRYPOINT_NOT_OBSERVED, "high"),
             Map.entry(LOST_THROWABLE, "medium"), Map.entry(MISSING_DOMAIN_MDC, "medium"),
@@ -665,6 +669,7 @@ public final class Rules {
         lastLifecycle = ctx.lifecycle();
         new SetupRules(ctx).run();
         new TracingRules(ctx).run();
+        new ReactiveRules(ctx).run();
         new EntrypointRules(ctx).run();
         ctx.freezePlan();
         new RepeatedValueRules(ctx).run();

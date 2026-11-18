@@ -453,6 +453,61 @@ public DepotClient(ClientHttpConnector connector,
 </tr>
 </table>
 
+### A WebFlux service: the trace follows the Reactor pipeline
+
+A WebFlux controller or router handler returning a `Mono`/`Flux` runs its operators on whichever thread emits; by
+default Reactor restores the trace only in `handle`/`tap`, so the log lines in `map`, `doOnNext`, … carry no trace id.
+Where Spring Boot reads `spring.reactor.context-propagation` (Boot 3.2+, Boot 4 with `spring-boot-reactor`) logast sets
+it to `auto`; otherwise it calls the hook first in `main`. The method itself stays as it is: a scope around a `Mono`
+would end before the pipeline runs. *Scenario `expected-reactive`, `E2eApplication.java` (the property: the same
+scenario with Boot's `ReactorAutoConfiguration` on the classpath).*
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```java
+@GetMapping("/{couponId}")
+public Mono<String> show(@PathVariable String couponId) {
+    return lookup.find(couponId);
+}
+```
+
+```java
+public static void main(String[] args) {
+    SpringApplication.run(E2eApplication.class, args);
+}
+```
+
+</td>
+<td>
+
+```java
+@GetMapping("/{couponId}")
+public Mono<String> show(@PathVariable String couponId) {
+    return lookup.find(couponId);
+}
+```
+
+```java
+public static void main(String[] args) {
+    Hooks.enableAutomaticContextPropagation();
+    SpringApplication.run(E2eApplication.class, args);
+}
+```
+
+```yaml
+# or, where Spring Boot reads it:
+spring:
+  reactor:
+    context-propagation: auto
+```
+
+</td>
+</tr>
+</table>
+
 ## Metrics
 
 ### A failure that is logged and handled is also counted, through a generated catalog

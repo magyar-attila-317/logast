@@ -3151,6 +3151,186 @@ class E2eGoldenTest {
                 .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|CouponQueueListener|CouponImportTasklet|OrderLineProcessor)");
     }
 
+    /** #14: a WebFlux controller and reactive router functions next to the existing Mono service (messaging). */
+    private static final IoAction REACTIVE_ENTRYPOINTS = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/reactive");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("ReactiveCouponController.java"), """
+                package com.example.e2e.reactive;
+
+                import com.example.e2e.messaging.ReactiveCouponLookup;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestMapping;
+                import org.springframework.web.bind.annotation.RestController;
+                import reactor.core.publisher.Flux;
+                import reactor.core.publisher.Mono;
+
+                /** Spring WebFlux: each method assembles the pipeline the request runs through. */
+                @RestController
+                @RequestMapping("/reactive-coupons")
+                public class ReactiveCouponController {
+                    private static final Logger log = LoggerFactory.getLogger(ReactiveCouponController.class);
+                    private final ReactiveCouponLookup lookup;
+
+                    ReactiveCouponController(ReactiveCouponLookup lookup) {
+                        this.lookup = lookup;
+                    }
+
+                    @GetMapping("/{couponId}")
+                    public Mono<String> show(@PathVariable String couponId) {
+                        return lookup.find(couponId);
+                    }
+
+                    @PostMapping("/{couponId}/hold")
+                    public Mono<String> hold(@PathVariable String couponId) {
+                        return lookup.find(couponId).map(String::toUpperCase);
+                    }
+
+                    @GetMapping("/{couponId}/preview")
+                    public Mono<String> preview(@PathVariable String couponId) {
+                        return lookup.find(couponId)
+                                .onErrorResume(e -> Mono.just("unknown"));
+                    }
+
+                    @PostMapping("/{couponId}/release")
+                    public Mono<String> release(@PathVariable String couponId) {
+                        return lookup.find(couponId)
+                                .doOnNext(found -> log.info("Coupon released [couponId={}]", couponId));
+                    }
+
+                    @GetMapping("/recent")
+                    public Flux<String> recent() {
+                        return Flux.just("first", "second");
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("ReactiveCouponRoutes.java"), """
+                package com.example.e2e.reactive;
+
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.web.reactive.function.server.RequestPredicates;
+                import org.springframework.web.reactive.function.server.RouterFunction;
+                import org.springframework.web.reactive.function.server.RouterFunctions;
+                import org.springframework.web.reactive.function.server.ServerResponse;
+
+                /** WebFlux functional endpoints. */
+                @Configuration
+                public class ReactiveCouponRoutes {
+                    @Bean
+                    public RouterFunction<ServerResponse> reactiveCouponRouter(ReactiveCouponHandler handler) {
+                        return RouterFunctions.route()
+                                .path("/reactive-routes", builder -> builder
+                                        .GET("/{couponId}", handler::show)
+                                        .POST("", handler::register))
+                                .build();
+                    }
+
+                    @Bean
+                    public RouterFunction<ServerResponse> reactiveCouponRemoval(ReactiveCouponHandler handler) {
+                        return RouterFunctions.route(RequestPredicates.DELETE("/reactive-routes/{couponId}"), handler::remove);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("ReactiveCouponHandler.java"), """
+                package com.example.e2e.reactive;
+
+                import com.example.e2e.messaging.ReactiveCouponLookup;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.reactive.function.server.ServerRequest;
+                import org.springframework.web.reactive.function.server.ServerResponse;
+                import reactor.core.publisher.Mono;
+
+                @Component
+                public class ReactiveCouponHandler {
+                    private final ReactiveCouponLookup lookup;
+
+                    ReactiveCouponHandler(ReactiveCouponLookup lookup) {
+                        this.lookup = lookup;
+                    }
+
+                    public Mono<ServerResponse> show(ServerRequest request) {
+                        String couponId = request.pathVariable("couponId");
+                        return lookup.find(couponId).flatMap(found -> ServerResponse.ok().bodyValue(found));
+                    }
+
+                    public Mono<ServerResponse> register(ServerRequest request) {
+                        return request.bodyToMono(String.class).flatMap(body -> ServerResponse.accepted().build());
+                    }
+
+                    public Mono<ServerResponse> remove(ServerRequest request) {
+                        return lookup.find(request.pathVariable("couponId")).then(ServerResponse.noContent().build());
+                    }
+                }
+                """);
+    };
+
+    private static final String REACTIVE = "src/main/java/com/example/e2e/reactive/";
+
+    /**
+     * #14: Spring WebFlux. The annotated controller's methods and the handlers of WebFlux router functions are HTTP
+     * entrypoints (traffic.yaml), observed by WebFlux's server observation: no wrapper, and no MdcScope around a Mono
+     * (it would end before the pipeline runs): the couponId MDC is a report (MISSING_DOMAIN_MDC) naming the Reactor
+     * Context route. Reactor restores the trace in its operators only with automatic context propagation
+     * (REACTIVE_CONTEXT_LOSS): the e2e classpath has no Spring Boot ReactorAutoConfiguration (Boot 4 without
+     * spring-boot-reactor), so spring.reactor.context-propagation would do nothing and the hook goes first into main; with
+     * it on the classpath (stand-in jar) the property is set instead. An unfiltered onErrorResume to a fallback is the
+     * Reactor form of CATCH_ALL_DEFAULT. Every file must equal e2e/expected-reactive; tracing alone and logging alone each
+     * switch propagation on; without context-propagation on the classpath the finding names it.
+     */
+    @Test
+    void seesWebFluxControllersAndRouterFunctionsAndSetsUpContextPropagation() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, REACTIVE_ENTRYPOINTS);
+        assertThat(actual.get(".logast/traffic.yaml")).as("annotated WebFlux controllers and WebFlux router handlers are entrypoints")
+                .contains("\"GET /reactive-coupons/{couponId}\"").contains("\"GET /reactive-routes/{couponId}\"")
+                .contains("\"POST /reactive-routes\"").contains("\"DELETE /reactive-routes/{couponId}\"");
+        assertThat(actual.get(MAIN_CLASS)).as("Boot 4 without spring-boot-reactor: the hook, first in main")
+                .contains("import reactor.core.publisher.Hooks;")
+                .contains("    public static void main(String[] args) {\n        Hooks.enableAutomaticContextPropagation();\n");
+        assertThat(actual.get("src/main/resources/application.yml")).doesNotContain("reactor");
+        assertThat(actual.get(REACTIVE + "ReactiveCouponController.java")).as("no scope or wrapper around a Mono")
+                .doesNotContain("MdcScope").doesNotContain("ObservedContext");
+        assertThat(actual.get("FINDINGS.txt")).as("the couponId MDC is a report on the reactive entrypoints")
+                .contains("MISSING_DOMAIN_MDC  src/main/java/com/example/e2e/reactive/ReactiveCouponController.java:26")
+                .contains("couponId not in MDC for ReactiveCouponController.show")
+                .as("onErrorResume to a fallback").contains("onErrorResume(e -> Mono.just(\"unknown\")) turns every error")
+                .as("switched on: no finding left").doesNotContain("  REACTIVE_CONTEXT_LOSS  ");
+        golden(EXPECTED.resolveSibling("expected-reactive"), actual);
+
+        // Spring Boot's ReactorAutoConfiguration on the classpath (Boot 4's spring-boot-reactor): the property does it
+        String boot = libraryClasspath("reactor-autoconfiguration", Map.of(
+                "org/springframework/boot/reactor/autoconfigure/ReactorAutoConfiguration.java", """
+                        package org.springframework.boot.reactor.autoconfigure;
+
+                        public final class ReactorAutoConfiguration {
+                        }
+                        """)).toString();
+        Map<String, String> property = migrate(tmp.resolve("property"), boot, REACTIVE_ENTRYPOINTS);
+        assertThat(property.get("src/main/resources/application.yml")).contains("  reactor:\n    context-propagation: auto\n");
+        assertThat(property.get(MAIN_CLASS)).doesNotContain("Hooks");
+
+        // each pack on its own switches it on: the trace (tracing) and the trace ids in log lines (logging)
+        for (String pack : List.of("tracing", "logging")) {
+            Map<String, String> alone = migrate(tmp.resolve(pack + "-only"), CLASSPATH, withPacks(REACTIVE_ENTRYPOINTS, "[" + pack + "]", ""));
+            assertThat(alone.get(MAIN_CLASS)).as(pack + " alone").contains("Hooks.enableAutomaticContextPropagation();");
+        }
+
+        // without io.micrometer:context-propagation Reactor restores nothing, hook or not: the finding says so
+        Path missing = tmp.resolve("no-context-propagation");
+        copy(BEFORE, missing);
+        REACTIVE_ENTRYPOINTS.run(missing);
+        Path cp = tmp.resolve("classpath-no-context-propagation.txt");
+        Files.write(cp, Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.contains("context-propagation")).toList());
+        assertThat(run(missing, "scan", missing.toString(), "--classpath-file", cp.toString()))
+                .contains("REACTIVE_CONTEXT_LOSS").contains("io.micrometer:context-propagation is not on the classpath");
+    }
+
+    private static final String MAIN_CLASS = "src/main/java/com/example/e2e/E2eApplication.java";
+
     /**
      * #51: API-first controllers. The request mappings sit on an interface the controller implements, the class-level
      * {@code @RequestMapping} too, and the paths come from {@code static final String} constants and their

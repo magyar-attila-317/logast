@@ -56,6 +56,9 @@ final class EntrypointRules {
                 ? ctx.domain.fromVars(params(m)).stream()
                 .filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).map(v -> nullSafe(m, v)).toList()
                 : List.of();
+        if (reactive) {
+            reactiveMdc(m);
+        }
         boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
         // a run's started and outcome lines belong to JOB_OUTCOME_MISSING: split between two rules, the outcome line it adds
         // ended the silence, the started line lost its owner, and the order came back after its own fix
@@ -156,6 +159,37 @@ final class EntrypointRules {
             ctx.plannedEntryKeys.put(m.key(), new TreeSet<>(missing.stream().map(DomainValues.Value::key).toList()));
             ctx.entryOrders.put(m.key(), b.id());
         }
+    }
+
+    /**
+     * MISSING_DOMAIN_MDC on a Mono/Flux entrypoint (#14), report only: an MdcScope around the body would set the keys
+     * while the pipeline is assembled and remove them before it runs (on other threads), so the lines in the operators
+     * would still lack them. Automatic context propagation does not help by itself either: Reactor restores only the
+     * ThreadLocals registered in the ContextRegistry (Micrometer's observation, and through it the trace ids), not
+     * arbitrary MDC keys. Sources: Reactor reference › Context-Propagation Support; context-propagation's
+     * {@code io.micrometer.context.integration.Slf4jThreadLocalAccessor} (key {@code cp.slf4j}, the MDC keys it is built for).
+     */
+    private void reactiveMdc(MethodInfo m) {
+        if (!ctx.enabled(Rules.MISSING_DOMAIN_MDC) || ctx.ignored(m.file(), m.line(), Rules.MISSING_DOMAIN_MDC) || ctx.legacyMdc(m)) {
+            return;
+        }
+        List<String> keys = ctx.domain.fromVars(params(m)).stream().map(DomainValues.Value::key)
+                .filter(k -> !ctx.a.paths.mdcInside(m).contains(k)).distinct().toList();
+        if (keys.isEmpty()) {
+            return;
+        }
+        ctx.order(Rules.MISSING_DOMAIN_MDC, m, m.line(), "entry-reactive")
+                .title(String.join(", ", keys) + " not in MDC for " + m.label() + ": it returns a Mono/Flux, so an MdcScope around "
+                        + "the body would end before the pipeline runs")
+                .suggestion("Put the value into the Reactor Context and let Reactor restore it as MDC in every operator: register "
+                        + "new Slf4jThreadLocalAccessor(" + String.join(", ", keys.stream().map(k -> "\"" + k + "\"").toList())
+                        + ") (io.micrometer.context.integration) once in ContextRegistry, switch on automatic context propagation "
+                        + "(REACTIVE_CONTEXT_LOSS), and end the pipeline with .contextWrite(Context.of(Slf4jThreadLocalAccessor.KEY, "
+                        + "Map.of(" + String.join(", ", keys.stream().map(k -> "\"" + k + "\", " + k).toList()) + "))). "
+                        + "Or carry it as baggage (management.tracing.baggage.correlation.fields). Not applied automatically: "
+                        + "it changes how the pipeline is built.")
+                .doneWhen("the key reaches MDC inside the pipeline (an MDC scope below the entrypoint, or the values come through "
+                        + "the Reactor Context), or the line is marked // logast:ignore MISSING_DOMAIN_MDC");
     }
 
     /**

@@ -91,25 +91,27 @@ class RuleLedgerTest {
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus();
 
     /** Rules the core knock-out cannot test: where they fire instead, or why switching them off changes nothing. */
-    static final Map<String, String> NO_KNOCKOUT = Map.of(
-            Rules.AUDIT_SECURITY_EVENTS, "#92: needs Spring Security on the classpath, which the corpora do not have: fires in "
-                    + "its own e2e scenario (expected-audit-pack, stand-in jar) and in RemedyTest#securityEventsRecordedDurably",
-            Rules.AUDIT_BEFORE_COMMIT, "#92: no corpus has an audit call inside a transaction: fires in its own e2e scenario "
-                    + "(expected-audit-records) and in RemedyTest#auditRecordWrittenWhenTheOutcomeIsKnown",
-            Rules.AUDIT_RECORD_SECRET, "#92: no corpus passes a secret to an audit call: fires in its own e2e scenario "
-                    + "(expected-audit-records) and in RemedyTest#auditRecordWithoutSecrets",
-            Rules.AUDIT_ACTOR_LOST_ASYNC, "#92: needs Spring Security's SecurityContextHolder, which the corpora do not have: "
+    static final Map<String, String> NO_KNOCKOUT = Map.ofEntries(
+            Map.entry(Rules.AUDIT_SECURITY_EVENTS, "#92: needs Spring Security on the classpath, which the corpora do not have: fires in "
+                    + "its own e2e scenario (expected-audit-pack, stand-in jar) and in RemedyTest#securityEventsRecordedDurably"),
+            Map.entry(Rules.AUDIT_BEFORE_COMMIT, "#92: no corpus has an audit call inside a transaction: fires in its own e2e scenario "
+                    + "(expected-audit-records) and in RemedyTest#auditRecordWrittenWhenTheOutcomeIsKnown"),
+            Map.entry(Rules.AUDIT_RECORD_SECRET, "#92: no corpus passes a secret to an audit call: fires in its own e2e scenario "
+                    + "(expected-audit-records) and in RemedyTest#auditRecordWithoutSecrets"),
+            Map.entry(Rules.AUDIT_ACTOR_LOST_ASYNC, "#92: needs Spring Security's SecurityContextHolder, which the corpora do not have: "
                     + "fires in its own e2e scenario (expected-audit-records, stand-in jar) and in "
-                    + "RemedyTest#auditActorReadBeforeTheHandOver",
-            Rules.BUSINESS_EVENT_TIMESTAMP, "#58: fires in its own e2e scenario (expected-business-timestamp); no corpus has the shape",
-            Rules.MESSAGE_SUGGESTED, "#58: fires on the // logast:wording marker an apply leaves behind (e2e snapshots)",
-            Rules.METRIC_CATALOG, "#58: fires once metric decisions are applied (e2e expected-decided)",
-            Rules.TRACE_ID_NOT_LOGGED, "#89: only without the logging pack (SETUP_LOGBACK_XML covers the file there), and no "
+                    + "RemedyTest#auditActorReadBeforeTheHandOver"),
+            Map.entry(Rules.BUSINESS_EVENT_TIMESTAMP, "#58: fires in its own e2e scenario (expected-business-timestamp); no corpus has the shape"),
+            Map.entry(Rules.MESSAGE_SUGGESTED, "#58: fires on the // logast:wording marker an apply leaves behind (e2e snapshots)"),
+            Map.entry(Rules.METRIC_CATALOG, "#58: fires once metric decisions are applied (e2e expected-decided)"),
+            Map.entry(Rules.TRACE_ID_NOT_LOGGED, "#89: only without the logging pack (SETUP_LOGBACK_XML covers the file there), and no "
                     + "corpus has a custom logback pattern without the trace id: fires in its own e2e scenario "
-                    + "(expected-tracing-depth), which also scans it switched off",
-            Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)",
-            Rules.SSE_BROADCAST_CONTEXT, "#17: no corpus broadcasts to stored SseEmitters: fires in its own e2e scenario "
-                    + "(expected-sse-broadcast), which also scans it switched off");
+                    + "(expected-tracing-depth), which also scans it switched off"),
+            Map.entry(Rules.REACTIVE_CONTEXT_LOSS, "#14: needs an entrypoint returning a Mono/Flux, which no corpus has: fires and is "
+                    + "applied in its own e2e scenario (expected-reactive), with the property, tracing alone and logging alone"),
+            Map.entry(Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)"),
+            Map.entry(Rules.SSE_BROADCAST_CONTEXT, "#17: no corpus broadcasts to stored SseEmitters: fires in its own e2e scenario "
+                    + "(expected-sse-broadcast), which also scans it switched off"));
 
     private static Map<String, String> negativeCorpus(String... rules) {
         Map<String, String> out = new TreeMap<>();

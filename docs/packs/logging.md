@@ -6,8 +6,9 @@ the entrypoint down, and a log line wherever a flow would otherwise be silent.
 - **On by default** (`packs: [logging, tracing]`).
 - **Settings:** `vocabulary`, `areas`, `logging`, `phrasing`, `levels`, `mdc`, `pii` in
   [configuration.md](../configuration.md); how the vocabulary and phrasing work: [vocabulary.md](../vocabulary.md).
-- ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED (context lost on another thread) and SSE_BROADCAST_CONTEXT are in both this pack and
-  [tracing](tracing.md#rules), where they are listed.
+- ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED (context lost on another thread), SSE_BROADCAST_CONTEXT and
+  REACTIVE_CONTEXT_LOSS (trace ids lost in Reactor operators) are in both this pack and [tracing](tracing.md#rules),
+  where they are listed.
 
 Legend: [rules.md](../rules.md#how-to-read-the-rule-tables). The fix column names the usual outcome; where a rule
 can end either way, the finding's note says why.
@@ -37,7 +38,7 @@ can end either way, the finding's note says why.
 | LOG_HELPER | medium | logging through a helper method | report: log at the call site |
 | LOG_KEY_VALUE_IN_MDC | low | a `[k=v]` that repeats a key MDC already carries | AUTO: removed from the message |
 | **MDC** | | | |
-| MISSING_DOMAIN_MDC | medium | an entrypoint whose business id is not in MDC | AUTO: `MdcScope` around the body |
+| MISSING_DOMAIN_MDC | medium | an entrypoint whose business id is not in MDC | AUTO: `MdcScope` around the body; report for a method returning a `Mono`/`Flux` (a scope would end before the pipeline runs: the note names the Reactor Context route) |
 | REPEATED_LOG_VALUE | medium | the same id logged by every message of a method and the methods it passes it to | AUTO: into MDC once |
 | MDC_NOT_CLOSEABLE | low | `MDC.put` never removed, or cleared in a `finally` | AUTO: one `MdcScope` (restores exactly what it changed) |
 | MDC_CLEAR | high | `MDC.clear()`: wipes the caller's context, trace ids included | report; folded into the MDC_NOT_CLOSEABLE fix |

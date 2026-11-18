@@ -54,6 +54,30 @@ public final class MetricsMap {
                java.util.Map<String, org.openrewrite.java.tree.Expression> amounts) {
     }
 
+    /** {@code call} sits in a lambda of a method that returns a Mono/Flux: an operator callback of the pipeline. */
+    static boolean inReactiveOperator(MethodInfo m, org.openrewrite.java.tree.J call) {
+        if (m.decl().getBody() == null || m.decl().getMethodType() == null
+                || !TypeUtils.isAssignableTo("org.reactivestreams.Publisher", m.decl().getMethodType().getReturnType())) {
+            return false;
+        }
+        boolean[] found = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public org.openrewrite.java.tree.J.Lambda visitLambda(org.openrewrite.java.tree.J.Lambda l, Integer p) {
+                new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+                    @Override
+                    public org.openrewrite.java.tree.J.MethodInvocation visitMethodInvocation(org.openrewrite.java.tree.J.MethodInvocation mi,
+                                                                                           Integer q) {
+                        found[0] |= mi == call;
+                        return super.visitMethodInvocation(mi, q);
+                    }
+                }.visit(l.getBody(), 0);
+                return l;
+            }
+        }.visit(m.decl().getBody(), 0);
+        return found[0];
+    }
+
     /** Numbers that name something rather than measure it: an id, a number, a code, a date part, a version. */
     private static final Pattern IDENTIFYING = Pattern.compile(
             "(?i).*(id|ids|number|no|nr|code|key|year|month|week|day|hour|version|port|status|type|index|idx)");
@@ -209,7 +233,9 @@ public final class MetricsMap {
                 }
                 List<Entrypoint> eps = a.paths.entrypointsReaching(m);
                 List<String> paths = eps.stream().map(e -> e.kind().name().toLowerCase(Locale.ROOT) + " " + e.label()).distinct().limit(5).toList();
-                boolean inObservation = eps.stream().anyMatch(e -> e.observedByFramework() || observedMethods.contains(e.method().key()));
+                // a Reactor operator's callback runs on whichever thread emits: the running timer is not the current one there (#14)
+                boolean inObservation = !inReactiveOperator(m, lc.call())
+                        && eps.stream().anyMatch(e -> e.observedByFramework() || observedMethods.contains(e.method().key()));
                 String fromPhrasing = phrasing.subjectOf(text);
                 String subject = clean(fromPhrasing != null ? fromPhrasing : subjectOf(text, event));
                 String metric = metricName(subject);
