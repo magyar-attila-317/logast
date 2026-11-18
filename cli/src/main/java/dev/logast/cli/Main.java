@@ -329,6 +329,9 @@ public final class Main {
         boolean write;
         @Option(names = "--format", defaultValue = "text", description = "text | json")
         String format;
+        @Option(names = "--without-classpath", description = "Apply even though the Gradle build has no classpath file "
+                + "(.logast/classpath*.txt): types stay unresolved and the compile gate may reject correct fixes")
+        boolean withoutClasspath;
         /** #117: set on the round apply runs itself after refreshing the classpath (once). */
         @Option(names = "--refreshed", hidden = true)
         boolean refreshed;
@@ -337,6 +340,15 @@ public final class Main {
 
         @Override
         public Integer call() throws IOException {
+            // #119: a Gradle build without a classpath file (logast classpath failed, or never ran): applying would
+            // resolve no library type, and the compile gate would reject correct fixes with errors that look like a bug
+            boolean gradleBuild = Files.exists(root().resolve("build.gradle")) || Files.exists(root().resolve("build.gradle.kts"));
+            if (gradleBuild && classpathFile == null && !withoutClasspath && Logast.classpath(root(), null).isEmpty()) {
+                Out.warn("no classpath yet (.logast/classpath*.txt): run `logast classpath .` first. If it fails, its Gradle error "
+                        + "says why (often a JDK the build's toolchain asks for is not installed). Nothing applied; "
+                        + "--without-classpath applies anyway, with library types unresolved.");
+                return 2;
+            }
             Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
             String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
             if (olderJdk != null) {
