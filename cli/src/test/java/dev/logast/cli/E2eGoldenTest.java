@@ -1778,6 +1778,267 @@ class E2eGoldenTest {
                 .contains("ParcelLedger.archive is @Transactional and throws IOException");
     }
 
+    /** #91 / #52: a library on the classpath whose @RestControllerAdvice maps its base exception (the sources do not show it). */
+    private static final Map<String, String> PLATFORM_ERRORS_LIBRARY = Map.of(
+            "org/orchardlib/errors/NotFound.java", """
+                    package org.orchardlib.errors;
+
+                    public class NotFound extends RuntimeException {
+                        public NotFound(String message) {
+                            super(message);
+                        }
+                    }
+                    """,
+            "org/orchardlib/errors/PlatformErrors.java", """
+                    package org.orchardlib.errors;
+
+                    import org.springframework.http.HttpStatus;
+                    import org.springframework.http.ProblemDetail;
+                    import org.springframework.web.bind.annotation.ExceptionHandler;
+                    import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+                    @RestControllerAdvice
+                    public class PlatformErrors {
+                        @ExceptionHandler(NotFound.class)
+                        ProblemDetail notFound(NotFound e) {
+                            return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+                        }
+                    }
+                    """);
+
+    /** The library compiled into a jar (javac gets it too), and a classpath file of the e2e classpath plus that jar. */
+    private Path platformErrorsClasspath() throws IOException {
+        Path src = tmp.resolve("platform-errors/src");
+        Path out = Files.createDirectories(tmp.resolve("platform-errors/classes"));
+        List<String> args = new ArrayList<>(List.of("-d", out.toString(), "-cp",
+                String.join(java.io.File.pathSeparator, Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList())));
+        for (Map.Entry<String, String> e : new TreeMap<>(PLATFORM_ERRORS_LIBRARY).entrySet()) {
+            Path f = src.resolve(e.getKey());
+            Files.createDirectories(f.getParent());
+            Files.writeString(f, e.getValue());
+            args.add(f.toString());
+        }
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        assertThat(ToolProvider.getSystemJavaCompiler().run(null, null, err, args.toArray(String[]::new)))
+                .as("the platform errors library compiles:\n" + err).isZero();
+        Path jar = tmp.resolve("platform-errors/platform-errors.jar");
+        try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar)); Stream<Path> s = Files.walk(out)) {
+            for (Path c : s.filter(Files::isRegularFile).sorted().toList()) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(out.relativize(c).toString().replace('\\', '/')));
+                zip.write(Files.readAllBytes(c));
+                zip.closeEntry();
+            }
+        }
+        extraClasses = new Path[]{jar};
+        Path cp = tmp.resolve("classpath-platform-errors.txt");
+        List<String> lines = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)));
+        lines.add(jar.toString());
+        Files.write(cp, lines);
+        return cp;
+    }
+
+    /** #91: request validation, a ProblemDetail subclass without status, a blocked WebClient, a library's advice. */
+    private static final IoAction LABEL_ERRORS = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/label");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("LabelRequest.java"), """
+                package com.example.e2e.label;
+
+                import jakarta.validation.constraints.NotBlank;
+                import jakarta.validation.constraints.Size;
+
+                public record LabelRequest(@NotBlank String labelCode, @Size(max = 40) String text) {
+                }
+                """);
+        // mapped by the library's advice (its base type): not a 500
+        Files.writeString(dir.resolve("LabelMissing.java"), """
+                package com.example.e2e.label;
+
+                import org.orchardlib.errors.NotFound;
+
+                public class LabelMissing extends NotFound {
+                    public LabelMissing(String labelCode) {
+                        super("no label " + labelCode);
+                    }
+                }
+                """);
+        for (String name : List.of("LabelStale", "LabelLocked")) {
+            Files.writeString(dir.resolve(name + ".java"), """
+                    package com.example.e2e.label;
+
+                    public class %s extends RuntimeException {
+                        public %s(String message) {
+                            super(message);
+                        }
+                    }
+                    """.formatted(name, name));
+        }
+        // ProblemDetail subclasses: one leaves the status 0, one passes it to ProblemDetail
+        Files.writeString(dir.resolve("LabelProblem.java"), """
+                package com.example.e2e.label;
+
+                import org.springframework.http.ProblemDetail;
+
+                public class LabelProblem extends ProblemDetail {
+                    public LabelProblem(String detail) {
+                        setDetail(detail);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("LabelGone.java"), """
+                package com.example.e2e.label;
+
+                import org.springframework.http.ProblemDetail;
+
+                public class LabelGone extends ProblemDetail {
+                    public LabelGone() {
+                        super(410);
+                    }
+                }
+                """);
+        // a catch-all that logs and answers 500 (validation failures land here first), two ProblemDetail handlers
+        Files.writeString(dir.resolve("LabelErrors.java"), """
+                package com.example.e2e.label;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ProblemDetail;
+                import org.springframework.web.bind.annotation.ExceptionHandler;
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+                @RestControllerAdvice
+                class LabelErrors {
+                    private static final Logger log = LoggerFactory.getLogger(LabelErrors.class);
+
+                    @ExceptionHandler(Exception.class)
+                    ProblemDetail unexpected(Exception e) {
+                        log.error("Label request failed", e);
+                        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
+                    }
+
+                    @ExceptionHandler(LabelStale.class)
+                    ProblemDetail stale(LabelStale e) {
+                        return new LabelProblem("stale label");
+                    }
+
+                    @ExceptionHandler(LabelLocked.class)
+                    ProblemDetail locked(LabelLocked e) {
+                        return new LabelGone();
+                    }
+                }
+                """);
+        // a WebClient call blocked on, on an HTTP path
+        Files.writeString(dir.resolve("LabelStore.java"), """
+                package com.example.e2e.label;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.reactive.function.client.WebClient;
+
+                @Component
+                class LabelStore {
+                    private final WebClient client;
+
+                    LabelStore(WebClient.Builder builder) {
+                        this.client = builder.baseUrl("http://labels").build();
+                    }
+
+                    String find(String labelCode) {
+                        return client.get().uri("/labels/{labelCode}", labelCode).retrieve().bodyToMono(String.class).block();
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("LabelController.java"), """
+                package com.example.e2e.label;
+
+                import jakarta.validation.Valid;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.PutMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class LabelController {
+                    private final LabelStore store;
+
+                    LabelController(LabelStore store) {
+                        this.store = store;
+                    }
+
+                    @PostMapping("/labels")
+                    String create(@RequestBody LabelRequest request) {
+                        return request.labelCode();
+                    }
+
+                    @PutMapping("/labels/{labelCode}")
+                    String update(@PathVariable String labelCode, @Valid @RequestBody LabelRequest request) {
+                        if (request.text() == null) {
+                            throw new LabelStale(labelCode);
+                        }
+                        return labelCode;
+                    }
+
+                    @PostMapping("/labels/notes")
+                    String note(@RequestBody String text) {
+                        return text;
+                    }
+
+                    @GetMapping("/labels/{labelCode}")
+                    String find(@PathVariable String labelCode) {
+                        String label = store.find(labelCode);
+                        if (label == null) {
+                            throw new LabelMissing(labelCode);
+                        }
+                        if (label.isBlank()) {
+                            throw new LabelLocked(labelCode);
+                        }
+                        return label;
+                    }
+                }
+                """);
+    };
+
+    private static void assertLabelFindings(String findings) {
+        assertThat(findings).as("a constrained body without @Valid")
+                .contains("LabelController.create takes request (LabelRequest, with Bean Validation constraints) without @Valid")
+                .as("with @Valid, or without constraints: not reported")
+                .doesNotContain("LabelController.update takes").doesNotContain("LabelController.note takes");
+        assertThat(findings).as("the catch-all answers the validation failures 500")
+                .contains("Handler for Exception also takes the validation failures of 1 @Valid request body");
+        assertThat(findings).as("a ProblemDetail subclass without a status")
+                .contains("returns LabelProblem, a ProblemDetail built without a status")
+                .doesNotContain("returns LabelGone");
+        assertThat(findings).as("a blocked WebClient call nobody maps")
+                .contains("Failures of downstream calls (WebClient, 1× on HTTP paths");
+        assertThat(findings).as("mapped by the library's advice").doesNotContain("LabelMissing is thrown on HTTP paths");
+    }
+
+    /**
+     * #91 / #52: a @RequestBody whose type has constraints but no @Valid is reported (REQUEST_NOT_VALIDATED), the @Valid
+     * one and the unconstrained one are not; the catch-all answering 500 takes the @Valid body's failures before
+     * Spring's 400 (CLIENT_ERROR_AS_SERVER_ERROR); a handler returning a ProblemDetail subclass whose constructor sets no
+     * status is reported, the one passing 410 is not (ERROR_HANDLER_STATUS_OK); a WebClient call blocked on, on an HTTP
+     * path, is a downstream failure nobody maps (UNMAPPED_EXCEPTION); an exception whose base type a library's
+     * @RestControllerAdvice maps is not reported. The same with only the errors pack. Every file must equal
+     * e2e/expected-errors-pack-validation.
+     */
+    @Test
+    void errorsPackFindsUnvalidatedBodiesStatuslessProblemsBlockedWebClientsAndLibraryHandlers() throws IOException {
+        String classpath = platformErrorsClasspath().toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, LABEL_ERRORS);
+        assertLabelFindings(actual.get("FINDINGS.txt"));
+        golden(EXPECTED.resolveSibling("expected-errors-pack-validation"), actual);
+
+        Map<String, String> alone = migrate(tmp.resolve("errors-only"), classpath, app -> {
+            LABEL_ERRORS.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [errors]"));
+        });
+        assertLabelFindings(alone.get("FINDINGS.txt"));
+    }
+
     /** #89: the shapes of the tracing pack's newer checks, in a stock service. */
     private static final IoAction STOCK_TRACING = app -> {
         Path dir = app.resolve("src/main/java/com/example/e2e/stock");

@@ -28,7 +28,7 @@ public class OrderController {
     }
 
     @PostMapping
-    public Order create(@RequestBody CreateOrderRequest request) { // expect: MISSING_DOMAIN_MDC
+    public Order create(@RequestBody CreateOrderRequest request) { // expect: MISSING_DOMAIN_MDC, REQUEST_NOT_VALIDATED
         log.info("Creating order for customer {}", request.customerId()); // expect: LOG_FORMAT
         return orderService.place(request);
     }
