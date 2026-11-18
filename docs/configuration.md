@@ -50,6 +50,8 @@ packs: [logging, tracing]
 | `errors` | error responses: leaked details, unmapped exceptions, ProblemDetail |
 | `audit` | actions that must leave an audit record |
 
+Every rule of every pack, with what it finds and how it is fixed: [rules.md](rules.md).
+
 `logast scan . --pack metrics` runs a pack for one scan without changing the file. `packs:` replaces the list
 from earlier layers (it does not add to it).
 
@@ -96,7 +98,7 @@ areas:
 
 ```yaml
 logging:
-  keyStyle: dotted              # how MDC and [k=v] keys are spelled: dotted (order.id), camel (orderId),
+  keyStyle: camel               # how MDC and [k=v] keys are spelled: camel (orderId), dotted (order.id),
                                 #   pascal (OrderId), snake (order_id), keep. Applies to vocabulary keys too.
   serviceName: "${SERVICE_NAME:shop}"          # written to spring.application.name when missing (default: the project name)
   serviceVersion: "${APPLICATION_VERSION:unknown}"   # written to spring.application.version when missing
@@ -193,6 +195,10 @@ Use `vendor` until the library is in your company repository.
 ```yaml
 metrics:
   events: true                  # business events without a metric get an Observation (timer + count + span)
+  defaults: [failures, jobs, skips, db-writes]   # logged outcomes counted without a metrics.json decision; [] = none
+  amounts: total                # a number on an outcome line counted too: total (counter), per-run (distribution), off
+  catalog: per-package          # metric names in one place: per-package, single (all in catalogClass), off
+  # catalogClass: com.example.metrics.BusinessMetrics   # for single (default: <app package>.metrics.BusinessMetrics)
   tags:                         # tag vocabulary
     outcome:
       aliases: [result, success] # renamed to "outcome"
@@ -205,7 +211,11 @@ metrics:
 resilience:
   httpConnectTimeout: 5s        # written to spring.http.clients.connect-timeout when a service has none
   httpReadTimeout: 30s          # written to spring.http.clients.read-timeout
+  dbQueryTimeout: 5m            # written to spring.jdbc.template.query-timeout and the JPA query timeout
+  singleInstance: false         # true: the service never runs more than once, @Scheduled jobs need no lock
 ```
+
+What each setting does in detail: [the metrics pack](packs/metrics.md) and [the resilience pack](packs/resilience.md).
 
 ### `audit` (pack `audit`)
 
