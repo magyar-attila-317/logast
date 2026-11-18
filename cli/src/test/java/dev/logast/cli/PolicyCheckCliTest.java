@@ -162,4 +162,20 @@ class PolicyCheckCliTest {
         assertThat(run("policy", project("support:\n  coordinates: dev.logast:logging-support:0.0.9\n  mode: vendor\n")
                 .toString(), "--check").out()).as("vendor mode copies the classes: no pin to match").doesNotContain("pins logging-support");
     }
+
+    /** #119: a Gradle build without a classpath file: apply stops and says how to get one, unless told to go on. */
+    @Test
+    void applyStopsWithoutAClasspathOnAGradleBuild() throws IOException {
+        Path app = project("packs: [logging]\n");
+        Files.writeString(app.resolve("build.gradle.kts"), "plugins { java }\n");
+        Run r = run("apply", app.toString(), "--auto");
+        assertThat(r.exit()).isEqualTo(2);
+        assertThat(r.err()).contains("no classpath yet (.logast/classpath*.txt): run `logast classpath .` first")
+                .contains("often a JDK the build's toolchain asks for is not installed");
+        assertThat(run("apply", app.toString(), "--auto", "--without-classpath").err()).doesNotContain("no classpath yet");
+        Path plain = tmp.resolve("plain");   // its own folder: project() writes into the one above
+        Files.createDirectories(plain.resolve("src/main/java/demo"));
+        Files.writeString(plain.resolve("src/main/java/demo/Ok.java"), "package demo;\n\nclass Ok {\n}\n");
+        assertThat(run("apply", plain.toString(), "--auto").err()).as("no Gradle build: as before").doesNotContain("no classpath yet");
+    }
 }
