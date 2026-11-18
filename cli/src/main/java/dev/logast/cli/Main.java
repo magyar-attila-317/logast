@@ -99,7 +99,8 @@ public final class Main {
 
     @Command(name = "scan", description = "Analyse the project and write work orders to <root>/.logast/orders.json")
     static class Scan extends Common implements Callable<Integer> {
-        @Option(names = "--format", defaultValue = "compact", description = "compact | json | summary | sarif | fills-template")
+        @Option(names = "--format", description = "human (default in a terminal: grouped, one line per finding) | compact "
+                + "(default otherwise: every order in full, for an LLM) | json | summary | sarif | fills-template")
         String format;
         @Option(names = "--rule", split = ",", description = "Only orders fixing these rules (comma-separated or repeated)")
         List<String> rules = new ArrayList<>();
@@ -129,6 +130,10 @@ public final class Main {
                 unknown.forEach(id -> Out.warn("--rule " + id + ": unknown rule id"
                         + dev.logast.policy.PolicyValidator.didYouMean(id, Rules.all()) + " (`logast rules` lists them)"));
                 return 2;
+            }
+            if (format == null) {
+                // a person at a terminal gets the grouped view, unless they asked for one rule or path: then every detail (#107)
+                format = Out.terminal() && rules.isEmpty() && entrypoint == null ? "human" : "compact";
             }
             Policy policy = policy();
             ScanResult r;
@@ -198,7 +203,7 @@ public final class Main {
                 Out.progress("scope:" + scope + ": " + shown.size() + " of " + r.orders().size() + " orders");
             }
             List<String> gaps = r.stats().gaps();
-            if (!gaps.isEmpty() && failOn == null && !format.equals("compact") && !format.equals("summary")) {
+            if (!gaps.isEmpty() && failOn == null && !format.equals("compact") && !format.equals("summary") && !format.equals("human")) {
                 gaps.forEach(g -> Out.warn("analysis incomplete: " + g)); // machine formats print no header of their own
             }
             switch (format) {
@@ -225,6 +230,7 @@ public final class Main {
                             ledgerLines(ledger, places),
                             dev.logast.Todo.alsoLines(todo.also()));
                 }
+                case "human" -> System.out.print(dev.logast.orders.HumanFormat.render(r, shown, Logast.lastAnalysis.appPackage, Out.width()));
                 default -> {
                     System.out.print(CompactFormat.render(r, shown, policy.terms()));
                     if (!policy.overrides().isEmpty()) {
@@ -233,11 +239,12 @@ public final class Main {
                     }
                 }
             }
-            if (format.equals("compact")) {
+            if (format.equals("compact") || format.equals("human")) {
                 // the listing above is the detail: the footer says what happens next (#101)
                 dev.logast.Todo todo = dev.logast.Todo.of(root(), r, policy, Logast.lastAnalysis, List.of(), false);
                 printBlocks(appliedEarlier(root()),
-                        todo.lines(new dev.logast.Todo.View(null, "the REPORT-ONLY orders above", fu, mu)),
+                        todo.lines(new dev.logast.Todo.View(null, format.equals("human") ? "the decisions above"
+                                : "the REPORT-ONLY orders above", fu, mu)),
                         ledgerLines(ledger, List.of()),
                         dev.logast.Todo.alsoLines(todo.also()));
             }

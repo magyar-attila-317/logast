@@ -19,6 +19,11 @@ final class Out {
         if (System.getenv("NO_COLOR") != null || "dumb".equals(System.getenv("TERM"))) {
             return;
         }
+        Ansi.enable(terminal());
+    }
+
+    /** Output goes to an interactive terminal (not a pipe, a file or a tool that captures it). */
+    static boolean terminal() {
         java.io.Console console = System.console();
         boolean terminal = console != null;
         try {   // Java 22+: console() exists even when redirected; isTerminal() tells
@@ -26,7 +31,16 @@ final class Out {
         } catch (ReflectiveOperationException e) {
             // Java 21: a non-null console means a terminal
         }
-        Ansi.enable(terminal);
+        return terminal;
+    }
+
+    /** The terminal's width (COLUMNS, else 120). */
+    static int width() {
+        try {
+            return Math.max(60, Integer.parseInt(System.getenv().getOrDefault("COLUMNS", "120").strip()));
+        } catch (NumberFormatException e) {
+            return 120;
+        }
     }
 
     static void title(String s) {
