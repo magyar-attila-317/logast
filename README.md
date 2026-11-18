@@ -134,6 +134,7 @@ Metric decisions (count an outcome, tag it, or skip it) go into `.logast/metrics
 | `.logast/traffic.yaml` | every entrypoint, with calls/day if you fill them in (judges log volume) | `init`, `traffic`, `apply` | yes |
 | `.logast/baseline.json` | the findings CI accepts as known | `init --baseline`, `scan --update-baseline` | yes |
 | `.logast/orders.json` | the last scan's work orders, in full | `scan` | no |
+| `.logast/coverage.txt` | every log call and what logast did with it: fixed, reported, ignored, skipped (with the reason) or checked ([details](docs/commands.md#every-log-call-is-accounted-for)) | `scan`, `apply --write` (logging pack) | no |
 | `.logast/fills.json` | message texts to write; kept in step with the code (entries kept, added, removed when done) | `scan`, `apply` | no |
 | `.logast/metrics.json` | metric decisions to make, kept in step the same way | `scan`, `apply` | no |
 | `.logast/steps/*.diff` | one diff per apply step, to review or drop a kind of change | `apply` | no |

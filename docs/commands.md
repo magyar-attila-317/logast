@@ -82,6 +82,42 @@ The log-coverage line is the share of places that should log (jobs, HTTP endpoin
 state changes, loops) and do; see [log coverage](packs/logging.md#log-coverage). It is also a column in the fleet
 report.
 
+### Every log call is accounted for
+
+A line without a finding could mean "checked, fine" or "never looked at", so `scan` (and `apply --write`) also writes
+`.logast/coverage.txt`: one line per log call, in file/line order, with what logast did with it, and prints one summary
+line per outcome:
+
+```
+src/main/java/com/example/shop/service/PledgeService.java:41   fixed    LOG_FORMAT FMT-e10ae3; reported MESSAGE_VAGUE MVG-53c6bf
+src/main/java/com/example/shop/service/PledgeService.java:44   checked  no finding
+src/main/java/com/example/shop/service/GatewayCalls.java:10    skipped  protected message (logging.protectedMessages)
+src/main/java/com/example/shop/service/GatewayCalls.java:14    ignored  LOG_FORMAT
+src/main/java/com/example/shop/service/LegacyGateway.java:9    skipped  other logging API: java.util.logging
+
+log calls 91, each accounted for in .logast/coverage.txt:
+  fixed       51  changed by an apply
+  reported    15  a finding on the line
+  ignored      1  a logast:ignore comment silences a rule
+  skipped     13  fluent call (format and level not checked) 2 · logging-support code 5 · message not a literal (built at runtime) 2 · …
+  checked     11  looked at, no finding
+```
+
+| outcome | meaning |
+|---|---|
+| `fixed` | an `apply --write` changed it (rule and id). Later runs keep saying so while the file is unchanged since; the file's fingerprint is at the end of `coverage.txt` |
+| `reported` | a finding sits on the line (rule and id, as in the scan output) |
+| `ignored` | a `// logast:ignore RULE` comment silenced that rule there |
+| `skipped` | a rule passed it over on purpose, with the reason it recorded where it decided: a protected message, a log helper's body, a message that is not a literal (a constant, built at runtime), a message that comes from an argument (`"{}"`), a fluent call (`log.atInfo()…`: format and level not checked), TRACE (arguments not checked), the logging-support classes copied into the service, or another logging API (Log4j2, java.util.logging, …: logast edits SLF4J only) |
+| `checked` | the rules looked at it and found nothing |
+
+The first outcome that applies is in the second column; the others follow in the detail. The number of lines always
+equals the number of log calls logast found. It is the logging pack's report: a run without that pack (`--pack
+tracing`, …) neither writes nor changes it, and a dry-run `apply` does not write it. Log calls in field initializers
+and static blocks are not in it (logast analyses method and constructor bodies). Source markers
+(`reporting.sourceComments: true`, see [configuration](configuration.md)) are an off-by-default debugging aid;
+`coverage.txt` is the answer to "did logast look at this line?".
+
 ## apply
 
 `apply` fixes what it can across all selected packs (best effort), refreshes the classpath when it changed a build
@@ -112,6 +148,8 @@ the same list without changing anything.
   started/completed per method, the result still compiles) and prints `CHECK FAILED file:line` if something breaks
   that.
 - **Trace.** `.logast/apply-trace.txt` records what each round applied and what its rescan brought up.
+- **Coverage.** With `--write`, `.logast/coverage.txt` lists every log call of the result; the ones this run changed
+  show as `fixed` ([every log call is accounted for](#every-log-call-is-accounted-for)).
 - `--only <ids>` restricts it to some orders; `--format json` prints the result for tools.
 
 ## review

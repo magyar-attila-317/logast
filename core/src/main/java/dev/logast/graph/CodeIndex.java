@@ -185,6 +185,11 @@ public final class CodeIndex {
         return methods.values();
     }
 
+    /** Every log call the index knows: SLF4J calls the rules check, plus calls through other logging APIs (#72). */
+    public int logCallCount() {
+        return methods.values().stream().mapToInt(m -> m.facts().logs.size() + m.facts().otherLogs.size()).sum();
+    }
+
     public MethodInfo method(String key) {
         return methods.get(key);
     }

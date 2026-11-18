@@ -36,6 +36,7 @@ public final class Applier {
     /**
      * @param before the scan of the code as it was; {@code after} the scan once every applied order is in (both left
      *               out of the JSON output)
+     * @param fixed  file → line in the result → "RULE id" of each applied order located there (the coverage report, #72)
      */
     public record Result(List<String> applied, Map<String, String> rejected, List<String> resolvedIndirectly,
                          List<String> changedFiles, String diff, int rounds,
@@ -43,11 +44,12 @@ public final class Applier {
                          @com.fasterxml.jackson.annotation.JsonIgnore ScanResult after,
                          List<String> violations,
                          @com.fasterxml.jackson.annotation.JsonIgnore Map<String, String> stepDiffs,
-                         @com.fasterxml.jackson.annotation.JsonIgnore List<String> trace) {
+                         @com.fasterxml.jackson.annotation.JsonIgnore List<String> trace,
+                         @com.fasterxml.jackson.annotation.JsonIgnore Map<String, TreeMap<Integer, Set<String>>> fixed) {
         public Result(List<String> applied, Map<String, String> rejected, List<String> resolvedIndirectly,
                       List<String> changedFiles, String diff, int rounds, ScanResult before, ScanResult after,
                       List<String> violations, Map<String, String> stepDiffs) {
-            this(applied, rejected, resolvedIndirectly, changedFiles, diff, rounds, before, after, violations, stepDiffs, List.of());
+            this(applied, rejected, resolvedIndirectly, changedFiles, diff, rounds, before, after, violations, stepDiffs, List.of(), Map.of());
         }
     }
 
@@ -139,6 +141,8 @@ public final class Applier {
         // an id applied in an earlier pass runs again only if another order changed one of its files since
         Map<String, Integer> appliedAt = new HashMap<>();
         Map<String, Map<String, Integer>> touches = new HashMap<>();   // file -> id -> round it was last edited
+        // where each applied order sits, followed through the later rounds' edits to the line in the result (#72)
+        Map<String, TreeMap<Integer, Set<String>>> fixed = new TreeMap<>();
         int seq = 0;
         trace.add("scan: " + scan.orders().size() + " orders");
         for (int pass = 1; pass <= MAX_PASSES; pass++) {
@@ -255,6 +259,11 @@ public final class Applier {
                 Map<String, String> signatures = new HashMap<>();
                 acceptedIds.forEach(id -> signatures.put(id, signature(byId.get(id))));
                 seq++;
+                Map<String, String> roundBefore = new HashMap<>();
+                accepted.stream().map(Edit::file).filter(f -> f.endsWith(".java")).distinct().forEach(f -> {
+                    Path p = work.resolve(f);
+                    roundBefore.put(f, Files.exists(p) ? text(bytes(p)) : null);
+                });
                 Map<String, String> failed = applyRound(work, acceptedIds, editsOf);
                 failed.forEach((id, why) -> {
                     WorkOrder o = byId.get(id);
@@ -277,6 +286,17 @@ public final class Applier {
                     }
                     pending.remove(id);
                 }
+                for (String id : acceptedIds) {
+                    WorkOrder o = byId.get(id);
+                    if (!failed.containsKey(id) && o.file() != null && o.file().endsWith(".java") && o.line() > 0) {
+                        fixed.computeIfAbsent(o.file(), k -> new TreeMap<>()).computeIfAbsent(o.line(), k -> new LinkedHashSet<>())
+                                .add(o.rule() + " " + o.id());
+                    }
+                }
+                roundBefore.forEach((f, old) -> {
+                    Path p = work.resolve(f);
+                    LineMap.follow(fixed, f, old, Files.exists(p) ? text(bytes(p)) : null);
+                });
                 progress.accept("~" + name + ", round " + stepRounds + ": checking the changed code (" + applied.size() + " done)");
                 Set<String> previous = new HashSet<>();
                 scan.orders().forEach(o -> previous.add(o.id()));
@@ -329,7 +349,7 @@ public final class Applier {
         if (write) {
             copyBack(root, work, changed);
         }
-        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs, trace);
+        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs, trace, fixed);
     }
 
     /** "RULE id file:line" for the trace. */

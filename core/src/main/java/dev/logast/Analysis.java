@@ -28,6 +28,9 @@ public final class Analysis {
     public final String supportPackage;
     public final boolean decoratorPresent;
 
+    /** What the rules did with each log call, recorded where they decide it (#72). */
+    public final LogLedger ledger = new LogLedger();
+
     /** Real entrypoint rates when provided (.logast/traffic.yaml or --traffic); never estimated. */
     public Traffic traffic = Traffic.none();
 

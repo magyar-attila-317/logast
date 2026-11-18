@@ -64,6 +64,20 @@ public final class LoggerScope {
             "org.apache.commons.logging.Log", "Commons Logging", "com.google.common.flogger.FluentLogger", "Flogger",
             "org.jboss.logging.Logger", "JBoss Logging");
 
+    /** A call that writes a log line on another API's logger; a fluent chain counts once, at its {@code atInfo()}-style start. */
+    private static final java.util.regex.Pattern LOGGING_METHOD = java.util.regex.Pattern.compile(
+            "(trace|debug|info|warn|warning|error|fatal|severe|config|fine|finer|finest|log|logp|logrb)[fv]?|at[A-Z][A-Za-z]*");
+
+    /** The other logging API a logger type belongs to, or null (SLF4J, or no logger type). */
+    public static String otherApi(String loggerType) {
+        return OTHER_TYPES.get(loggerType);
+    }
+
+    /** Whether a method of another API's logger writes a log line ({@code info}, {@code warning}, {@code atInfo}, …). */
+    public static boolean loggingMethod(String name) {
+        return LOGGING_METHOD.matcher(name).matches();
+    }
+
     private final CodeIndex index;
     private final Map<String, List<Logger>> cache = new HashMap<>();
 

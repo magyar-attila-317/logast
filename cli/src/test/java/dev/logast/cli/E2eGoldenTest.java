@@ -1020,6 +1020,62 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-source-markers"), actual);
     }
 
+    /**
+     * #72: .logast/coverage.txt accounts for every log call: fixed, reported, ignored, skipped with the reason recorded
+     * where the rule passes it over, or checked. e2e/before has fixed, reported, checked and some skips (a log helper,
+     * a constant template, TRACE, the copied support classes); the shapes it lacks are added here: a protected message,
+     * another logging API, an ignore comment, a fluent call with and without a message, a message from an argument.
+     */
+    @Test
+    void everyLogCallIsAccountedFor() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replace("logging:\n",
+                    "logging:\n  protectedMessages: ['^Payment gateway unavailable']\n"));
+            Path dir = app.resolve("src/main/java/com/example/e2e/ledger");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("GatewayCalls.java"), """
+                    package com.example.e2e.ledger;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    class GatewayCalls {
+                        private static final Logger log = LoggerFactory.getLogger(GatewayCalls.class);
+
+                        void charge(String gatewayId, String reply) {
+                            log.warn("Payment gateway unavailable [gatewayId={}]", gatewayId);
+                            log.debug("{}", reply);
+                            log.atDebug().addKeyValue("gatewayId", gatewayId).log("Gateway reply received");
+                            log.atDebug().addKeyValue("gatewayId", gatewayId).log();
+                            log.info("Gateway {} charged", gatewayId); // logast:ignore LOG_FORMAT METRIC_OUTCOME_UNMEASURED
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("LegacyGateway.java"), """
+                    package com.example.e2e.ledger;
+
+                    import java.util.logging.Logger;
+
+                    class LegacyGateway {
+                        private static final Logger log = Logger.getLogger(LegacyGateway.class.getName());
+
+                        void refund(String gatewayId) {
+                            log.info("Gateway refund requested");
+                        }
+                    }
+                    """);
+        });
+
+        String coverage = actual.get(".logast/coverage.txt");
+        assertThat(coverage).as("every outcome").contains("  fixed    ", "  reported ", "  ignored  LOG_FORMAT", "  checked  ");
+        assertThat(coverage).as("every skip reason").contains("protected message", "message not a literal", "message comes from an argument",
+                "fluent call", "no message", "TRACE level", "inside a log helper", "logging-support code",
+                "other logging API: java.util.logging");
+        assertThat(actual.get("FINDINGS.txt")).as("the summary per outcome").contains("log calls ", "  skipped  ");
+        golden(EXPECTED.resolveSibling("expected-log-call-coverage"), actual);
+    }
+
     @Test
     void flagsInlineNamedPlaceholderWithoutRewordingItsMessage() throws IOException {
         Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {

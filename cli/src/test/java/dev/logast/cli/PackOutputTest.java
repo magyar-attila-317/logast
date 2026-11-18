@@ -95,6 +95,22 @@ class PackOutputTest {
         }
     }
 
+    /** #72 as #88: the account of every log call is the logging pack's report; other packs neither write nor print it. */
+    @Test
+    void logCallCoverageOnlyWithTheLoggingPack() throws IOException {
+        Path app = project();
+        String cp = classpathFile().toString();
+        Path coverage = app.resolve(".logast/coverage.txt");
+        for (String pack : new String[]{"tracing", "metrics", "resilience", "errors", "audit"}) {
+            assertThat(run("scan", app.toString(), "--pack", pack, "--classpath-file", cp)).as("--pack " + pack)
+                    .doesNotContain("log calls ");
+            assertThat(coverage).as("--pack " + pack).doesNotExist();
+        }
+        assertThat(run("scan", app.toString(), "--pack", "metrics,logging", "--format", "summary", "--classpath-file", cp))
+                .contains("log calls 0, each accounted for in .logast/coverage.txt");
+        assertThat(coverage).exists();
+    }
+
     @Test
     void packOptionListsEveryPack() {
         for (String command : new String[]{"scan", "apply", "init"}) {

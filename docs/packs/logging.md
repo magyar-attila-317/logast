@@ -152,6 +152,10 @@ logging:
 
 Where logs are missing, logast adds the line and someone writes the sentence.
 
+The other direction, the log lines that exist: `.logast/coverage.txt` says for every one of them whether logast
+fixed, reported, ignored, skipped (and why) or checked it; see
+[every log call is accounted for](../commands.md#every-log-call-is-accounted-for).
+
 An entrypoint (an endpoint that changes something, a listener, a job) is "silent" when its own flow logs nothing at
 INFO on the normal path: the method itself, the service it calls and one level below. Lines deeper in shared code
 (event publishers, audit, helpers) and lines in catch blocks don't count; they don't say which flow ran. GET

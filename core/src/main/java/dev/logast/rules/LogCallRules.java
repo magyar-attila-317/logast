@@ -1,5 +1,6 @@
 package dev.logast.rules;
 
+import dev.logast.LogLedger;
 import dev.logast.graph.CallGraph;
 import dev.logast.model.CatchInfo;
 import dev.logast.model.Level;
@@ -30,20 +31,24 @@ final class LogCallRules {
     void run() {
         for (MethodInfo m : ctx.methods()) {
             if (ctx.logHelper(m)) {
+                m.facts().logs.forEach(lc -> ctx.skip(lc, LogLedger.HELPER));
                 continue;   // LOG_HELPER: inline it at the call sites instead of polishing it
             }
             List<LogCall> logs = m.facts().logs;
             for (int i = 0; i < logs.size(); i++) {
                 LogCall lc = logs.get(i);
                 if (lc.fluent() || lc.template() == null) {
+                    ctx.skip(lc, lc.fluent() ? LogLedger.FLUENT : LogLedger.NO_MESSAGE);
                     continue;
                 }
                 String written = MessageTemplate.text(lc.template());
                 if (written != null && !MessageTemplate.stripPlaceholders(MessageTemplate.compliantKeys(written) != null
                         ? MessageTemplate.compliantBase(written) : written).matches(".*\\p{L}.*")) {
+                    ctx.skip(lc, LogLedger.MESSAGE_ARGUMENT);
                     continue;   // "{} [count={}]": the message itself comes from an argument; nothing to restructure
                 }
                 if (ctx.policy.logging().protectedMessage(MessageTemplate.text(lc.template()))) {
+                    ctx.skip(lc, LogLedger.PROTECTED);
                     continue;   // alert-linked (logging.protectedMessages): never reworded or reformatted
                 }
                 boolean deleted = false;
@@ -337,6 +342,7 @@ final class LogCallRules {
         int line = Pos.line(lc.call());
         MessageTemplate.Parsed parsed = MessageTemplate.parse(lc.template());
         if (parsed == null) {
+            ctx.skip(lc, LogLedger.NOT_LITERAL);   // a constant or a method's result: no wording or format to check
             return;
         }
         List<String> issues = new ArrayList<>();
