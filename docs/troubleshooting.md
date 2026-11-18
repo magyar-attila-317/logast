@@ -30,3 +30,20 @@
 - AUDIT_MISSING follows direct calls only: an audit written by a listener of a published event counts when the event
   (or what it carries) is audit-typed, but not when the listener alone decides to audit.
 - UNMAPPED_EXCEPTION treats a controller's own `@ExceptionHandler` as global, and ignores exceptions from libraries.
+
+## Check a logast update against your own services (#10)
+
+Keep your real services as regression cases on your machine only, outside git:
+
+```
+~/.logast-private/<service>/before/        the service as it was (a copy)
+~/.logast-private/<service>/classpath.txt  optional: logast classpath writes .logast/classpath-*.txt
+~/.logast-private/<service>/expected/      the reviewed migrated result
+```
+
+- `./gradlew :cli:privateRegression -Pprivate.update` records `expected/` (review it first: it is what logast
+  produces today).
+- After a logast update, `./gradlew :cli:privateRegression` migrates every `before/` again and names each file
+  that differs (first differing line). Nothing leaves the machine; without the folder the task does nothing.
+- `-Plogast.private.dir=<dir>` uses another folder.
+

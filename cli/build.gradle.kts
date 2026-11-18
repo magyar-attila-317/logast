@@ -103,7 +103,34 @@ tasks.test {
     filter {
         excludeTestsMatching(e2eGolden)
         excludeTestsMatching(e2eShards)
+        excludeTestsMatching(privateRun)
     }
+}
+
+// #10: the owner's real services, outside git (~/.logast-private/<service>/{before,expected,classpath.txt}); nothing to
+// run where the folder does not exist. -Pprivate.update records expected/ after a reviewed change.
+val privateRun = "dev.logast.cli.PrivateRegressionRun"
+val privateRegression by tasks.registering(Test::class) {
+    description = "Migrates every service under ~/.logast-private and compares it with its recorded expected/ (#10)"
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching(privateRun)
+        isFailOnNoMatchingTests = false   // no ~/.logast-private: nothing to run
+    }
+    val dir = providers.gradleProperty("logast.private.dir").orNull
+    dir?.let { systemProperty("logast.private.dir", it) }
+    doFirst {
+        val root = file(dir ?: (System.getProperty("user.home") + "/.logast-private"))
+        if (!root.isDirectory) {
+            logger.lifecycle("privateRegression: no $root, nothing to run (see issue #10 for the layout)")
+        }
+    }
+    systemProperty("logast.private.update", providers.gradleProperty("private.update").isPresent.toString())
+    outputs.upToDateWhen { false }   // the services change outside the build
+    maxHeapSize = "4g"
 }
 
 val e2e by tasks.registering(Test::class) {
