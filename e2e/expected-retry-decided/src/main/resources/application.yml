@@ -56,5 +56,5 @@ resilience:
     usages:
       rate-client:
         history:
-          max-retries: 1
+          max-retries: 2
           delay: 100ms

@@ -256,6 +256,9 @@ usages:                  # the existing retries (RETRY_SETTINGS_HARDCODED)
 candidates:              # idempotent HTTP calls nothing retries (RETRY_RECOMMENDED)
   ParcelClient.quote:    # src/…/ParcelClient.java:16, reached from GET /parcels/{id}/quote (request)
     retry: "yes"         # yes: one quick retry (maxRetries 1, delay 100 ms) · no
+    specific: true       # optional, as under usages: taken over by the usage yes creates, in the same apply
+    values:
+      max-retries: 2
   ParcelClient.status:
     retry: "no"          # not recommended again
 ```

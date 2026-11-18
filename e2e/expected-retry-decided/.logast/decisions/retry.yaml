@@ -10,10 +10,13 @@
 # candidates: idempotent HTTP calls nothing retries (GET / HEAD / PUT / DELETE / OPTIONS, no retry on any path to
 # them). retry: yes adds @Retryable (a request: one quick retry; a job or consumer: retries with backoff; the
 # settings then move into application.yml like any usage's); no: not recommended again. Say no when a gateway
-# or service mesh already retries, or the remote side must not see the call twice.
+# or service mesh already retries, or the remote side must not see the call twice. specific: and values:
+# work here as under usages and are taken over by the usage yes creates.
 usages:
   RateClient.history:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:20
     specific: true
+    values:
+      max-retries: 2
   RateClient.margin:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:25
     specific: false
   RateLedger.record:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateLedger.java:15
