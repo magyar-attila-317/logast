@@ -21,7 +21,7 @@ public class CouponLookup {
             return load(couponId);
         } catch (IllegalStateException e) {
             log.warn("Coupon lookup failed", e);
-            BusinessMetrics.couponLookupFailed();
+            BusinessMetrics.tagFailed();
             throw new CouponMissing(couponId, e);
         }
     }

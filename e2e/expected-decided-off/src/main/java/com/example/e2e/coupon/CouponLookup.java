@@ -21,7 +21,7 @@ public class CouponLookup {
             return load(couponId);
         } catch (IllegalStateException e) {
             log.warn("Coupon lookup failed", e);
-            Outcomes.count("coupon.lookup", "failed");
+            Outcomes.tag("failed");
             throw new CouponMissing(couponId, e);
         }
     }

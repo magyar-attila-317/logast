@@ -88,7 +88,7 @@ src/main/java/com/example/e2e/web/CouponDetailsController.java:31     checked  n
 src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    MESSAGE_SUGGESTED SUG-08dd18
 # fixed lines are kept while their file is unchanged:
 # src/main/java/com/example/e2e/coupon/CouponCleanupJob.java 6c411c967e0a
-# src/main/java/com/example/e2e/coupon/CouponLookup.java 7475c910a9fa
+# src/main/java/com/example/e2e/coupon/CouponLookup.java 803f15916146
 # src/main/java/com/example/e2e/coupon/CouponReloadJob.java 250b497b1a18
 # src/main/java/com/example/e2e/coupon/CouponRepository.java 30f552523f18
 # src/main/java/com/example/e2e/coupon/CouponSender.java a2aacdffeca1

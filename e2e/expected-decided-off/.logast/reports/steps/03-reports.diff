@@ -58,7 +58,7 @@ index c2e743a..5259e5c 100644
              }
          }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponLookup.java b/src/main/java/com/example/e2e/coupon/CouponLookup.java
-index e2c3a76..f6585ea 100644
+index e2c3a76..c3aaae8 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponLookup.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponLookup.java
 @@ -1,5 +1,6 @@ 
@@ -72,7 +72,7 @@ index e2c3a76..f6585ea 100644
              return load(couponId);
          } catch (IllegalStateException e) {
              log.warn("Coupon lookup failed", e);
-+            Outcomes.count("coupon.lookup", "failed");
++            Outcomes.tag("failed");
              throw new CouponMissing(couponId, e);
          }
      }

@@ -12,9 +12,9 @@ public final class CouponMetrics {
     private CouponMetrics() {
     }
 
-    /** coupon.lookup{outcome="failed"} +1. */
-    public static void couponLookupFailed() {
-        Outcomes.count("coupon.lookup", "failed");
+    /** outcome="failed" on the timer already running (same thread). */
+    public static void tagFailed() {
+        Outcomes.tag("failed");
     }
 
     /** coupons{outcome="updated"} +1; rows is one sample of the distribution coupons.rows{outcome="updated"}. */

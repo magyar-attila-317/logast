@@ -42,14 +42,14 @@ index c2e743a..c50982e 100644
              }
          }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponLookup.java b/src/main/java/com/example/e2e/coupon/CouponLookup.java
-index e2c3a76..8798a37 100644
+index e2c3a76..cc31d60 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponLookup.java
 +++ b/src/main/java/com/example/e2e/coupon/CouponLookup.java
 @@ -20,6 +20,7 @@ 
              return load(couponId);
          } catch (IllegalStateException e) {
              log.warn("Coupon lookup failed", e);
-+            CouponMetrics.couponLookupFailed();
++            CouponMetrics.tagFailed();
              throw new CouponMissing(couponId, e);
          }
      }
@@ -275,7 +275,7 @@ index 81fb0d6..3a83e39 100644
  }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponMetrics.java b/src/main/java/com/example/e2e/coupon/CouponMetrics.java
 new file mode 100644
-index 0000000..d5ef6aa
+index 0000000..631d04e
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/coupon/CouponMetrics.java
 @@ -0,0 +1,49 @@ 
@@ -293,9 +293,9 @@ index 0000000..d5ef6aa
 +    private CouponMetrics() {
 +    }
 +
-+    /** coupon.lookup{outcome="failed"} +1. */
-+    public static void couponLookupFailed() {
-+        Outcomes.count("coupon.lookup", "failed");
++    /** outcome="failed" on the timer already running (same thread). */
++    public static void tagFailed() {
++        Outcomes.tag("failed");
 +    }
 +
 +    /** coupons{outcome="updated"} +1; rows is one sample of the distribution coupons.rows{outcome="updated"}. */

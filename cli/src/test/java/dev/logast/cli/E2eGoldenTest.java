@@ -485,12 +485,19 @@ abstract class E2eGoldenTest {
         assertThat(Files.readString(metrics)).as("metrics.yaml has outcomes to decide").contains("count: \"\"");
         // count every outcome; where the line logs a number, count that too: the first entry per run, the rest totals
         int[] amounts = {0};
+        boolean[] tagged = {false};
         long decided = editDecisions(metrics, root -> {
             long n = 0;
             for (var entry : entries(root)) {
                 if (entry.path("count").asText("x").isEmpty()) {
-                    entry.put("count", "counter");
+                    // #25: one outcome tags the timer already running instead of counting: Outcomes.tag(..)
+                    boolean tag = !tagged[0] && entry.path("_tag").asText("").equals("available");
+                    entry.put("count", tag ? "tag" : "counter");
+                    tagged[0] |= tag;
                     n++;
+                    if (tag) {
+                        continue;
+                    }
                 }
                 if (entry.path("amount").asText("x").isEmpty() && entry.path("as").asText("x").isEmpty()
                         && entry.path("_amounts").path(0).asText("").matches("\\w+")) {
@@ -501,6 +508,7 @@ abstract class E2eGoldenTest {
             return n;
         });
         assertThat(amounts[0]).as("some outcome lines log a number to count").isPositive();
+        assertThat(tagged[0]).as("one outcome is a tag on a running timer").isTrue();
         int amountsDecided = amounts[0];
         beforeApply.run(app);
 
@@ -519,7 +527,8 @@ abstract class E2eGoldenTest {
         Map<String, String> actual = files(app);
         // every decision is a counting line: inline (catalog off) or one call into a catalog, whose member holds the name
         long counted = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)
-                .mapToLong(t -> t.lines().filter(l -> l.contains("Outcomes.count(\"") || l.contains("Outcomes.record(\"")).count()).sum();
+                .mapToLong(t -> t.lines().filter(l -> l.contains("Outcomes.count(\"") || l.contains("Outcomes.record(\"")
+                        || l.contains("Outcomes.tag(\"")).count()).sum();
         long withAmount = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)
                 .mapToLong(t -> t.lines().filter(l -> l.matches(".*Outcomes\\.(count|record)\\(\"[^\"]+\", \"[^\"]+\", \"[^\"]+\", [^\"]+\\);.*")).count()).sum();
         // decisions that cannot be written stay in metrics.yaml with a "_problem" (e.g. a log line inside a returned pipeline)
@@ -540,9 +549,9 @@ abstract class E2eGoldenTest {
             }
             long outside = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/") && !catalogs.contains(e.getKey())
                             && !e.getKey().contains("/logging/"))
-                    .mapToLong(e -> e.getValue().lines().filter(l -> l.matches(".*(Outcomes\\.(count|record)|ObservedContext\\.entrypoint)\\(\".*")).count())
+                    .mapToLong(e -> e.getValue().lines().filter(l -> l.matches(".*(Outcomes\\.(count|record|tag)|ObservedContext\\.entrypoint)\\(\".*")).count())
                     .sum();
-            assertThat(outside).as("no metric or observation name is left at a call site").isZero();
+            assertThat(outside).as("no metric or observation name, nor an outcome tag (#25), is left at a call site").isZero();
             long calls = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/") && !catalogs.contains(e.getKey()))
                     .mapToLong(e -> e.getValue().lines().filter(l -> l.matches("\\s*\\w*Metrics\\.[a-z]\\w*\\(.*\\);.*")).count()).sum();
             assertThat(calls).as("every outcome decided in metrics.yaml is counted through the catalog").isEqualTo(decided);

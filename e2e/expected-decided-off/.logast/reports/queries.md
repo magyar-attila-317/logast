@@ -239,13 +239,6 @@ sum by (outcome) (increase(calculation_total{application="e2e-shop"}[1h]))
 sum by (outcome) (increase(coupon_total{application="e2e-shop"}[1h]))
 ```
 
-**coupon.lookup** (outcome: failed), per hour  
-`src/main/java/com/example/e2e/coupon/CouponLookup.java:24`
-
-```promql
-sum by (outcome) (increase(coupon_lookup_total{application="e2e-shop"}[1h]))
-```
-
 **coupon.messages** (outcome: completed), per hour  
 `src/main/java/com/example/e2e/messaging/CouponMessages.java:33`
 
@@ -435,12 +428,6 @@ FROM Metric SELECT sum(calculation) WHERE service.name = 'e2e-shop' FACET outcom
 
 ```sql
 FROM Metric SELECT sum(coupon) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
-```
-
-**coupon.lookup** (outcome: failed), per hour
-
-```sql
-FROM Metric SELECT sum(coupon.lookup) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```
 
 **coupon.messages** (outcome: completed), per hour
