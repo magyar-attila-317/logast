@@ -13,6 +13,9 @@
 # or service mesh already retries, or the remote side must not see the call twice. specific: and values:
 # work here as under usages and are taken over by the usage yes creates.
 usages:
+  RateArchive.fetch:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateArchive.java:16
+    # never runs: private / static / final, or only called from its own class, which skips the Spring proxy (RETRY_BYPASSED); move it where other beans call
+    specific: false
   RateClient.history:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:20
     specific: true
     values:
@@ -23,5 +26,8 @@ usages:
     # retries inside RateClient.margin, which retries too: the attempts multiply (NESTED_RETRY); keep one of them
     specific: false
 candidates:
+  RateSpread.spread:    # src/main/java/com/example/e2e/rate/RateSpread.java:10, reached from GET /rates/{code}/archive (request)
+    # makes the call through RateSpread.fetch, which it calls on itself: the Spring proxy skips that call, so the retry goes here
+    retry: ""    # yes: one quick retry (maxRetries 1, delay 100 ms) · no
   RateClient.current:
     retry: "no"

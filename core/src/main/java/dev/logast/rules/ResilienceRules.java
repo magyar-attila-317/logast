@@ -117,7 +117,7 @@ final class ResilienceRules {
         if (ctx.enabled(Rules.RETRY_SETTINGS_HARDCODED)) {
             new RetrySettingsRules(ctx).run();
         }
-        if (ctx.enabled(Rules.RETRY_RECOMMENDED) || ctx.enabled(Rules.NESTED_RETRY)) {
+        if (ctx.enabled(Rules.RETRY_RECOMMENDED) || ctx.enabled(Rules.NESTED_RETRY) || ctx.enabled(Rules.RETRY_BYPASSED)) {
             new RetryCoverageRules(ctx).run();
         }
         if (!clients && !executors && !waits && !jdbc && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {

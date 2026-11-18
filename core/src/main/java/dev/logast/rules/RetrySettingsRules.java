@@ -132,7 +132,7 @@ public final class RetrySettingsRules {
      * @param caller "request" (one quick retry) or "job" (retries with backoff)
      * @param from   the entrypoints that reach it
      */
-    public record Candidate(String method, String caller, String from, String file, int line) {
+    public record Candidate(String method, String caller, String from, String file, int line, String via, boolean annotatable) {
     }
 
     /**
@@ -364,16 +364,21 @@ public final class RetrySettingsRules {
         List<Usage> usages = usages(a);
         List<Candidate> candidates = new ArrayList<>();
         Map<String, String> nested = new HashMap<>();
+        Set<String> bypassed = new HashSet<>();
         for (dev.logast.orders.WorkOrder o : orders) {
             Object method = o.data() == null ? null : o.data().get("method");
             if (method == null) {
                 continue;
             }
             if (o.rule().equals(Rules.RETRY_RECOMMENDED)) {
+                Object via = o.data().get("via");
                 candidates.add(new Candidate(method.toString(), String.valueOf(o.data().get("caller")),
-                        String.valueOf(o.data().get("from")), o.file(), o.line()));
+                        String.valueOf(o.data().get("from")), o.file(), o.line(), via == null ? null : via.toString(),
+                        !"no".equals(o.data().get("annotatable"))));
             } else if (o.rule().equals(Rules.NESTED_RETRY)) {
                 nested.put(method.toString(), String.valueOf(o.data().get("inner")));
+            } else if (o.rule().equals(Rules.RETRY_BYPASSED)) {
+                bypassed.add(method.toString());
             }
         }
         Map<String, String> answers = candidateMarks(root);
@@ -412,6 +417,10 @@ public final class RetrySettingsRules {
             Boolean specific = mark != null && mark.specific() != null ? mark.specific() : u.managed() ? u.specific() : null;
             sb.append("  ").append(u.label()).append(":    # ").append(u.family()).append(", ").append(u.file()).append(':')
                     .append(u.line()).append('\n');
+            if (bypassed.contains(u.label())) {
+                sb.append("    # never runs: private / static / final, or only called from its own class, which skips the Spring ")
+                        .append("proxy (RETRY_BYPASSED); move it where other beans call\n");
+            }
             if (nested.containsKey(u.label())) {
                 sb.append("    # retries inside ").append(nested.get(u.label())).append(", which retries too: the attempts multiply ")
                         .append("(NESTED_RETRY); keep one of them\n");
@@ -433,8 +442,17 @@ public final class RetrySettingsRules {
         candidates.sort(Comparator.comparing(Candidate::method));
         for (Candidate c : candidates) {
             sb.append("  ").append(c.method()).append(":    # ").append(c.file()).append(':').append(c.line()).append(", reached from ")
-                    .append(c.from()).append('\n')
-                    .append("    retry: \"").append(answers.getOrDefault(c.method(), "")).append("\"    # yes: ")
+                    .append(c.from()).append('\n');
+            if (c.via() != null) {
+                sb.append("    # makes the call through ").append(c.via()).append(", which it calls on itself: the Spring proxy skips ")
+                        .append("that call, so the retry goes here\n");
+            }
+            if (!c.annotatable()) {
+                sb.append("    # @Retryable cannot work on this path (self-invocation, or a private / static / final method): ")
+                        .append("retry the call in code (RetryTemplate), or move it into a bean other beans call\n");
+                continue;
+            }
+            sb.append("    retry: \"").append(answers.getOrDefault(c.method(), "")).append("\"    # yes: ")
                     .append(c.caller().equals("request") ? "one quick retry (maxRetries 1, delay 100 ms)"
                             : "retries with backoff (maxRetries 3, delay 1 s, multiplier 2)").append(" · no\n");
             settings(sb, marks.get(c.method()));

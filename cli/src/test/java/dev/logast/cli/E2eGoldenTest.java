@@ -6384,6 +6384,55 @@ abstract class E2eGoldenTest {
                     public void quote(@PathVariable String code) {
                         client.submit(code);
                     }
+
+                    @GetMapping("/rates/{code}/archive")
+                    public String archive(@PathVariable String code) {
+                        return archive.archived(code) + spread.spread(code);
+                    }
+                }
+                """.replace("    private final RateLedger ledger;\n", "    private final RateLedger ledger;\n    private final RateArchive archive;\n"
+                + "    private final RateSpread spread;\n").replace("RateController(RateClient client, RateLedger ledger) {\n",
+                "RateController(RateClient client, RateLedger ledger, RateArchive archive, RateSpread spread) {\n"
+                + "        this.archive = archive;\n        this.spread = spread;\n"));
+        // #109: a retry the proxy never sees (a private helper called on itself), and a call made through such a helper
+        Files.writeString(dir.resolve("RateArchive.java"), """
+                package com.example.e2e.rate;
+
+                import org.springframework.resilience.annotation.Retryable;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+
+                @Component
+                public class RateArchive {
+                    private final RestClient rest = RestClient.create("http://rates");
+
+                    public String archived(String code) {
+                        return fetch(code);
+                    }
+
+                    @Retryable(maxRetries = 2)
+                    private String fetch(String code) {
+                        return rest.get().uri("/rates/{code}/archive", code).retrieve().body(String.class);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("RateSpread.java"), """
+                package com.example.e2e.rate;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+
+                @Component
+                public class RateSpread {
+                    private final RestClient rest = RestClient.create("http://rates");
+
+                    public String spread(String code) {
+                        return fetch(code);
+                    }
+
+                    private String fetch(String code) {
+                        return rest.get().uri("/rates/{code}/spread", code).retrieve().body(String.class);
+                    }
                 }
                 """);
     };
@@ -6407,7 +6456,10 @@ abstract class E2eGoldenTest {
                 "(request): one dropped connection or 503 fails the request",
                 "Retry it at most once, with a short backoff, inside the caller's timeout",
                 "Retry it with backoff: @Retryable(maxRetriesString = \"${resilience.retry.defaults.max-retries}\"",
-                "RateLedger.record retries and calls RateClient.margin, which retries again");
+                "RateLedger.record retries and calls RateClient.margin, which retries again",
+                // #109: self-invocation: the retry goes where the proxy sees the call; a retry it never sees is reported
+                "RateSpread.spread calls RateSpread.fetch, which makes an idempotent HTTP call that nothing retries",
+                "The retry on RateArchive.fetch never runs: it is private and only called from its own class");
         assertThat(findings).contains(expected).doesNotContain("RateClient.margin makes").doesNotContain("RateClient.submit makes")
                 .doesNotContain("RateFeed.latest makes").doesNotContain("RateClient.margin retries and calls");
         golden(EXPECTED.resolveSibling("expected-retry-coverage"), actual);
@@ -6440,7 +6492,7 @@ abstract class E2eGoldenTest {
                 .doesNotContain("RateClient.current makes").doesNotContain("RateClient.history makes");
         assertThat(decided.get(".logast/decisions/retry.yaml")).as("no stays listed; yes is a usage now, with the candidate's settings")
                 .contains("  RateClient.current:\n    retry: \"no\"")
-                .contains("usages:\n  RateClient.history:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:20\n"
+                .contains("\n  RateClient.history:    # Spring Framework @Retryable, src/main/java/com/example/e2e/rate/RateClient.java:20\n"
                         + "    specific: true\n    values:\n      max-retries: 2\n");
         assertThat(decided.get("src/main/resources/application.yml")).as("the candidate's values, in the same apply")
                 .contains("      rate-client:\n        history:\n          max-retries: 2\n");
