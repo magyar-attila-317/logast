@@ -74,7 +74,8 @@ class RuleLedgerTest {
             Map.entry(Rules.HEALTH_PROBE_MISCONFIGURED, "rules/RemedyTest#healthProbesOnAndLivenessKeptToTheInstance"),
             Map.entry(Rules.READINESS_WITHOUT_DATABASE, "rules/RemedyTest#readinessWithTheDatabaseOrDecidedAgainst"),
             Map.entry(Rules.CACHE_UNBOUNDED, "rules/RemedyTest#cachesWithASizeBound"),
-            Map.entry(Rules.AUDIT_SECURITY_EVENTS, "rules/RemedyTest#securityEventsRecordedDurably"));
+            Map.entry(Rules.AUDIT_SECURITY_EVENTS, "rules/RemedyTest#securityEventsRecordedDurably"),
+            Map.entry(Rules.TRACING_EXPORT_UNCONFIGURED, "rules/RemedyTest#tracingExportWithAnEndpointPerEnvironment"));
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus();

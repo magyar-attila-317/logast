@@ -2182,4 +2182,36 @@ class RemedyTest {
                         }
                 """)));
     }
+
+    // ---- TRACING_EXPORT_UNCONFIGURED -------------------------------------------------------------------------------
+
+    /** #89: the OTLP endpoint is per environment: a profile file or the deployment's environment sets it. */
+    @Test
+    void tracingExportWithAnEndpointPerEnvironment() throws IOException {
+        Map<String, String> before = Map.of(java("RemedyApplication"), """
+                package x;
+
+                import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+                @SpringBootApplication
+                public class RemedyApplication {
+                }
+                """);
+        fires(Rules.TRACING_EXPORT_UNCONFIGURED, before);
+        gone(Rules.TRACING_EXPORT_UNCONFIGURED, "the endpoint in a profile's configuration", with(before,
+                "src/main/resources/application-prod.yml", """
+                        management:
+                          opentelemetry:
+                            tracing:
+                              export:
+                                otlp:
+                                  endpoint: http://otel-collector:4318/v1/traces
+                        """));
+        gone(Rules.TRACING_EXPORT_UNCONFIGURED, "OTEL_EXPORTER_OTLP_ENDPOINT in the deployment", with(before,
+                "deploy/deployment.yaml", """
+                        env:
+                          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                            value: http://otel-collector:4318
+                        """));
+    }
 }

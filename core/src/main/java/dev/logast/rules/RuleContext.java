@@ -55,6 +55,11 @@ public final class RuleContext {
     /** TracingRules will switch on Kafka listener observation, so listeners count as observed. */
     boolean kafkaListenerObservationPlanned;
     boolean rabbitListenerObservationPlanned;
+    /**
+     * Spring Boot processes @Observed / @NewSpan (or an order of this scan makes it do so): only then does such an
+     * annotation count as observing its method (OBSERVED_ANNOTATION_INACTIVE).
+     */
+    boolean observedAnnotationsActive = true;
     private PathContext planned;
 
     RuleContext(Analysis a) {

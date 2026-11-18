@@ -63,6 +63,31 @@ public final class SpringProperties {
         return out;
     }
 
+    /**
+     * Every key {@code file} (an application*.yml/.yaml/.properties) sets, in any of its documents, profile-specific ones
+     * included; empty when it cannot be read.
+     */
+    public static Set<String> allKeys(Path file) {
+        Set<String> out = new TreeSet<>();
+        try {
+            String text = dev.logast.parse.SourceText.read(file);
+            if (file.getFileName().toString().endsWith(".properties")) {
+                Properties props = new Properties();
+                props.load(new StringReader(text));
+                props.keySet().forEach(k -> out.add(String.valueOf(k)));
+            } else {
+                for (JsonNode doc : new ObjectMapper(new YAMLFactory()).readerFor(JsonNode.class).<JsonNode>readValues(text).readAll()) {
+                    Map<String, String> flat = new TreeMap<>();
+                    flatten("", doc, flat);
+                    out.addAll(flat.keySet());
+                }
+            }
+        } catch (IOException | RuntimeException e) {
+            // unreadable config: treat as absent
+        }
+        return out;
+    }
+
     /** A document that applies always (no spring.config.activate.*) overrides what came before. */
     private static void putBase(Map<String, String> doc, Map<String, String> out) {
         if (doc.keySet().stream().noneMatch(k -> k.startsWith("spring.config.activate."))) {
