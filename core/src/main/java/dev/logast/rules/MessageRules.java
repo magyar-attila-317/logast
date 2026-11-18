@@ -81,7 +81,7 @@ final class MessageRules {
                 if (ctx.enabled(Rules.MESSAGE_VAGUE)) {
                     wording(m, lc, l, raw, n++);
                 }
-                if (ctx.enabled(Rules.LOG_KEY_VALUE_IN_MDC) && lc.fluent()) {
+                if ((ctx.enabled(Rules.LOG_KEY_VALUE_IN_MDC) || ctx.enabled(Rules.LOG_KEY_STYLE)) && lc.fluent()) {
                     keyValues(m, lc, n++);
                 }
             }
@@ -227,11 +227,21 @@ final class MessageRules {
                 continue;
             }
             String canonical = aliases.getOrDefault(key, ctx.policy.styledKey(key));
+            int line = Pos.line(mi.getName());
             if (!inMdc.contains(key) && !inMdc.contains(canonical)) {
+                // #22 (LOG-CTX-04): a property key gets the same name as in a [k=v] suffix: the vocabulary's (an alias
+                // renamed), else the key style
+                String named = ctx.policy.logKey(canonical);
+                if (ctx.enabled(Rules.LOG_KEY_STYLE) && !named.equals(key) && !ctx.ignored(m.file(), line, Rules.LOG_KEY_STYLE)) {
+                    ctx.order(Rules.LOG_KEY_STYLE, m, line, "kvstyle" + ordinal + "|" + key)
+                            .title("Structured property '" + key + "' is named '" + named + "' in this service (vocabulary / "
+                                    + "logging.keyStyle): one name per field, or the log backend sees two fields")
+                            .edit(Edit.replace(m.file().relPath(), Pos.start(k), Pos.end(k), "\"" + named + "\""))
+                            .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
+                }
                 continue;
             }
-            int line = Pos.line(mi.getName());
-            if (ctx.ignored(m.file(), line, Rules.LOG_KEY_VALUE_IN_MDC) || mi.getSelect() == null) {
+            if (!ctx.enabled(Rules.LOG_KEY_VALUE_IN_MDC) || ctx.ignored(m.file(), line, Rules.LOG_KEY_VALUE_IN_MDC) || mi.getSelect() == null) {
                 continue;
             }
             OrderBuilder b = ctx.order(Rules.LOG_KEY_VALUE_IN_MDC, m, line, "kv" + ordinal + "|" + key)

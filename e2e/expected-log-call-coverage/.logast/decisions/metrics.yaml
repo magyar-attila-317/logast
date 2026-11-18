@@ -99,6 +99,16 @@ OUM-be530b:
   _paths:
     - scheduled @Scheduled EdgeJob.run
   _tag: available
+OUM-173a2f:
+  count: ""
+  name: gateway.reply
+  outcome: stored
+  _event: stored
+  _message: INFO "Gateway reply stored"
+  _where: src/main/java/com/example/e2e/ledger/GatewayCalls.java:18 GatewayCalls.store
+  _frequency: "unknown: no entrypoint is known to reach it"
+  _paths: []
+  _tag: not available here (no observation known to run)
 OUM-4284aa:
   count: ""
   name: coupon.lookup
