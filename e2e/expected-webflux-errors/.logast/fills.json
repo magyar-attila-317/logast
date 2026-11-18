@@ -1,15 +1,20 @@
 {
   "_readme" : "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.",
-  "_status" : "24 finding(s) below need a message text.",
+  "_status" : "25 finding(s) below need a message text.",
   "SIL-1a1d44" : {
     "MSG" : "",
     "_MSG" : "Entry log for POST /crates (CrateController.register): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started",
-    "_where" : "src/main/java/com/example/e2e/crate/CrateController.java:15 CrateController.register"
+    "_where" : "src/main/java/com/example/e2e/crate/CrateController.java:18 CrateController.register"
   },
   "SIL-f5bc8b" : {
     "MSG" : "",
     "_MSG" : "Entry log for PUT /crates/{crateCode} (CrateController.relabel): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started",
-    "_where" : "src/main/java/com/example/e2e/crate/CrateController.java:20 CrateController.relabel"
+    "_where" : "src/main/java/com/example/e2e/crate/CrateController.java:23 CrateController.relabel"
+  },
+  "SIL-707c22" : {
+    "MSG" : "",
+    "_MSG" : "Entry log for POST /crates/{crateCode}/seal (CrateController.seal): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started",
+    "_where" : "src/main/java/com/example/e2e/crate/CrateController.java:33 CrateController.seal"
   },
   "SWA-91b292" : {
     "MSG" : "",

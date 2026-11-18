@@ -4,8 +4,8 @@ What an HTTP client sees when something goes wrong: leaked internals, exceptions
 without a trace id, failures that leave no stack trace.
 
 - **Opt-in:** `packs: [logging, tracing, errors]` in `logast.yaml`, or `logast scan . --pack errors`.
-- ERROR_RESPONSE_UNTRACED uses one class of the [runtime starter](../starter.md) (`ProblemTraceId`) and switches on
-  only its property, `logging-support.problem-trace-id.enabled`.
+- ERROR_RESPONSE_UNTRACED uses one class of the [runtime starter](../starter.md) (`ProblemTraceId`, on a WebFlux-only
+  service `ReactiveProblemTraceId`) and switches on only its property, `logging-support.problem-trace-id.enabled`.
 
 Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
 
@@ -14,10 +14,10 @@ Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
 | rule | severity | finds | fix |
 |---|---|---|---|
 | ERROR_DETAILS_EXPOSED | high | `server.error.include-message/stacktrace/exception`; a handler for unexpected exceptions copying `e.getMessage()` into the body | AUTO for the config (set to never), report for handlers |
-| UNMAPPED_EXCEPTION | medium | an application exception thrown on an HTTP path that no `@ExceptionHandler` or `@ResponseStatus` maps (it becomes a 500); a downstream call on an HTTP path (RestClient, RestTemplate, `@HttpExchange` / Feign interfaces, a WebClient call ending in `block()`) whose exceptions no handler maps, so another service's failure is answered as our own 500. Handlers count from the sources and from `@ControllerAdvice` classes in libraries on the classpath (outside the public groups, without a basePackages / assignableTypes selector) | report: decide its status (downstream: 502 for an error status, 504 for a timeout, or pass a 404 on) |
+| UNMAPPED_EXCEPTION | medium | an application exception thrown on an HTTP path (or signalled with `Mono.error` / `Flux.error`) that no `@ExceptionHandler` or `@ResponseStatus` maps (it becomes a 500); a downstream call on an HTTP path (RestClient, RestTemplate, `@HttpExchange` / Feign interfaces, a WebClient call ending in `block()` or returned to WebFlux from `retrieve().bodyToMono/bodyToFlux/toEntity`, unless an `onErrorResume` / `onErrorMap` / `onErrorReturn` follows it) whose exceptions no handler maps, so another service's failure is answered as our own 500. Handlers count from the sources and from `@ControllerAdvice` classes in libraries on the classpath (outside the public groups, without a basePackages / assignableTypes selector) | report: decide its status (downstream: 502 for an error status, 504 for a timeout, or pass a 404 on) |
 | CLIENT_ERROR_AS_SERVER_ERROR | medium | a handler answering 500 for a validation / not-found / denied exception; a catch-all `@ExceptionHandler(Exception)` answering 500 while request bodies are `@Valid`: it takes `MethodArgumentNotValidException` (WebFlux: `WebExchangeBindException`) before Spring's default 400 | report |
 | PROBLEM_DETAILS_DISABLED | low | Spring MVC errors are not RFC 9457 `ProblemDetail` responses: neither `spring.mvc.problemdetails.enabled: true` nor an advice extending `ResponseEntityExceptionHandler` (on a [WebFlux-only service](#webflux-only-services): `spring.webflux.problemdetails.enabled`, WebFlux's `ResponseEntityExceptionHandler`) | report (changes the API's error body) |
-| ERROR_RESPONSE_UNTRACED | medium | error responses without the trace id (Spring MVC, or a [WebFlux-only service](#webflux-only-services), with Micrometer Tracing) | AUTO: `logging-support.problem-trace-id.enabled: true`; logging-support then adds `"traceId"` to every `ProblemDetail` and to Spring Boot's error map, so a reported error leads straight to its log lines and trace (a traceId a handler set is kept). Report on a WebFlux-only service: logging-support's `ProblemTraceId` is a Spring MVC advice |
+| ERROR_RESPONSE_UNTRACED | medium | error responses without the trace id (Spring MVC, or a [WebFlux-only service](#webflux-only-services), with Micrometer Tracing) | AUTO: `logging-support.problem-trace-id.enabled: true`; logging-support then adds `"traceId"` to every `ProblemDetail` and to Spring Boot's error map, so a reported error leads straight to its log lines and trace (a traceId a handler set is kept). On a WebFlux-only service the same property switches on `ReactiveProblemTraceId` (ProblemDetail responses only), plus `spring.reactor.context-propagation: auto` when unset |
 | ASYNC_ERROR_LOST | high | a Future whose result is thrown away: its exception stays in the future and is never logged (`@Async void` is fine: Spring logs those) | AUTO for a `CompletableFuture` statement: a `whenComplete` that logs the failure (wording marked `// logast:wording`); report for other Futures (`executor.submit(…)`) |
 | CAUSE_DROPPED | medium | `catch (X e) { throw new Y(e.getMessage()); }`: the new exception does not carry `e`, so the original stack trace is lost | AUTO when `Y` has a constructor taking the same arguments plus the cause (`e` is appended); report otherwise (add such a constructor, or `initCause(e)`) |
 | CATCH_ALL_DEFAULT | medium | `catch (Exception e) { … return null; }` (or `Optional.empty()`, an empty collection, `0`, `false`, `""`): the caller cannot tell a failure from an empty result, logged or not. The Reactor form too: `onErrorReturn(x)`, `onErrorComplete()`, `onErrorResume(e -> Mono.just(..) / Mono.empty())` without an error type or predicate; in WebFlux the request then ends as a success, and the server observation records no error ([Framework reference, Observability, reactive HTTP server](https://docs.spring.io/spring-framework/reference/integration/observability.html)) | report (let it through, catch only what means "nothing there", or return a result type that carries the failure) |
@@ -39,8 +39,17 @@ and the rules keep their MVC behaviour. On a WebFlux-only service:
   an advice extending it, in the sources or a library, settles it.
 - CLIENT_ERROR_AS_SERVER_ERROR and REQUEST_NOT_VALIDATED name `WebExchangeBindException`, what a failed `@Valid` body
   raises in WebFlux; a handler for it settles the catch-all finding.
-- ERROR_RESPONSE_UNTRACED is a report: logging-support's `ProblemTraceId` is a Spring MVC `ResponseBodyAdvice`, so
-  nothing is switched on; add `"traceId"` to the `ProblemDetail` responses in the handlers.
+- ERROR_RESPONSE_UNTRACED is AUTO as on MVC: the same property switches on logging-support's `ReactiveProblemTraceId`
+  (vendor mode copies that class instead of `ProblemTraceId`). WebFlux has no `ResponseBodyAdvice`; it calls the
+  `ErrorResponse.Interceptor`s registered through a `WebFluxConfigurer` for every RFC 9457 response it renders
+  ([Framework reference, WebFlux Error Responses, Render](https://docs.spring.io/spring-framework/reference/web/webflux/ann-rest-exceptions.html#webflux-ann-rest-exceptions-render),
+  Spring Framework 6.2+). WebFlux keeps the server observation in the Reactor context, so the trace id is found only
+  with automatic context propagation: the fix also sets `spring.reactor.context-propagation: auto` when it is unset and
+  Spring Boot reads it (otherwise the tracing pack's REACTIVE_CONTEXT_LOSS adds the hook). Spring Boot's error map
+  (`DefaultErrorWebExceptionHandler`) gets no traceId on WebFlux.
+- UNMAPPED_EXCEPTION follows `Mono.error(new X())` / `Flux.error(() -> new X())` like a `throw`, and counts a WebClient
+  call returned to WebFlux (`retrieve().bodyToMono(..)`) as a downstream call: its `WebClientResponseException` reaches
+  the handlers.
 - `@ExceptionHandler` in a `@RestControllerAdvice`, `@ResponseStatus` and `server.error.*` work the same in WebFlux, and
   so do the other rules. An exception a handler answers is not recorded as an error on the server observation, in
   WebFlux as in MVC ([Framework reference, Observability, HTTP Server instrumentation](https://docs.spring.io/spring-framework/reference/integration/observability.html#observability.http-server)):

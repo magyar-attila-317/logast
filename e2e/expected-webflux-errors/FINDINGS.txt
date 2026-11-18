@@ -1,9 +1,15 @@
-logast · 80 files · 24 entrypoints · 86/214 methods reachable · 160 call edges
+logast · 82 files · 27 entrypoints · 89/222 methods reachable · 160 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 70.8% (jobs 9/9 · http 8/15)   (places that should log and do)
-74 orders: 0 AUTO, 24 NEEDS TEXT, 50 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 63.0% (jobs 9/9 · http 8/18)   (places that should log and do)
+79 orders: 0 AUTO, 25 NEEDS TEXT, 54 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
+HTC-16196c  high  REPORT-ONLY  HTTP_CLIENT_UNTRACED  src/main/java/com/example/e2e/crate/CrateController.java:15
+  WebClient in a field initializer: no traceparent header on outgoing calls
+  note: Build it in the constructor from an injected, instrumented builder (WebClient.Builder).
+HTO-ed7982  high  REPORT-ONLY  HTTP_CLIENT_NO_TIMEOUT  src/main/java/com/example/e2e/crate/CrateController.java:15
+  HTTP client built from WebClient.create() without timeouts: spring.http.clients.* does not reach it (Spring Boot configures only the builders it injects), so a slow dependency holds the calling thread
+  note: Build it from the injected WebClient.Builder (spring.http.clients.* timeouts apply), or give it a clientConnector with a connect and a response timeout (Reactor Netty: HttpClient.create().option(CONNECT_TIMEOUT_MILLIS, ..).responseTimeout(..)); Reactor Netty sets no response timeout by default.
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
   CompletableFuture.runAsync runs on another thread without MDC/trace context
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process
@@ -68,22 +74,37 @@ ARI-b9b946  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/exam
   why: the audit call is a call on AuditLog, recognised by its name (audit.emitters is empty)
   note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
   done when: an argument comes from the security context (a Principal / Authentication parameter, @AuthenticationPrincipal, SecurityContextHolder), or the audit method reads it itself
-SIL-1a1d44  medium  NEEDS TEXT  ENTRYPOINT_SILENT  src/main/java/com/example/e2e/crate/CrateController.java:15  CrateController.register
+SIL-1a1d44  medium  NEEDS TEXT  ENTRYPOINT_SILENT  src/main/java/com/example/e2e/crate/CrateController.java:18  CrateController.register
   POST /crates: its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
   path: POST /crates → CrateController.register
   + log.info("{{MSG}}");
   (+2 more edits)
   MSG: Entry log for POST /crates (CrateController.register): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
-RQV-1e1b5d  medium  REPORT-ONLY  REQUEST_NOT_VALIDATED  src/main/java/com/example/e2e/crate/CrateController.java:20
+RQV-1e1b5d  medium  REPORT-ONLY  REQUEST_NOT_VALIDATED  src/main/java/com/example/e2e/crate/CrateController.java:23
   CrateController.relabel takes request (CrateRequest, with Bean Validation constraints) without @Valid: the constraints are never checked, bad input passes into the service
   note: Decide whether the constraints apply: @Valid on the parameter rejects invalid requests before the method runs. Not applied automatically: it changes which requests are accepted. Map WebExchangeBindException to 400 first: the catch-all CrateErrors.unexpected would answer the rejected requests with 500. No Bean Validation provider is on the classpath (spring-boot-starter-validation): without one, @Valid checks nothing either.
   done when: the parameter (or the interface method's) has @Valid or @Validated, or its type has no constraints
-SIL-f5bc8b  medium  NEEDS TEXT  ENTRYPOINT_SILENT  src/main/java/com/example/e2e/crate/CrateController.java:20  CrateController.relabel
+SIL-f5bc8b  medium  NEEDS TEXT  ENTRYPOINT_SILENT  src/main/java/com/example/e2e/crate/CrateController.java:23  CrateController.relabel
   PUT /crates/{crateCode}: its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
   path: PUT /crates/{crateCode} → CrateController.relabel
   + log.info("{{MSG}}");
   (+2 more edits)
   MSG: Entry log for PUT /crates/{crateCode} (CrateController.relabel): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
+SIL-707c22  medium  NEEDS TEXT  ENTRYPOINT_SILENT  src/main/java/com/example/e2e/crate/CrateController.java:33  CrateController.seal
+  POST /crates/{crateCode}/seal: its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
+  path: POST /crates/{crateCode}/seal → CrateController.seal
+  + log.info("{{MSG}}");
+  (+2 more edits)
+  MSG: Entry log for POST /crates/{crateCode}/seal (CrateController.seal): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
+UMX-7e1489  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e2e/crate/CrateController.java:39
+  Failures of downstream calls (WebClient, 1× on HTTP paths, e.g. WebClient.ResponseSpec.bodyToMono in CrateController.label) are not mapped and end in the catch-all handler: the client gets a 500, as for our own bug, instead of 502 / 504
+  note: Map WebClientException in the controller advice: an error status from the other service → 502 Bad Gateway (or pass a 404 on deliberately), a timeout / I/O error → 504 Gateway Timeout, as ProblemDetails naming the downstream service; log them with the downstream status.
+  done when: an @ExceptionHandler names WebClientException or one of its subtypes, or every call catches them
+CAD-a73bc0  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/crate/CrateController.java:44  CrateController.fallbackLabel
+  onErrorResume(e -> Mono.just("unlabelled")) turns every error of the pipeline into a default value: the subscriber cannot tell a failure from a result, and a WebFlux request ends as a success
+  path: GET /crates/{crateCode}/fallback-label → CrateController.fallbackLabel
+  note: Let the error through (or map it to an exception the error handling answers), recover only from the errors that really mean "nothing there" (onErrorResume(SomeException.class, ..)), or log it with the cause before falling back.
+  done when: the operator names the error type or predicate it recovers from, or the pipeline lets the error through
 CES-281117  medium  REPORT-ONLY  CLIENT_ERROR_AS_SERVER_ERROR  src/main/java/com/example/e2e/crate/CrateErrors.java:16  CrateErrors.unexpected
   Handler for Exception also takes the validation failures of 1 @Valid request body (e.g. request in CrateController.register) and answers 500: a client's bad input is reported as a server failure
   note: Map WebExchangeBindException to 400 (an @ExceptionHandler returning a ProblemDetail with the field errors, or extend ResponseEntityExceptionHandler): @ExceptionHandler methods run before Spring's default 400 answer.
@@ -92,6 +113,11 @@ EHO-7ad9b1  medium  REPORT-ONLY  ERROR_HANDLER_STATUS_OK  src/main/java/com/exam
   Handler for CrateLate returns CrateAnswer without @ResponseStatus: the client gets 200 for a failure (clients and monitoring count it as a success)
   note: Decide its status: @ResponseStatus(HttpStatus.…) on the handler, a ResponseEntity with that status, or a ProblemDetail.forStatus(…) (its status becomes the HTTP status).
   done when: the handler (or its class) has @ResponseStatus, writes the response itself, or returns a ProblemDetail, an ErrorResponse or a ResponseEntity with an error status
+UMX-fd1fd5  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e2e/crate/CrateSealed.java:3
+  CrateSealed is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it: it ends in the catch-all handler
+  also fixes: UNMAPPED_EXCEPTION src/main/java/com/example/e2e/crate/CrateController.java:34
+  note: Decide its status: @ResponseStatus(HttpStatus.CONFLICT) on the class, or an @ExceptionHandler returning a ProblemDetail (with a stable error code) in the controller advice.
+  done when: @ResponseStatus on it or a supertype, it extends ResponseStatusException (or is an ErrorResponse), or an @ExceptionHandler names it or a supertype narrower than Exception / RuntimeException
 ARI-efeed7  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/edge/Audited.java:10  Audited.audit
   The audit records Audited.audit writes (1 call) do not say whether the action succeeded
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → Audited.audit
@@ -181,11 +207,6 @@ BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/exam
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
   done when: the wait takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..)), orTimeout(..) precedes it in the chain, or an earlier bounded wait on the same future (allOf(..).get(5, SECONDS)) runs first on every path
-ERT-8fae87  medium  REPORT-ONLY  ERROR_RESPONSE_UNTRACED  src/main/resources/application.yml:1
-  Error responses do not carry the trace id (Spring WebFlux): a client reporting an error has nothing that leads to its logs
-  why: Spring WebFlux without Spring MVC, with Micrometer Tracing
-  note: Not applied: logging-support's trace id in ProblemDetail responses works with Spring MVC only. Add "traceId" to the ProblemDetail responses yourself (ProblemDetail.setProperty in the @ExceptionHandler methods, or for all of them in an ErrorResponse interceptor of the WebFlux config).
-  done when: error responses carry the trace id (then suppress this finding)
 TEX-42c898  medium  REPORT-ONLY  TRACING_EXPORT_UNCONFIGURED  src/main/resources/application.yml:1
   Traces are exported nowhere: management.opentelemetry.tracing.export.otlp.endpoint is not set, so Spring Boot creates no OTLP exporter and the trace ids in the logs lead nowhere
   note: Set the collector's endpoint per environment: management.opentelemetry.tracing.export.otlp.endpoint in application-<profile>.yml, or MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT in the deployment (e.g. http://otel-collector:4318/v1/traces).
@@ -422,16 +443,16 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
-Applied earlier: 101 changes in 54 files (git diff to review)
+Applied earlier: 102 changes in 55 files (git diff to review)
 
 Waiting on you — logast can't continue without these:
-  24 log lines need wording        → write "MSG" in .logast/fills.json
+  25 log lines need wording        → write "MSG" in .logast/fills.json
   12 outcomes: count, tag or skip  → .logast/metrics.json
-  38 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
+  42 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
 Log lines: 86 — 51 fixed, 16 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
 
 Also:
-  fill calls/day in .logast/traffic.yaml (optional)   24 of 24 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  fill calls/day in .logast/traffic.yaml (optional)   27 of 27 entrypoints have no rate: log levels and metrics frequency stay cautious there

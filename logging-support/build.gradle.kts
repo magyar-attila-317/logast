@@ -18,6 +18,7 @@ dependencies {
     compileOnly("org.springframework.boot:spring-boot-autoconfigure")
     compileOnly("org.springframework:spring-web")
     compileOnly("org.springframework:spring-webmvc")   // ProblemTraceId: only used in Spring MVC applications
+    compileOnly("org.springframework:spring-webflux")   // ReactiveProblemTraceId: only used in WebFlux applications
     compileOnly("io.micrometer:micrometer-tracing")
     compileOnly("jakarta.servlet:jakarta.servlet-api")
     compileOnly("org.springframework:spring-tx")   // AfterCommit: only used where transactions exist
@@ -27,6 +28,7 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-opentelemetry")
     testImplementation("org.springframework:spring-web")
     testImplementation("org.springframework:spring-webmvc")      // ProblemTraceIdTest: MockMvc only, no web application
+    testImplementation("org.springframework:spring-webflux")     // ReactiveProblemTraceIdTest: WebTestClient
     testImplementation("tools.jackson.core:jackson-databind")
     testImplementation("jakarta.servlet:jakarta.servlet-api")
     testImplementation("org.springframework:spring-tx")

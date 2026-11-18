@@ -9,6 +9,8 @@ entrypoints:
   "GET /pledges":     # http, PledgeController.open
   "GET /pledges/{pledgeId}/details":     # http, PledgeDetailsController.details
   "GET /crates/{crateCode}":     # http, CrateController.show
+  "GET /crates/{crateCode}/fallback-label":     # http, CrateController.fallbackLabel
+  "GET /crates/{crateCode}/label":     # http, CrateController.label
   "GET /quotes/{productId}":     # http, QuoteController.quote
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
   "POST /admin/pledges/{pledgeId}/revoke":     # http, PledgeController.revoke
@@ -17,6 +19,7 @@ entrypoints:
   "POST /pledges/{pledgeId}/publish":     # http, PledgeController.publish
   "POST /pledges/{pledgeId}/use":     # http, PledgeController.use
   "POST /crates":     # http, CrateController.register
+  "POST /crates/{crateCode}/seal":     # http, CrateController.seal
   "POST /orders":     # http, PledgeController.place
   "PUT /crates/{crateCode}":     # http, CrateController.relabel
   # scheduled
