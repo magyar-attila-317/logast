@@ -58,11 +58,11 @@ src/main/java/com/example/e2e/job/PublishRunJob.java:27               fixed    L
 src/main/java/com/example/e2e/job/PublishRunJob.java:33               fixed    LOG_FORMAT FMT-9c563d; reported MESSAGE_VAGUE MVG-4a4ce2
 src/main/java/com/example/e2e/job/PublishRunJob.java:37               fixed    LOG_FORMAT FMT-d7597d
 src/main/java/com/example/e2e/job/PublishRunJob.java:41               checked  no finding
-src/main/java/com/example/e2e/logging/MdcHygiene.java:52              skipped  logging-support code
-src/main/java/com/example/e2e/logging/ObservedContext.java:143        skipped  logging-support code
-src/main/java/com/example/e2e/logging/ObservedContext.java:145        skipped  logging-support code
-src/main/java/com/example/e2e/logging/ObservedContext.java:147        skipped  logging-support code
-src/main/java/com/example/e2e/logging/ObservedContext.java:149        skipped  logging-support code
+src/main/java/com/example/e2e/logging/MdcHygiene.java:53              skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:144        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:146        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:148        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:150        skipped  logging-support code
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:23        checked  no finding
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:30        checked  no finding
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:31        fixed    MESSAGE_SUGGESTED SUG-1fede7

@@ -66,11 +66,12 @@ index 6bd81fc..6f790a0 100644
 +      probability: 1.0
 diff --git a/src/main/java/com/example/e2e/logging/BatchTraceListener.java b/src/main/java/com/example/e2e/logging/BatchTraceListener.java
 new file mode 100644
-index 0000000..09e7354
+index 0000000..b2d1cc5
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/BatchTraceListener.java
-@@ -0,0 +1,95 @@ 
+@@ -0,0 +1,96 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.observation.ObservationRegistry;
@@ -167,11 +168,12 @@ index 0000000..09e7354
 +}
 diff --git a/src/main/java/com/example/e2e/logging/ContextExecutors.java b/src/main/java/com/example/e2e/logging/ContextExecutors.java
 new file mode 100644
-index 0000000..5ced6c9
+index 0000000..e03efe1
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/ContextExecutors.java
-@@ -0,0 +1,97 @@ 
+@@ -0,0 +1,98 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import java.util.Collection;
@@ -270,11 +272,12 @@ index 0000000..5ced6c9
 +}
 diff --git a/src/main/java/com/example/e2e/logging/ContextPropagation.java b/src/main/java/com/example/e2e/logging/ContextPropagation.java
 new file mode 100644
-index 0000000..7642827
+index 0000000..a984ee9
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/ContextPropagation.java
-@@ -0,0 +1,77 @@ 
+@@ -0,0 +1,78 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.context.ContextSnapshot;
@@ -353,11 +356,12 @@ index 0000000..7642827
 +}
 diff --git a/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java b/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java
 new file mode 100644
-index 0000000..c6fa034
+index 0000000..8cbca4a
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java
-@@ -0,0 +1,33 @@ 
+@@ -0,0 +1,34 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import org.springframework.boot.EnvironmentPostProcessor;
@@ -392,11 +396,12 @@ index 0000000..c6fa034
 +}
 diff --git a/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java b/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java
 new file mode 100644
-index 0000000..5a04188
+index 0000000..85317e7
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java
-@@ -0,0 +1,42 @@ 
+@@ -0,0 +1,43 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.observation.ObservationRegistry;
@@ -440,11 +445,12 @@ index 0000000..5a04188
 +}
 diff --git a/src/main/java/com/example/e2e/logging/MdcHygiene.java b/src/main/java/com/example/e2e/logging/MdcHygiene.java
 new file mode 100644
-index 0000000..a14814d
+index 0000000..fbefb78
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/MdcHygiene.java
-@@ -0,0 +1,58 @@ 
+@@ -0,0 +1,59 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import org.slf4j.Logger;
@@ -504,11 +510,12 @@ index 0000000..a14814d
 +}
 diff --git a/src/main/java/com/example/e2e/logging/MdcScope.java b/src/main/java/com/example/e2e/logging/MdcScope.java
 new file mode 100644
-index 0000000..0c9da99
+index 0000000..99dc7d4
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/MdcScope.java
-@@ -0,0 +1,74 @@ 
+@@ -0,0 +1,75 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import org.slf4j.MDC;
@@ -584,11 +591,12 @@ index 0000000..0c9da99
 +}
 diff --git a/src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java b/src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java
 new file mode 100644
-index 0000000..d8f1916
+index 0000000..93c034d
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java
-@@ -0,0 +1,20 @@ 
+@@ -0,0 +1,21 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.observation.ObservationRegistry;
@@ -610,11 +618,12 @@ index 0000000..d8f1916
 +}
 diff --git a/src/main/java/com/example/e2e/logging/ObservedContext.java b/src/main/java/com/example/e2e/logging/ObservedContext.java
 new file mode 100644
-index 0000000..fc69f81
+index 0000000..5c29e05
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/ObservedContext.java
-@@ -0,0 +1,305 @@ 
+@@ -0,0 +1,306 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.observation.Observation;
@@ -921,11 +930,12 @@ index 0000000..fc69f81
 +}
 diff --git a/src/main/java/com/example/e2e/logging/TraceContextEnv.java b/src/main/java/com/example/e2e/logging/TraceContextEnv.java
 new file mode 100644
-index 0000000..bf7753e
+index 0000000..a51a1ad
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/TraceContextEnv.java
-@@ -0,0 +1,34 @@ 
+@@ -0,0 +1,35 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import java.util.Map;
@@ -961,11 +971,12 @@ index 0000000..bf7753e
 +}
 diff --git a/src/main/java/com/example/e2e/logging/MdcHygieneFilter.java b/src/main/java/com/example/e2e/logging/MdcHygieneFilter.java
 new file mode 100644
-index 0000000..87e2cfb
+index 0000000..31c859e
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/MdcHygieneFilter.java
-@@ -0,0 +1,35 @@ 
+@@ -0,0 +1,36 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import jakarta.servlet.FilterChain;
@@ -1002,11 +1013,12 @@ index 0000000..87e2cfb
 +}
 diff --git a/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java b/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java
 new file mode 100644
-index 0000000..29a368c
+index 0000000..c52d07a
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java
-@@ -0,0 +1,27 @@ 
+@@ -0,0 +1,28 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import org.springframework.context.annotation.Configuration;
@@ -1035,11 +1047,12 @@ index 0000000..29a368c
 +}
 diff --git a/src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java b/src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java
 new file mode 100644
-index 0000000..08e5f57
+index 0000000..bd77aba
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java
-@@ -0,0 +1,48 @@ 
+@@ -0,0 +1,49 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.tracing.Span;
@@ -1089,11 +1102,12 @@ index 0000000..08e5f57
 +}
 diff --git a/src/main/java/com/example/e2e/logging/AfterCommit.java b/src/main/java/com/example/e2e/logging/AfterCommit.java
 new file mode 100644
-index 0000000..c861522
+index 0000000..5a8f49f
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/AfterCommit.java
-@@ -0,0 +1,59 @@ 
+@@ -0,0 +1,60 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.observation.Observation;
@@ -1154,11 +1168,12 @@ index 0000000..c861522
 +}
 diff --git a/src/main/java/com/example/e2e/logging/Outcomes.java b/src/main/java/com/example/e2e/logging/Outcomes.java
 new file mode 100644
-index 0000000..5fa2712
+index 0000000..7dd0fc4
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/Outcomes.java
-@@ -0,0 +1,72 @@ 
+@@ -0,0 +1,73 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.core.instrument.Counter;
@@ -1232,11 +1247,12 @@ index 0000000..5fa2712
 +}
 diff --git a/src/main/java/com/example/e2e/logging/ProblemTraceId.java b/src/main/java/com/example/e2e/logging/ProblemTraceId.java
 new file mode 100644
-index 0000000..125d8c3
+index 0000000..c9032ac
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/ProblemTraceId.java
-@@ -0,0 +1,83 @@ 
+@@ -0,0 +1,84 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
++// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
 +
 +import io.micrometer.tracing.Span;

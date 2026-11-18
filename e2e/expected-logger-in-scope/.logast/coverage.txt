@@ -62,11 +62,11 @@ src/main/java/com/example/e2e/loggers/CleanupJob.java:9               fixed    M
 src/main/java/com/example/e2e/loggers/Dispatcher.java:14              fixed    METRIC_OUTCOME_UNMEASURED OUM-cd3f84
 src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java:9         checked  no finding
 src/main/java/com/example/e2e/loggers/renamed/PurgeJob.java:13        fixed    METRIC_OUTCOME_UNMEASURED OUM-682bc2
-src/main/java/com/example/e2e/logging/MdcHygiene.java:52              skipped  logging-support code
-src/main/java/com/example/e2e/logging/ObservedContext.java:143        skipped  logging-support code
-src/main/java/com/example/e2e/logging/ObservedContext.java:145        skipped  logging-support code
-src/main/java/com/example/e2e/logging/ObservedContext.java:147        skipped  logging-support code
-src/main/java/com/example/e2e/logging/ObservedContext.java:149        skipped  logging-support code
+src/main/java/com/example/e2e/logging/MdcHygiene.java:53              skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:144        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:146        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:148        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:150        skipped  logging-support code
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:23        checked  no finding
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:30        fixed    LOG_FORMAT FMT-ec5a6d
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:31        fixed    METRIC_OUTCOME_UNMEASURED OUM-21d0c8; reported MESSAGE_SUGGESTED SUG-1fede7
