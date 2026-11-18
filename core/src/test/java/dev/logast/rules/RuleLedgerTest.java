@@ -59,18 +59,22 @@ class RuleLedgerTest {
     static final Map<String, String> NO_FIRING_CASE = Map.of();
 
     /** Unit tests (Class#method) that assert the rule stays silent on a near miss. */
-    static final Map<String, String> SILENT_IN_UNIT_TEST = Map.of(
-            Rules.LOG_VOLUME, "VolumeTest#volumeNeedsProvidedTrafficAndUsesTheBudget",   // no traffic, below budget
-            Rules.LOG_IN_LOOP, "LoopSizeTest#infoPerItemDependsOnTheLoopSize",            // declared small, fixed loops
-            Rules.RUNTIME_TRACE_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss",
-            Rules.RUNTIME_MDC_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss",
-            Rules.RUNTIME_NULL_VALUE, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss",
+    static final Map<String, String> SILENT_IN_UNIT_TEST = Map.ofEntries(
+            Map.entry(Rules.LOG_VOLUME, "VolumeTest#volumeNeedsProvidedTrafficAndUsesTheBudget"),   // no traffic, below budget
+            Map.entry(Rules.LOG_IN_LOOP, "LoopSizeTest#infoPerItemDependsOnTheLoopSize"),            // declared small, fixed loops
+            Map.entry(Rules.RUNTIME_TRACE_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss"),
+            Map.entry(Rules.RUNTIME_MDC_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss"),
+            Map.entry(Rules.RUNTIME_NULL_VALUE, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss"),
             // #58 c: project-wide findings, so the near miss is the whole project with the note's remedy applied
-            Rules.KAFKA_NO_ERROR_HANDLER, "rules/RemedyTest#kafkaListenerWithACommonErrorHandlerBean",
-            Rules.PROBLEM_DETAILS_DISABLED, "rules/RemedyTest#problemDetailsByPropertyOrByAdvice",
-            Rules.SCHEDULED_WITHOUT_LOCK, "rules/RemedyTest#scheduledJobWithALockOrOnASingleInstance",
-            Rules.SCHEDULER_SINGLE_THREAD, "rules/RemedyTest#scheduledJobsWithAPoolOfTheirOwn",
-            Rules.AUDIT_SECURITY_EVENTS, "rules/RemedyTest#securityEventsRecordedDurably");
+            Map.entry(Rules.KAFKA_NO_ERROR_HANDLER, "rules/RemedyTest#kafkaListenerWithACommonErrorHandlerBean"),
+            Map.entry(Rules.PROBLEM_DETAILS_DISABLED, "rules/RemedyTest#problemDetailsByPropertyOrByAdvice"),
+            Map.entry(Rules.SCHEDULED_WITHOUT_LOCK, "rules/RemedyTest#scheduledJobWithALockOrOnASingleInstance"),
+            Map.entry(Rules.SCHEDULER_SINGLE_THREAD, "rules/RemedyTest#scheduledJobsWithAPoolOfTheirOwn"),
+            Map.entry(Rules.SHUTDOWN_NOT_GRACEFUL, "rules/RemedyTest#gracefulShutdownLongerThanTheWork"),
+            Map.entry(Rules.HEALTH_PROBE_MISCONFIGURED, "rules/RemedyTest#healthProbesOnAndLivenessKeptToTheInstance"),
+            Map.entry(Rules.READINESS_WITHOUT_DATABASE, "rules/RemedyTest#readinessWithTheDatabaseOrDecidedAgainst"),
+            Map.entry(Rules.CACHE_UNBOUNDED, "rules/RemedyTest#cachesWithASizeBound"),
+            Map.entry(Rules.AUDIT_SECURITY_EVENTS, "rules/RemedyTest#securityEventsRecordedDurably"));
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus();

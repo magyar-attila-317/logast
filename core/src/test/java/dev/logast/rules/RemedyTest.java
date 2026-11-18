@@ -598,6 +598,129 @@ class RemedyTest {
                 PARCEL_JOBS.replace("    @Scheduled(cron = \"0 0 * * * *\")\n", "")));
     }
 
+    // ---- rollout and readiness (#29, #30, #90 item 2), unbounded caches (#90 item 7) ----------------------------------
+
+    private static final String PARCEL_APP = """
+            package x;
+
+            import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+            @SpringBootApplication
+            public class ParcelApp {
+            }
+            """;
+
+    private static final String PARCEL_API = """
+            package x;
+
+            import javax.sql.DataSource;
+            import org.springframework.jdbc.core.JdbcTemplate;
+            import org.springframework.web.bind.annotation.GetMapping;
+            import org.springframework.web.bind.annotation.PathVariable;
+            import org.springframework.web.bind.annotation.RestController;
+
+            @RestController
+            public class ParcelApi {
+                private final JdbcTemplate jdbc;
+
+                public ParcelApi(JdbcTemplate jdbc) {
+                    this.jdbc = jdbc;
+                }
+
+                @GetMapping("/parcels/{id}")
+                public String status(@PathVariable String id) {
+                    return jdbc.queryForObject("SELECT status FROM parcel WHERE id = ?", String.class, id);
+                }
+            }
+            """;
+
+    private static final String YML = "src/main/resources/application.yml";
+
+    @Test
+    void gracefulShutdownLongerThanTheWork() throws IOException {
+        Map<String, String> before = Map.of(java("ParcelApp"), PARCEL_APP, java("ParcelApi"), PARCEL_API,
+                YML, CONFIG + "server:\n  shutdown: immediate\n");
+        fires(Rules.SHUTDOWN_NOT_GRACEFUL, before);
+        gone(Rules.SHUTDOWN_NOT_GRACEFUL, "graceful is the default", with(before, YML, CONFIG));
+        gone(Rules.SHUTDOWN_NOT_GRACEFUL, "server.shutdown: graceful", with(before, YML, CONFIG + "server:\n  shutdown: graceful\n"));
+        gone(Rules.SHUTDOWN_NOT_GRACEFUL, "a library: no @SpringBootApplication", with(before, java("ParcelApp"), "package x;\n"));
+
+        // the default phase (30s) is shorter than a transaction may run
+        Map<String, String> longWork = with(before, YML, CONFIG + "  transaction:\n    default-timeout: 60\n");
+        fires(Rules.SHUTDOWN_NOT_GRACEFUL, longWork);
+        gone(Rules.SHUTDOWN_NOT_GRACEFUL, "a phase longer than the transaction timeout", with(longWork, YML,
+                CONFIG + "  transaction:\n    default-timeout: 60\n  lifecycle:\n    timeout-per-shutdown-phase: 90s\n"));
+        gone(Rules.SHUTDOWN_NOT_GRACEFUL, "a shorter transaction timeout", with(longWork, YML,
+                CONFIG + "  transaction:\n    default-timeout: 20s\n"));
+        fires(Rules.SHUTDOWN_NOT_GRACEFUL, with(before, YML, CONFIG + "  lifecycle:\n    timeout-per-shutdown-phase: 10s\n"
+                + "  http:\n    clients:\n      connect-timeout: 2s\n      read-timeout: 15s\n"));
+    }
+
+    @Test
+    void healthProbesOnAndLivenessKeptToTheInstance() throws IOException {
+        Map<String, String> before = Map.of(java("ParcelApp"), PARCEL_APP, java("ParcelApi"), PARCEL_API, YML, CONFIG
+                + "management:\n  endpoint:\n    health:\n      group:\n        liveness:\n          include: livenessState,db\n"
+                + "        readiness:\n          include: readinessState,db\n");
+        fires(Rules.HEALTH_PROBE_MISCONFIGURED, before);
+        gone(Rules.HEALTH_PROBE_MISCONFIGURED, "liveness: livenessState only", with(before, YML, CONFIG
+                + "management:\n  endpoint:\n    health:\n      group:\n        liveness:\n          include: livenessState\n"
+                + "        readiness:\n          include: readinessState,db\n"));
+        Map<String, String> off = with(before, YML, CONFIG
+                + "management:\n  endpoint:\n    health:\n      probes:\n        enabled: false\n");
+        fires(Rules.HEALTH_PROBE_MISCONFIGURED, off);
+        gone(Rules.HEALTH_PROBE_MISCONFIGURED, "probes left on", with(before, YML, CONFIG
+                + "management:\n  endpoint:\n    health:\n      probes:\n        enabled: true\n"));
+        gone(Rules.HEALTH_PROBE_MISCONFIGURED, "a library: no @SpringBootApplication", with(off, java("ParcelApp"), "package x;\n"));
+    }
+
+    @Test
+    void readinessWithTheDatabaseOrDecidedAgainst() throws IOException {
+        Map<String, String> before = Map.of(java("ParcelApp"), PARCEL_APP, java("ParcelApi"), PARCEL_API, YML, CONFIG
+                + "management:\n  endpoints:\n    web:\n      exposure:\n        include: health\n");
+        fires(Rules.READINESS_WITHOUT_DATABASE, before);
+        gone(Rules.READINESS_WITHOUT_DATABASE, "readiness includes db", with(before, YML, CONFIG
+                + "management:\n  endpoint:\n    health:\n      group:\n        readiness:\n          include: readinessState,db\n"));
+        gone(Rules.READINESS_WITHOUT_DATABASE, "decided against: the rule switched off", with(before, "logast.yaml",
+                PACKS + "rules:\n  READINESS_WITHOUT_DATABASE:\n    enabled: false\n"));
+        gone(Rules.READINESS_WITHOUT_DATABASE, "no Actuator", with(before, YML, CONFIG));
+        gone(Rules.READINESS_WITHOUT_DATABASE, "a library: no @SpringBootApplication", with(before, java("ParcelApp"), "package x;\n"));
+    }
+
+    @Test
+    void cachesWithASizeBound() throws IOException {
+        Map<String, String> before = Map.of(java("ParcelApp"), PARCEL_APP.replace("@SpringBootApplication\n",
+                        "@SpringBootApplication\n@org.springframework.cache.annotation.EnableCaching\n"),
+                java("ParcelApi"), PARCEL_API);
+        fires(Rules.CACHE_UNBOUNDED, before);
+        gone(Rules.CACHE_UNBOUNDED, "Caffeine with maximumSize", with(before, YML,
+                CONFIG + "  cache:\n    type: caffeine\n    caffeine:\n      spec: maximumSize=500,expireAfterWrite=10m\n"));
+        fires(Rules.CACHE_UNBOUNDED, with(before, YML,
+                CONFIG + "  cache:\n    type: caffeine\n    caffeine:\n      spec: expireAfterWrite=10m\n"));
+        fires(Rules.CACHE_UNBOUNDED, with(before, YML, CONFIG + "  cache:\n    type: simple\n"));
+        gone(Rules.CACHE_UNBOUNDED, "Redis", with(before, YML, CONFIG + "  cache:\n    type: redis\n"));
+        gone(Rules.CACHE_UNBOUNDED, "a cache library in the build with a bounded spec", with(before,
+                "build.gradle.kts", "dependencies {\n    implementation(\"com.github.ben-manes.caffeine:caffeine\")\n}\n",
+                YML, CONFIG + "  cache:\n    caffeine:\n      spec: maximumSize=500\n"));
+        gone(Rules.CACHE_UNBOUNDED, "a bounded CaffeineCacheManager bean", with(before, java("CacheConfig"), """
+                package x;
+
+                import org.springframework.cache.caffeine.CaffeineCacheManager;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+
+                @Configuration
+                public class CacheConfig {
+                    @Bean
+                    CaffeineCacheManager cacheManager() {
+                        CaffeineCacheManager manager = new CaffeineCacheManager();
+                        manager.setCacheSpecification("maximumSize=500");
+                        return manager;
+                    }
+                }
+                """));
+        gone(Rules.CACHE_UNBOUNDED, "no @EnableCaching", with(before, java("ParcelApp"), PARCEL_APP));
+    }
+
     // ---- RETRY_INACTIVE (#90) --------------------------------------------------------------------------------------
 
     @Test
