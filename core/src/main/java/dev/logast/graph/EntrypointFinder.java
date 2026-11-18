@@ -30,6 +30,7 @@ public final class EntrypointFinder {
         MESSAGING.put("org.springframework.messaging.handler.annotation.MessageMapping", Kind.WEBSOCKET);
         MESSAGING.put("org.springframework.messaging.simp.annotation.SubscribeMapping", Kind.WEBSOCKET);
         MESSAGING.put("io.awspring.cloud.sqs.annotation.SqsListener", Kind.SQS);
+        MESSAGING.put("org.springframework.integration.annotation.ServiceActivator", Kind.INTEGRATION);
     }
 
     /**
@@ -42,10 +43,21 @@ public final class EntrypointFinder {
      * @param stream        Spring Cloud Stream is on the classpath: Consumer/Function beans are bound to destinations
      * @param functions     spring.cloud.function.definition split into function names; null when not set
      * @param autodetect    spring.cloud.stream.function.autodetect is not false
+     * @param grpcObserved  Spring gRPC is on the classpath and spring.grpc.server.observation.enabled is not false (Boot's
+     *                      GrpcServerObservationAutoConfiguration registers ObservationGrpcServerInterceptor globally)
+     * @param integrationPatterns Spring Integration's observation patterns ({@code @EnableIntegrationManagement
+     *                      (observationPatterns)} or spring.integration.management.observation-patterns); empty: none observed
      */
-    public record Platform(boolean sqsObserved, boolean batchObserved, boolean stream, List<String> functions, boolean autodetect) {
-        public static final Platform NONE = new Platform(false, false, false, null, true);
+    public record Platform(boolean sqsObserved, boolean batchObserved, boolean stream, List<String> functions, boolean autodetect,
+                           boolean grpcObserved, List<String> integrationPatterns) {
+        public static final Platform NONE = new Platform(false, false, false, null, true, false, List.of());
     }
+
+    /** A handler Spring calls that logast cannot name statically (#15), reported where it is registered. */
+    public record Unresolved(MethodInfo site, int line, String what, String why) {
+    }
+
+    private final List<Unresolved> unresolved = new ArrayList<>();
 
     private final Policy policy;
     private final boolean kafkaObserved;
@@ -82,6 +94,7 @@ public final class EntrypointFinder {
         if (platform.stream()) {
             FunctionalEntrypoints.streamFunctions(index, platform.functions(), platform.autodetect(), bound);
         }
+        FunctionalEntrypoints.redisAdapters(index, bound, unresolved);
         for (MethodInfo m : index.methods()) {
             Entrypoint ep = classify(m, index);
             if (ep == null && m.hasBody()) {
@@ -95,6 +108,11 @@ public final class EntrypointFinder {
         return out;
     }
 
+    /** Handlers {@link #find} saw registered but could not resolve to a source method. */
+    public List<Unresolved> unresolved() {
+        return unresolved;
+    }
+
     private Entrypoint classify(MethodInfo m, CodeIndex index) {
         if (!m.hasBody()) {
             return null;
@@ -106,6 +124,9 @@ public final class EntrypointFinder {
         for (J.Annotation a : m.decl().getLeadingAnnotations()) {
             for (var e : MESSAGING.entrySet()) {
                 if (Annotations.is(a, e.getKey())) {
+                    if (e.getValue() == Kind.INTEGRATION && m.hasAnnotation("org.springframework.context.annotation.Bean")) {
+                        continue;   // @Bean @ServiceActivator defines a MessageHandler bean: the handler is not this method
+                    }
                     return messaging(m, a, e.getValue());
                 }
             }
@@ -119,6 +140,14 @@ public final class EntrypointFinder {
         Entrypoint batch = springBatch(m, owner);
         if (batch != null) {
             return batch;
+        }
+        Entrypoint listener = redisListener(m, owner);
+        if (listener != null) {
+            return listener;
+        }
+        Entrypoint grpc = grpcService(m, owner);
+        if (grpc != null) {
+            return grpc;
         }
         if (WEBSOCKET_CALLBACKS.contains(m.name()) && m.decl().getBody() != null
                 && TypeUtils.isAssignableTo("org.springframework.web.socket.WebSocketHandler", owner.type())) {
@@ -174,6 +203,7 @@ public final class EntrypointFinder {
             case JMS -> "@JmsListener " + Annotations.stringAttribute(a, "destination").orElse(m.label());
             case RABBIT -> "@RabbitListener " + Annotations.stringAttribute(a, "queues", "value").orElse(m.label());
             case SQS -> "@SqsListener " + Annotations.stringAttribute(a, "value", "queueNames").orElse(m.label());
+            case INTEGRATION -> "@ServiceActivator " + Annotations.stringAttribute(a, "inputChannel").orElse(m.label());
             case WEBSOCKET -> "@" + a.getSimpleName() + " " + Annotations.stringAttribute(a, "value", "destination").orElse(m.label());
             case EVENT -> "@" + a.getSimpleName() + " " + m.label() + eventType(m, a);
             default -> "@" + a.getSimpleName() + " " + m.label();
@@ -192,6 +222,7 @@ public final class EntrypointFinder {
             case RABBIT -> rabbitObserved && !batch(m, a);
             // Spring Cloud AWS observes each message (spring.cloud.aws.sqs.observation-enabled); its batch sink none
             case SQS -> platform.sqsObserved() && !batch(m, a);
+            case INTEGRATION -> integrationObserved(m);
             default -> false;
         };
         return new Entrypoint(m, kind, label, observed);
@@ -233,6 +264,79 @@ public final class EntrypointFinder {
             }
         }
         return null;
+    }
+
+    /**
+     * Spring Integration observes a message handler only when its component name matches one of the observation patterns
+     * (Spring Integration reference, Metrics and Management › Micrometer Observation: "By default, none of the
+     * IntegrationManagement components are instrumented"; Boot's IntegrationAutoConfiguration passes
+     * spring.integration.management.observation-patterns to {@code @EnableIntegrationManagement}). An annotated service
+     * activator's endpoint is named {@code <bean>.<method>.serviceActivator}, its handler {@code <endpoint>.handler}.
+     */
+    private boolean integrationObserved(MethodInfo m) {
+        String simple = m.owner().simpleName();
+        String bean = m.owner().decl().getLeadingAnnotations().stream()
+                .filter(a -> Annotations.is(a, "org.springframework.stereotype.Component")
+                        || Annotations.is(a, "org.springframework.stereotype.Service"))
+                .map(a -> Annotations.stringAttribute(a, "value").orElse(null)).filter(Objects::nonNull).findFirst()
+                .orElse(Character.toLowerCase(simple.charAt(0)) + simple.substring(1));
+        String endpoint = bean + "." + m.name() + ".serviceActivator";
+        return smartMatch(endpoint, platform.integrationPatterns()) || smartMatch(endpoint + ".handler", platform.integrationPatterns());
+    }
+
+    /**
+     * Spring Integration's PatternMatchUtils.smartMatch: case-insensitive, the first pattern that matches decides, a
+     * leading {@code !} negates, {@code *} matches anything.
+     */
+    static boolean smartMatch(String name, List<String> patterns) {
+        for (String p : patterns) {
+            boolean negate = p.startsWith("!");
+            String pattern = negate || p.startsWith("\\") ? p.substring(1) : p;
+            StringBuilder re = new StringBuilder();
+            String[] parts = pattern.toLowerCase(Locale.ROOT).split("\\*", -1);
+            for (int i = 0; i < parts.length; i++) {
+                re.append(i == 0 ? "" : ".*").append(java.util.regex.Pattern.quote(parts[i]));
+            }
+            if (name.toLowerCase(Locale.ROOT).matches(re.toString())) {
+                return !negate;
+            }
+        }
+        return false;
+    }
+
+    private static final String REDIS_LISTENER = "org.springframework.data.redis.connection.MessageListener";
+    static final String REDIS_ADAPTER = "org.springframework.data.redis.listener.adapter.MessageListenerAdapter";
+
+    /**
+     * A Spring Data Redis pub/sub listener class ({@code MessageListener.onMessage(Message, byte[])}).
+     * RedisMessageListenerContainer calls it on its task executor without an observation (Spring Data Redis reference,
+     * Observability: Lettuce observes Redis commands; the container source has no observation), so it is not observed.
+     * MessageListenerAdapter is a MessageListener too: its delegates come from {@link FunctionalEntrypoints#redisAdapters}.
+     */
+    private static Entrypoint redisListener(MethodInfo m, ClassInfo owner) {
+        if (owner.type() == null || m.type().hasFlags(Flag.Static) || !m.name().equals("onMessage")
+                || m.type().getParameterTypes().size() != 2 || !TypeUtils.isAssignableTo(REDIS_LISTENER, owner.type())
+                || TypeUtils.isAssignableTo(REDIS_ADAPTER, owner.type())) {
+            return null;
+        }
+        return new Entrypoint(m, Kind.REDIS, "redis " + m.label(), false);
+    }
+
+    /**
+     * A gRPC service method: a public method of a {@code BindableService} (the generated {@code *ImplBase}) that answers
+     * through its last parameter, a {@code StreamObserver}, and returns nothing (unary and server streaming). Client and
+     * bidirectional streaming methods return the request observer: their work runs in its callbacks, not in the method,
+     * so they are not seen. Spring gRPC observes every call unless switched off ({@link Platform#grpcObserved}).
+     */
+    private Entrypoint grpcService(MethodInfo m, ClassInfo owner) {
+        if (owner.type() == null || m.type().hasFlags(Flag.Static) || !m.type().hasFlags(Flag.Public)
+                || m.type().getParameterTypes().isEmpty()
+                || m.type().getReturnType() != org.openrewrite.java.tree.JavaType.Primitive.Void
+                || !TypeUtils.isAssignableTo("io.grpc.BindableService", owner.type())
+                || !TypeUtils.isAssignableTo("io.grpc.stub.StreamObserver", m.type().getParameterTypes().getLast())) {
+            return null;
+        }
+        return new Entrypoint(m, Kind.GRPC, "grpc " + m.label(), platform.grpcObserved());
     }
 
     /** WebSocketHandler methods Spring calls per connection event or message, outside any HTTP request. */

@@ -370,6 +370,41 @@ public void onReady() {
 </tr>
 </table>
 
+### A Redis pub/sub delegate gets its observation and MDC
+
+A bean Redis calls through `new MessageListenerAdapter(relay, "onPledge")` ran without a trace and without the pledge
+id in MDC: Spring Data Redis observes Redis commands, not the listener container.
+*Scenario `expected-relay-entrypoints`, `PledgeRelay.java`.*
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```java
+public void onPledge(String pledgeId) {
+    relayLog.record(pledgeId);
+}
+```
+
+</td>
+<td>
+
+```java
+public void onPledge(String pledgeId) {
+    ObservedContext.entrypoint(RelayMetrics.PLEDGE_RELAY_ON_PLEDGE)
+            .mdc("pledgeId", pledgeId)
+            .debugOnSuccess()
+            .run(() -> {
+                relayLog.record(pledgeId);
+            });
+}
+```
+
+</td>
+</tr>
+</table>
+
 ### `@Observed` starts working: the property and the AspectJ starter are added
 
 Without `management.observations.annotations.enabled` and aspectjweaver, Spring Boot ignores `@Observed` and the

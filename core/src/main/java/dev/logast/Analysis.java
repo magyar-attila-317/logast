@@ -18,6 +18,8 @@ public final class Analysis {
     public final Policy policy;
     public final CodeIndex index;
     public final List<Entrypoint> entrypoints;
+    /** Handlers registered in code that could not be resolved to a source method (#15). */
+    public final List<EntrypointFinder.Unresolved> unresolvedHandlers;
     public final CallGraph graph;
     public final PathContext paths;
     public final Set<String> httpFilterKeys;
@@ -55,11 +57,12 @@ public final class Analysis {
         // span): part of that flow, not an entrypoint of its own
         boolean rabbitObserved = "true".equals(springProperties.get("spring.rabbitmq.listener.simple.observation-enabled"))
                 || "true".equals(springProperties.get("spring.rabbitmq.listener.direct.observation-enabled"));
-        this.entrypoints = new EntrypointFinder(policy, kafkaObserved, rabbitObserved, platform(project, index, springProperties))
-                .find(index).stream()
+        EntrypointFinder finder = new EntrypointFinder(policy, kafkaObserved, rabbitObserved, platform(project, index, springProperties));
+        this.entrypoints = finder.find(index).stream()
                 .filter(ep -> ep.kind() != Entrypoint.Kind.EVENT || graph.in(ep.method()).stream()
                         .noneMatch(e -> e.site().type().getName().equals("publishEvent")))
                 .toList();
+        this.unresolvedHandlers = finder.unresolved();
         this.httpFilterKeys = filterKeys(index);
         this.appPackage = appPackage(index);
         this.supportPackage = policy.support().vendor()
@@ -128,8 +131,40 @@ public final class Analysis {
         String definition = props.get("spring.cloud.function.definition");
         List<String> functions = definition == null ? null
                 : Arrays.stream(definition.split("[;|,]")).map(String::trim).filter(f -> !f.isEmpty()).toList();
+        // Boot's GrpcServerObservationAutoConfiguration: Spring gRPC's server, both properties default true
+        boolean grpcObserved = project.probe().hasClass("org.springframework.grpc.server.GrpcServerFactory")
+                && !"false".equals(props.get("spring.grpc.server.enabled"))
+                && !"false".equals(props.get("spring.grpc.server.observation.enabled"));
         return new EntrypointFinder.Platform(sqsObserved, batchObserved, stream, functions,
-                !"false".equals(props.get("spring.cloud.stream.function.autodetect")));
+                !"false".equals(props.get("spring.cloud.stream.function.autodetect")), grpcObserved, integrationPatterns(index, props));
+    }
+
+    /**
+     * Spring Integration's observation patterns: {@code @EnableIntegrationManagement(observationPatterns = ..)} in source,
+     * else spring.integration.management.observation-patterns (Boot's IntegrationAutoConfiguration passes it to that
+     * annotation). Each value may be comma-separated; empty: nothing is observed.
+     */
+    private static List<String> integrationPatterns(CodeIndex index, Map<String, String> props) {
+        List<String> raw = new ArrayList<>();
+        index.classes().forEach(c -> c.decl().getLeadingAnnotations().stream()
+                .filter(a -> dev.logast.model.Annotations.is(a, "org.springframework.integration.config.EnableIntegrationManagement"))
+                .forEach(a -> dev.logast.model.Annotations.rawAttribute(a, "observationPatterns").ifPresent(v -> {
+                    java.util.regex.Matcher q = java.util.regex.Pattern.compile("\"([^\"]*)\"").matcher(v);
+                    while (q.find()) {
+                        raw.add(q.group(1));
+                    }
+                })));
+        if (raw.isEmpty()) {
+            String key = "spring.integration.management.observation-patterns";
+            if (props.get(key) != null) {
+                raw.add(props.get(key));
+            }
+            for (int i = 0; props.get(key + "[" + i + "]") != null; i++) {
+                raw.add(props.get(key + "[" + i + "]"));
+            }
+        }
+        return raw.stream().flatMap(v -> Arrays.stream(v.split(","))).map(String::trim)
+                .filter(v -> !v.isEmpty() && !v.startsWith("${")).toList();
     }
 
     private static String appPackage(CodeIndex index) {

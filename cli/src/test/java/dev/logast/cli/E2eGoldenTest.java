@@ -3362,6 +3362,463 @@ class E2eGoldenTest {
                 .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|PledgeQueueListener|PledgeImportTasklet|OrderLineProcessor)");
     }
 
+    /**
+     * Stand-ins for Spring Data Redis pub/sub, Spring Integration's {@code @ServiceActivator}, grpc-java (with a generated
+     * service base class) and Spring gRPC, none of which is on the e2e classpath (#15).
+     */
+    private static final Map<String, String> RELAY_LIBRARY_STUBS = Map.ofEntries(
+            Map.entry("org/springframework/data/redis/connection/Message.java", """
+                    package org.springframework.data.redis.connection;
+
+                    public interface Message {
+                        byte[] getBody();
+
+                        byte[] getChannel();
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/connection/MessageListener.java", """
+                    package org.springframework.data.redis.connection;
+
+                    public interface MessageListener {
+                        void onMessage(Message message, byte[] pattern);
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/listener/Topic.java", """
+                    package org.springframework.data.redis.listener;
+
+                    public interface Topic {
+                        String getTopic();
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/listener/ChannelTopic.java", """
+                    package org.springframework.data.redis.listener;
+
+                    public class ChannelTopic implements Topic {
+                        private final String name;
+
+                        public ChannelTopic(String name) {
+                            this.name = name;
+                        }
+
+                        public String getTopic() {
+                            return name;
+                        }
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/listener/RedisMessageListenerContainer.java", """
+                    package org.springframework.data.redis.listener;
+
+                    import org.springframework.data.redis.connection.MessageListener;
+
+                    public class RedisMessageListenerContainer {
+                        public void addMessageListener(MessageListener listener, Topic topic) {
+                        }
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/listener/adapter/MessageListenerAdapter.java", """
+                    package org.springframework.data.redis.listener.adapter;
+
+                    import org.springframework.data.redis.connection.Message;
+                    import org.springframework.data.redis.connection.MessageListener;
+
+                    public class MessageListenerAdapter implements MessageListener {
+                        public MessageListenerAdapter() {
+                        }
+
+                        public MessageListenerAdapter(Object delegate) {
+                        }
+
+                        public MessageListenerAdapter(Object delegate, String defaultListenerMethod) {
+                        }
+
+                        public void setDefaultListenerMethod(String defaultListenerMethod) {
+                        }
+
+                        public void onMessage(Message message, byte[] pattern) {
+                        }
+                    }
+                    """),
+            Map.entry("org/springframework/integration/annotation/ServiceActivator.java", """
+                    package org.springframework.integration.annotation;
+
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface ServiceActivator {
+                        String inputChannel() default "";
+
+                        String outputChannel() default "";
+                    }
+                    """),
+            Map.entry("io/grpc/ServerServiceDefinition.java", """
+                    package io.grpc;
+
+                    public final class ServerServiceDefinition {
+                    }
+                    """),
+            Map.entry("io/grpc/BindableService.java", """
+                    package io.grpc;
+
+                    public interface BindableService {
+                        ServerServiceDefinition bindService();
+                    }
+                    """),
+            Map.entry("io/grpc/stub/StreamObserver.java", """
+                    package io.grpc.stub;
+
+                    public interface StreamObserver<V> {
+                        void onNext(V value);
+
+                        void onError(Throwable t);
+
+                        void onCompleted();
+                    }
+                    """),
+            Map.entry("com/example/proto/PledgeRequest.java", """
+                    package com.example.proto;
+
+                    public final class PledgeRequest {
+                        public String getPledgeId() {
+                            return "";
+                        }
+                    }
+                    """),
+            Map.entry("com/example/proto/PledgeReply.java", """
+                    package com.example.proto;
+
+                    public final class PledgeReply {
+                        public static PledgeReply of(String status) {
+                            return new PledgeReply();
+                        }
+                    }
+                    """),
+            Map.entry("com/example/proto/PledgeServiceGrpc.java", """
+                    package com.example.proto;
+
+                    import io.grpc.stub.StreamObserver;
+
+                    /** What protoc-gen-grpc-java generates: the service base class implementations extend. */
+                    public final class PledgeServiceGrpc {
+                        public abstract static class PledgeServiceImplBase implements io.grpc.BindableService {
+                            public void lookup(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {
+                            }
+
+                            public void watch(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {
+                            }
+
+                            public StreamObserver<PledgeRequest> upload(StreamObserver<PledgeReply> responseObserver) {
+                                return null;
+                            }
+
+                            public final io.grpc.ServerServiceDefinition bindService() {
+                                return new io.grpc.ServerServiceDefinition();
+                            }
+                        }
+                    }
+                    """),
+            Map.entry("org/springframework/grpc/server/GrpcServerFactory.java", """
+                    package org.springframework.grpc.server;
+
+                    public interface GrpcServerFactory {
+                    }
+                    """));
+
+    /** #15: Redis pub/sub listeners and adapter delegates, Spring Integration service activators, a gRPC service. */
+    private static final IoAction RELAY_ENTRYPOINTS = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/relay");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("RelayLog.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class RelayLog {
+                    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RelayLog.class);
+
+                    void record(String what) {
+                        log.info("Relay recorded {}", what);
+                    }
+
+                    /** Only the Redis listener calls it: the container logs what it rethrows. */
+                    void forward(byte[] body) {
+                        try {
+                            record(new String(body, java.nio.charset.StandardCharsets.UTF_8));
+                        } catch (RuntimeException e) {
+                            log.error("Relay forward failed", e);
+                            throw e;
+                        }
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("PledgeChannelListener.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.data.redis.connection.Message;
+                import org.springframework.data.redis.connection.MessageListener;
+                import org.springframework.stereotype.Component;
+
+                /** A Redis pub/sub listener registered on the container. */
+                @Component
+                public class PledgeChannelListener implements MessageListener {
+                    private final RelayLog relayLog;
+
+                    PledgeChannelListener(RelayLog relayLog) {
+                        this.relayLog = relayLog;
+                    }
+
+                    @Override
+                    public void onMessage(Message message, byte[] pattern) {
+                        relayLog.forward(message.getBody());
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("PledgeRelay.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.stereotype.Component;
+
+                /** A plain bean Redis calls through MessageListenerAdapters. */
+                @Component
+                public class PledgeRelay {
+                    private final RelayLog relayLog;
+
+                    PledgeRelay(RelayLog relayLog) {
+                        this.relayLog = relayLog;
+                    }
+
+                    public void onPledge(String pledgeId) {
+                        relayLog.record(pledgeId);
+                    }
+
+                    public void onRefund(String refundId, String channel) {
+                        relayLog.record(refundId);
+                    }
+
+                    public void handleMessage(String voucherId) {
+                        relayLog.record(voucherId);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("RedisRelaySetup.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.beans.factory.annotation.Value;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.data.redis.listener.ChannelTopic;
+                import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+                import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
+
+                @Configuration
+                public class RedisRelaySetup {
+                    static final String REFUND_METHOD = "onRefund";
+
+                    @Value("${relay.method:onPledge}")
+                    private String relayMethod;
+
+                    @Bean
+                    public RedisMessageListenerContainer relayContainer(PledgeChannelListener listener, PledgeRelay relay) {
+                        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+                        container.addMessageListener(listener, new ChannelTopic("pledge-events"));
+                        container.addMessageListener(new MessageListenerAdapter(relay, "onPledge"), new ChannelTopic("pledges"));
+                        container.addMessageListener(new MessageListenerAdapter(relay, REFUND_METHOD), new ChannelTopic("refunds"));
+                        container.addMessageListener(new MessageListenerAdapter(relay), new ChannelTopic("vouchers"));
+                        return container;
+                    }
+
+                    @Bean
+                    public MessageListenerAdapter configuredAdapter(PledgeRelay relay) {
+                        return new MessageListenerAdapter(relay, relayMethod);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("PledgeActivator.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.integration.annotation.ServiceActivator;
+                import org.springframework.stereotype.Component;
+
+                /** A Spring Integration endpoint: each message on the input channel calls the method. */
+                @Component
+                public class PledgeActivator {
+                    private final RelayLog relayLog;
+
+                    PledgeActivator(RelayLog relayLog) {
+                        this.relayLog = relayLog;
+                    }
+
+                    @ServiceActivator(inputChannel = "pledgeRequests")
+                    public void allot(String pledgeId) {
+                        relayLog.record(pledgeId);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("VoucherActivator.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.integration.annotation.ServiceActivator;
+                import org.springframework.messaging.MessageHandler;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class VoucherActivator {
+                    private final RelayLog relayLog;
+
+                    VoucherActivator(RelayLog relayLog) {
+                        this.relayLog = relayLog;
+                    }
+
+                    @ServiceActivator(inputChannel = "voucherRequests")
+                    public void issue(String voucherId) {
+                        relayLog.record(voucherId);
+                    }
+
+                    /** Defines a handler bean: the method is configuration, not a handler. */
+                    @Bean
+                    @ServiceActivator(inputChannel = "voucherAudits")
+                    public MessageHandler voucherAuditHandler() {
+                        return message -> relayLog.record("audit");
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("PledgeGrpcService.java"), """
+                package com.example.e2e.relay;
+
+                import com.example.proto.PledgeReply;
+                import com.example.proto.PledgeRequest;
+                import com.example.proto.PledgeServiceGrpc;
+                import io.grpc.stub.StreamObserver;
+                import java.util.concurrent.Executor;
+                import org.springframework.stereotype.Service;
+
+                /** A gRPC service: one call answered before the method returns, one answered later on another thread. */
+                @Service
+                public class PledgeGrpcService extends PledgeServiceGrpc.PledgeServiceImplBase {
+                    private final RelayLog relayLog;
+                    private final Executor relayExecutor;
+
+                    PledgeGrpcService(RelayLog relayLog, Executor relayExecutor) {
+                        this.relayLog = relayLog;
+                        this.relayExecutor = relayExecutor;
+                    }
+
+                    @Override
+                    public void lookup(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {
+                        String pledgeId = request.getPledgeId();
+                        relayLog.record(pledgeId);
+                        responseObserver.onNext(PledgeReply.of("found"));
+                        responseObserver.onCompleted();
+                    }
+
+                    @Override
+                    public void watch(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {
+                        String pledgeId = request.getPledgeId();
+                        relayLog.record(pledgeId);
+                        relayExecutor.execute(() -> {
+                            responseObserver.onNext(PledgeReply.of("changed"));
+                            responseObserver.onCompleted();
+                        });
+                    }
+
+                    @Override
+                    public StreamObserver<PledgeRequest> upload(StreamObserver<PledgeReply> responseObserver) {
+                        return new StreamObserver<>() {
+                            @Override
+                            public void onNext(PledgeRequest value) {
+                                relayLog.record(value.getPledgeId());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                responseObserver.onError(t);
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                responseObserver.onCompleted();
+                            }
+                        };
+                    }
+                }
+                """);
+    };
+
+    private static final String RELAY = "src/main/java/com/example/e2e/relay/";
+
+    /**
+     * #15: Redis pub/sub, Spring Integration and gRPC entrypoints. A Redis {@code MessageListener} and the methods a
+     * {@code MessageListenerAdapter} delegates to (a literal name, a constant, the default handleMessage) are not observed
+     * by Spring Data Redis: ObservedContext; an adapter whose method name comes from a property is reported. A
+     * {@code @ServiceActivator} method is observed only when Spring Integration's observation patterns match it (none by
+     * default): ObservedContext; a {@code @Bean @ServiceActivator} is not a handler. The unary and server-streaming
+     * methods of a gRPC service are observed by Spring gRPC: MDC and lines only (here none: the flow logs, and a protobuf
+     * request is no MDC value); with its observation switched off, the
+     * method that completes in its body is wrapped and the one that completes later on another thread is reported.
+     * Client streaming (returns the request observer) is not an entrypoint. Every file must equal
+     * e2e/expected-relay-entrypoints; tracing alone does its part.
+     */
+    @Test
+    void seesRedisListenersServiceActivatorsAndGrpcServices() throws IOException {
+        String classpath = libraryClasspath("relay-libraries", RELAY_LIBRARY_STUBS).toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, RELAY_ENTRYPOINTS);
+        assertThat(actual.get(".logast/traffic.yaml")).as("every new kind is an entrypoint")
+                .contains("\"redis PledgeChannelListener.onMessage\"").contains("\"redis PledgeRelay.onPledge\"")
+                .contains("\"redis PledgeRelay.onRefund\"").contains("\"redis PledgeRelay.handleMessage\"")
+                .contains("\"@ServiceActivator pledgeRequests\"").contains("\"@ServiceActivator voucherRequests\"")
+                .doesNotContain("voucherAudits").doesNotContain("voucherAuditHandler")
+                .contains("\"grpc PledgeGrpcService.lookup\"").contains("\"grpc PledgeGrpcService.watch\"")
+                .doesNotContain("PledgeGrpcService.upload");
+        assertThat(actual.get(RELAY + "PledgeChannelListener.java")).as("Redis pub/sub is not observed")
+                .contains("ObservedContext.entrypoint(");
+        assertThat(actual.get(RELAY + "PledgeRelay.java")).as("each adapter delegate, with its MDC")
+                .contains("ObservedContext.entrypoint(RelayMetrics.PLEDGE_RELAY_ON_PLEDGE)").contains(".mdc(\"pledgeId\", pledgeId)")
+                .contains("ObservedContext.entrypoint(RelayMetrics.PLEDGE_RELAY_ON_REFUND)")
+                .contains("ObservedContext.entrypoint(RelayMetrics.PLEDGE_RELAY_HANDLE_MESSAGE)");
+        assertThat(actual.get("FINDINGS.txt")).as("an adapter method from a property is reported")
+                .contains("MessageListenerAdapter for PledgeRelay: the handler Redis calls is not known");
+        assertThat(actual.get(RELAY + "PledgeActivator.java")).as("Spring Integration observes nothing by default")
+                .contains("ObservedContext.entrypoint(");
+        assertThat(actual.get(RELAY + "PledgeGrpcService.java")).as("observed by Spring gRPC: no wrapper (its flow logs; the "
+                + "request carries no MDC key logast knows)").doesNotContain("ObservedContext");
+        assertThat(actual.get(RELAY + "RelayLog.java")).as("RedisMessageListenerContainer logs a listener's exception: the "
+                + "logged-and-rethrown line goes").doesNotContain("Relay forward failed");
+        String lifecycle = run(tmp.resolve("app"), "lifecycle", tmp.resolve("app").toString(), "--classpath-file", classpath);
+        assertThat(lifecycle.indexOf("grpc PledgeGrpcService.watch")).as("gRPC: the call's status is its outcome, like HTTP:\n" + lifecycle)
+                .isGreaterThan(lifecycle.indexOf("http (")).isLessThan(lifecycle.indexOf("message ("));
+        golden(EXPECTED.resolveSibling("expected-relay-entrypoints"), actual);
+
+        // the tracing pack alone: the wrappers, no MDC scopes or lines
+        Map<String, String> tracing = migrate(tmp.resolve("tracing-only"), classpath, withPacks(RELAY_ENTRYPOINTS, "[tracing]", ""));
+        assertThat(tracing.get(RELAY + "PledgeRelay.java")).contains("ObservedContext.entrypoint(\"pledge-relay.on-pledge\")")
+                .doesNotContain("MdcScope");
+        assertThat(tracing.get(RELAY + "PledgeActivator.java")).contains("ObservedContext.entrypoint(\"pledge-activator.allot\")");
+        assertThat(tracing.get(RELAY + "PledgeGrpcService.java")).doesNotContain("ObservedContext").doesNotContain("MdcScope");
+
+        // Spring Integration observes pledgeActivator's handler by its pattern; Spring gRPC observation switched off
+        Map<String, String> switched = migrate(tmp.resolve("switched"), classpath, app -> {
+            RELAY_ENTRYPOINTS.run(app);
+            Path yml = app.resolve("src/main/resources/application.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("spring:\n", """
+                    spring:
+                      integration:
+                        management:
+                          observation-patterns: "!voucher*, pledgeActivator.*"
+                      grpc:
+                        server:
+                          observation:
+                            enabled: false
+                    """));
+        });
+        assertThat(switched.get(RELAY + "PledgeActivator.java")).doesNotContain("ObservedContext");
+        assertThat(switched.get(RELAY + "VoucherActivator.java")).contains("ObservedContext.entrypoint(");
+        assertThat(switched.get(RELAY + "PledgeGrpcService.java")).as("only the call that completes in its body is wrapped")
+                .containsOnlyOnce("ObservedContext.entrypoint(").contains("ObservedContext.entrypoint(RelayMetrics.PLEDGE_GRPC_SERVICE_LOOKUP)");
+        assertThat(switched.get("FINDINGS.txt")).contains("grpc PledgeGrpcService.watch is not observed");
+    }
+
     /** #14: a WebFlux controller and reactive router functions next to the existing Mono service (messaging). */
     private static final IoAction REACTIVE_ENTRYPOINTS = app -> {
         Path dir = app.resolve("src/main/java/com/example/e2e/reactive");

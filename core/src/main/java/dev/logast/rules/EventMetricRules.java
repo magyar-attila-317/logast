@@ -28,7 +28,7 @@ final class EventMetricRules {
      */
     private static final Set<Entrypoint.Kind> TIMED_BY_FRAMEWORK = EnumSet.of(Entrypoint.Kind.HTTP, Entrypoint.Kind.SCHEDULED,
             Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.BATCH, Entrypoint.Kind.STEP,
-            Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM);
+            Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM, Entrypoint.Kind.INTEGRATION, Entrypoint.Kind.GRPC);
     private static final Pattern MEASURED = Pattern.compile(
             "ObservedContext|Observation\\.|MeterRegistry|meterRegistry|\\bCounter\\.|\\bTimer\\.|\\.counter\\(|\\.timer\\(");
     private static final Pattern NAME = Pattern.compile("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,3}");
