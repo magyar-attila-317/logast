@@ -28,7 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>Firing case</b>: the rule is reported in one of the {@link #corpora() corpora} (core scans of parsed projects,
  * plus {@code logast verify} on captured events for the RUNTIME_* rules), or appears in an e2e snapshot
- * ({@code FINDINGS.txt}, the applied ids in {@code OUTPUT.txt}, {@code .logast/reports/apply-trace.txt}).
+ * ({@code FINDINGS.txt}, the applied ids in {@code OUTPUT.txt}, {@code .logast/reports/apply-trace.txt}; in the
+ * scenarios that snapshot only the service (#110) the findings list and {@code RULES.txt}).
  *
  * <p><b>Must-not-fire case</b>, the smallest version that still means something:
  * <ul>
@@ -332,6 +333,8 @@ class RuleLedgerTest {
     }
 
     private static final Pattern FINDING = Pattern.compile("^[A-Z]{3}-[0-9a-f]{6}\\S*\\s+\\S+\\s+(?:AUTO|NEEDS TEXT|REPORT-ONLY)\\s+([A-Z_]+)\\s");
+    private static final Pattern INDEX = Pattern.compile("^(?:AUTO|NEEDS TEXT|REPORT-ONLY) ([A-Z_]+) \\S+:\\d+$");
+    private static final Pattern RULES_LINE = Pattern.compile("^(applied|rescan|also) ([A-Z_]+)$");
     private static final Pattern ALSO_FIXES = Pattern.compile("^\\s+also fixes: ([A-Z_]+)\\s");
     private static final Pattern TRACED = Pattern.compile("([A-Z][A-Z_]+) [A-Z]{3}-[0-9a-f]{6}");
     private static final Pattern ID = Pattern.compile("\\b([A-Z]{3})-[0-9a-f]{6}\\b");
@@ -347,12 +350,24 @@ class RuleLedgerTest {
         assertThat(dirs).as("e2e snapshots under " + E2E).isNotEmpty();
         for (Path dir : dirs) {
             String name = "e2e " + dir.getFileName();
-            for (String file : List.of("FINDINGS.txt", "OUTPUT.txt", ".logast/reports/apply-trace.txt")) {
+            for (String file : List.of("FINDINGS.txt", "OUTPUT.txt", ".logast/reports/apply-trace.txt", "RULES.txt")) {
                 Path f = dir.resolve(file);
                 if (!Files.exists(f)) {
                     continue;
                 }
                 for (String line : Files.readAllLines(f)) {
+                    // the snapshot of most scenarios (#110): findings as "KIND RULE file:line", RULES.txt as "applied RULE" etc.
+                    Matcher r = RULES_LINE.matcher(line);
+                    if (r.matches()) {
+                        fires.accept(r.group(2), name + "/" + file);
+                        if (r.group(1).equals("applied")) {
+                            silent.accept(r.group(2), "its fix, applied and rescanned in " + name);
+                        }
+                    }
+                    r = INDEX.matcher(line);
+                    if (r.find()) {
+                        fires.accept(r.group(1), name + "/" + file);
+                    }
                     Matcher m = FINDING.matcher(line);
                     if (m.find()) {
                         fires.accept(m.group(1), name + "/" + file);

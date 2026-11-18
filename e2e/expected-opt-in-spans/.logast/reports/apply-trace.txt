@@ -1,2 +1,0 @@
-scan: 69 orders
-== pass 1
