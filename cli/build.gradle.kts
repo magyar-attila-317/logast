@@ -109,7 +109,7 @@ tasks.test {
 }
 
 // #9: public Spring Boot services (corpus/corpus.yaml) cloned at pinned commits and migrated; network and minutes per
-// service, so its own task (nightly in CI). -Pcorpus.only=petclinic,… runs a few.
+// service, so its own task (on demand, locally or the corpus workflow in CI). -Pcorpus.only=petclinic,… runs a few.
 val corpusRun = "dev.logast.cli.CorpusRun"
 val corpus by tasks.registering(Test::class) {
     description = "Migrates the public services of corpus/corpus.yaml and checks the migration invariants (#9)"

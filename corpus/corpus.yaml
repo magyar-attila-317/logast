@@ -1,5 +1,5 @@
 # #9: public Spring Boot services logast must migrate cleanly (Gradle builds, Spring Boot 3 / 4), each pinned to a
-# commit so a result is reproducible. ./gradlew :cli:corpus (-Pcorpus.only=<name>); nightly in CI (corpus workflow).
+# commit so a result is reproducible. ./gradlew :cli:corpus (-Pcorpus.only=<name>), or the corpus workflow in CI (on demand).
 # Picked for their entrypoints: MVC + JPA, @Scheduled, RabbitMQ, JMS, Spring Batch, WebFlux.
 services:
   - name: petclinic
