@@ -49,11 +49,15 @@ public final class HumanFormat {
         List<WorkOrder> text = orders.stream().filter(o -> !o.reportOnly() && !o.slots().isEmpty()).toList();
         // an uncounted outcome is an entry of metrics.yaml (count, tag or skip), not a decision to read about
         List<WorkOrder> outcomes = orders.stream().filter(o -> o.reportOnly() && o.rule().equals(Rules.METRIC_OUTCOME_UNMEASURED)).toList();
-        List<WorkOrder> decisions = orders.stream().filter(o -> o.reportOnly() && !o.rule().equals(Rules.METRIC_OUTCOME_UNMEASURED)).toList();
+        // and a recommended retry is an entry of retry.yaml (#109)
+        List<WorkOrder> retries = orders.stream().filter(o -> o.reportOnly() && o.rule().equals(Rules.RETRY_RECOMMENDED)).toList();
+        List<WorkOrder> decisions = orders.stream().filter(o -> o.reportOnly() && !o.rule().equals(Rules.METRIC_OUTCOME_UNMEASURED)
+                && !o.rule().equals(Rules.RETRY_RECOMMENDED)).toList();
         sb.append('\n').append(Ansi.bold(orders.size() + " findings")).append(": ")
                 .append(Ansi.green(auto.size() + " logast fixes")).append(", ")
                 .append(Ansi.cyan(text.size() + " need a message")).append(", ")
                 .append(outcomes.isEmpty() ? "" : Ansi.cyan(outcomes.size() + " outcomes to count or skip") + ", ")
+                .append(retries.isEmpty() ? "" : Ansi.cyan(retries.size() + " retries to decide") + ", ")
                 .append(Ansi.magenta(decisions.size() + (decisions.size() == 1 ? " needs your decision" : " need your decision")))
                 .append('\n');
         if (!auto.isEmpty()) {
@@ -69,6 +73,10 @@ public final class HumanFormat {
                     + "(`logast metrics .` has the context): ")).append(outcomes.size()).append(" logged but not counted").append('\n');
         }
 
+        if (!retries.isEmpty()) {
+            sb.append("  ").append(Ansi.cyan("retries")).append("          ").append(Ansi.dim("answer yes or no in "
+                    + "decisions/retry.yaml: ")).append(retries.size()).append(" idempotent calls nothing retries").append('\n');
+        }
         if (!decisions.isEmpty()) {
             sb.append('\n').append(Ansi.bold("Your decisions")).append(Ansi.dim(" (most important first; → what to do)")).append('\n');
             Map<String, Map<String, List<WorkOrder>>> bySeverity = new TreeMap<>(

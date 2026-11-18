@@ -171,6 +171,7 @@ abstract class E2eGoldenTest {
     private static final Map<String, Set<String>> KEEP = Map.of(
             "expected-retry-settings", Set.of(".logast/decisions/retry.yaml"),
             "expected-retry-coverage", Set.of(".logast/decisions/retry.yaml"),
+            "expected-retry-decided", Set.of(".logast/decisions/retry.yaml"),
             "expected-amounts-off", Set.of(".logast/decisions/metrics.yaml"));
     private static final java.util.regex.Pattern FINDING = java.util.regex.Pattern.compile(
             "(?m)^[A-Z]{3}-[0-9a-f]{6}\\s+\\S+\\s+(AUTO|NEEDS TEXT|REPORT-ONLY)\\s+(\\S+)\\s+(\\S+:\\d+)");
@@ -6410,6 +6411,34 @@ abstract class E2eGoldenTest {
         assertThat(findings).contains(expected).doesNotContain("RateClient.margin makes").doesNotContain("RateClient.submit makes")
                 .doesNotContain("RateFeed.latest makes").doesNotContain("RateClient.margin retries and calls");
         golden(EXPECTED.resolveSibling("expected-retry-coverage"), actual);
+
+        // #109: retry.yaml lists the recommended calls next to the usages; answered there, the next apply acts on them
+        Path rated = tmp.resolve("app");
+        Path retry = rated.resolve(".logast/decisions/retry.yaml");
+        String listed = Files.readString(retry);
+        assertThat(listed).as("candidates next to the usages, the nested retry noted at its usage")
+                .contains("candidates:\n  RateClient.current:").contains("  RateClient.history:")
+                .contains("    # retries inside RateClient.margin, which retries too");
+        Files.writeString(retry, listed
+                .replaceFirst("(RateClient\\.current:[^\n]*\n    retry: )\"\"", "$1no")
+                .replaceFirst("(RateClient\\.history:[^\n]*\n    retry: )\"\"", "$1yes"));
+        String third = run(rated, "apply", rated.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        String trace = Files.readString(rated.resolve(".logast/reports/apply-trace.txt"));
+        assertThat(trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "")
+                .as("answered in one pass:\n" + trace).doesNotContain("applying");
+        assertThat(run(rated, "apply", rated.toString(), "--auto", "--write", "--classpath-file", CLASSPATH))
+                .as("a second apply changes nothing").contains("applied (0):").contains("files (0):");
+        assertThat(third).doesNotContain("CHECK FAILED");
+        Files.writeString(rated.resolve("FINDINGS.txt"), run(rated, "scan", rated.toString(), "--classpath-file", CLASSPATH));
+        compile(rated);
+        Map<String, String> decided = files(rated);
+        assertThat(decided.get("src/main/java/com/example/e2e/rate/RateClient.java")).as("yes: retried, its values in application.yml")
+                .contains("@Retryable(");
+        assertThat(decided.get("FINDINGS.txt")).as("both answered: neither is recommended again")
+                .doesNotContain("RateClient.current makes").doesNotContain("RateClient.history makes");
+        assertThat(decided.get(".logast/decisions/retry.yaml")).as("no stays listed; yes is a usage now")
+                .contains("  RateClient.current:\n    retry: \"no\"").contains("usages:\n  RateClient.history:");
+        golden(EXPECTED.resolveSibling("expected-retry-decided"), decided);
 
         // the resilience pack on its own reports the same
         Map<String, String> alone = migrate(tmp.resolve("resilience-only"), CLASSPATH, app -> {

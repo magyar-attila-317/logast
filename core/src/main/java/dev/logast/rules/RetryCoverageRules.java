@@ -81,9 +81,12 @@ final class RetryCoverageRules {
         for (Entrypoint ep : ctx.a.entrypoints) {
             entrypoints.computeIfAbsent(ep.method().key(), k -> new ArrayList<>()).add(ep);
         }
+        // #109: the answers in retry.yaml: yes adds the retry, no stops the recommendation
+        Map<String, String> answers = RetrySettingsRules.candidateMarks(ctx.a.project.root());
+        boolean retryable = ctx.a.project.probe().hasClass(ResilienceRules.RESILIENCE_PKG + "Retryable");
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() == null || body(m).http() != Http.IDEMPOTENT || retried(m)
-                    || ctx.ignored(m.file(), m.line(), Rules.RETRY_RECOMMENDED)) {
+                    || ctx.ignored(m.file(), m.line(), Rules.RETRY_RECOMMENDED) || "no".equals(answers.get(m.label()))) {
                 continue;
             }
             List<Entrypoint> callers = unretriedCallers(m, entrypoints);
@@ -95,11 +98,30 @@ final class RetryCoverageRules {
                     + (callers.size() > 3 ? " and " + (callers.size() - 3) + " more" : "");
             String annotation = "@Retryable(maxRetriesString = \"${resilience.retry.defaults.max-retries}\", "
                     + "delayString = \"${resilience.retry.defaults.delay}\")";
-            ctx.order(Rules.RETRY_RECOMMENDED, m, m.line(), "retry-recommended")
-                    .title(m.label() + " makes an idempotent HTTP call that nothing retries, reached from " + from + ": "
+            OrderBuilder b = ctx.order(Rules.RETRY_RECOMMENDED, m, m.line(), "retry-recommended")
+                    .data("method", m.label()).data("caller", request ? "request" : "job").data("from", from);
+            if ("yes".equals(answers.get(m.label())) && retryable) {
+                // retry: yes: Spring Framework 7's @Retryable with the recommended values; the next round enables it
+                // (RETRY_INACTIVE) and moves the values into application.yml (RETRY_SETTINGS_HARDCODED)
+                String added = request ? "@Retryable(maxRetries = 1, delay = 100)" : "@Retryable(maxRetries = 3, delay = 1000, multiplier = 2)";
+                int at = m.decl().getLeadingAnnotations().isEmpty() ? dev.logast.parse.Pos.start(m.decl())
+                        : dev.logast.parse.Pos.start(m.decl().getLeadingAnnotations().getFirst());
+                b.title("Adds " + added + " to " + m.label() + " (retry: yes in " + RetrySettingsRules.WORK_FILE + "): its "
+                                + "idempotent HTTP call is reached from " + from)
+                        .suggestion("Answered yes in " + RetrySettingsRules.WORK_FILE + ". The next round enables @Retryable where "
+                                + "needed and moves the values into application.yml.")
+                        .edits(JavaEdits.imports(m.file(), ResilienceRules.RESILIENCE_PKG + "Retryable"))
+                        .edit(dev.logast.orders.Edit.insert(m.file().relPath(), at,
+                                added + "\n" + Text.indentAt(m.file().text(), at)));
+                continue;
+            }
+            String decide = "Decide in " + RetrySettingsRules.WORK_FILE + " (candidates: " + m.label() + ", retry: yes or no)"
+                    + (retryable ? "; yes adds it on the next apply. " : "; Spring Framework 7's @Retryable is not on the "
+                    + "classpath, so add the retry yourself. ");
+            b.title(m.label() + " makes an idempotent HTTP call that nothing retries, reached from " + from + ": "
                             + (request ? "one dropped connection or 503 fails the request"
                             : "one dropped connection or 503 fails the run"))
-                    .suggestion(request
+                    .suggestion(decide + (request
                             ? "Retry it at most once, with a short backoff, inside the caller's timeout: @Retryable(maxRetries = 1, "
                             + "delay = 100) on " + m.label() + " (Spring Framework 7, needs @EnableResilientMethods; the next apply "
                             + "moves the settings into application.yml, under resilience.retry.usages when they differ from "
@@ -107,7 +129,7 @@ final class RetryCoverageRules {
                             + "Skip it when a service mesh or gateway already retries."
                             : "Retry it with backoff: " + annotation + " on " + m.label() + " (Spring Framework 7, needs "
                             + "@EnableResilientMethods), with the settings shared in application.yml under resilience.retry.defaults "
-                            + "(for example 3 retries, starting at one second, multiplier 2), or retryWhen(Retry.backoff(..)) on a WebClient.")
+                            + "(for example 3 retries, starting at one second, multiplier 2), or retryWhen(Retry.backoff(..)) on a WebClient."))
                     .basis("only idempotent calls (GET / HEAD / PUT / DELETE / OPTIONS); no @Retryable, Resilience4j @Retry, "
                             + "RetryTemplate, retryWhen or Spring Cloud CircuitBreaker on the path, no Kafka / RabbitMQ redelivery")
                     .doneWhen("the method, or a method on every path to it from an entrypoint, retries (@Retryable, Resilience4j "
@@ -161,6 +183,7 @@ final class RetryCoverageRules {
                 continue;
             }
             ctx.order(Rules.NESTED_RETRY, m, m.line(), "nested-retry")
+                    .data("method", m.label()).data("inner", path.getLast())
                     .title(m.label() + " retries and calls " + String.join(" → ", path.subList(1, path.size()))
                             + ", which retries again: every outer attempt runs all inner attempts, so the attempts multiply "
                             + "(3 × 3 = 9 calls to the remote side) and the wait grows with them")

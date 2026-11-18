@@ -126,6 +126,40 @@ public final class RetrySettingsRules {
     record Mark(Boolean specific, Map<String, String> values) {
     }
 
+    /**
+     * A call RETRY_RECOMMENDED recommends retrying (#109), as the work file lists it.
+     *
+     * @param caller "request" (one quick retry) or "job" (retries with backoff)
+     * @param from   the entrypoints that reach it
+     */
+    public record Candidate(String method, String caller, String from, String file, int line) {
+    }
+
+    /**
+     * The person's answer per candidate ({@code candidates.<method>.retry}): "yes" (add the retry), "no" (never ask
+     * again) or "" (undecided).
+     */
+    public static Map<String, String> candidateMarks(Path root) {
+        Path p = root.resolve(WORK_FILE);
+        Map<String, String> out = new LinkedHashMap<>();
+        if (!Files.exists(p)) {
+            return out;
+        }
+        try {
+            JsonNode n = new ObjectMapper(new YAMLFactory()).readTree(Files.readString(p));
+            if (n != null && n.path("candidates").isObject()) {
+                n.get("candidates").fields().forEachRemaining(e -> {
+                    JsonNode r = e.getValue() == null ? null : e.getValue().get("retry");
+                    String v = r == null || r.isNull() ? "" : r.isBoolean() ? (r.asBoolean() ? "yes" : "no") : r.asText().strip();
+                    out.put(e.getKey(), v.equalsIgnoreCase("true") ? "yes" : v.equalsIgnoreCase("false") ? "no" : v.toLowerCase(Locale.ROOT));
+                });
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return out;
+    }
+
     private final RuleContext ctx;
 
     RetrySettingsRules(RuleContext ctx) {
@@ -311,32 +345,68 @@ public final class RetrySettingsRules {
     }
 
     /**
-     * Writes .logast/decisions/retry.yaml when the service has retry usages: every usage, with what the person marked kept and
-     * the current state where nothing is marked. Returns true when the file was created by this call.
+     * Writes .logast/decisions/retry.yaml (#104, #109): every retry decision of the service in one place. {@code usages}:
+     * every existing retry, with what the person marked kept and the current state where nothing is marked (a usage
+     * that retries inside another retry says so, from NESTED_RETRY). {@code candidates}: every call RETRY_RECOMMENDED
+     * recommends retrying ({@code retry: yes} adds the retry on the next apply, {@code no} stops the recommendation),
+     * and the ones answered "no" earlier. Written when there is something to list; returns true when created now.
      */
-    public static boolean writeWorkFile(Path root, Analysis a) {
+    public static boolean writeWorkFile(Path root, Analysis a, List<dev.logast.orders.WorkOrder> orders) {
         List<Usage> usages = usages(a);
+        List<Candidate> candidates = new ArrayList<>();
+        Map<String, String> nested = new HashMap<>();
+        for (dev.logast.orders.WorkOrder o : orders) {
+            Object method = o.data() == null ? null : o.data().get("method");
+            if (method == null) {
+                continue;
+            }
+            if (o.rule().equals(Rules.RETRY_RECOMMENDED)) {
+                candidates.add(new Candidate(method.toString(), String.valueOf(o.data().get("caller")),
+                        String.valueOf(o.data().get("from")), o.file(), o.line()));
+            } else if (o.rule().equals(Rules.NESTED_RETRY)) {
+                nested.put(method.toString(), String.valueOf(o.data().get("inner")));
+            }
+        }
+        Map<String, String> answers = candidateMarks(root);
+        Set<String> usageLabels = new HashSet<>();
+        usages.forEach(u -> usageLabels.add(u.label()));
+        Set<String> listedCandidates = new HashSet<>();
+        candidates.forEach(c -> listedCandidates.add(c.method()));
+        // answered "no": no longer recommended, still listed so the answer can be changed back
+        List<String> declined = answers.entrySet().stream().filter(e -> e.getValue().equals("no") && !listedCandidates.contains(e.getKey())
+                && !usageLabels.contains(e.getKey())).map(Map.Entry::getKey).sorted().toList();
         Path p = root.resolve(WORK_FILE);
-        if (usages.isEmpty()) {
+        if (usages.isEmpty() && candidates.isEmpty() && declined.isEmpty()) {
             return false;
         }
         Map<String, Mark> marks = marks(root);
         StringBuilder sb = new StringBuilder()
-                .append("# Retry settings per @Retryable usage (optional). By default a usage reads the shared block of its kind in\n")
+                .append("# Every retry decision of the service. Then run: logast apply . --auto --write\n")
+                .append("#\n")
+                .append("# usages: the existing retries (@Retryable). By default a usage reads the shared block of its kind in\n")
                 .append("# application.yml: resilience.retry.defaults (Spring Framework) or resilience.retry.spring-retry-defaults\n")
                 .append("# (Spring Retry). specific: true gives it its own block, resilience.retry.usages.<class>.<method>, starting\n")
                 .append("# from the shared values or from values: given here; the next `logast apply` moves it. false points it back to\n")
                 .append("# the shared block (its own block stays in application.yml, unused). Empty: logast decides (a usage whose\n")
                 .append("# settings differ from the shared ones keeps them in a block of its own).\n")
-                .append("usages:\n");
+                .append("#\n")
+                .append("# candidates: idempotent HTTP calls nothing retries (GET / HEAD / PUT / DELETE / OPTIONS, no retry on any path to\n")
+                .append("# them). retry: yes adds @Retryable (a request: one quick retry; a job or consumer: retries with backoff; the\n")
+                .append("# settings then move into application.yml like any usage's); no: not recommended again. Say no when a gateway\n")
+                .append("# or service mesh already retries, or the remote side must not see the call twice.\n");
+        sb.append("usages:").append(usages.isEmpty() ? " {}\n" : "\n");
         Set<String> listed = new HashSet<>();
         for (Usage u : usages) {
             listed.add(u.label());
             Mark mark = marks.get(u.label());
             Boolean specific = mark != null && mark.specific() != null ? mark.specific() : u.managed() ? u.specific() : null;
             sb.append("  ").append(u.label()).append(":    # ").append(u.family()).append(", ").append(u.file()).append(':')
-                    .append(u.line()).append('\n')
-                    .append("    specific: ").append(specific == null ? "" : specific).append('\n');
+                    .append(u.line()).append('\n');
+            if (nested.containsKey(u.label())) {
+                sb.append("    # retries inside ").append(nested.get(u.label())).append(", which retries too: the attempts multiply ")
+                        .append("(NESTED_RETRY); keep one of them\n");
+            }
+            sb.append("    specific: ").append(specific == null ? "" : specific).append('\n');
             if (mark != null && !mark.values().isEmpty()) {
                 sb.append("    values:\n");
                 mark.values().forEach((k, v) -> sb.append("      ").append(k).append(": ").append(v).append('\n'));
@@ -346,6 +416,18 @@ public final class RetrySettingsRules {
         if (!gone.isEmpty()) {
             sb.append("# no longer a retry usage logast manages (kept for reference):\n");
             gone.forEach(l -> sb.append("#  ").append(l).append(": specific ").append(marks.get(l).specific()).append('\n'));
+        }
+        sb.append("candidates:").append(candidates.isEmpty() && declined.isEmpty() ? " {}\n" : "\n");
+        candidates.sort(Comparator.comparing(Candidate::method));
+        for (Candidate c : candidates) {
+            sb.append("  ").append(c.method()).append(":    # ").append(c.file()).append(':').append(c.line()).append(", reached from ")
+                    .append(c.from()).append('\n')
+                    .append("    retry: \"").append(answers.getOrDefault(c.method(), "")).append("\"    # yes: ")
+                    .append(c.caller().equals("request") ? "one quick retry (maxRetries 1, delay 100 ms)"
+                            : "retries with backoff (maxRetries 3, delay 1 s, multiplier 2)").append(" · no\n");
+        }
+        for (String d : declined) {
+            sb.append("  ").append(d).append(":\n    retry: \"no\"\n");
         }
         try {
             boolean created = !Files.exists(p);

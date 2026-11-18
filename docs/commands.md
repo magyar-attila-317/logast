@@ -30,7 +30,7 @@ Options most analysing commands share: `--policy <file>`, `--classpath-file <fil
 
 | folder | what is in it | in git? |
 |---|---|---|
-| `.logast/decisions/` | what a person decides, all YAML: `messages.yaml` (message texts), `metrics.yaml` (count, tag or skip a logged outcome), `traffic.yaml` (calls/day per entrypoint), `retry.yaml` (retry usages with settings of their own). logast keeps the entries in step with the code and keeps what you wrote | yes |
+| `.logast/decisions/` | what a person decides, all YAML: `messages.yaml` (message texts), `metrics.yaml` (count, tag or skip a logged outcome), `traffic.yaml` (calls/day per entrypoint), `retry.yaml` (every retry decision: settings per usage, and yes / no for the calls logast recommends retrying). logast keeps the entries in step with the code and keeps what you wrote | yes |
 | `.logast/reports/` | what logast writes for you to read: `orders.json`, `coverage.txt`, `steps/`, `apply-trace.txt`, `last-apply.txt`, `queries.md`, `verify.json` | no |
 | `.logast/` | `classpath-*.txt` (machine input), `baseline.json` (CI), `README.md`, `shape/` | baseline and README |
 
