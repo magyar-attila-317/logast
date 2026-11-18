@@ -237,6 +237,26 @@ resilience:
 
 What each setting does in detail: [the metrics pack](packs/metrics.md) and [the resilience pack](packs/resilience.md).
 
+#### `.logast/retry.yaml`: retry settings per usage
+
+With the resilience pack, logast keeps `.logast/retry.yaml` up to date. It lists every `@Retryable` usage it manages
+(RETRY_SETTINGS_HARDCODED), the way `.logast/traffic.yaml` lists the entrypoints. Keep it in git. Filling it in is
+optional.
+
+```yaml
+usages:
+  ParcelClient.track:    # Spring Framework @Retryable, src/main/java/com/example/parcel/ParcelClient.java:11
+    specific: true       # its own block: resilience.retry.usages.parcel-client.track.*
+    values:              # optional: what the new block starts with (default: the shared values)
+      max-retries: 5
+  ParcelClient.quote:    # Spring Framework @Retryable, src/main/java/com/example/parcel/ParcelClient.java:16
+    specific: false      # the shared block: resilience.retry.defaults.*
+```
+
+The next `logast apply` follows it. Empty means logast decides: the shared block, unless the usage's settings differ
+from it. Then the usage keeps them in a block of its own. Marking a usage `false` again points it back to the shared
+block; its own block stays in `application.yml`, unused. Details: [the resilience pack](packs/resilience.md#retry-settings-in-configuration).
+
 ### `audit` (pack `audit`)
 
 ```yaml

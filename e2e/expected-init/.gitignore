@@ -3,4 +3,5 @@
 .logast/*
 !.logast/baseline.json
 !.logast/traffic.yaml
+!.logast/retry.yaml
 !.logast/README.md

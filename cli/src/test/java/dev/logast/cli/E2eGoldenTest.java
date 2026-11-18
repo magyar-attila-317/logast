@@ -5828,7 +5828,7 @@ class E2eGoldenTest {
         assertThat(actual.get("FINDINGS.txt")).contains("new JdbcTemplate(..) creates a JdbcTemplate of its own")
                 .doesNotContain("new NamedParameterJdbcTemplate(..)");
         assertThat(actual.get("src/main/java/com/example/e2e/E2eApplication.java"))
-                .contains("@EnableResilientMethods\n@SpringBootApplication");
+                .contains("@EnableResilientMethods\n@EnableConfigurationProperties(RetrySettings.class)\n@SpringBootApplication");
         assertThat(actual.get("FINDINGS.txt")).contains("SCHEDULER_SINGLE_THREAD")
                 .contains("Spring Boot's auto-configured executor").contains("CarrierLabels.print)")
                 .doesNotContain("RETRY_INACTIVE");
@@ -5940,6 +5940,228 @@ class E2eGoldenTest {
             Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [resilience]"));
         });
         assertThat(alone.get("FINDINGS.txt")).contains(expected);
+    }
+
+    /** #104: stand-ins for Spring Retry 2.x (not on the e2e classpath): the attributes the retry settings scenario uses. */
+    private static final Map<String, String> SPRING_RETRY_STUBS = Map.of(
+            "org/springframework/retry/annotation/Retryable.java", """
+                    package org.springframework.retry.annotation;
+
+                    import java.lang.annotation.ElementType;
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+                    import java.lang.annotation.Target;
+
+                    @Target({ElementType.METHOD, ElementType.TYPE})
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface Retryable {
+                        Class<? extends Throwable>[] value() default {};
+
+                        Class<? extends Throwable>[] retryFor() default {};
+
+                        int maxAttempts() default 3;
+
+                        String maxAttemptsExpression() default "";
+
+                        Backoff backoff() default @Backoff();
+                    }
+                    """,
+            "org/springframework/retry/annotation/Backoff.java", """
+                    package org.springframework.retry.annotation;
+
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface Backoff {
+                        long value() default 1000;
+
+                        long delay() default 0;
+
+                        long maxDelay() default 0;
+
+                        double multiplier() default 0;
+
+                        String delayExpression() default "";
+
+                        String maxDelayExpression() default "";
+
+                        String multiplierExpression() default "";
+
+                        boolean random() default false;
+                    }
+                    """,
+            "org/springframework/retry/annotation/EnableRetry.java", """
+                    package org.springframework.retry.annotation;
+
+                    import java.lang.annotation.ElementType;
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+                    import java.lang.annotation.Target;
+
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface EnableRetry {
+                    }
+                    """);
+
+    /** #104: the shapes of {@link #retrySettingsMoveIntoConfiguration()}. */
+    private static final IoAction PARCEL_RETRIES = app -> {
+        Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/parcel"));
+        Files.writeString(dir.resolve("ParcelConfig.java"), """
+                package com.example.e2e.parcel;
+
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.resilience.annotation.EnableResilientMethods;
+                import org.springframework.retry.annotation.EnableRetry;
+
+                @Configuration
+                @EnableResilientMethods
+                @EnableRetry
+                public class ParcelConfig {
+                }
+                """);
+        // Spring Framework 7: two usages with the same settings share them, one with settings of its own (in seconds)
+        // keeps them, one that already reads the team's own property is left alone
+        Files.writeString(dir.resolve("ParcelClient.java"), """
+                package com.example.e2e.parcel;
+
+                import java.io.IOException;
+                import java.util.concurrent.TimeUnit;
+                import org.springframework.resilience.annotation.Retryable;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelClient {
+                    @Retryable(maxRetries = 2, delay = 500)
+                    public String track(String parcelId) {
+                        return "in transit";
+                    }
+
+                    @Retryable(maxRetries = 2, delay = 500)
+                    public String quote(String parcelId) {
+                        return "4.20";
+                    }
+
+                    @Retryable(value = IOException.class, maxRetries = 5, delay = 2, multiplier = 2.0, timeUnit = TimeUnit.SECONDS)
+                    public String label(String parcelId) throws IOException {
+                        return "label";
+                    }
+
+                    @Retryable(maxRetriesString = "${parcel.audit.retries:1}")
+                    public String audit(String parcelId) {
+                        return "audited";
+                    }
+                }
+                """);
+        // Spring Retry: a backoff with a multiplier, and a bare @Retryable on the library's defaults
+        Files.writeString(dir.resolve("ParcelGateway.java"), """
+                package com.example.e2e.parcel;
+
+                import org.springframework.retry.annotation.Backoff;
+                import org.springframework.retry.annotation.Retryable;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ParcelGateway {
+                    @Retryable(retryFor = IllegalStateException.class, maxAttempts = 4, backoff = @Backoff(delay = 200, multiplier = 1.5))
+                    public void send(String parcelId) {
+                        System.out.println(parcelId);
+                    }
+
+                    @Retryable
+                    public void cancel(String parcelId) {
+                        System.out.println(parcelId);
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #104: retry settings come from configuration. Literal attempts and delays of Spring Framework 7's and Spring
+     * Retry's @Retryable move into application.yml: one shared block per kind (resilience.retry.defaults,
+     * resilience.retry.spring-retry-defaults) with the most common settings, a block of its own
+     * (resilience.retry.usages.<class>.<method>) for a usage whose settings differ, so nothing changes behaviour. The
+     * annotations read them through placeholders (Framework: maxRetriesString = "${…}"; Spring Retry:
+     * maxAttemptsExpression = "#{${…}}"), the generated RetrySettings record binds them, @EnableConfigurationProperties
+     * registers it. A usage reading the team's own property is left alone. .logast/retry.yaml lists the usages: marking
+     * one specific gives it its own block on the next apply, and the run after that changes nothing. Every file must
+     * equal e2e/expected-retry-settings; the resilience pack alone gives the same code and configuration.
+     */
+    @Test
+    void retrySettingsMoveIntoConfiguration() throws IOException {
+        String classpath = libraryClasspath("spring-retry", SPRING_RETRY_STUBS).toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, PARCEL_RETRIES);
+        String client = actual.get("src/main/java/com/example/e2e/parcel/ParcelClient.java");
+        String gateway = actual.get("src/main/java/com/example/e2e/parcel/ParcelGateway.java");
+        String yml = actual.get("src/main/resources/application.yml");
+        assertThat(client).contains("@Retryable(maxRetriesString = \"${resilience.retry.defaults.max-retries}\", "
+                        + "delayString = \"${resilience.retry.defaults.delay}\")")
+                .contains("@Retryable(value = IOException.class, timeUnit = TimeUnit.SECONDS, "
+                        + "maxRetriesString = \"${resilience.retry.usages.parcel-client.label.max-retries}\"")
+                .as("the team's own property").contains("@Retryable(maxRetriesString = \"${parcel.audit.retries:1}\")");
+        assertThat(gateway).contains("maxAttemptsExpression = \"#{${resilience.retry.spring-retry-defaults.max-attempts}}\"")
+                .contains("backoff = @Backoff(delayExpression = \"#{${resilience.retry.usages.parcel-gateway.cancel.delay}}\")")
+                .contains("import org.springframework.retry.annotation.Backoff;");
+        assertThat(yml).contains("""
+                resilience:
+                  retry:
+                    defaults:
+                      max-retries: 2
+                      delay: 500ms
+                """).contains("""
+                        label:
+                          max-retries: 5
+                          delay: 2000ms
+                          multiplier: 2.0
+                """).contains("""
+                    spring-retry-defaults:
+                      max-attempts: 4
+                      delay: 200
+                      multiplier: 1.5
+                """);
+        assertThat(actual.get("src/main/java/com/example/e2e/RetrySettings.java"))
+                .contains("@ConfigurationProperties(\"resilience.retry\")");
+        assertThat(actual.get(MAIN_CLASS)).contains("@EnableConfigurationProperties(RetrySettings.class)\n@SpringBootApplication");
+        assertThat(actual.get(".logast/retry.yaml")).contains("  ParcelClient.track:").contains("  ParcelClient.label:")
+                .doesNotContain("ParcelClient.audit");
+        assertThat(actual.get("OUTPUT.txt")).contains(".logast/retry.yaml (optional)");
+        golden(EXPECTED.resolveSibling("expected-retry-settings"), actual);
+
+        // marked specific: the next apply gives ParcelClient.track a block of its own, starting from the shared values
+        Path app = tmp.resolve("app");
+        Path work = app.resolve(".logast/retry.yaml");
+        String marked = Files.readString(work).replaceFirst("(  ParcelClient\\.track:.*\\n    specific: )false", "$1true");
+        assertThat(marked).isNotEqualTo(Files.readString(work));
+        Files.writeString(work, marked);
+        String apply = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
+        assertThat(apply).doesNotContain("CHECK FAILED");
+        String moved = Files.readString(app.resolve("src/main/java/com/example/e2e/parcel/ParcelClient.java"));
+        assertThat(moved).contains("@Retryable(maxRetriesString = \"${resilience.retry.usages.parcel-client.track.max-retries}\", "
+                        + "delayString = \"${resilience.retry.usages.parcel-client.track.delay}\")\n    public String track")
+                .as("the other usage stays on the shared settings")
+                .contains("@Retryable(maxRetriesString = \"${resilience.retry.defaults.max-retries}\", "
+                        + "delayString = \"${resilience.retry.defaults.delay}\")\n    public String quote");
+        assertThat(Files.readString(app.resolve("src/main/resources/application.yml")))
+                .contains("          multiplier: 2.0\n        track:\n          max-retries: 2\n          delay: 500ms\n");
+        assertThat(Files.readString(work)).contains("  ParcelClient.track:    # Spring Framework @Retryable, "
+                + "src/main/java/com/example/e2e/parcel/ParcelClient.java:11\n    specific: true\n");
+        String again = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
+        assertThat(again).as("the run after that changes nothing").contains("applied (0):").contains("files (0):")
+                .doesNotContain("CHECK FAILED");
+        compile(app, "UTF-8", PLATFORM, extraClasses[0]);
+
+        // the resilience pack on its own writes the same code and configuration
+        Map<String, String> alone = migrate(tmp.resolve("resilience-only"), classpath, app2 -> {
+            PARCEL_RETRIES.run(app2);
+            Path policy = app2.resolve("logast.yml");
+            Files.writeString(policy, Files.readString(policy).replaceFirst("(?m)^packs: .*$", "packs: [resilience]"));
+        });
+        for (String f : List.of("src/main/java/com/example/e2e/parcel/ParcelClient.java", "src/main/java/com/example/e2e/parcel/ParcelGateway.java",
+                "src/main/java/com/example/e2e/RetrySettings.java", ".logast/retry.yaml")) {
+            assertThat(alone.get(f)).as(f).isEqualTo(actual.get(f));
+        }
+        assertThat(alone.get("src/main/resources/application.yml")).contains("    spring-retry-defaults:\n      max-attempts: 4\n");
     }
 
     /** #90 item 5, the retry follow-up and the WebClient.Builder: the shapes of {@link #poisonMessagesNestedRetriesAndWebClientTimeouts()}. */

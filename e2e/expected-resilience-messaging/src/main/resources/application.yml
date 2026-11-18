@@ -48,3 +48,8 @@ management:
   tracing:
     sampling:
       probability: 1.0
+resilience:
+  retry:
+    defaults:
+      max-retries: 2
+      delay: 1000ms

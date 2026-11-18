@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class CarrierClient {
-    @Retryable(maxRetries = 2)
+    @Retryable(maxRetriesString = "${resilience.retry.defaults.max-retries}", delayString = "${resilience.retry.defaults.delay}")
     public String track(String parcelId) {
         return "in transit";
     }

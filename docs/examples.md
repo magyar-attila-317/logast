@@ -760,16 +760,95 @@ public class E2eApplication {
 <td>
 
 ```java
-// CarrierClient (unchanged)
-@Retryable(maxRetries = 2)
+// CarrierClient (its settings move into application.yml,
+// see "Retry settings move into configuration")
+@Retryable(maxRetriesString = "${resilience.retry.defaults.max-retries}",
+        delayString = "${resilience.retry.defaults.delay}")
 public String track(String parcelId) {
 // …
 
 // E2eApplication
 @EnableResilientMethods
+@EnableConfigurationProperties(RetrySettings.class)
 @SpringBootApplication
 public class E2eApplication {
 ```
+
+</td>
+</tr>
+</table>
+
+### Retry settings move into configuration
+
+Attempts and delays written into `@Retryable` move into `application.yml`. Usages with the same settings share one
+block. A usage with settings of its own keeps them in its own block, and `.logast/retry.yaml` decides which usages get
+one. A generated `RetrySettings` record binds the blocks.
+*Scenario `expected-retry-settings`, `ParcelClient.java`, `ParcelGateway.java` and `application.yml`.*
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```java
+// ParcelClient (Spring Framework 7)
+@Retryable(maxRetries = 2, delay = 500)
+public String track(String parcelId) {
+// …
+@Retryable(value = IOException.class, maxRetries = 5,
+        delay = 2, multiplier = 2.0, timeUnit = TimeUnit.SECONDS)
+public String label(String parcelId) throws IOException {
+
+// ParcelGateway (Spring Retry)
+@Retryable(retryFor = IllegalStateException.class, maxAttempts = 4,
+        backoff = @Backoff(delay = 200, multiplier = 1.5))
+public void send(String parcelId) {
+```
+
+</td>
+<td>
+
+```java
+// ParcelClient
+@Retryable(maxRetriesString = "${resilience.retry.defaults.max-retries}",
+        delayString = "${resilience.retry.defaults.delay}")
+public String track(String parcelId) {
+// …
+@Retryable(value = IOException.class, timeUnit = TimeUnit.SECONDS,
+        maxRetriesString = "${resilience.retry.usages.parcel-client.label.max-retries}",
+        delayString = "${resilience.retry.usages.parcel-client.label.delay}",
+        multiplierString = "${resilience.retry.usages.parcel-client.label.multiplier}")
+public String label(String parcelId) throws IOException {
+
+// ParcelGateway
+@Retryable(retryFor = IllegalStateException.class,
+        maxAttemptsExpression = "#{${resilience.retry.spring-retry-defaults.max-attempts}}",
+        backoff = @Backoff(
+                delayExpression = "#{${resilience.retry.spring-retry-defaults.delay}}",
+                multiplierExpression = "#{${resilience.retry.spring-retry-defaults.multiplier}}"))
+public void send(String parcelId) {
+```
+
+```yaml
+# application.yml
+resilience:
+  retry:
+    defaults:
+      max-retries: 2
+      delay: 500ms
+    spring-retry-defaults:
+      max-attempts: 4
+      delay: 200
+      multiplier: 1.5
+    usages:
+      parcel-client:
+        label:
+          max-retries: 5
+          delay: 2000ms
+          multiplier: 2.0
+```
+
+(logast writes each annotation on one line; wrapped here to fit.)
 
 </td>
 </tr>
