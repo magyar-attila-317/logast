@@ -76,11 +76,11 @@ final class EntrypointRules {
         }
         List<DomainValues.Value> missing = ctx.enabled(Rules.MISSING_DOMAIN_MDC) && !reactive
                 && !ctx.ignored(f, line, Rules.MISSING_DOMAIN_MDC) && !ctx.legacyMdc(m)
-                ? ctx.domain.fromVars(params(m)).stream()
+                ? entryValues(ep, m).stream()
                 .filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).map(v -> nullSafe(m, v)).toList()
                 : List.of();
         if (reactive) {
-            reactiveMdc(m);
+            reactiveMdc(ep, m);
         }
         boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
         // a run's started and outcome lines belong to JOB_OUTCOME_MISSING: split between two rules, the outcome line it adds
@@ -186,6 +186,16 @@ final class EntrypointRules {
     }
 
     /**
+     * The MDC values an entrypoint's parameters give: by name and configured type, and for a request or message the
+     * getter / record accessor its payload carries (#15, {@link DomainValues#fromParams}). Not for in-process application
+     * events (EVENT): their listeners run inside the publisher's call, which has its own scope; reading their payloads
+     * is a separate decision.
+     */
+    private List<DomainValues.Value> entryValues(Entrypoint ep, MethodInfo m) {
+        return ep.kind() == Entrypoint.Kind.EVENT ? ctx.domain.fromVars(params(m)) : ctx.domain.fromParams(params(m));
+    }
+
+    /**
      * MISSING_DOMAIN_MDC on a Mono/Flux entrypoint (#14), report only: an MdcScope around the body would set the keys
      * while the pipeline is assembled and remove them before it runs (on other threads), so the lines in the operators
      * would still lack them. Automatic context propagation does not help by itself either: Reactor restores only the
@@ -193,11 +203,11 @@ final class EntrypointRules {
      * arbitrary MDC keys. Sources: Reactor reference › Context-Propagation Support; context-propagation's
      * {@code io.micrometer.context.integration.Slf4jThreadLocalAccessor} (key {@code cp.slf4j}, the MDC keys it is built for).
      */
-    private void reactiveMdc(MethodInfo m) {
+    private void reactiveMdc(Entrypoint ep, MethodInfo m) {
         if (!ctx.enabled(Rules.MISSING_DOMAIN_MDC) || ctx.ignored(m.file(), m.line(), Rules.MISSING_DOMAIN_MDC) || ctx.legacyMdc(m)) {
             return;
         }
-        List<String> keys = ctx.domain.fromVars(params(m)).stream().map(DomainValues.Value::key)
+        List<String> keys = entryValues(ep, m).stream().map(DomainValues.Value::key)
                 .filter(k -> !ctx.a.paths.mdcInside(m).contains(k)).distinct().toList();
         if (keys.isEmpty()) {
             return;

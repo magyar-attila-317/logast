@@ -14,6 +14,9 @@ public final class RelayMetrics {
     public static final String COUPON_ACTIVATOR_REDEEM = "coupon-activator.redeem";
 
     /** Observation (timer and span) name. */
+    public static final String COUPON_ACTIVATOR_GIVE_BACK = "coupon-activator.give-back";
+
+    /** Observation (timer and span) name. */
     public static final String COUPON_CHANNEL_LISTENER_ON_MESSAGE = "coupon-channel-listener.on-message";
 
     /** Observation (timer and span) name. */

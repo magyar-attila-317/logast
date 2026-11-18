@@ -1,5 +1,6 @@
 package com.example.e2e.relay;
 
+import com.example.e2e.logging.MdcScope;
 import com.example.proto.CouponReply;
 import com.example.proto.CouponRequest;
 import com.example.proto.CouponServiceGrpc;
@@ -20,20 +21,24 @@ public class CouponGrpcService extends CouponServiceGrpc.CouponServiceImplBase {
 
     @Override
     public void lookup(CouponRequest request, StreamObserver<CouponReply> responseObserver) {
-        String couponId = request.getCouponId();
-        relayLog.record(couponId);
-        responseObserver.onNext(CouponReply.of("found"));
-        responseObserver.onCompleted();
+        try (var mdc = MdcScope.of("couponId", request.getCouponId())) {
+            String couponId = request.getCouponId();
+            relayLog.record(couponId);
+            responseObserver.onNext(CouponReply.of("found"));
+            responseObserver.onCompleted();
+        }
     }
 
     @Override
     public void watch(CouponRequest request, StreamObserver<CouponReply> responseObserver) {
-        String couponId = request.getCouponId();
-        relayLog.record(couponId);
-        relayExecutor.execute(() -> {
-            responseObserver.onNext(CouponReply.of("changed"));
-            responseObserver.onCompleted();
-        });
+        try (var mdc = MdcScope.of("couponId", request.getCouponId())) {
+            String couponId = request.getCouponId();
+            relayLog.record(couponId);
+            relayExecutor.execute(() -> {
+                responseObserver.onNext(CouponReply.of("changed"));
+                responseObserver.onCompleted();
+            });
+        }
     }
 
     @Override

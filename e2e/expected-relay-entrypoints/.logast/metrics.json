@@ -146,7 +146,7 @@
     "_message" : "INFO \"Relay recorded\"",
     "_where" : "src/main/java/com/example/e2e/relay/RelayLog.java:10 RelayLog.record",
     "_frequency" : "unknown: no rate for \"@ServiceActivator couponRequests\" in .logast/traffic.yaml",
-    "_paths" : [ "integration @ServiceActivator couponRequests", "integration @ServiceActivator voucherRequests", "grpc grpc CouponGrpcService.lookup", "grpc grpc CouponGrpcService.watch", "redis redis CouponChannelListener.onMessage" ],
+    "_paths" : [ "integration @ServiceActivator couponRequests", "integration @ServiceActivator couponReturns", "integration @ServiceActivator voucherRequests", "grpc grpc CouponGrpcService.lookup", "grpc grpc CouponGrpcService.watch" ],
     "_tag" : "available"
   }
 }

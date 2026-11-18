@@ -34,6 +34,7 @@ entrypoints:
   "redis CouponRelay.onRefund":     # redis, CouponRelay.onRefund
   # integration
   "@ServiceActivator couponRequests":     # integration, CouponActivator.redeem
+  "@ServiceActivator couponReturns":     # integration, CouponActivator.giveBack
   "@ServiceActivator voucherRequests":     # integration, VoucherActivator.issue
   # grpc
   "grpc CouponGrpcService.lookup":     # grpc, CouponGrpcService.lookup

@@ -314,8 +314,11 @@ class RepeatedChainTest {
                 }
                 """);
         ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
-        // request.couponId() is a couponId (accessor name), and it goes into method1's couponId parameter
-        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+        // request.couponId() is a couponId (accessor name): the entrypoint's own MDC scope (#15) takes it from the request,
+        // so the repeated value needs no scope of its own in method1
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.MISSING_DOMAIN_MDC)).extracting(WorkOrder::method)
                 .containsExactly("Coupons.method0");
+        assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.REPEATED_LOG_VALUE)).extracting(WorkOrder::method)
+                .doesNotContain("Coupons.method1");
     }
 }

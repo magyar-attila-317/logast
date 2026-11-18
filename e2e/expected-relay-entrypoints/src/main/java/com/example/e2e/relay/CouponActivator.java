@@ -22,4 +22,14 @@ public class CouponActivator {
                     relayLog.record(couponId);
                 });
     }
+
+    @ServiceActivator(inputChannel = "couponReturns")
+    public void giveBack(CouponReturn command) {
+        ObservedContext.entrypoint(RelayMetrics.COUPON_ACTIVATOR_GIVE_BACK)
+                .mdc("couponId", command.couponId())
+                .debugOnSuccess()
+                .run(() -> {
+                    relayLog.record(command.couponId() + " x" + command.quantity());
+                });
+    }
 }

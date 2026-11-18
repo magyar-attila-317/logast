@@ -108,7 +108,8 @@ More entrypoints, each checked against its framework's documentation:
   (Boot's `GrpcServerObservationAutoConfiguration` registers `ObservationGrpcServerInterceptor` globally;
   `spring.grpc.server.observation.enabled`, default true, Boot properties appendix), so they get MDC only and no
   outcome line: the call ends with `onCompleted`, which may come after the method returns, and its status and the
-  server observation are the outcome (like an HTTP access log). With the observation off or without Spring gRPC, a
+  server observation are the outcome (like an HTTP access log). The MDC value comes from the request's getter (`request.getCouponId()` for a
+  vocabulary key `couponId`). With the observation off or without Spring gRPC, a
   method that calls `responseObserver.onCompleted()` in its own body gets an ObservedContext; one that hands the
   observer to a lambda, an inner class or another call is reported (a wrapper would end before the call does).
   Client and bidirectional streaming methods return the request observer and are not seen.
