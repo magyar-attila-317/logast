@@ -70,6 +70,17 @@ class PolicyValidationTest {
                 .contains("logast.yaml: rules.LOG_FORMAT.severity: 'critical' is not a severity; use one of [high, medium, low]");
     }
 
+    /** #24: a pinned starter older than the calls this logast writes; newer, equal or non-numeric pins say nothing. */
+    @Test
+    void anOlderPinnedStarterIsNamed() {
+        assertThat(Policy.Support.olderStarter("0.1.0", "0.2.0")).startsWith("pins logging-support 0.1.0, but this logast (0.2.0)")
+                .endsWith("or use support.mode: vendor");
+        assertThat(Policy.Support.olderStarter("0.9.3", "1.0.0")).isNotNull();
+        assertThat(Policy.Support.olderStarter("0.2.0", "0.2.0")).isNull();
+        assertThat(Policy.Support.olderStarter("0.3.0", "0.2.0")).isNull();
+        assertThat(Policy.Support.olderStarter("latest", "0.2.0")).isNull();
+    }
+
     @Test
     void queriesBlockIsChecked() {
         assertThat(error("queries:\n  backends: [prometheus, splunck]\n"))

@@ -1,0 +1,22 @@
+# #24: a release tag (v1.2.3) must name the version in gradle.properties, so the published starter, the CLI and the
+# coordinates the CLI writes by default all carry the same number.
+name: release-check
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag equals gradle.properties version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(sed -n 's/^version=//p' gradle.properties)"
+          echo "tag $tag, gradle.properties $version"
+          test "$tag" = "$version"

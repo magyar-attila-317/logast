@@ -262,7 +262,8 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      */
     public record Support(String coordinates, String packageName, String mode, String vendorPackage) {
         public Support {
-            coordinates = coordinates == null ? "dev.logast:logging-support:0.1.0" : coordinates;
+            // #24: the starter of the same release as this logast (its version is the one the generated calls exist in)
+            coordinates = coordinates == null ? "dev.logast:logging-support:" + releaseVersion() : coordinates;
             packageName = packageName == null ? "dev.logast.support" : packageName;
             mode = mode == null ? "dependency" : mode.toLowerCase(Locale.ROOT);
             if (!mode.equals("dependency") && !mode.equals("vendor")) {
@@ -272,6 +273,43 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
         public boolean vendor() {
             return mode.equals("vendor");
+        }
+
+        /** The version {@code coordinates} names, or "" when it names none. */
+        public String version() {
+            String[] p = coordinates.split(":");
+            return p.length > 2 ? p[2] : "";
+        }
+
+        /** This logast's release version (logast-version.properties of a build), 0.1.0 outside one. */
+        public static String releaseVersion() {
+            String v = dev.logast.orders.Baseline.currentVersion();
+            return v.equals("dev") || v.startsWith("$") ? "0.1.0" : v;
+        }
+
+        /**
+         * #24: the warning when a pinned starter is older than the one this logast writes calls for (dependency mode):
+         * generated code may call members the pinned release does not have. Null when not older or not comparable.
+         */
+        public static String olderStarter(String pinned, String tool) {
+            int[] a = numbers(pinned);
+            int[] b = numbers(tool);
+            if (a == null || b == null) {
+                return null;
+            }
+            for (int i = 0; i < 3; i++) {
+                if (a[i] != b[i]) {
+                    return a[i] < b[i] ? "pins logging-support " + pinned + ", but this logast (" + tool + ") writes calls of "
+                            + "logging-support " + tool + ": the generated code may not compile against " + pinned
+                            + "; pin " + tool + " (publish it to your repository first), or use support.mode: vendor" : null;
+                }
+            }
+            return null;
+        }
+
+        private static int[] numbers(String version) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)").matcher(version);
+            return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))} : null;
         }
 
         public String groupAndArtifact() {
