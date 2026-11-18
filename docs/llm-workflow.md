@@ -14,7 +14,7 @@ logging code by hand and do not read source files unless an order is REPORT-ONLY
    `logast classpath <root>` again after dependency changes. It runs Gradle
    and writes `.logast/classpath-*.txt`. If `scan` warns about a missing classpath or unresolved
    calls, run it first.
-2. `logast scan <root>` prints every work order. The full JSON goes to `<root>/.logast/orders.json`.
+2. `logast scan <root> --format compact` prints every work order (the default when the output is not a terminal). The full JSON goes to `<root>/.logast/orders.json`.
    - **AUTO**: no input needed.
    - **NEEDS TEXT**: write the message for each slot (usually `MSG`).
    - **REPORT-ONLY**: needs a human decision. Read its `note` and mention it in your summary;

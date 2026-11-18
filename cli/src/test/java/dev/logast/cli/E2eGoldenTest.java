@@ -88,6 +88,31 @@ class E2eGoldenTest {
         }));
     }
 
+    /**
+     * #107: scan for a person at a terminal: counts, then the decisions grouped by severity and rule, what to do per
+     * rule (the first instruction of the notes), one line per finding below the application package (two findings on one line and text as one, ×2), at most four per rule.
+     * Piped, scan keeps the full listing every other scenario snapshots (FINDINGS.txt). Must equal
+     * e2e/expected-scan-human/SCAN.txt.
+     */
+    @Test
+    void scanForAPersonGroupsTheDecisions() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        String human = run(app, "scan", app.toString(), "--format", "human", "--classpath-file", CLASSPATH);
+        assertThat(human).as("grouped, below the application package, the same place twice as one line")
+                .contains("Your decisions").contains("    async work loses the log context (4)  ASYNC_CONTEXT_LOSS\n")
+                .contains("      web/QuoteController.java:18  CompletableFuture.join() without a timeout")
+                .contains(" ×2\n").contains("      +2 more\n").doesNotContain("src/main/java/com/example/e2e/")
+                .contains("outcomes to count or skip").contains("--rule ASYNC_CONTEXT_LOSS")
+                .as("each rule says what to do: the note's first instruction, past an explanation")
+                .contains("      → Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.\n")
+                .contains("      → Log it there (or in an @ExceptionHandler), then delete this one.\n")
+                .contains("      → e.g. Record the trace or correlation id");
+        String piped = run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
+        assertThat(piped).as("not a terminal: the full listing").contains("REPORT-ONLY").doesNotContain("Your decisions");
+        golden(EXPECTED.resolveSibling("expected-scan-human"), Map.of("SCAN.txt", human));
+    }
+
     /** Every file equals the snapshot in {@code expectedDir}; with -Pe2e.update the snapshot is rewritten instead. */
     private static void golden(Path expectedDir, Map<String, String> actual) throws IOException {
         if (UPDATE) {

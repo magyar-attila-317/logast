@@ -50,30 +50,47 @@ the wording it leaves, so they only make sense after it. Each step is also its o
 
 ## scan
 
+In a terminal, `scan` shows what needs a person, grouped (shortened from `e2e/expected-scan-human/SCAN.txt`):
+
 ```
 $ logast scan .
-logast · 63 files · 21 entrypoints · 49/147 methods reachable · 52 call edges
-log coverage 44.0% (jobs 6/10 · http 5/11 · skips 0/1 · loops 0/1 · stateChanges 0/2)   (places that should log and do)
-165 orders: 88 AUTO, 10 NEEDS TEXT, 67 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = … · REPORT-ONLY = …)
-glossary terms: tenant, order, payment, charge, refund, shipment, customer, reconciliation, confirmation
-…
+logast · 53 files · 21 entrypoints · log coverage 42.9%
 
+143 findings: 93 logast fixes, 5 need a message, 11 outcomes to count or skip, 34 need your decision
+  logast fixes     message not in house format 41, business id missing from MDC 7, …
+  messages         write in .logast/fills.json or `logast review .`: business id missing from MDC 3, …
+  outcomes         decide in .logast/metrics.json (`logast metrics .` has the context): 11 logged but not counted
+
+Your decisions (most important first; → what to do)
+  high
+    async work loses the log context (4)  ASYNC_CONTEXT_LOSS
+      → Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.
+      edge/EdgeFlow.java:41        CompletableFuture.runAsync runs on another thread without MDC/trace context
+      web/QuoteController.java:16  CompletableFuture.supplyAsync runs on another thread without MDC/trace context
+      …
+  medium
+    wait without a timeout  BLOCKING_WAIT_UNBOUNDED
+      → Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutExcep…
+      web/QuoteController.java:18  CompletableFuture.join() without a timeout on a request path: if the work n… ×2
+  …
+
+what to decide, and when it is done: logast scan . --rule ASYNC_CONTEXT_LOSS   ·   everything in full (for an LLM): --format compact
+```
+
+Each rule's → line is the first instruction of its findings' notes ("e.g." when they differ). `--rule X` (or
+`--entrypoint`) shows every detail of those findings: the evidence, the whole suggestion, and when it counts as done. Piped or redirected (an LLM, CI, a file), `scan` prints that full listing for every order:
+
+```
+$ logast scan . --format compact
 SWA-d5b58b  low  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/shop/service/DefaultOrderService.java:41
   PaymentException is caught and dropped without a log line in DefaultOrderService.place (documented as intentional)
   path: POST /orders → OrderController.create → DefaultOrderService.place
   + log.warn("{{MSG}}", order.id(){{ARGS}}, e);
   MSG: What failed and what happens next … | suffix keys: [order.id] | must read as '{subject} failed'
-  note: PaymentClient.charge already logs this exception before rethrowing it. After this fix that log becomes
-        an EXCEPTION_LOGGED_TWICE order to delete (log once, where it is handled).
-
-DOM-f22aa2  medium  AUTO  MISSING_DOMAIN_MDC  src/main/java/com/example/shop/web/OrderController.java:37
-  GET /orders/{orderId}: MDC lacks order.id
-  + try (var mdc = MdcScope.of("order.id", orderId)) {
-  + … (4 lines)
 ```
 
 - Narrow the list: `--rule`, `--pack`, `--severity high`, `--entrypoint "POST /orders"`, `--limit`.
-- Change the output: `--format compact` (default) `| summary | json | sarif | fills-template`.
+- Change the output: `--format human` (default in a terminal) `| compact` (default otherwise) `| summary | json | sarif | fills-template`.
 - CI: `--baseline`, `--update-baseline`, `--since <git ref>`, `--fail-on <severity>` (see the README's CI section).
 - `scan` also creates and updates `.logast/fills.json` and `.logast/metrics.json`: it keeps every entry you already
   have exactly as it is, adds entries for new findings and removes the ones that are done. Nothing is rewritten when
