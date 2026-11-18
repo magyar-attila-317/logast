@@ -601,8 +601,25 @@ final class LogCallRules {
      * ({@code summary.runCode()}, {@code job.getRunCode()}).
      */
     static boolean sameValue(String src, String key) {
-        String cap = key.isEmpty() ? key : Character.toUpperCase(key.charAt(0)) + key.substring(1);
-        return src.equals(key) || src.endsWith("." + key + "()") || src.endsWith(".get" + cap + "()");
+        // #112: a key in another style (run.code, run_code, RunCode) names the Java value runCode
+        String name = javaName(key);
+        String cap = name.isEmpty() ? name : Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        return src.equals(key) || src.equals(name) || src.endsWith("." + name + "()") || src.endsWith(".get" + cap + "()");
+    }
+
+    /** {@code run.code} / {@code run_code} / {@code RunCode} → {@code runCode}: the Java name a key stands for. */
+    static String javaName(String key) {
+        StringBuilder sb = new StringBuilder();
+        boolean up = false;
+        for (char c : key.toCharArray()) {
+            if (c == '.' || c == '_' || c == '-') {
+                up = sb.length() > 0;
+            } else {
+                sb.append(up ? Character.toUpperCase(c) : sb.length() == 0 ? Character.toLowerCase(c) : c);
+                up = false;
+            }
+        }
+        return sb.toString();
     }
 
     /** Suffix name for an MDC/registry key (vocabulary logKey), or the key itself. */
