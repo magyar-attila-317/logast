@@ -10,6 +10,7 @@ import dev.logast.parse.SourceFileInfo;
 import org.openrewrite.java.tree.J;
 
 import java.util.*;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -107,6 +108,7 @@ final class EventMetricRules {
                 || ctx.observedAnnotationsActive && (TracingRules.observedAnnotation(m, false) || TracingRules.meterAnnotation(m));
     }
 
+    private static final Pattern PROCESSING = Pattern.compile("(?i)processing\\s+(.+)");
     private static final Pattern TRAILING_PREPOSITION = Pattern.compile("(?i).*\\b(to|for|on|after|before|with|from|of|in|at|by|into)$");
 
     /**
@@ -124,6 +126,13 @@ final class EventMetricRules {
             String text = MessageTemplate.compliantKeys(raw) != null ? MessageTemplate.compliantBase(raw) : MessageTemplate.stripPlaceholders(raw);
             String event = ctx.phrasing.eventOf(text);
             String s = event == null || !EVENTS.contains(event) ? null : ctx.phrasing.subjectOf(text);
+            Matcher processing = event == null ? PROCESSING.matcher(text.strip()) : null;
+            if (processing != null && processing.matches()) {
+                // #21: "Processing X" opens X only for this rule, and only with X's completion in the same method; it is
+                // not a phrasing variant (MESSAGE_PHRASING would rewrite every per-item "Processing order {}" line)
+                event = "processing";
+                s = processing.group(1).strip();
+            }
             if (s == null || s.isBlank() || s.split("\\s+").length > 3 || !s.matches("[\\p{L}][\\p{L}0-9 \\-]*")
                     || TRAILING_PREPOSITION.matcher(s).matches()) {
                 continue;
@@ -138,7 +147,7 @@ final class EventMetricRules {
         LogCall first = null;
         for (var e : eventsBySubject.entrySet()) {
             Set<String> ev = e.getValue();
-            boolean lifecycle = ev.contains("started") && (ev.contains("completed") || ev.contains("failed"));
+            boolean lifecycle = (ev.contains("started") || ev.contains("processing")) && (ev.contains("completed") || ev.contains("failed"));
             boolean business = Arrays.stream(e.getKey().split("[\\s\\-]+")).anyMatch(w -> terms.contains(w)
                     || w.endsWith("s") && terms.contains(w.substring(0, w.length() - 1)));
             if ((ev.contains("started") || ev.contains("completed")) && (lifecycle || business)) {

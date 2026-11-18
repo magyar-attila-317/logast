@@ -14,7 +14,7 @@ Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
 
 | rule | severity | finds | fix |
 |---|---|---|---|
-| BUSINESS_EVENT_UNMEASURED | medium | a business event (a method logging "X started" / "X completed") with no count, duration or error rate | AUTO: an Observation around it (timer and span) |
+| BUSINESS_EVENT_UNMEASURED | medium | a business event (a method logging "X started" / "X completed", or any wording in `phrasing.events` such as "Starting X" / "X done"; "Processing X" counts as the start when X's completion is logged in the same method) with no count, duration or error rate | AUTO: an Observation around it (timer and span) |
 | METRIC_OUTCOME_UNMEASURED | low | an outcome the logs report that no metric counts | report; AUTO for the `metrics.defaults` categories and once its `metrics.yaml` entry is decided |
 | METRIC_CATALOG | low | a metric or observation name written at the call site | AUTO: moved into a catalog class |
 | OBSERVED_ANNOTATION_INACTIVE | high | `@Observed` / `@Timed` / `@Counted` that Spring Boot does not process (also in tracing) | AUTO: switches them on |
