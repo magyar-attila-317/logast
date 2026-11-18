@@ -5,7 +5,7 @@ files (54): src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java, src/main
 Waiting on you — logast can't continue without these:
   23 log lines need wording        → write "MSG" in .logast/fills.json
   12 outcomes: count, tag or skip  → .logast/metrics.json
-  39 decisions                     → logast scan .   (each says what to decide)
+  41 decisions                     → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
@@ -23,7 +23,7 @@ files (0):   ·  0 rounds, <t>
 Waiting on you — logast can't continue without these:
   23 log lines need wording        → write "MSG" in .logast/fills.json
   12 outcomes: count, tag or skip  → .logast/metrics.json
-  39 decisions                     → logast scan .   (each says what to decide)
+  41 decisions                     → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 

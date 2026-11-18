@@ -1,7 +1,7 @@
 logast · 82 files · 24 entrypoints · 90/224 methods reachable · 164 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 70.8% (jobs 9/9 · http 8/15)   (places that should log and do)
-74 orders: 0 AUTO, 23 NEEDS TEXT, 51 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+76 orders: 0 AUTO, 23 NEEDS TEXT, 53 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -400,6 +400,18 @@ FMT-93dcb8  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/order/Pay
   + "{{MSG}}", order.amountCents(){{ARGS}}
   MSG: Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: "Charging order with {} cents" | suffix keys: [amountCents]
   mdc: [orderId]  vars: order:Order, mdc:MdcScope
+RRC-9ec872  low  REPORT-ONLY  RETRY_RECOMMENDED  src/main/java/com/example/e2e/parcel/ParcelClient.java:15  ParcelClient.track
+  ParcelClient.track makes an idempotent HTTP call that nothing retries, reached from GET /parcels/{parcelCode} (request): one dropped connection or 503 fails the request
+  path: GET /parcels/{parcelCode} → ParcelController.track → ParcelClient.track
+  why: only idempotent calls (GET / HEAD / PUT / DELETE / OPTIONS); no @Retryable, Resilience4j @Retry, RetryTemplate, retryWhen or Spring Cloud CircuitBreaker on the path, no Kafka / RabbitMQ redelivery
+  note: Retry it at most once, with a short backoff, inside the caller's timeout: @Retryable(maxRetries = 1, delay = 100) on ParcelClient.track (Spring Framework 7, needs @EnableResilientMethods; the next apply moves the settings into application.yml, under resilience.retry.usages when they differ from resilience.retry.defaults), or retryWhen(Retry.backoff(1, Duration.ofMillis(100))) on a WebClient. Skip it when a service mesh or gateway already retries.
+  done when: the method, or a method on every path to it from an entrypoint, retries (@Retryable, Resilience4j @Retry, RetryTemplate, retryWhen, Spring Cloud CircuitBreaker), or it makes a non-idempotent call
+RRC-ac851c  low  REPORT-ONLY  RETRY_RECOMMENDED  src/main/java/com/example/e2e/parcel/ParcelClient.java:19  ParcelClient.carrier
+  ParcelClient.carrier makes an idempotent HTTP call that nothing retries, reached from GET /parcels/{parcelCode}/carrier (request): one dropped connection or 503 fails the request
+  path: GET /parcels/{parcelCode}/carrier → ParcelController.carrier → ParcelClient.carrier
+  why: only idempotent calls (GET / HEAD / PUT / DELETE / OPTIONS); no @Retryable, Resilience4j @Retry, RetryTemplate, retryWhen or Spring Cloud CircuitBreaker on the path, no Kafka / RabbitMQ redelivery
+  note: Retry it at most once, with a short backoff, inside the caller's timeout: @Retryable(maxRetries = 1, delay = 100) on ParcelClient.carrier (Spring Framework 7, needs @EnableResilientMethods; the next apply moves the settings into application.yml, under resilience.retry.usages when they differ from resilience.retry.defaults), or retryWhen(Retry.backoff(1, Duration.ofMillis(100))) on a WebClient. Skip it when a service mesh or gateway already retries.
+  done when: the method, or a method on every path to it from an entrypoint, retries (@Retryable, Resilience4j @Retry, RetryTemplate, retryWhen, Spring Cloud CircuitBreaker), or it makes a non-idempotent call
 SUG-ff2554  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/parcel/ParcelErrors.java:16  ParcelErrors.unexpected
   Generated wording "Request failed unexpectedly": say it in domain terms
   - "Request failed unexpectedly"
@@ -426,7 +438,7 @@ Applied earlier: 101 changes in 54 files (git diff to review)
 Waiting on you — logast can't continue without these:
   23 log lines need wording        → write "MSG" in .logast/fills.json
   12 outcomes: count, tag or skip  → .logast/metrics.json
-  39 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
+  41 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 

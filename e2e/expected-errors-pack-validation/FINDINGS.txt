@@ -1,7 +1,7 @@
 logast · 84 files · 25 entrypoints · 88/225 methods reachable · 163 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 68.0% (jobs 9/9 · http 8/16)   (places that should log and do)
-74 orders: 0 AUTO, 24 NEEDS TEXT, 50 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+75 orders: 0 AUTO, 24 NEEDS TEXT, 51 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -358,6 +358,12 @@ MVG-4a4ce2  low  REPORT-ONLY  MESSAGE_VAGUE  src/main/java/com/example/e2e/job/P
   why: the text matches '^(publishing|completed publishing|finished publishing)\b' (policy logging.vagueMessages)
   note: Name the business operation and its outcome: "<Subject> started / completed / failed / skipped", e.g. "Pledge stipend invoice publication completed [count={}]".
   done when: the message matches no logging.vagueMessages pattern
+RRC-c1233b  low  REPORT-ONLY  RETRY_RECOMMENDED  src/main/java/com/example/e2e/label/LabelStore.java:14  LabelStore.find
+  LabelStore.find makes an idempotent HTTP call that nothing retries, reached from GET /labels/{labelCode} (request): one dropped connection or 503 fails the request
+  path: GET /labels/{labelCode} → LabelController.find → LabelStore.find
+  why: only idempotent calls (GET / HEAD / PUT / DELETE / OPTIONS); no @Retryable, Resilience4j @Retry, RetryTemplate, retryWhen or Spring Cloud CircuitBreaker on the path, no Kafka / RabbitMQ redelivery
+  note: Retry it at most once, with a short backoff, inside the caller's timeout: @Retryable(maxRetries = 1, delay = 100) on LabelStore.find (Spring Framework 7, needs @EnableResilientMethods; the next apply moves the settings into application.yml, under resilience.retry.usages when they differ from resilience.retry.defaults), or retryWhen(Retry.backoff(1, Duration.ofMillis(100))) on a WebClient. Skip it when a service mesh or gateway already retries.
+  done when: the method, or a method on every path to it from an entrypoint, retries (@Retryable, Resilience4j @Retry, RetryTemplate, retryWhen, Spring Cloud CircuitBreaker), or it makes a non-idempotent call
 SUG-1fede7  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/messaging/PledgeMessages.java:31  PledgeMessages.onReturn
   Generated wording "Pledge messages completed": say it in domain terms
   path: @RabbitListener pledge-returns → PledgeMessages.onReturn
@@ -426,7 +432,7 @@ Applied earlier: 101 changes in 55 files (git diff to review)
 Waiting on you — logast can't continue without these:
   24 log lines need wording        → write "MSG" in .logast/fills.json
   12 outcomes: count, tag or skip  → .logast/metrics.json
-  38 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
+  39 decisions                     → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 

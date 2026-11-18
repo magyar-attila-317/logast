@@ -104,6 +104,8 @@ public final class RuleLabels {
             Map.entry(RABBIT_NO_ERROR_HANDLER, "RabbitMQ without an error handler"),
             Map.entry(RETRY_IN_TRANSACTION, "retry inside a transaction"),
             Map.entry(RETRY_SETTINGS_HARDCODED, "retry settings in code"),
+            Map.entry(RETRY_RECOMMENDED, "idempotent call without retry"),
+            Map.entry(NESTED_RETRY, "retry inside a retry"),
             // errors
             Map.entry(ERROR_DETAILS_EXPOSED, "error details sent to clients"),
             Map.entry(ERROR_RESPONSE_UNTRACED, "error response without a trace id"),

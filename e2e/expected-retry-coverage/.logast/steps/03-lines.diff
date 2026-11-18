@@ -1,0 +1,306 @@
+diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
+index fcbeedd..6e6c5af 100644
+--- a/src/main/java/com/example/e2e/job/PublishRunJob.java
++++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.orchardlib.Week;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -14,13 +15,17 @@
+ 
+     @Override
+     protected void doRun(String runCode, Week week) {
+-        log.info("Publishing started [runCode={}]", runCode);
+-        var summary = RunSummary.of(runCode, week);
+-        report(summary);   // overloaded: the var's type picks report(RunSummary)
+-        String current = runCode;                                       // the same value under another name
+-        log.debug("Publishing batch [runCode={}]", current);
+-        notifyDone(runCode);
+-        log.info("Publishing completed [runCode={}]", runCode);
++        ObservedContext.entrypoint("publishing")
++                .quiet()
++                .run(() -> {
++                    log.info("Publishing started [runCode={}]", runCode);
++                    var summary = RunSummary.of(runCode, week);
++                    report(summary);   // overloaded: the var's type picks report(RunSummary)
++                    String current = runCode;                                       // the same value under another name
++                    log.debug("Publishing batch [runCode={}]", current);
++                    notifyDone(runCode);
++                    log.info("Publishing completed [runCode={}]", runCode);
++                });
+     }
+ 
+     /** Every caller passes the run code: the parameter is the value MDC already carries. */
+diff --git a/src/main/java/com/example/e2e/web/QuoteController.java b/src/main/java/com/example/e2e/web/QuoteController.java
+index 93796ad..17cde43 100644
+--- a/src/main/java/com/example/e2e/web/QuoteController.java
++++ b/src/main/java/com/example/e2e/web/QuoteController.java
+@@ -1,11 +1,13 @@ 
+ package com.example.e2e.web;
+ 
+ import java.util.concurrent.CompletableFuture;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RestController;
+ 
+ /** Two parallel lookups joined on one line (#43: two findings of one rule on one line once crashed the scan). */
++@Slf4j
+ @RestController
+ public class QuoteController {
+     record Quote(String price, String stock) {
+@@ -22,7 +24,12 @@
+     @GetMapping("/quotes/{productId}/refresh")
+     public String refresh(@PathVariable String productId) {
+         String result = productId.strip();
+-        CompletableFuture.runAsync(() -> System.out.println(result));
++        CompletableFuture.runAsync(() -> System.out.println(result))
++                .whenComplete((result2, error) -> {
++                    if (error != null) {
++                        log.error("Quote controller async work failed", error); // logast:wording
++                    }
++                });
+         return result;
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 953396f..2e68061 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -39,7 +39,12 @@ 
+         audit(kioskData.pledgeId());                                               // default method of an interface
+         EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
+         CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+-                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
++                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
++                .whenComplete((result, error) -> {
++                    if (error != null) {
++                        log.error("Edge flow async work failed", error); // logast:wording
++                    }
++                });
+         log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
+         new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
+         log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+index 0d60ea5..436af48 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+@@ -1,10 +1,13 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import java.util.List;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /** JdbcTemplate repository: an update, an upsert through queryForObject, a list read. */
++@Slf4j
+ @Repository
+ public class PledgeRepository {
+     private static final String CLOSE = "UPDATE pledges SET closed = true WHERE pledge_id = ?";
+@@ -20,14 +23,19 @@
+     }
+ 
+     public void close(String pledgeId) {
+-        jdbcTemplate.update(CLOSE, pledgeId);
++        int rows = jdbcTemplate.update(CLOSE, pledgeId);
++        AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
+     }
+ 
+     public int countUse(String pledgeId) {
+-        return jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
++        int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
++        AfterCommit.log(() -> log.info("Pledge usage saved [uses={}]", uses)); // logast:wording
++        return uses;
+     }
+ 
+     public List<String> findOpen() {
+-        return jdbcTemplate.queryForList("SELECT pledge_id FROM pledges WHERE closed = false", String.class);
++        List<String> result = jdbcTemplate.queryForList("SELECT pledge_id FROM pledges WHERE closed = false", String.class);
++        log.debug("Pledges read [count={}]", result.size()); // logast:wording
++        return result;
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
+index 6f153ca..3103ead 100644
+--- a/src/main/java/com/example/e2e/job/TallyJob.java
++++ b/src/main/java/com/example/e2e/job/TallyJob.java
+@@ -12,6 +12,7 @@ 
+ 
+     @Override
+     protected void doExecute() {
++        log.info("Tally started"); // logast:wording
+         log.info("Tally done");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
+index 7fb069d..4f47def 100644
+--- a/src/main/java/com/example/e2e/job/ExportJob.java
++++ b/src/main/java/com/example/e2e/job/ExportJob.java
+@@ -1,12 +1,16 @@ 
+ package com.example.e2e.job;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.context.annotation.Profile;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ @Profile("export")
+ public class ExportJob extends SettlementJob {
+     @Override
+     protected void doExecute() {
++        log.info("Export job started"); // logast:wording
++        log.info("Export job completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
+index 535e1fe..7bba83c 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
+@@ -1,8 +1,10 @@ 
+ package com.example.e2e.pledge;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ public class PledgeReloadJob {
+     private final PledgeLookup lookup;
+@@ -13,6 +15,8 @@
+ 
+     @Scheduled(fixedDelay = 600000)
+     public void run() {
++        log.info("Pledge reload started"); // logast:wording
+         lookup.reload();
++        log.info("Pledge reload completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+index d5cf243..c2e5489 100644
+--- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
++++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+@@ -26,10 +26,12 @@ 
+     @RabbitListener(queues = "pledge-returns")
+     public void onReturn(String pledgeId) {
+         log.info("Pledge return received [pledgeId={}]", pledgeId);
++        log.info("Pledge messages completed"); // logast:wording
+     }
+ 
+     @JmsListener(destination = "pledge-audits")
+     public void onAudit(String pledgeId) {
+         log.info("Pledge audit received [pledgeId={}]", pledgeId);
++        log.info("Pledge messages completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/rate/RateSync.java b/src/main/java/com/example/e2e/rate/RateSync.java
+index 8f2222f..00b84fc 100644
+--- a/src/main/java/com/example/e2e/rate/RateSync.java
++++ b/src/main/java/com/example/e2e/rate/RateSync.java
+@@ -1,8 +1,10 @@ 
+ package com.example.e2e.rate;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ public class RateSync {
+     private final RateClient client;
+@@ -15,6 +17,8 @@
+ 
+     @Scheduled(fixedDelay = 60000)
+     public void refresh() {
++        log.info("Rate sync started"); // logast:wording
+         System.out.println(client.current("EUR") + feed.latest("EUR"));
++        log.info("Rate sync completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
+index 19fd1cc..7334819 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeJob.java
++++ b/src/main/java/com/example/e2e/edge/EdgeJob.java
+@@ -2,11 +2,13 @@ 
+ 
+ import com.example.e2e.stipend.KioskTotals;
+ import java.util.List;
++import lombok.extern.slf4j.Slf4j;
+ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.stereotype.Component;
+ 
+ /** Drives the edge-case shapes row by row. */
++@Slf4j
+ @Component
+ public class EdgeJob {
+     private final EdgeFlow flow;
+@@ -18,9 +20,12 @@
+     @Scheduled(cron = "0 30 3 * * *")
+     @SchedulerLock(name = "edge-job")   // runs on one instance at a time
+     public void run() {
+-        for (KioskTotals row : pending()) {
++        log.info("Edge started"); // logast:wording
++        var rows = pending();
++        for (KioskTotals row : rows) {
+             flow.process(row);
+         }
++        log.info("Edge completed [kioskTotalsCount={}]", rows.size()); // logast:wording
+     }
+ 
+     private List<KioskTotals> pending() {
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+index 20a83cc..08f9ee6 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.scheduling.annotation.Scheduled;
+@@ -19,9 +20,12 @@
+     @Scheduled(cron = "0 0 2 * * *")
+     @Transactional
+     public void cleanup() {
+-        for (String pledgeId : repository.findOpen()) {
++        log.info("Pledge cleanup started"); // logast:wording
++        var pledgeIds = repository.findOpen();
++        for (String pledgeId : pledgeIds) {
+             log.info("Closing stale pledge {}", pledgeId);
+             repository.close(pledgeId);
+         }
++        AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 1ad9a72..3422916 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.order;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.event.EventListener;
+@@ -20,6 +21,11 @@
+     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
+     @TransactionalEventListener
+     public void onCommitted(OrderPlaced event) {
+-        log.info("Order audit recorded [orderId={}]", event.orderId());
++        ObservedContext.entrypoint("order.notifications")
++                .quiet()
++                .run(() -> {
++                    log.info("Order audit recorded [orderId={}]", event.orderId());
++                    log.info("Order notifications completed"); // logast:wording
++                });
+     }
+ }
