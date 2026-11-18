@@ -1,30 +1,4 @@
-logast · 53 files · 21 entrypoints · 61/106 methods reachable · 64 call edges
-WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-4 orders: 0 AUTO, 0 NEEDS TEXT, 4 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
-glossary terms: pledge, order, sponsorship
-
-CAD-265862  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:21  LoyaltyClient.balance
-  catch (Exception) returns 0L: the caller cannot tell a failure from an empty result
-  note: Let the exception through (or wrap it), catch only the exceptions that really mean "nothing there", or return a result type that carries the failure.
-  done when: the catch no longer returns a default value (null, 0, false, "", an empty collection or Optional), or catches something narrower than Exception, RuntimeException or Throwable
-CDR-2c546b  medium  REPORT-ONLY  CAUSE_DROPPED  src/main/java/com/example/e2e/order/PaymentClient.java:35  PaymentClient.verify
-  catch (IllegalStateException e) throws a new OrderRejected without e as its cause: the original stack trace is lost
-  note: Pass e as the cause: add a constructor (…, Throwable cause) to OrderRejected, or call initCause(e) before throwing.
-  done when: the new OrderRejected gets e (or a Throwable wrapping it) as a constructor argument, or initCause(e) before the throw
-UMX-665400  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e2e/order/PaymentException.java:3
-  PaymentException is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it: the client gets a 500
-  also fixes: UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentClient.java:17
-  note: Decide its status: @ResponseStatus(HttpStatus.CONFLICT) on the class, or an @ExceptionHandler returning a ProblemDetail (with a stable error code) in the controller advice.
-  done when: @ResponseStatus on it or a supertype, it extends ResponseStatusException (or is an ErrorResponse), or an @ExceptionHandler names it or a supertype narrower than Exception / RuntimeException
-PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/application.yml:1
-  Spring MVC errors (400 bad input, 405, 415, ...) are not RFC 9457 ProblemDetail responses: every service answers them in its own shape
-  why: spring.mvc.problemdetails.enabled is not set, and no class extends ResponseEntityExceptionHandler
-  note: Set spring.mvc.problemdetails.enabled: true (or extend ResponseEntityExceptionHandler in the controller advice). Not applied automatically: it changes the error body API clients see.
-  done when: spring.mvc.problemdetails.enabled: true, or a class extends ResponseEntityExceptionHandler
-
-Applied earlier: 5 changes in 5 files (git diff to review)
-
-Waiting on you — logast can't continue without these:
-  4 decisions  → the REPORT-ONLY orders above   (each says what to decide)
-    mostly: failure turned into a default value 1, exception cause dropped 1, error responses not ProblemDetail 1, …
-  logast applies nothing for these: change the code, and the next scan drops what is done
+REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:21
+REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/order/PaymentClient.java:35
+REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentException.java:3
+REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

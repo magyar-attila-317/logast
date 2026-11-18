@@ -23,7 +23,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A second apply is recorded too: what it still changes shows up in the snapshot.
  * <p>After an intended behaviour change: {@code ./gradlew :cli:test -Pe2e.update}, then review the diff of e2e/expected.
  */
-class E2eGoldenTest {
+abstract class E2eGoldenTest {
+    /** Shards run in parallel JVMs (#110): the subclasses E2eShard0..3 each run the scenarios whose name hashes to them. */
+    static final int SHARDS = 4;
+
+    @org.junit.jupiter.api.BeforeEach
+    void onlyThisShardsScenarios(org.junit.jupiter.api.TestInfo info) {
+        String name = getClass().getSimpleName();
+        int shard = name.startsWith("E2eShard") ? Integer.parseInt(name.substring("E2eShard".length())) : 0;
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                Math.floorMod(info.getTestMethod().orElseThrow().getName().hashCode(), SHARDS) == shard, "another shard runs it");
+    }
+
     private static final Path BEFORE = Path.of(System.getProperty("logast.e2e.before"));
     private static final Path EXPECTED = Path.of(System.getProperty("logast.e2e.expected"));
     /** The fixture's classpath plus Lombok (real services use it): written once per run into a temp file. */
@@ -150,8 +161,80 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-scan-human"), Map.of("SCAN.txt", human));
     }
 
+    /**
+     * Scenarios that snapshot logast's own output in full (#110): the reports, the decision files, OUTPUT.txt and the
+     * finding texts. Every other scenario snapshots what logast changes in the service, and its findings as a list.
+     */
+    private static final Set<String> FULL_REPORTS = Set.of("expected", "expected-decided", "expected-decided-off",
+            "expected-decided-single", "expected-scan-human", "expected-init", "expected-log-call-coverage");
+    /** Report or decision files that are the subject of a scenario that otherwise snapshots only the service. */
+    private static final Map<String, Set<String>> KEEP = Map.of(
+            "expected-retry-settings", Set.of(".logast/decisions/retry.yaml"),
+            "expected-retry-coverage", Set.of(".logast/decisions/retry.yaml"),
+            "expected-amounts-off", Set.of(".logast/decisions/metrics.yaml"));
+    private static final java.util.regex.Pattern FINDING = java.util.regex.Pattern.compile(
+            "(?m)^[A-Z]{3}-[0-9a-f]{6}\\s+\\S+\\s+(AUTO|NEEDS TEXT|REPORT-ONLY)\\s+(\\S+)\\s+(\\S+:\\d+)");
+
+    /**
+     * What a scenario's snapshot holds (#110): everything for {@link #FULL_REPORTS}; else the service's files, the
+     * findings as "KIND RULE file:line" (which findings remain and where, not their wording), RULES.txt (the rules
+     * applied, brought up by a rescan, also fixed: what RuleLedgerTest counts as firing) and the {@link #KEEP} files.
+     * A change of report wording, ids or the .logast layout then touches only the full scenarios.
+     */
+    static Map<String, String> scoped(String scenario, Map<String, String> files) {
+        if (FULL_REPORTS.contains(scenario)) {
+            return files;
+        }
+        Set<String> keep = KEEP.getOrDefault(scenario, Set.of());
+        Map<String, String> out = new TreeMap<>();
+        for (var e : files.entrySet()) {
+            String k = e.getKey();
+            if (keep.contains(k)) {
+                out.put(k, e.getValue());
+            } else if (k.equals("FINDINGS.txt")) {
+                StringBuilder sb = new StringBuilder();
+                java.util.regex.Matcher m = FINDING.matcher(e.getValue());
+                while (m.find()) {
+                    sb.append(m.group(1)).append(' ').append(m.group(2)).append(' ').append(m.group(3)).append('\n');
+                }
+                out.put(k, sb.toString());
+            } else if (!k.startsWith(".logast/") && !k.equals("OUTPUT.txt")) {
+                out.put(k, e.getValue());
+            }
+        }
+        // which rules the migration applied, which a rescan brought up, which a finding also fixes: behaviour, not wording
+        SortedSet<String> rules = new TreeSet<>();
+        String trace = files.getOrDefault("OUTPUT.txt", "") + "\n" + files.getOrDefault(".logast/reports/apply-trace.txt", "");
+        for (String line : trace.lines().map(String::strip).toList()) {
+            if (line.startsWith("applied (")) {   // "applied (3): BET-466d72 FMT-0447e4 …": the rule is the id's prefix
+                for (java.util.regex.Matcher m = ORDER_ID.matcher(line); m.find(); ) {
+                    String rule = dev.logast.rules.OrderBuilder.ruleOfPrefix(m.group(1));
+                    if (rule != null) {
+                        rules.add("applied " + rule);
+                    }
+                }
+            }
+            String what = line.contains("applying [") ? "applied " : line.contains("rescan: new [") ? "rescan " : null;
+            for (java.util.regex.Matcher m = TRACED.matcher(line); what != null && m.find(); ) {
+                rules.add(what + m.group(1));
+            }
+        }
+        for (java.util.regex.Matcher m = ALSO_FIXES.matcher(files.getOrDefault("FINDINGS.txt", "")); m.find(); ) {
+            rules.add("also " + m.group(1));
+        }
+        if (!rules.isEmpty()) {
+            out.put("RULES.txt", String.join("\n", rules) + "\n");
+        }
+        return out;
+    }
+
+    private static final java.util.regex.Pattern ORDER_ID = java.util.regex.Pattern.compile("\\b([A-Z]{3})-[0-9a-f]{6}\\b");
+    private static final java.util.regex.Pattern TRACED = java.util.regex.Pattern.compile("([A-Z][A-Z_]+) [A-Z]{3}-[0-9a-f]{6}");
+    private static final java.util.regex.Pattern ALSO_FIXES = java.util.regex.Pattern.compile("(?m)^\\s+also fixes: ([A-Z_]+)\\s");
+
     /** Every file equals the snapshot in {@code expectedDir}; with -Pe2e.update the snapshot is rewritten instead. */
-    private static void golden(Path expectedDir, Map<String, String> actual) throws IOException {
+    private static void golden(Path expectedDir, Map<String, String> all) throws IOException {
+        Map<String, String> actual = scoped(expectedDir.getFileName().toString(), all);
         if (UPDATE) {
             deleteTree(expectedDir);
             for (var e : actual.entrySet()) {

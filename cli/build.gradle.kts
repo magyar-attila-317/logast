@@ -74,13 +74,17 @@ dependencies {
 // (`e2e` on JDK 25, `e2eJdk21`) runs on CI or with -Pe2e. `./gradlew :cli:e2e -Pe2e.update` rewrites e2e/expected
 // after an intended behaviour change.
 val e2eGolden = "dev.logast.cli.E2eGoldenTest"
+// #110: the scenarios run in E2eShard0..3 (each a quarter of E2eGoldenTest's scenarios), one JVM per shard in parallel
+val e2eShards = "dev.logast.cli.E2eShard*"
 
 fun Test.e2eSetup() {
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform()
-    filter { includeTestsMatching(e2eGolden) }
+    filter { includeTestsMatching(e2eShards) }
+    // scenarios run logast in-process (System.out is captured): parallel only as separate JVMs, up to 4, 2 GB each
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
     dependsOn(":fixtures:sample-app:writeClasspath", ":logging-support:classes")
     // dependency mode: javac compiles the migrated service against the starter's classes (it is not on the classpath logast reads)
     systemProperty("logast.e2e.support", project(":logging-support").layout.buildDirectory.dir("classes/java/main").get().asFile.absolutePath)
@@ -96,7 +100,10 @@ fun Test.e2eSetup() {
 
 tasks.test {
     useJUnitPlatform()
-    filter { excludeTestsMatching(e2eGolden) }
+    filter {
+        excludeTestsMatching(e2eGolden)
+        excludeTestsMatching(e2eShards)
+    }
 }
 
 val e2e by tasks.registering(Test::class) {

@@ -1,62 +1,12 @@
-logast · 73 files · 21 entrypoints · 76/202 methods reachable · 144 call edges
-WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-12 orders: 0 AUTO, 0 NEEDS TEXT, 12 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
-glossary terms: pledge, order, sponsorship
-
-OUM-773d35  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeService.java:43  PledgeService.publish
-  "Pledge {} published" is logged but not counted (outcome=published, frequency unknown: no rate for "POST /pledges/{pledgeId}/publish" in .logast/decisions/traffic.yaml)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge", "published")), tag (Outcomes.tag("published") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-4809f0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeService.java:49  PledgeService.allot
-  "Pledge allotment completed" is logged but not counted (outcome=completed, frequency unknown: no rate for "POST /pledges/allot" in .logast/decisions/traffic.yaml)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.allotment", "completed")), tag (Outcomes.tag("completed") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-49d3bd  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/Audited.java:11  Audited.audit
-  "Pledge audited" is logged but not counted (outcome=audited, frequency low)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge", "audited")), tag (Outcomes.tag("audited") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-3c3200  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:42  EdgeFlow.process
-  "Pledge archived" is logged but not counted (outcome=archived, frequency low)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge", "archived")), tag (Outcomes.tag("archived") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-be530b  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/edge/EdgeFlow.java:43  EdgeFlow.process
-  "Pledge parsed" is logged but not counted (outcome=parsed, frequency low)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge", "parsed")), tag (Outcomes.tag("parsed") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-4284aa  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17  ReactivePledgeLookup.find
-  "Pledge lookup failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
-  note: The log line is part of a return/throw statement: a counting line after it would never run; count it where it happens (inside the lambda) or mark it skip. Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.lookup", "failed")) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-0f37ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderNotifications.java:16  OrderNotifications.onPlaced
-  "Order confirmation sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /orders" in .logast/decisions/traffic.yaml)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("order.confirmation", "sent")), tag (Outcomes.tag("sent") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-b0f94e  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderNotifications.java:23  OrderNotifications.onCommitted
-  "Order audit recorded" is logged but not counted (outcome=recorded, frequency unknown: no rate for "@TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)" in .logast/decisions/traffic.yaml)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("order.audit", "recorded")), tag (Outcomes.tag("recorded") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-d691d7  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderService.java:34  OrderService.place
-  "Order {} placed" is logged but not counted (outcome=placed, frequency unknown: no rate for "POST /orders" in .logast/decisions/traffic.yaml)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("order", "placed")), tag (Outcomes.tag("placed") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-00f4c0  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderService.java:45  OrderService.ship
-  "Orders shipped" is logged but not counted (outcome=shipped, frequency unknown: no entrypoint is known to reach it)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("orders", "shipped")) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-d826b2  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/shelf/ShelfKeeper.java:16  ShelfKeeper.restock
-  "Shelf restock completed" is logged but not counted (outcome=completed, frequency unknown: no entrypoint is known to reach it)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("shelf.restock", "completed")) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-OUM-e105e9  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/shelf/ShelfKeeper.java:22  ShelfKeeper.inspect
-  "Shelf inspection completed" is logged but not counted (outcome=completed, frequency unknown: no entrypoint is known to reach it)
-  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("shelf.inspection", "completed")) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
-  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-
-Applied earlier: 13 changes in 29 files (git diff to review)
-
-Waiting on you — logast can't continue without these:
-  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
-  then run: logast apply . --auto --write   (on this code: don't revert it)
-
-Also:
-  fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:43
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:49
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/Audited.java:11
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:42
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:43
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:16
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:23
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:34
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:45
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/shelf/ShelfKeeper.java:16
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/shelf/ShelfKeeper.java:22

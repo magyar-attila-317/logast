@@ -10,6 +10,16 @@ import java.util.*;
 /** Mutable builder; the id is derived from rule + anchor so it survives rescans of unchanged code. */
 public final class OrderBuilder {
     /** Rule → order id prefix (package-private for RuleLedgerTest, which reads applied ids in e2e snapshots). */
+    /** The rule an order id's prefix stands for ({@code BET} → BUSINESS_EVENT_TIMESTAMP), or null. */
+    public static String ruleOfPrefix(String prefix) {
+        for (var e : PREFIX.entrySet()) {
+            if (e.getValue().equals(prefix)) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
     static final Map<String, String> PREFIX = Map.ofEntries(
             Map.entry(Rules.SWALLOWED_EXCEPTION, "SWA"), Map.entry(Rules.LOST_THROWABLE, "LTH"),
             Map.entry(Rules.LOG_AND_RETHROW, "LAR"), Map.entry(Rules.STRING_CONCAT_LOG, "CAT"),

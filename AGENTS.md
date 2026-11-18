@@ -14,19 +14,25 @@ on real services; the background is in issue #7.
   fixtures. Anonymised exports (`logast shape`) of real services stay local and never get committed.
 
 ## Every change comes with a test that fails without it
-- A new rule or fix gets a case in an e2e scenario (`e2e/before`, snapshots in `e2e/expected*`) that compares **every
-  file** of the result. Put the code shape that showed the problem into the scenario, with neutral names.
-  Report-only findings show up in `FINDINGS.txt` (a `scan` after the migration), so their text, location and path are
-  part of the snapshot too.
+- A new rule or fix gets a case in an e2e scenario (`e2e/before`, snapshots in `e2e/expected*`). Put the code shape
+  that showed the problem into the scenario, with neutral names. What a scenario snapshots (#110):
+  - **every file logast changes in the service** (`src/`, resources, build files), compared in full;
+  - **its findings as a list** in `FINDINGS.txt`: `KIND RULE file:line` per finding left after the migration (a
+    report-only finding is pinned by rule and place, not by its wording);
+  - **logast's own output in full** (`.logast/**`, `OUTPUT.txt`, finding texts) only in the few scenarios listed in
+    `FULL_REPORTS` of `E2eGoldenTest`, and single report or decision files a scenario is about (`KEEP`).
+  A change of report wording, ids or the `.logast` layout is reviewed in those few scenarios; a rule change shows in
+  every scenario whose code it changes. Assert the texts that matter for a new finding in the scenario itself.
 - Switch the change off once and check that its test fails. A test that passes without the fix proves nothing.
 - Every scenario must keep its properties: one pass (pass 2 of the first apply applies nothing), a second apply changes
   nothing, no `CHECK FAILED`, and the result compiles. Do not weaken these assertions to make a change pass.
 - The e2e scenarios run in their own tasks (#73): `./gradlew :cli:e2e` (JDK 25) and `:cli:e2eJdk21`, each with and
-  without Lombok and with class folders on the classpath. Results must be identical. Locally, run the scenarios your
-  change touches (`./gradlew :cli:e2e --tests "*Name*"`); CI runs the full matrix on every push.
+  without Lombok and with class folders on the classpath, as four shards (`E2eShard0..3`) in parallel JVMs. Results
+  must be identical. Locally, run the scenarios your change touches (`./gradlew :cli:e2e --tests "*Name*"`); CI runs the full matrix on every push.
 - `./gradlew :cli:e2e -Pe2e.update` rewrites the snapshots (add `--tests` to limit it): review `git diff e2e/` before
-  keeping them, and say in the commit why the expected output changed. A change of shared code (rule output, ids,
-  report text) can touch every scenario: then update and run all of them (`./gradlew build -Pe2e`).
+  keeping them, and say in the commit why the expected output changed. A change of shared code (rule output that
+  edits code, or a finding's rule or place) can touch every scenario: then update and run all of them
+  (`./gradlew build -Pe2e`).
 
 ## Documentation
 - README.md is the stable overview (what logast is, install, quick start, workflow, packs in a line each, pointers).

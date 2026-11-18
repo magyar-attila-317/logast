@@ -6,6 +6,7 @@
 
 - [ ] Every change has a test that fails without it (switched off once and checked)
 - [ ] e2e: one pass, second apply empty, no `CHECK FAILED`, result compiles; changed snapshots reviewed and explained
+- [ ] report wording / ids / `.logast` layout changed: reviewed in the `FULL_REPORTS` scenarios; a new finding's text asserted in its scenario
 - [ ] `./gradlew build` and the touched scenarios (`./gradlew :cli:e2e --tests "*Name*"`) pass
 - [ ] Each touched pack still works standalone (`--pack <pack>` alone)
 - [ ] Docs updated: `docs/packs/<pack>.md`, `docs/rules.md`, `docs/configuration.md` / `docs/starter.md` as needed
