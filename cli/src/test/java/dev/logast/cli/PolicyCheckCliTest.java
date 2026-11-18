@@ -143,4 +143,13 @@ class PolicyCheckCliTest {
             throw new IllegalStateException(e);
         }
     }
+
+    /** #5: a service built for a newer Java than logast runs on: scan says so (its newer APIs stay unresolved). */
+    @Test
+    void scanWarnsWhenTheServiceNeedsANewerJava() throws IOException {
+        Path app = project("packs: [logging]\n");
+        Files.writeString(app.resolve("build.gradle.kts"), "kotlin { jvmToolchain(99) }\n");
+        assertThat(run("scan", app.toString(), "--format", "json").err())
+                .contains("the service builds for Java 99, logast runs on Java " + Runtime.version().feature());
+    }
 }
