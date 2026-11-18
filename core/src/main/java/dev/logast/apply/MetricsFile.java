@@ -12,21 +12,22 @@ import java.nio.file.Path;
 import java.util.*;
 
 /**
- * {@code .logast/metrics.json}: one decision per outcome the logs report and no metric counts
- * (METRIC_OUTCOME_UNMEASURED). {@code "count": "counter" | "tag" | "skip"}; the next scan turns decided entries into
- * AUTO orders, {@code logast apply . --auto} writes them. Kept up to date like fills.json: what you wrote stays,
- * new outcomes are added, finished ones removed, nothing written when nothing changed.
+ * {@code .logast/decisions/metrics.yaml} (was {@code .logast/metrics.json}, #108): one decision per outcome the logs
+ * report and no metric counts (METRIC_OUTCOME_UNMEASURED). {@code count: counter | tag | skip}; the next scan turns
+ * decided entries into AUTO orders, {@code logast apply . --auto} writes them. Kept up to date like messages.yaml: what
+ * you wrote stays, new outcomes are added, finished ones removed, nothing written when nothing changed.
  */
 public final class MetricsFile {
-    public static final String PATH = ".logast/metrics.json";
+    public static final String PATH = dev.logast.LogastDir.METRICS;
     public static final String RULE = "METRIC_OUTCOME_UNMEASURED";
-    private static final String README = "One entry per outcome the logs report and no metric counts. Set \"count\" to "
-            + "\"counter\" (Outcomes.count(name, outcome): a counter name{outcome=...}), \"tag\" (Outcomes.tag(outcome) on the "
-            + "timer already running; only where _tag says available) or \"skip\" (a // logast:ignore comment). Edit \"name\" "
-            + "and \"outcome\" freely (lower case, dots). Where the line logs a number (_amounts), \"amount\" names one to count too: "
-            + "\"as\": \"total\" (a counter name.<amount> grows by it) or \"per-run\" (each value one sample of a distribution "
-            + "summary name.<amount>); empty \"as\" takes metrics.amounts from logast.yaml. Leave \"amount\" empty to count "
-            + "how often only. Then: logast apply . --auto. `logast metrics . --format json` has the context.";
+    private static final String README = "One entry per outcome the logs report and no metric counts. Set count to "
+            + "counter (Outcomes.count(name, outcome): a counter name{outcome=...}), tag (Outcomes.tag(outcome) on the "
+            + "timer already running; only where _tag says available) or skip (a // logast:ignore comment). Edit name "
+            + "and outcome freely (lower case, dots). Where the line logs a number (_amounts), amount names one to count too: "
+            + "as: total (a counter name.<amount> grows by it) or per-run (each value one sample of a distribution "
+            + "summary name.<amount>); an empty as takes metrics.amounts from logast.yaml. Leave amount empty to count "
+            + "how often only. Then: logast apply . --auto. `logast metrics . --format json` has the context. Keys starting "
+            + "with _ are hints (_where and _event find the line again when its id changes: keep them).";
 
     /**
      * A decision read from the file, with where its log line was (file, method, event) for when the line's id changed.
@@ -114,8 +115,8 @@ public final class MetricsFile {
         if (current.isEmpty() && !Files.exists(file)) {
             return new FillsFile.Update(0, 0, 0, 0, false);
         }
-        ObjectNode out = OrderJson.MAPPER.createObjectNode();
-        out.put("_readme", README);
+        ObjectNode out = DecisionYaml.MAPPER.createObjectNode();
+        String header = DecisionYaml.comment(README);
         // decisions written under an id that changed move to the outcome's current id instead of being dropped
         Map<String, Decision> decidedBefore = new LinkedHashMap<>();
         previous.forEach((id, n) -> {
@@ -180,16 +181,9 @@ public final class MetricsFile {
                 decided++;
             }
         }
-        boolean changed = !Files.exists(file) || added > 0 || removed > 0 || problemsChanged || !previous.containsKey("_readme")
-                || !README.equals(previous.get("_readme").asText());
-        if (changed) {
-            try {
-                Files.createDirectories(file.getParent());
-                OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), out);
-            } catch (IOException ex) {
-                throw new UncheckedIOException(ex);
-            }
-        }
+        boolean changed = !Files.exists(file) || added > 0 || removed > 0 || problemsChanged || !DecisionYaml.header(file).equals(header)
+                || previous.keySet().stream().anyMatch(k -> k.startsWith("_"));   // the earlier "_readme" is the header now
+        changed = changed && DecisionYaml.write(file, header, out);
         return new FillsFile.Update(current.size(), decided, added, removed, changed, problems);
     }
 
@@ -199,10 +193,7 @@ public final class MetricsFile {
         }
         try {
             Map<String, JsonNode> out = new LinkedHashMap<>();
-            JsonNode n = OrderJson.MAPPER.readTree(file.toFile());
-            if (n instanceof ObjectNode o) {
-                o.fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue()));
-            }
+            DecisionYaml.read(file).fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue()));
             return out;
         } catch (IOException ex) {
             throw new UncheckedIOException("cannot read " + file + ": " + ex.getMessage(), ex);

@@ -34,7 +34,7 @@ class RemedyTest {
     private int projects;
 
     /**
-     * Writes a project (a logast.yaml with every pack unless the files bring their own, and its .logast/traffic.yaml if
+     * Writes a project (a logast.yaml with every pack unless the files bring their own, and its .logast/decisions/traffic.yaml if
      * the files bring one) and returns its orders.
      */
     private List<WorkOrder> scan(Map<String, String> files) throws IOException {
@@ -2246,9 +2246,9 @@ class RemedyTest {
                 }
                 """;
         String traffic = "entrypoints:\n  \"POST /parcels/{parcelId}/ping\": 500000\n";
-        fires(Rules.LOG_VOLUME, Map.of(java("TrackingController"), controller.replace("LEVEL", "info"), ".logast/traffic.yaml", traffic));
+        fires(Rules.LOG_VOLUME, Map.of(java("TrackingController"), controller.replace("LEVEL", "info"), ".logast/decisions/traffic.yaml", traffic));
         gone(Rules.LOG_VOLUME, "moved to DEBUG", Map.of(java("TrackingController"), controller.replace("LEVEL", "debug"),
-                ".logast/traffic.yaml", traffic));
+                ".logast/decisions/traffic.yaml", traffic));
     }
 
     // ---- MDC_CLEAR -------------------------------------------------------------------------------------------------

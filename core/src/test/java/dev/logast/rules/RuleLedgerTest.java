@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>Firing case</b>: the rule is reported in one of the {@link #corpora() corpora} (core scans of parsed projects,
  * plus {@code logast verify} on captured events for the RUNTIME_* rules), or appears in an e2e snapshot
- * ({@code FINDINGS.txt}, the applied ids in {@code OUTPUT.txt}, {@code .logast/apply-trace.txt}).
+ * ({@code FINDINGS.txt}, the applied ids in {@code OUTPUT.txt}, {@code .logast/reports/apply-trace.txt}).
  *
  * <p><b>Must-not-fire case</b>, the smallest version that still means something:
  * <ul>
@@ -347,7 +347,7 @@ class RuleLedgerTest {
         assertThat(dirs).as("e2e snapshots under " + E2E).isNotEmpty();
         for (Path dir : dirs) {
             String name = "e2e " + dir.getFileName();
-            for (String file : List.of("FINDINGS.txt", "OUTPUT.txt", ".logast/apply-trace.txt")) {
+            for (String file : List.of("FINDINGS.txt", "OUTPUT.txt", ".logast/reports/apply-trace.txt")) {
                 Path f = dir.resolve(file);
                 if (!Files.exists(f)) {
                     continue;

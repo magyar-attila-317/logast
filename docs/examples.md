@@ -594,7 +594,7 @@ public static void couponResendFailed() {
 ### Queries for what the service now measures and logs
 
 `logast queries` turns the counters, observations and MDC keys into queries to paste (#106).
-*`e2e/expected-decided/.logast/queries.md`, with `queries.splunk.index: shop-logs`.*
+*`e2e/expected-decided/.logast/reports/queries.md`, with `queries.splunk.index: shop-logs`.*
 
 The counter of the failed resend above, in Prometheus and New Relic:
 
@@ -844,7 +844,7 @@ public class E2eApplication {
 ### Retry settings move into configuration
 
 Attempts and delays written into `@Retryable` move into `application.yml`. Usages with the same settings share one
-block. A usage with settings of its own keeps them in its own block, and `.logast/retry.yaml` decides which usages get
+block. A usage with settings of its own keeps them in its own block, and `.logast/decisions/retry.yaml` decides which usages get
 one. A generated `RetrySettings` record binds the blocks.
 *Scenario `expected-retry-settings`, `ParcelClient.java`, `ParcelGateway.java` and `application.yml`.*
 

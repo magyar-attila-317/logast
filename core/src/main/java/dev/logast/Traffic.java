@@ -13,7 +13,7 @@ import java.util.*;
 /**
  * Real entrypoint rates (calls per day), provided by the team; logast never guesses them. Two formats:
  * <pre>
- * # .logast/traffic.yaml
+ * # .logast/decisions/traffic.yaml
  * entrypoints:
  *   "POST /orders": 120000
  *   "@Scheduled ReconciliationJob.reconcile": 1440
@@ -39,10 +39,10 @@ public final class Traffic {
         return new Traffic(new TreeMap<>(perDay), source);
     }
 
-    /** Explicit file, else {@code <root>/.logast/traffic.yaml|yml|json}, else none. */
+    /** Explicit file, else {@code <root>/.logast/decisions/traffic.yaml|yml|json}, else none. */
     public static Traffic load(Path root, Path explicit) {
         List<Path> candidates = explicit != null ? List.of(explicit)
-                : List.of(root.resolve(".logast/traffic.yaml"), root.resolve(".logast/traffic.yml"), root.resolve(".logast/traffic.json"));
+                : List.of(root.resolve(LogastDir.TRAFFIC), root.resolve(LogastDir.DECISIONS + "/traffic.yml"), root.resolve(LogastDir.DECISIONS + "/traffic.json"));
         for (Path p : candidates) {
             if (Files.exists(p)) {
                 return read(p);

@@ -67,7 +67,7 @@ changed per environment and without a rebuild.
 - **Nothing changes silently.** A usage whose settings differ from the shared ones gets a block of its own,
   `resilience.retry.usages.<class>.<method>` (kebab case), with its current values. Sharing would change how it
   retries, so it is kept and the apply output names it.
-- **Per usage on request.** `.logast/retry.yaml` lists every usage (see [configuration.md](../configuration.md#logastretryyaml-retry-settings-per-usage)).
+- **Per usage on request.** `.logast/decisions/retry.yaml` lists every usage (see [configuration.md](../configuration.md#logastdecisionsretryyaml-retry-settings-per-usage)).
   `specific: true` gives it a block of its own on the next `apply`, starting from the shared values (or from
   `values:` given there). `false` points it back to the shared block. Its own block stays in `application.yml`,
   unused, so no value you set is lost.

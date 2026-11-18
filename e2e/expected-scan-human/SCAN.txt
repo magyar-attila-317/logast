@@ -3,8 +3,8 @@ WARNING: 2 calls did not resolve: paths through them may be missing (`--format c
 
 143 findings: 93 logast fixes, 5 need a message, 11 outcomes to count or skip, 34 need your decision
   logast fixes     message not in house format 41, business id missing from MDC 7, logged outcome not counted 7, same i…
-  messages         write in .logast/fills.json or `logast review .`: business id missing from MDC 3, exception dropped …
-  outcomes         decide in .logast/metrics.json (`logast metrics .` has the context): 11 logged but not counted
+  messages         write in .logast/decisions/messages.yaml or `logast review .`: business id missing from MDC 3, excep…
+  outcomes         decide in .logast/decisions/metrics.yaml (`logast metrics .` has the context): 11 logged but not counted
 
 Your decisions (most important first; → what to do)
   high
@@ -88,13 +88,13 @@ what to decide, and when it is done: logast scan . --rule ASYNC_CONTEXT_LOSS   �
 Next: logast apply . --auto --write   93 fixes logast makes itself (without --write: a preview)
 
 Then waiting on you (the counts change with the apply):
-   5 log lines need wording        → write "MSG" in .logast/fills.json
-  11 outcomes: count, tag or skip  → .logast/metrics.json
+   5 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
+  11 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
   34 decisions                     → the decisions above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
-Log lines: 64 — 51 with a finding, 10 fine, 3 not checked (.logast/coverage.txt)
+Log lines: 64 — 51 with a finding, 10 fine, 3 not checked (.logast/reports/coverage.txt)
 
 Also:
-  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there

@@ -3,23 +3,23 @@ applied (13): SUP-065aa3 OBA-7df0b3 SID-ce5940 BEU-212707 BEU-f11deb MCA-cd561d 
 files (29): build.gradle.kts, src/main/java/com/example/e2e/coupon/CouponLookup.java, src/main/java/com/example/e2e/coupon/CouponMetrics.java, src/main/java/com/example/e2e/coupon/CouponSender.java, src/main/java/com/example/e2e/edge/EdgeFlow.java, src/main/java/com/example/e2e/edge/EdgeMetrics.java, src/main/java/com/example/e2e/job/CalculationJob.java, src/main/java/com/example/e2e/job/JobMetrics.java, src/main/java/com/example/e2e/job/PreloadJob.java, src/main/java/com/example/e2e/job/PublishRunJob.java, src/main/java/com/example/e2e/logging/AfterCommit.java, src/main/java/com/example/e2e/logging/BatchTraceListener.java, src/main/java/com/example/e2e/logging/ContextExecutors.java, src/main/java/com/example/e2e/logging/ContextPropagation.java, src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java, src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygiene.java, src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygieneFilter.java, src/main/java/com/example/e2e/logging/MdcScope.java, src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java, src/main/java/com/example/e2e/logging/ObservedContext.java, src/main/java/com/example/e2e/logging/Outcomes.java, src/main/java/com/example/e2e/logging/TraceContextEnv.java, src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java, src/main/java/com/example/e2e/order/OrderMetrics.java, src/main/java/com/example/e2e/order/OrderService.java, src/main/resources/META-INF/spring.factories, src/main/resources/application.yml  ·  4 rounds, <t>
 
 Waiting on you — logast can't continue without these:
-  12 outcomes: count, tag or skip  → .logast/metrics.json
+  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
 Also:
-  logast classpath .                                  dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
-  git diff                                            review the changes (one diff per kind of change in .logast/steps/)
-  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  logast classpath .                                            dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
+  git diff                                                      review the changes (one diff per kind of change in .logast/reports/steps/)
+  fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  logast verify .                                               build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)
 applied (0):
 files (0):   ·  0 rounds, <t>
 
 Waiting on you — logast can't continue without these:
-  12 outcomes: count, tag or skip  → .logast/metrics.json
+  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
 Also:
-  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  logast verify .                                               build and run the tests with log capture: does the result really log what it should?

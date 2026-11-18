@@ -3,33 +3,33 @@ applied (104): SLG-d7dbb8 SUP-065aa3 DBT-0a0927 DBT-51720a ERT-0d5559 HTO-c3e718
 files (57): src/main/java/com/example/e2e/E2eApplication.java, src/main/java/com/example/e2e/RetrySettings.java, src/main/java/com/example/e2e/carrier/CarrierClient.java, src/main/java/com/example/e2e/carrier/CarrierRates.java, src/main/java/com/example/e2e/coupon/CouponCleanupJob.java, src/main/java/com/example/e2e/coupon/CouponLookup.java, src/main/java/com/example/e2e/coupon/CouponMetrics.java, src/main/java/com/example/e2e/coupon/CouponReloadJob.java, src/main/java/com/example/e2e/coupon/CouponRepository.java, src/main/java/com/example/e2e/coupon/CouponSender.java, src/main/java/com/example/e2e/coupon/CouponService.java, src/main/java/com/example/e2e/edge/Audited.java, src/main/java/com/example/e2e/edge/CouponRules.java, src/main/java/com/example/e2e/edge/CouponTask.java, src/main/java/com/example/e2e/edge/EdgeFlow.java, src/main/java/com/example/e2e/edge/EdgeJob.java, src/main/java/com/example/e2e/edge/EdgeMetrics.java, src/main/java/com/example/e2e/edge/Exclusion.java, src/main/java/com/example/e2e/edge/OriginCheck.java, src/main/java/com/example/e2e/income/CalculationService.java, src/main/java/com/example/e2e/income/CouponChecks.java, src/main/java/com/example/e2e/income/IncomeCalculator.java, src/main/java/com/example/e2e/job/BaseRunJob.java, src/main/java/com/example/e2e/job/CalculationJob.java, src/main/java/com/example/e2e/job/ExportJob.java, src/main/java/com/example/e2e/job/JobMetrics.java, src/main/java/com/example/e2e/job/PreloadJob.java, src/main/java/com/example/e2e/job/PublishRunJob.java, src/main/java/com/example/e2e/job/SettlementJobExecutor.java, src/main/java/com/example/e2e/logging/AfterCommit.java, src/main/java/com/example/e2e/logging/BatchTraceListener.java, src/main/java/com/example/e2e/logging/ContextExecutors.java, src/main/java/com/example/e2e/logging/ContextPropagation.java, src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java, src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygiene.java, src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygieneFilter.java, src/main/java/com/example/e2e/logging/MdcScope.java, src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java, src/main/java/com/example/e2e/logging/ObservedContext.java, src/main/java/com/example/e2e/logging/Outcomes.java, src/main/java/com/example/e2e/logging/ProblemTraceId.java, src/main/java/com/example/e2e/logging/TraceContextEnv.java, src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java, src/main/java/com/example/e2e/messaging/CouponMessages.java, src/main/java/com/example/e2e/messaging/MessagingMetrics.java, src/main/java/com/example/e2e/order/OrderEvents.java, src/main/java/com/example/e2e/order/OrderMetrics.java, src/main/java/com/example/e2e/order/OrderNotifications.java, src/main/java/com/example/e2e/order/OrderService.java, src/main/java/com/example/e2e/order/PaymentClient.java, src/main/java/com/example/e2e/web/CouponController.java, src/main/java/com/example/e2e/web/CouponDetailsController.java, src/main/java/com/example/e2e/web/QuoteController.java, src/main/resources/META-INF/spring.factories, src/main/resources/application.yml  ·  10 rounds, <t>
 
 Waiting on you — logast can't continue without these:
-  22 log lines need wording        → write "MSG" in .logast/fills.json
-  12 outcomes: count, tag or skip  → .logast/metrics.json
+  22 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
+  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
   37 decisions                     → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
-Log lines: 86 — 51 fixed, 16 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
+Log lines: 86 — 51 fixed, 16 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
-  git diff                                                                             review the changes (one diff per kind of change in .logast/steps/)
-  fill calls/day in .logast/traffic.yaml (optional)                                    21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  mark retry usages that need settings of their own in .logast/retry.yaml (optional)   every @Retryable reads the shared resilience.retry.* settings unless marked specific there
-  logast verify .                                                                      build and run the tests with log capture: does the result really log what it should?
+  git diff                                                                                       review the changes (one diff per kind of change in .logast/reports/steps/)
+  fill calls/day in .logast/decisions/traffic.yaml (optional)                                    21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  mark retry usages that need settings of their own in .logast/decisions/retry.yaml (optional)   every @Retryable reads the shared resilience.retry.* settings unless marked specific there
+  logast verify .                                                                                build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)
 applied (0):
 files (0):   ·  0 rounds, <t>
 
 Waiting on you — logast can't continue without these:
-  22 log lines need wording        → write "MSG" in .logast/fills.json
-  12 outcomes: count, tag or skip  → .logast/metrics.json
+  22 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
+  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
   37 decisions                     → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
-Log lines: 86 — 51 fixed, 16 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
+Log lines: 86 — 51 fixed, 16 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
-  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  logast verify .                                               build and run the tests with log capture: does the result really log what it should?

@@ -187,9 +187,9 @@ final class DbRules {
                 .title(m.label() + " " + (write ? "changes" : "reads") + " data (" + (sql == null ? name : firstWords(sql)) + ") and logs nothing: "
                         + level.toUpperCase(Locale.ROOT) + " line added (" + why + ")")
                 .suggestion("Generated wording \"" + message + "\" is marked " + WORDING_MARKER + "; write a better one in "
-                        + "fills.json once it is applied (MESSAGE_SUGGESTED)."
+                        + "messages.yaml once it is applied (MESSAGE_SUGGESTED)."
                         + (afterCommit ? " Logged after commit: a rolled-back change is never announced." : "")
-                        + (!write && level.equals("debug") ? " A .logast/traffic.yaml rate within the volume budget raises it to INFO." : ""))
+                        + (!write && level.equals("debug") ? " A .logast/decisions/traffic.yaml rate within the volume budget raises it to INFO." : ""))
                 .context(ctx.context(m, Pos.start(stmt), Text.oneLine(text.substring(Pos.start(stmt), Math.min(Pos.end(stmt), text.length())), 160), null));
         b.edits(edits);
         b.edits(logger.edits());

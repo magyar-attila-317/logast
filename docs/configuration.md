@@ -189,7 +189,7 @@ HTTP endpoints are found the way Spring MVC finds them (#51):
 - paths from literals, `static final String` constants and their `+` concatenation.
 
 A mapping with several paths (`@GetMapping({"/a", "/b"})`) stays one entrypoint (one handler: one entry MDC scope, one
-entry line), named after its first path. Every path is a line of its own in `.logast/traffic.yaml` (the handler's rate
+entry line), named after its first path. Every path is a line of its own in `.logast/decisions/traffic.yaml` (the handler's rate
 is their sum) and `audit.actions.http` matches any of them; the `http.server.requests` query names the first.
 
 Generated sources (`build/generated/**`, `target/generated-sources/**` of each module: OpenAPI interfaces, annotation
@@ -215,7 +215,7 @@ Use `vendor` until the library is in your company repository.
 ```yaml
 metrics:
   events: true                  # business events without a metric get an Observation (timer + count + span)
-  defaults: [failures, jobs, skips, db-writes]   # logged outcomes counted without a metrics.json decision; [] = none
+  defaults: [failures, jobs, skips, db-writes]   # logged outcomes counted without a metrics.yaml decision; [] = none
   amounts: total                # a number on an outcome line counted too: total (counter), per-run (distribution), off
   catalog: per-package          # metric names in one place: per-package, single (all in catalogClass), off
   # catalogClass: com.example.metrics.BusinessMetrics   # for single (default: <app package>.metrics.BusinessMetrics)
@@ -237,10 +237,12 @@ resilience:
 
 What each setting does in detail: [the metrics pack](packs/metrics.md) and [the resilience pack](packs/resilience.md).
 
-#### `.logast/retry.yaml`: retry settings per usage
+#### `.logast/decisions/retry.yaml`: retry settings per usage
 
-With the resilience pack, logast keeps `.logast/retry.yaml` up to date. It lists every `@Retryable` usage it manages
-(RETRY_SETTINGS_HARDCODED), the way `.logast/traffic.yaml` lists the entrypoints. Keep it in git. Filling it in is
+(Before #108 this file was `.logast/retry.yaml`; the next command moves it.)
+
+With the resilience pack, logast keeps `.logast/decisions/retry.yaml` up to date. It lists every `@Retryable` usage it manages
+(RETRY_SETTINGS_HARDCODED), the way `.logast/decisions/traffic.yaml` lists the entrypoints. Keep it in git. Filling it in is
 optional.
 
 ```yaml
@@ -277,11 +279,11 @@ event implementing `AuditableDomainEvent`) counts.
 
 ```yaml
 reporting:
-  sourceComments: false   # true: add "// logast: RULE ID" beside findings that need an entry in fills.json or
-                          #   metrics.json (a debugging aid; scan adds and removes them)
+  sourceComments: false   # true: add "// logast: RULE ID" beside findings that need an entry in messages.yaml or
+                          #   metrics.yaml (a debugging aid; scan adds and removes them)
 ```
 
-Independent of this setting, `scan` and `apply --write` with the logging pack write `.logast/coverage.txt`: every log
+Independent of this setting, `scan` and `apply --write` with the logging pack write `.logast/reports/coverage.txt`: every log
 call with what logast did with it (fixed, reported, ignored, skipped with the reason, checked). See "Every log call is
 accounted for" in [commands](commands.md#every-log-call-is-accounted-for).
 

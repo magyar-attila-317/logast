@@ -1,6 +1,5 @@
 package dev.logast.apply;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.logast.orders.OrderJson;
@@ -14,14 +13,16 @@ import java.nio.file.Path;
 import java.util.*;
 
 /**
- * {@code .logast/fills.json}: the message texts for NEEDS TEXT orders. {@code logast scan} keeps it up to date (one
- * entry per order, with hints; texts already written are kept), {@code logast apply} uses every entry that has text.
+ * {@code .logast/decisions/messages.yaml} (was {@code .logast/fills.json}, #108): the message texts for NEEDS TEXT
+ * orders. {@code logast scan} keeps it up to date (one entry per order, with hints; texts already written are kept),
+ * {@code logast apply} uses every entry that has text.
  */
 public final class FillsFile {
-    public static final String PATH = ".logast/fills.json";
-    private static final String README = "Write the message text for each order (\"MSG\"), then run: logast apply . --auto  "
-            + "Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it. "
-            + "Keys starting with _ are hints. `logast scan` keeps this file up to date and keeps what you wrote.";
+    public static final String PATH = dev.logast.LogastDir.MESSAGES;
+    private static final String README = "Write the message text for each order (MSG), then run: logast apply . --auto\n"
+            + "Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it.\n"
+            + "Keys starting with _ are hints (_where and \"was:\" find the line again when its id changes: keep them). "
+            + "`logast scan` keeps this file up to date and keeps what you wrote.";
 
     private FillsFile() {
     }
@@ -62,10 +63,9 @@ public final class FillsFile {
         Path file = root.resolve(PATH);
         Map<String, JsonNode> previous = readRaw(file);
         Map<String, Object> template = template(orders);
-        ObjectNode out = OrderJson.MAPPER.createObjectNode();
-        out.set("_readme", previous.getOrDefault("_readme", OrderJson.MAPPER.getNodeFactory().textNode(README)));
+        ObjectNode out = DecisionYaml.MAPPER.createObjectNode();
         // always says where things stand, so an empty file reads as "nothing to write", not as "something went wrong"
-        out.put("_status", template.isEmpty()
+        String header = DecisionYaml.comment(README, template.isEmpty()
                 ? "Nothing needs a message text right now: every finding is fixed automatically or only reported."
                 : template.size() + " finding(s) below need a message text.");
         // written texts follow their line when its id shifted (a log line added above it in the same method)
@@ -132,15 +132,9 @@ public final class FillsFile {
             }
         }
         boolean exists = Files.exists(file);
-        boolean changed = !exists || added > 0 || removed > 0 || !out.equals(OrderJson.MAPPER.valueToTree(previous));
-        if (changed) {
-            try {
-                Files.createDirectories(file.getParent());
-                OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), out);
-            } catch (IOException ex) {
-                throw new UncheckedIOException(ex);
-            }
-        }
+        ObjectNode before = DecisionYaml.withoutNotes(OrderJson.MAPPER.valueToTree(previous));
+        boolean changed = !exists || added > 0 || removed > 0 || !out.equals(before) || !DecisionYaml.header(file).equals(header);
+        changed = changed && DecisionYaml.write(file, header, out);
         return new Update(template.size(), filled, added, removed, changed);
     }
 
@@ -211,11 +205,8 @@ public final class FillsFile {
             return Map.of();
         }
         try {
-            JsonNode root = OrderJson.MAPPER.readTree(file.toFile());
             Map<String, JsonNode> out = new LinkedHashMap<>();
-            if (root instanceof ObjectNode o) {
-                o.fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue()));
-            }
+            DecisionYaml.read(file).fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue()));
             return out;
         } catch (IOException ex) {
             throw new UncheckedIOException("cannot read " + file + ": " + ex.getMessage(), ex);
@@ -225,30 +216,29 @@ public final class FillsFile {
     /** Stores texts written elsewhere (the review page) into the file, so scan and apply see them too. */
     public static void save(Path root, Map<String, Fill> fills) {
         Path file = root.resolve(PATH);
-        Map<String, JsonNode> raw = new LinkedHashMap<>(readRaw(file));
+        ObjectNode raw = DecisionYaml.withoutNotes(OrderJson.MAPPER.valueToTree(readRaw(file)));
         fills.forEach((id, f) -> {
-            ObjectNode node = raw.get(id) instanceof ObjectNode o ? o : OrderJson.MAPPER.createObjectNode();
+            ObjectNode node = raw.get(id) instanceof ObjectNode o ? o : raw.putObject(id);
             f.slots().forEach(node::put);
             if (!f.args().isEmpty()) {
                 node.set("args", OrderJson.MAPPER.valueToTree(f.args()));
             }
-            raw.put(id, node);
         });
-        try {
-            Files.createDirectories(file.getParent());
-            OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), raw);
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
-        }
+        String header = DecisionYaml.header(file);
+        DecisionYaml.write(file, header.isEmpty() ? DecisionYaml.comment(README) : header, raw);
     }
 
-    /** Explicit file (--fills), else the default one when it exists. */
+    /** Explicit file (--fills: YAML, or JSON when it ends in .json), else the default one when it exists. */
     public static Map<String, Fill> forApply(Path root, Path explicit) {
         if (explicit != null) {
             try {
-                Map<String, Fill> all = OrderJson.MAPPER.readValue(explicit.toFile(), new TypeReference<LinkedHashMap<String, Fill>>() {
-                });
-                all.keySet().removeIf(k -> k.startsWith("_"));
+                Map<String, Fill> all = new LinkedHashMap<>();
+                for (var it = DecisionYaml.read(explicit).fields(); it.hasNext(); ) {
+                    var e = it.next();
+                    if (!e.getKey().startsWith("_") && e.getValue().isObject()) {
+                        all.put(e.getKey(), OrderJson.MAPPER.convertValue(e.getValue(), Fill.class));
+                    }
+                }
                 return all;
             } catch (IOException ex) {
                 throw new UncheckedIOException("cannot read " + explicit + ": " + ex.getMessage(), ex);

@@ -71,7 +71,7 @@ class E2eGoldenTest {
     }
     private static final boolean UPDATE = Boolean.getBoolean("logast.e2e.update");
     /** Generated each run or machine-specific: not part of the snapshot. */
-    private static final Set<String> SKIP = Set.of(".logast/orders.json", ".logast/classpath.txt", ".logast/classpath-root.txt");
+    private static final Set<String> SKIP = Set.of(".logast/reports/orders.json", ".logast/classpath.txt", ".logast/classpath-root.txt");
 
     @TempDir
     Path tmp;
@@ -223,40 +223,96 @@ class E2eGoldenTest {
     }
 
     /**
-     * The whole process: migrate, then write every message text logast asks for (fills.json) and count every outcome
-     * (metrics.json), then apply once more. Every decision must land, also the ones on lines the texts reword (their
+     * The whole process: migrate, then write every message text logast asks for (messages.yaml) and count every outcome
+     * (metrics.yaml), then apply once more. Every decision must land, also the ones on lines the texts reword (their
      * ids used to include the message text, so a reworded line lost its decision without a word). Then {@code logast
-     * queries} writes .logast/queries.md for what the service now measures (#106). Every file must equal
+     * queries} writes .logast/reports/queries.md for what the service now measures (#106). Every file must equal
      * e2e/expected-decided.
      */
     @org.junit.jupiter.params.ParameterizedTest(name = "metrics.catalog: {0}")
     @org.junit.jupiter.params.provider.ValueSource(strings = {"per-package", "single", "off"})
     void filledTextsAndMetricDecisionsAllLand(String catalog) throws IOException {
+        decided(catalog, app -> {
+        });
+    }
+
+    /**
+     * #108: a service set up by an earlier logast keeps its decisions in the old layout: .logast/fills.json and
+     * .logast/metrics.json (JSON, with a "_readme"), traffic.yaml and the reports at the top of .logast. The next apply
+     * moves them into decisions/ (as YAML) and reports/, says so in one line, and honours every decision: the result
+     * equals the run in the new layout, every file must equal e2e/expected-decided.
+     */
+    @Test
+    void decisionsInTheEarlierLayoutAreMovedAndHonoured() throws IOException {
+        STDERR.setLength(0);
+        decided("per-package", E2eGoldenTest::toEarlierLayout);
+        assertThat(STDERR.toString()).as("one line says what moved").contains("moved to the new .logast layout: "
+                + "fills.json → decisions/messages.yaml, metrics.json → decisions/metrics.yaml, traffic.yaml → decisions/traffic.yaml, "
+                + "orders.json, coverage.txt, apply-trace.txt, last-apply.txt, steps → reports/\n");
+        for (String old : List.of("fills.json", "metrics.json", "traffic.yaml", "orders.json", "coverage.txt", "steps")) {
+            assertThat(tmp.resolve("app/.logast").resolve(old)).as("moved: " + old).doesNotExist();
+        }
+    }
+
+    /** The .logast of an earlier logast: fills.json and metrics.json as JSON with their "_readme", every other file at the top. */
+    private static void toEarlierLayout(Path app) throws IOException {
+        Path dir = app.resolve(".logast");
+        Map<String, String> json = Map.of("decisions/messages.yaml", "fills.json", "decisions/metrics.yaml", "metrics.json");
+        for (var e : json.entrySet()) {
+            var tree = (com.fasterxml.jackson.databind.node.ObjectNode) dev.logast.apply.DecisionYaml.MAPPER.readTree(dir.resolve(e.getKey()).toFile());
+            var old = dev.logast.orders.OrderJson.MAPPER.createObjectNode().put("_readme", "Write the message text for each order ...");
+            old.setAll(tree);
+            dev.logast.orders.OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(dir.resolve(e.getValue()).toFile(), old);
+            Files.delete(dir.resolve(e.getKey()));
+        }
+        for (String sub : List.of("decisions", "reports")) {
+            try (Stream<Path> s = Files.list(dir.resolve(sub))) {
+                for (Path p : s.toList()) {
+                    Files.move(p, dir.resolve(p.getFileName()));
+                }
+            }
+            Files.delete(dir.resolve(sub));
+        }
+        assertThat(dir.resolve("traffic.yaml")).exists();
+        assertThat(dir.resolve("steps")).isDirectory();
+    }
+
+    /**
+     * migrate, write every text, count every outcome, {@code beforeApply}, apply, compile, logast queries: every file
+     * must equal the expected-decided snapshot of the catalog.
+     */
+    private void decided(String catalog, IoAction beforeApply) throws IOException {
         Path app = tmp.resolve("app");
         migrate(app, CLASSPATH, a -> {
-            // the manual flow: nothing counted by default, every outcome decided in metrics.json
+            // the manual flow: nothing counted by default, every outcome decided in metrics.yaml
             Path yml = a.resolve("logast.yml");
             Files.writeString(yml, Files.readString(yml) + "metrics:\n  defaults: []\n"
                     + (catalog.equals("per-package") ? "" : "  catalog: " + catalog + "\n")   // per-package is the default
                     + "queries:\n  splunk:\n    index: shop-logs\n");   // logast queries (#106), run at the end
         });
         writeTexts(app);
-        Path metrics = app.resolve(".logast/metrics.json");
-        String m = Files.readString(metrics);
-        assertThat(m).as("metrics.json has outcomes to decide").contains("\"count\" : \"\"");
+        Path metrics = app.resolve(".logast/decisions/metrics.yaml");
+        assertThat(Files.readString(metrics)).as("metrics.yaml has outcomes to decide").contains("count: \"\"");
         // count every outcome; where the line logs a number, count that too: the first entry per run, the rest totals
-        String counted0 = m.replace("\"count\" : \"\"", "\"count\" : \"counter\"");
-        java.util.regex.Matcher am = java.util.regex.Pattern.compile("\"amount\" : \"\",(\\s*)\"as\" : \"\",(\\s*)\"_amounts\" : \\[ \"(\\w+)\"")
-                .matcher(counted0);
-        StringBuilder sb = new StringBuilder();
-        int amounts = 0;
-        while (am.find()) {
-            am.appendReplacement(sb, "\"amount\" : \"$3\",$1\"as\" : \"" + (amounts++ == 0 ? "per-run" : "") + "\",$2\"_amounts\" : [ \"$3\"");
-        }
-        am.appendTail(sb);
-        assertThat(amounts).as("some outcome lines log a number to count").isPositive();
-        Files.writeString(metrics, sb.toString());
-        long decided = m.lines().filter(l -> l.contains("\"count\" : \"\"")).count();
+        int[] amounts = {0};
+        long decided = editDecisions(metrics, root -> {
+            long n = 0;
+            for (var entry : entries(root)) {
+                if (entry.path("count").asText("x").isEmpty()) {
+                    entry.put("count", "counter");
+                    n++;
+                }
+                if (entry.path("amount").asText("x").isEmpty() && entry.path("as").asText("x").isEmpty()
+                        && entry.path("_amounts").path(0).asText("").matches("\\w+")) {
+                    entry.put("amount", entry.path("_amounts").path(0).asText());
+                    entry.put("as", amounts[0]++ == 0 ? "per-run" : "");
+                }
+            }
+            return n;
+        });
+        assertThat(amounts[0]).as("some outcome lines log a number to count").isPositive();
+        int amountsDecided = amounts[0];
+        beforeApply.run(app);
 
         String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         Files.writeString(app.resolve("OUTPUT.txt"), Files.readString(app.resolve("OUTPUT.txt"))
@@ -265,7 +321,7 @@ class E2eGoldenTest {
         // #106: the queries for what the service now measures and logs; every counter, observation and MDC key shows
         String queries = run(app, "queries", app.toString(), "--classpath-file", CLASSPATH);
         assertThat(queries).as("written, all three backends").contains("PromQL").contains("NRQL").contains("SPL");
-        assertThat(Files.readString(app.resolve(".logast/queries.md"))).as("counters through the catalog or inline, observations "
+        assertThat(Files.readString(app.resolve(".logast/reports/queries.md"))).as("counters through the catalog or inline, observations "
                         + "named by catalog constants")
                 .contains("sum by (outcome) (increase(coupon_resend_total{application=\"e2e-shop\"}[1h]))")
                 .contains("FROM Metric SELECT count(`coupon-messages.on-batch`)")
@@ -276,15 +332,15 @@ class E2eGoldenTest {
                 .mapToLong(t -> t.lines().filter(l -> l.contains("Outcomes.count(\"") || l.contains("Outcomes.record(\"")).count()).sum();
         long withAmount = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/")).map(Map.Entry::getValue)
                 .mapToLong(t -> t.lines().filter(l -> l.matches(".*Outcomes\\.(count|record)\\(\"[^\"]+\", \"[^\"]+\", \"[^\"]+\", [^\"]+\\);.*")).count()).sum();
-        // decisions that cannot be written stay in metrics.json with a "_problem" (e.g. a log line inside a returned pipeline)
-        long problems = actual.get(".logast/metrics.json").lines().filter(l -> l.contains("\"_problem\"")).count();
+        // decisions that cannot be written stay in metrics.yaml with a "_problem" (e.g. a log line inside a returned pipeline)
+        long problems = actual.get(".logast/decisions/metrics.yaml").lines().filter(l -> l.strip().startsWith("_problem:")).count();
         // the reactive pipeline's line (inside a return), the async failure line (inside whenComplete's if) and the line in
         // runAsync's lambda (another thread, later) cannot be counted after their statement
         assertThat(problems).as("lines that cannot be counted after their statement").isEqualTo(3);
         decided -= problems;
         if (catalog.equals("off")) {
-            assertThat(counted).as("every outcome decided in metrics.json is counted").isEqualTo(decided);
-            assertThat(withAmount).as("every amount named in metrics.json is counted").isEqualTo(amounts);
+            assertThat(counted).as("every outcome decided in metrics.yaml is counted").isEqualTo(decided);
+            assertThat(withAmount).as("every amount named in metrics.yaml is counted").isEqualTo(amountsDecided);
         } else {
             List<String> catalogs = actual.entrySet().stream().filter(e -> e.getValue().contains("// logast:metrics-catalog"))
                     .map(Map.Entry::getKey).toList();
@@ -299,13 +355,13 @@ class E2eGoldenTest {
             assertThat(outside).as("no metric or observation name is left at a call site").isZero();
             long calls = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/") && !catalogs.contains(e.getKey()))
                     .mapToLong(e -> e.getValue().lines().filter(l -> l.matches("\\s*\\w*Metrics\\.[a-z]\\w*\\(.*\\);.*")).count()).sum();
-            assertThat(calls).as("every outcome decided in metrics.json is counted through the catalog").isEqualTo(decided);
+            assertThat(calls).as("every outcome decided in metrics.yaml is counted through the catalog").isEqualTo(decided);
         }
         golden(EXPECTED.resolveSibling(catalog.equals("per-package") ? "expected-decided" : "expected-decided-" + catalog), actual);
     }
 
     /**
-     * metrics.amounts: off in logast.yaml: metrics.json offers no amounts, and the default database counts carry no row
+     * metrics.amounts: off in logast.yaml: metrics.yaml offers no amounts, and the default database counts carry no row
      * amount. Every file must equal e2e/expected-amounts-off.
      */
     @Test
@@ -314,7 +370,7 @@ class E2eGoldenTest {
             Path yml = app.resolve("logast.yml");
             Files.writeString(yml, Files.readString(yml) + "metrics:\n  amounts: off\n");
         });
-        assertThat(actual.get(".logast/metrics.json")).as("no amounts offered").doesNotContain("\"_amounts\"");
+        assertThat(actual.get(".logast/decisions/metrics.yaml")).as("no amounts offered").doesNotContain("_amounts:");
         assertThat(actual.values().stream().filter(t -> t.contains("Outcomes.count(\"") && t.contains("// logast:metrics-catalog")).toList())
                 .as("the default database count has no row amount").noneMatch(t -> t.contains("\"rows\""));
         golden(EXPECTED.resolveSibling("expected-amounts-off"), actual);
@@ -669,14 +725,12 @@ class E2eGoldenTest {
                     """);
         });
         // the started lines of the controller are written and applied: each lands inside the MDC scope its method opens with
-        Path fills = app.resolve(".logast/fills.json");
-        String f = Files.readString(fills);
-        String filled = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*\"_MSG\" : \"Entry log for [^\"]*\",\\s*"
-                + "\"_where\" : \"src/main/java/com/example/e2e/locker/LockerController)").matcher(f).replaceAll("\"MSG\" : \"Locker change started\",$1");
-        assertThat(filled).as("fills.json asks for the controller's started lines").isNotEqualTo(f);
-        Files.writeString(fills, filled);
+        long filled = editDecisions(app.resolve(".logast/decisions/messages.yaml"), root -> fillMessages(root, (hint, where) ->
+                hint.matches("Entry log for [^\"]*") && where.startsWith("src/main/java/com/example/e2e/locker/LockerController")
+                        ? "Locker change started" : null, false));
+        assertThat(filled).as("messages.yaml asks for the controller's started lines").isPositive();
         String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
-        String trace = Files.readString(app.resolve(".logast/apply-trace.txt"));
+        String trace = Files.readString(app.resolve(".logast/reports/apply-trace.txt"));
         assertThat(trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "")
                 .as("pass 2 applies nothing:\n" + trace).doesNotContain("applying");
         String fourth = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
@@ -726,14 +780,60 @@ class E2eGoldenTest {
         assertSameFiles(files(EXPECTED), withoutWarning);
     }
 
-    /** Writes a text ("Coupon sweep <event>") into every fills.json entry that asks for one in a lifecycle form. */
+    /** Writes a text ("Coupon sweep <event>") into every messages.yaml entry that asks for one in a lifecycle form. */
     private static void writeTexts(Path app) throws IOException {
-        Path fills = app.resolve(".logast/fills.json");
-        String f = Files.readString(fills);
-        String filledTexts = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*)\"_MSG\" : \"([^\"]*?must read as: \\{subject} (\\w+)[^\"]*)\"")
-                .matcher(f).replaceAll("\"MSG\" : \"Coupon sweep $3\",$1\"_MSG\" : \"$2\"");
-        assertThat(filledTexts).as("fills.json has texts to write").isNotEqualTo(f);
-        Files.writeString(fills, filledTexts);
+        java.util.regex.Pattern form = java.util.regex.Pattern.compile("^[^\"]*?must read as: \\{subject} (\\w+)");
+        long filled = editDecisions(app.resolve(".logast/decisions/messages.yaml"), root -> fillMessages(root, (hint, where) -> {
+            java.util.regex.Matcher m = form.matcher(hint);
+            return m.find() ? "Coupon sweep " + m.group(1) : null;
+        }, false));
+        assertThat(filled).as("messages.yaml has texts to write").isPositive();
+    }
+
+    /** Edits a decision file as a person would: its entries as a tree, written back under the header logast wrote. */
+    private static long editDecisions(Path file, java.util.function.ToLongFunction<com.fasterxml.jackson.databind.node.ObjectNode> edit)
+            throws IOException {
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) dev.logast.apply.DecisionYaml.MAPPER.readTree(file.toFile());
+        long n = edit.applyAsLong(root);
+        Files.writeString(file, dev.logast.apply.DecisionYaml.text(dev.logast.apply.DecisionYaml.header(file), root));
+        return n;
+    }
+
+    private static List<com.fasterxml.jackson.databind.node.ObjectNode> entries(com.fasterxml.jackson.databind.node.ObjectNode root) {
+        List<com.fasterxml.jackson.databind.node.ObjectNode> out = new ArrayList<>();
+        root.fields().forEachRemaining(e -> {
+            if (!e.getKey().startsWith("_") && e.getValue() instanceof com.fasterxml.jackson.databind.node.ObjectNode entry) {
+                out.add(entry);
+            }
+        });
+        return out;
+    }
+
+    /**
+     * Writes MSG of the entries whose only slot is an empty MSG (MSG, then its hint _MSG, then _where), where
+     * {@code text} gives one for the hint and the place; returns how many were written.
+     */
+    private static long fillMessages(com.fasterxml.jackson.databind.node.ObjectNode root,
+                                     java.util.function.BiFunction<String, String, String> text, boolean firstOnly) {
+        long n = 0;
+        for (var entry : entries(root)) {
+            List<String> names = new ArrayList<>();
+            entry.fieldNames().forEachRemaining(names::add);
+            int at = names.indexOf("MSG");
+            if (at < 0 || at + 2 >= names.size() || !names.get(at + 1).equals("_MSG") || !names.get(at + 2).equals("_where")
+                    || !entry.path("MSG").asText("x").isEmpty()) {
+                continue;
+            }
+            String msg = text.apply(entry.path("_MSG").asText(""), entry.path("_where").asText(""));
+            if (msg != null) {
+                entry.put("MSG", msg);
+                n++;
+                if (firstOnly) {
+                    break;
+                }
+            }
+        }
+        return n;
     }
 
     /**
@@ -748,12 +848,9 @@ class E2eGoldenTest {
         });
         writeTexts(app);
         // the reworded line in PaymentClient.charge is keyed by its place among the method's log calls
-        Path fills = app.resolve(".logast/fills.json");
-        String f = Files.readString(fills);
-        String reworded = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*\"_MSG\" : \"Reword this DEBUG message[^\"]*was: Charging order)")
-                .matcher(f).replaceFirst("\"MSG\" : \"Charging the card\",$1");
-        assertThat(reworded).as("fills.json asks to reword the charge line").isNotEqualTo(f);
-        Files.writeString(fills, reworded);
+        long reworded = editDecisions(app.resolve(".logast/decisions/messages.yaml"), root -> fillMessages(root, (hint, where) ->
+                hint.matches("(?s)Reword this DEBUG message[^\"]*was: Charging order.*") ? "Charging the card" : null, true));
+        assertThat(reworded).as("messages.yaml asks to reword the charge line").isPositive();
         Path job = app.resolve("src/main/java/com/example/e2e/coupon/CouponCleanupJob.java");
         String text = Files.readString(job);
         String shifted = text.replace("    public void cleanup() {\n", "    public void cleanup() {\n        log.debug(\"Cleanup tick\");\n");
@@ -792,7 +889,7 @@ class E2eGoldenTest {
         String output = run(app, "init", app.toString(), "--no-classpath");
         Files.writeString(app.resolve("OUTPUT.txt"), output);
         assertThat(output).as("the flow, in order").containsSubsequence("logast apply . --auto --write",
-                "fill in .logast/fills.json and .logast/metrics.json", "logast apply . --auto --write", "git diff");
+                "fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml", "logast apply . --auto --write", "git diff");
         Map<String, String> written = new TreeMap<>();
         files(app).forEach((k, v) -> {
             if (!v.equals(before.get(k))) {
@@ -800,7 +897,7 @@ class E2eGoldenTest {
             }
         });
         assertThat(written.keySet()).as("init changes no source file").noneMatch(k -> k.startsWith("src/"));
-        assertThat(written).as("init does not create the files to fill in").doesNotContainKeys(".logast/fills.json", ".logast/metrics.json");
+        assertThat(written).as("init does not create the files to fill in").doesNotContainKeys(".logast/decisions/messages.yaml", ".logast/decisions/metrics.yaml");
         golden(EXPECTED.resolveSibling("expected-init"), written);
     }
 
@@ -1087,13 +1184,13 @@ class E2eGoldenTest {
 
         String source = actual.get("src/main/java/com/example/e2e/review/ReviewMarkers.java");
         assertThat(source).contains("// logast: LOG_FORMAT ").contains("// logast: METRIC_OUTCOME_UNMEASURED ");
-        assertThat(actual.get(".logast/fills.json")).contains("FMT-").contains("doing");
-        assertThat(actual.get(".logast/metrics.json")).contains("OUM-").contains("_where");
+        assertThat(actual.get(".logast/decisions/messages.yaml")).contains("FMT-").contains("doing");
+        assertThat(actual.get(".logast/decisions/metrics.yaml")).contains("OUM-").contains("_where");
         golden(EXPECTED.resolveSibling("expected-source-markers"), actual);
     }
 
     /**
-     * #72: .logast/coverage.txt accounts for every log call: fixed, reported, ignored, skipped with the reason recorded
+     * #72: .logast/reports/coverage.txt accounts for every log call: fixed, reported, ignored, skipped with the reason recorded
      * where the rule passes it over, or checked. e2e/before has fixed, reported, checked and some skips (a log helper,
      * a constant template, TRACE, the copied support classes); the shapes it lacks are added here: a protected message,
      * another logging API, an ignore comment, a fluent call with and without a message, a message from an argument.
@@ -1139,12 +1236,12 @@ class E2eGoldenTest {
                     """);
         });
 
-        String coverage = actual.get(".logast/coverage.txt");
+        String coverage = actual.get(".logast/reports/coverage.txt");
         assertThat(coverage).as("every outcome").contains("  fixed    ", "  reported ", "  ignored  LOG_FORMAT", "  checked  ");
         assertThat(coverage).as("every skip reason").contains("protected message", "message not a literal", "message comes from an argument",
                 "fluent call", "no message", "TRACE level", "inside a log helper", "logging-support code",
                 "other logging API: java.util.logging");
-        assertThat(actual.get("FINDINGS.txt")).as("the one coverage line (#101)").containsPattern("(?m)^Log lines: \\d+ — .*\\d+ not checked \\(.logast/coverage.txt\\)$");
+        assertThat(actual.get("FINDINGS.txt")).as("the one coverage line (#101)").containsPattern("(?m)^Log lines: \\d+ — .*\\d+ not checked \\(.logast/reports/coverage.txt\\)$");
         golden(EXPECTED.resolveSibling("expected-log-call-coverage"), actual);
     }
 
@@ -1171,7 +1268,7 @@ class E2eGoldenTest {
 
         String source = actual.get("src/main/java/com/example/e2e/review/ScheduleCanceller.java");
         assertThat(source).contains("log.info(\"No schedules found for given orderId: {}. There was nothing to cancel.\", orderId);\n").doesNotContain("// logast:");
-        assertThat(actual.get(".logast/fills.json")).contains("FMT-").contains("orderId");
+        assertThat(actual.get(".logast/decisions/messages.yaml")).contains("FMT-").contains("orderId");
         assertThat(actual.get("FINDINGS.txt")).contains("No schedules found for given orderId");
         golden(EXPECTED.resolveSibling("expected-inline-named-placeholder"), actual);
     }
@@ -3364,7 +3461,7 @@ class E2eGoldenTest {
     void seesBatchStepsSqsListenersStreamFunctionsAndRouterFunctions() throws IOException {
         String classpath = libraryClasspath("entrypoint-libraries", ENTRYPOINT_LIBRARY_STUBS).toString();
         Map<String, String> actual = migrate(tmp.resolve("app"), classpath, INTAKE_ENTRYPOINTS);
-        assertThat(actual.get(".logast/traffic.yaml")).as("every new kind is an entrypoint")
+        assertThat(actual.get(".logast/decisions/traffic.yaml")).as("every new kind is an entrypoint")
                 .contains("\"tasklet CouponImportTasklet.execute\"")
                 .contains("\"item processor OrderLineProcessor.process\"")
                 .contains("\"@SqsListener coupon-requests\"").contains("\"@SqsListener coupon-bulk\"")
@@ -3379,7 +3476,7 @@ class E2eGoldenTest {
         assertThat(actual.get(INTAKE + "CouponQueueListener.java")).as("SQS observation off by default; batches never")
                 .contains("ObservedContext.entrypoint(IntakeMetrics.COUPON_QUEUE_LISTENER_ON_REQUEST)")
                 .contains("ObservedContext.entrypoint(IntakeMetrics.COUPON_QUEUE_LISTENER_ON_BULK)");
-        assertThat(actual.get(".logast/apply-trace.txt")).as("#99: Stream times \"Order desk completed\": no second timer")
+        assertThat(actual.get(".logast/reports/apply-trace.txt")).as("#99: Stream times \"Order desk completed\": no second timer")
                 .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|CouponQueueListener|CouponImportTasklet|OrderLineProcessor)");
         assertThat(actual.get(INTAKE + "OrderLedger.java")).as("#99: an MdcScope measures nothing: the timer comes in pass 1")
                 .contains("MdcScope.of(\"orderId\", order.id())").contains("ObservedContext.entrypoint(");
@@ -3430,7 +3527,7 @@ class E2eGoldenTest {
                 .doesNotContain("ObservedContext.entrypoint(IntakeMetrics.COUPON_QUEUE_LISTENER_ON_REQUEST)")
                 .as("only the batch listener, which SQS never observes, is wrapped")
                 .containsOnlyOnce("ObservedContext.entrypoint(").contains("ObservedContext.entrypoint(IntakeMetrics.COUPON_QUEUE_LISTENER_ON_BULK)");
-        assertThat(observed.get(".logast/apply-trace.txt")).as("no second timer on an observed handler")
+        assertThat(observed.get(".logast/reports/apply-trace.txt")).as("no second timer on an observed handler")
                 .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|CouponQueueListener|CouponImportTasklet|OrderLineProcessor)");
     }
 
@@ -3849,7 +3946,7 @@ class E2eGoldenTest {
     void seesRedisListenersServiceActivatorsAndGrpcServices() throws IOException {
         String classpath = libraryClasspath("relay-libraries", RELAY_LIBRARY_STUBS).toString();
         Map<String, String> actual = migrate(tmp.resolve("app"), classpath, RELAY_ENTRYPOINTS);
-        assertThat(actual.get(".logast/traffic.yaml")).as("every new kind is an entrypoint")
+        assertThat(actual.get(".logast/decisions/traffic.yaml")).as("every new kind is an entrypoint")
                 .contains("\"redis CouponChannelListener.onMessage\"").contains("\"redis CouponRelay.onCoupon\"")
                 .contains("\"redis CouponRelay.onRefund\"").contains("\"redis CouponRelay.handleMessage\"")
                 .contains("\"@ServiceActivator couponRequests\"").contains("\"@ServiceActivator voucherRequests\"")
@@ -4041,7 +4138,7 @@ class E2eGoldenTest {
     @Test
     void seesWebFluxControllersAndRouterFunctionsAndSetsUpContextPropagation() throws IOException {
         Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, REACTIVE_ENTRYPOINTS);
-        assertThat(actual.get(".logast/traffic.yaml")).as("annotated WebFlux controllers and WebFlux router handlers are entrypoints")
+        assertThat(actual.get(".logast/decisions/traffic.yaml")).as("annotated WebFlux controllers and WebFlux router handlers are entrypoints")
                 .contains("\"GET /reactive-coupons/{couponId}\"").contains("\"GET /reactive-routes/{couponId}\"")
                 .contains("\"POST /reactive-routes\"").contains("\"DELETE /reactive-routes/{couponId}\"");
         assertThat(actual.get(MAIN_CLASS)).as("Boot 4 without spring-boot-reactor: the hook, first in main")
@@ -4454,7 +4551,7 @@ class E2eGoldenTest {
                     """);
         });
 
-        String traffic = actual.get(".logast/traffic.yaml");
+        String traffic = actual.get(".logast/decisions/traffic.yaml");
         assertThat(traffic).as("a class that is not a controller serves no mapping").doesNotContain("LockerStub")
                 .as("the mapped interface methods are entrypoints, with the paths their constants spell")
                 .contains("\"GET /lockers/{lockerId}\":").contains("\"POST /lockers/{lockerId}/open\":")
@@ -4669,7 +4766,7 @@ class E2eGoldenTest {
 
         assertThat(Files.readString(generated[0])).as("generated sources are never edited").isEqualTo(generatedBinApi);
         assertThat(actual.get("FINDINGS.txt")).as("generated sources are never reported").doesNotContain("build/generated");
-        String traffic = actual.get(".logast/traffic.yaml");
+        String traffic = actual.get(".logast/decisions/traffic.yaml");
         assertThat(traffic).as("mappings on an interface from a library jar, in a controller marked by the jar's annotation")
                 .contains("\"GET /shelves/{shelfId}\":").contains("\"POST /shelves/{shelfId}/restock\":")
                 .as("mappings on an interface in generated sources").contains("\"DELETE /bins/{binId}\":")
@@ -5623,12 +5720,9 @@ class E2eGoldenTest {
     /** migrate, then write the texts of the swallowed-exception fixes in the loggers package and apply them. */
     private Map<String, String> migrateAndFillLoggerTexts(Path app, String classpath, IoAction prepare) throws IOException {
         migrate(app, classpath, prepare);
-        Path fills = app.resolve(".logast/fills.json");
-        String f = Files.readString(fills);
-        String filled = java.util.regex.Pattern.compile("\"MSG\" : \"\",(\\s*\"_MSG\" : \"(?:[^\"\\\\]|\\\\.)*\",\\s*"
-                + "\"_where\" : \"src/main/java/com/example/e2e/loggers/)").matcher(f).replaceAll("\"MSG\" : \"Step failed\",$1");
-        assertThat(filled).as("fills.json has texts for the loggers package").isNotEqualTo(f);
-        Files.writeString(fills, filled);
+        long filled = editDecisions(app.resolve(".logast/decisions/messages.yaml"), root -> fillMessages(root, (hint, where) ->
+                where.startsWith("src/main/java/com/example/e2e/loggers/") ? "Step failed" : null, false));
+        assertThat(filled).as("messages.yaml has texts for the loggers package").isPositive();
         String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
         assertThat(third).doesNotContain("CHECK FAILED");
         Files.writeString(app.resolve("OUTPUT.txt"), Files.readString(app.resolve("OUTPUT.txt"))
@@ -5680,9 +5774,9 @@ class E2eGoldenTest {
         prepare.run(app);
         String first = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
         // the pipeline's steps settle in one pass: a second pass inside the same run applies nothing
-        String trace = Files.readString(app.resolve(".logast/apply-trace.txt"));
+        String trace = Files.readString(app.resolve(".logast/reports/apply-trace.txt"));
         String afterPass1 = trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "";
-        assertThat(afterPass1).as("pass 2 of the first apply applies nothing (.logast/apply-trace.txt):\n" + trace)
+        assertThat(afterPass1).as("pass 2 of the first apply applies nothing (.logast/reports/apply-trace.txt):\n" + trace)
                 .doesNotContain("applying");
         String second = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
         // one run is the end state: a second one finds nothing, and neither run trips a self-check
@@ -6385,7 +6479,7 @@ class E2eGoldenTest {
      * (resilience.retry.usages.<class>.<method>) for a usage whose settings differ, so nothing changes behaviour. The
      * annotations read them through placeholders (Framework: maxRetriesString = "${…}"; Spring Retry:
      * maxAttemptsExpression = "#{${…}}"), the generated RetrySettings record binds them, @EnableConfigurationProperties
-     * registers it. A usage reading the team's own property is left alone. .logast/retry.yaml lists the usages: marking
+     * registers it. A usage reading the team's own property is left alone. .logast/decisions/retry.yaml lists the usages: marking
      * one specific gives it its own block on the next apply, and the run after that changes nothing. Every file must
      * equal e2e/expected-retry-settings; the resilience pack alone gives the same code and configuration.
      */
@@ -6424,14 +6518,14 @@ class E2eGoldenTest {
         assertThat(actual.get("src/main/java/com/example/e2e/RetrySettings.java"))
                 .contains("@ConfigurationProperties(\"resilience.retry\")");
         assertThat(actual.get(MAIN_CLASS)).contains("@EnableConfigurationProperties(RetrySettings.class)\n@SpringBootApplication");
-        assertThat(actual.get(".logast/retry.yaml")).contains("  ParcelClient.track:").contains("  ParcelClient.label:")
+        assertThat(actual.get(".logast/decisions/retry.yaml")).contains("  ParcelClient.track:").contains("  ParcelClient.label:")
                 .doesNotContain("ParcelClient.audit");
-        assertThat(actual.get("OUTPUT.txt")).contains(".logast/retry.yaml (optional)");
+        assertThat(actual.get("OUTPUT.txt")).contains(".logast/decisions/retry.yaml (optional)");
         golden(EXPECTED.resolveSibling("expected-retry-settings"), actual);
 
         // marked specific: the next apply gives ParcelClient.track a block of its own, starting from the shared values
         Path app = tmp.resolve("app");
-        Path work = app.resolve(".logast/retry.yaml");
+        Path work = app.resolve(".logast/decisions/retry.yaml");
         String marked = Files.readString(work).replaceFirst("(  ParcelClient\\.track:.*\\n    specific: )false", "$1true");
         assertThat(marked).isNotEqualTo(Files.readString(work));
         Files.writeString(work, marked);
@@ -6459,7 +6553,7 @@ class E2eGoldenTest {
             Files.writeString(policy, Files.readString(policy).replaceFirst("(?m)^packs: .*$", "packs: [resilience]"));
         });
         for (String f : List.of("src/main/java/com/example/e2e/parcel/ParcelClient.java", "src/main/java/com/example/e2e/parcel/ParcelGateway.java",
-                "src/main/java/com/example/e2e/RetrySettings.java", ".logast/retry.yaml")) {
+                "src/main/java/com/example/e2e/RetrySettings.java", ".logast/decisions/retry.yaml")) {
             assertThat(alone.get(f)).as(f).isEqualTo(actual.get(f));
         }
         assertThat(alone.get("src/main/resources/application.yml")).contains("    spring-retry-defaults:\n      max-attempts: 4\n");
@@ -6709,7 +6803,7 @@ class E2eGoldenTest {
 
     /**
      * Order ids are anchored to code, not to line numbers (#43): a line added at the top of every file shifts every
-     * finding, and no id may change, so baselines, fills.json and --only keep matching.
+     * finding, and no id may change, so baselines, messages.yaml and --only keep matching.
      */
     @Test
     void orderIdsSurviveShiftedLines() throws IOException {
@@ -6719,7 +6813,7 @@ class E2eGoldenTest {
             run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
             try {
                 return java.util.regex.Pattern.compile("\"id\" ?: ?\"([A-Z]+-[0-9a-f]+)\"")
-                        .matcher(Files.readString(app.resolve(".logast/orders.json"))).results().map(r -> r.group(1)).sorted().toList();
+                        .matcher(Files.readString(app.resolve(".logast/reports/orders.json"))).results().map(r -> r.group(1)).sorted().toList();
             } catch (IOException e) {
                 throw new java.io.UncheckedIOException(e);
             }
@@ -6776,8 +6870,8 @@ class E2eGoldenTest {
         copy(BEFORE, app);
         run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
 
-        Path fills = app.resolve(".logast/fills.json");
-        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Path fills = app.resolve(".logast/decisions/messages.yaml");
+        var mapper = dev.logast.apply.DecisionYaml.MAPPER;
         var root = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(fills.toFile());
         int n = 0;
         for (var it = root.fields(); it.hasNext(); ) {
@@ -6795,7 +6889,7 @@ class E2eGoldenTest {
                 entry.put(slot, form.find() ? form.group(1).replace("{subject}", "Reworded step " + (++n)) : "Reworded line " + (++n));
             }
         }
-        mapper.writerWithDefaultPrettyPrinter().writeValue(fills.toFile(), root);
+        Files.writeString(fills, dev.logast.apply.DecisionYaml.text(dev.logast.apply.DecisionYaml.header(fills), root));
 
         String second = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
@@ -6932,17 +7026,22 @@ class E2eGoldenTest {
     }
 
     /** Runs the CLI in-process; stdout with the temp path, timings and colours normalised. */
+    /** What the commands run since it was last cleared printed to stderr (progress, warnings: not part of OUTPUT.txt). */
+    private static final StringBuilder STDERR = new StringBuilder();
+
     private static String run(Path app, String... args) {
         PrintStream out = System.out;
         PrintStream err = System.err;
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
         try {
             System.setOut(new PrintStream(buf, true, StandardCharsets.UTF_8));
-            System.setErr(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+            System.setErr(new PrintStream(errBuf, true, StandardCharsets.UTF_8));
             new CommandLine(new Main()).execute(args);
         } finally {
             System.setOut(out);
             System.setErr(err);
+            STDERR.append(errBuf.toString(StandardCharsets.UTF_8));
         }
         return buf.toString(StandardCharsets.UTF_8)
                 .replace(app.toString(), "<app>")

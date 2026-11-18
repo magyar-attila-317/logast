@@ -155,6 +155,6 @@ final class Out {
     }
 
     private static String pad(String label) {
-        return String.format("%-24s", label);
+        return label.length() < 24 ? String.format("%-24s", label) : label + " ";   // a long label still keeps its space
     }
 }

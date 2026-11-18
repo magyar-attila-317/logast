@@ -16,7 +16,7 @@ import java.util.Map;
 public final class Fill {
     private final Map<String, String> slots = new LinkedHashMap<>();
     private final List<String> args = new ArrayList<>();
-    /** Hints from fills.json ("_MSG", "_where"): what the entry was written for, to find its line again. */
+    /** Hints from messages.yaml ("_MSG", "_where"): what the entry was written for, to find its line again. */
     private final Map<String, String> hints = new LinkedHashMap<>();
 
     @JsonCreator

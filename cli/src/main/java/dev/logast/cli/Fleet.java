@@ -36,6 +36,7 @@ final class Fleet implements Callable<Integer> {
         List<FleetReport.Service> result = new ArrayList<>();
         for (Path root : roots) {
             Path r = root.toAbsolutePath().normalize();
+            Main.migrate(r);
             Policy policy = Logast.policy(r, null);
             Main.warnOnce(policy);
             System.err.println("scanning " + r);

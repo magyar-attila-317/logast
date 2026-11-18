@@ -298,7 +298,7 @@ public final class MetricsMap {
                 return true;
             }
             if (l <= last && Suppressions.lineIgnores(t, Rules.METRIC_OUTCOME_UNMEASURED)) {
-                a.ledger.ignored(m.file().relPath(), line, Rules.METRIC_OUTCOME_UNMEASURED);   // "skip" in metrics.json
+                a.ledger.ignored(m.file().relPath(), line, Rules.METRIC_OUTCOME_UNMEASURED);   // "skip" in metrics.yaml
                 return true;
             }
         }
@@ -356,7 +356,7 @@ public final class MetricsMap {
             }
             Double rate = a.traffic.known() ? a.traffic.perDay(ep) : null;
             if (rate == null) {
-                return "unknown: no rate for \"" + ep.label() + "\" in .logast/traffic.yaml";
+                return "unknown: no rate for \"" + ep.label() + "\" in .logast/decisions/traffic.yaml";
             }
             if (rate > budget) {
                 return "high: " + ep.label() + " " + VolumeRules.human(rate) + "/day";

@@ -15,7 +15,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Keeps a short source marker beside findings that need an entry in fills.json or metrics.json. */
+/** Keeps a short source marker beside findings that need an entry in messages.yaml or metrics.yaml. */
 public final class FindingComments {
     private static final String PREFIX = "logast: ";
     private static final Pattern MARKER = Pattern.compile("([A-Z_]+) ([A-Z]+-[a-fA-F0-9]+)");

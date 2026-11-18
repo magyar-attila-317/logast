@@ -1,0 +1,43 @@
+# One entry per outcome the logs report and no metric counts. Set count to counter (Outcomes.count(name, outcome): a
+# counter name{outcome=...}), tag (Outcomes.tag(outcome) on the timer already running; only where _tag says
+# available) or skip (a // logast:ignore comment). Edit name and outcome freely (lower case, dots). Where the line
+# logs a number (_amounts), amount names one to count too: as: total (a counter name.<amount> grows by it) or
+# per-run (each value one sample of a distribution summary name.<amount>); an empty as takes metrics.amounts from
+# logast.yaml. Leave amount empty to count how often only. Then: logast apply . --auto. `logast metrics . --format
+# json` has the context. Keys starting with _ are hints (_where and _event find the line again when its id changes:
+# keep them).
+OUM-3c3200:
+  count: counter
+  name: coupon
+  outcome: archived
+  _event: archived
+  _message: INFO "Coupon archived"
+  _where: src/main/java/com/example/e2e/edge/EdgeFlow.java:45 EdgeFlow.process
+  _frequency: low
+  _paths:
+    - scheduled @Scheduled EdgeJob.run
+  _tag: available
+  _problem: "The log line runs in a lambda on another thread, later: a counting line after the statement would count when the work is handed off, not when it happens; count it inside the lambda, or mark it skip."
+OUM-bb1ac8:
+  count: counter
+  name: edge.flow.async.work
+  outcome: failed
+  _event: failed
+  _message: ERROR "Edge flow async work failed"
+  _where: src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process
+  _frequency: low
+  _paths:
+    - scheduled @Scheduled EdgeJob.run
+  _tag: available
+  _problem: "The log line runs inside a lambda, only under a condition: a counting line after the statement would count every run; count it inside the lambda, next to the log line, or mark it skip."
+OUM-4284aa:
+  count: counter
+  name: coupon.lookup
+  outcome: failed
+  _event: failed
+  _message: WARN "Coupon lookup failed"
+  _where: src/main/java/com/example/e2e/messaging/ReactiveCouponLookup.java:17 ReactiveCouponLookup.find
+  _frequency: "unknown: no entrypoint is known to reach it"
+  _paths: []
+  _tag: not available here (no observation known to run)
+  _problem: "The log line is part of a return/throw statement: a counting line after it would never run; count it where it happens (inside the lambda) or mark it skip."

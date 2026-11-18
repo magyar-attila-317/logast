@@ -9,7 +9,7 @@ Waiting on you — logast can't continue without these:
 
 Also:
   logast classpath .   dependencies changed and Gradle failed (exit 1): fix the build, then refresh the classpath
-  git diff             review the changes (one diff per kind of change in .logast/steps/)
+  git diff             review the changes (one diff per kind of change in .logast/reports/steps/)
   logast verify .      build and run the tests with log capture: does the result really log what it should?
 
 === the same again (what one run left behind)

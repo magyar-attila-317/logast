@@ -40,14 +40,14 @@ import java.util.regex.Pattern;
  * By default every usage of a family reads one shared block ({@code resilience.retry.defaults} for Spring Framework's,
  * {@code resilience.retry.spring-retry-defaults} for Spring Retry's), holding the most common literal settings. A usage
  * whose literals differ from the shared block gets its own block ({@code resilience.retry.usages.<class>.<method>}), so
- * no behaviour changes silently. {@code .logast/retry.yaml} lists every usage: {@code specific: true} gives it its own
+ * no behaviour changes silently. {@code .logast/decisions/retry.yaml} lists every usage: {@code specific: true} gives it its own
  * block (starting from the shared values, or {@code values:} given there), {@code false} points it back to the shared
  * one (its block stays in application.yml, unused: no value typed in is lost). Class lists ({@code includes},
  * {@code retryFor}, ...), predicates and {@code timeUnit} stay in the annotation; a usage with a setting that is not a
  * literal (a constant, an expression of its own) is left alone.
  */
 public final class RetrySettingsRules {
-    public static final String WORK_FILE = ".logast/retry.yaml";
+    public static final String WORK_FILE = dev.logast.LogastDir.RETRY;
     static final String PREFIX = "resilience.retry.";
     static final String SETTINGS_CLASS = "RetrySettings";
     private static final String ENABLE_PROPS = "org.springframework.boot.context.properties.EnableConfigurationProperties";
@@ -311,7 +311,7 @@ public final class RetrySettingsRules {
     }
 
     /**
-     * Writes .logast/retry.yaml when the service has retry usages: every usage, with what the person marked kept and
+     * Writes .logast/decisions/retry.yaml when the service has retry usages: every usage, with what the person marked kept and
      * the current state where nothing is marked. Returns true when the file was created by this call.
      */
     public static boolean writeWorkFile(Path root, Analysis a) {
@@ -671,7 +671,7 @@ public final class RetrySettingsRules {
                  * @param defaults            what Spring Framework's @Retryable usages share
                  * @param springRetryDefaults what Spring Retry's @Retryable usages share
                  * @param usages              usages with settings of their own: class, then method (kebab case); which ones is
-                 *                            decided in .logast/retry.yaml
+                 *                            decided in .logast/decisions/retry.yaml
                  */
                 @ConfigurationProperties("resilience.retry")
                 public record RetrySettings(Retry defaults, Retry springRetryDefaults, Map<String, Map<String, Retry>> usages) {

@@ -357,7 +357,7 @@ public final class Rules {
         List<dev.logast.apply.MetricsFile.Spot> spots = new ArrayList<>();
         for (MetricsMap.Gap g : gaps) {
             MetricsMap.Unmeasured u = g.outcome();
-            // not the message text: a reworded line (fills.json, a key moved to MDC) keeps its id and its decision
+            // not the message text: a reworded line (messages.yaml, a key moved to MDC) keeps its id and its decision
             String anchor = u.file() + "|" + u.method() + "|" + u.event();
             int n = seen.merge(anchor, 1, Integer::sum);   // the same event twice in one method: number the repeats
             OrderBuilder b = ctx.order(METRIC_OUTCOME_UNMEASURED, n == 1 ? anchor : anchor + "|" + n).at(u.file(), u.line())
@@ -368,7 +368,7 @@ public final class Rules {
                     .doneWhen("a metric counts this outcome, or its decision in " + dev.logast.apply.MetricsFile.PATH
                             + " is applied (logast apply . --auto)");
             if (!ctx.policy.metrics().amounts().equals("off") && !g.amounts().isEmpty()) {
-                b.data("amounts", List.copyOf(g.amounts().keySet()));   // numbers the line logs: metrics.json offers them
+                b.data("amounts", List.copyOf(g.amounts().keySet()));   // numbers the line logs: metrics.yaml offers them
             }
             b.method = u.method();
             builders.add(b);
@@ -380,9 +380,9 @@ public final class Rules {
             MetricsMap.Gap g = gaps.get(i);
             MetricsMap.Unmeasured u = g.outcome();
             OrderBuilder b = builders.get(i);
-            String advice = "Decide in " + dev.logast.apply.MetricsFile.PATH + ": \"count\": \"counter\" (Outcomes.count(\"" + g.name()
-                    + "\", \"" + u.event() + "\"))" + (g.tagAvailable() ? ", \"tag\" (Outcomes.tag(\"" + u.event() + "\") on the running timer)" : "")
-                    + " or \"skip\"; then logast apply . --auto. Count it only if a dashboard or alert needs it.";
+            String advice = "Decide in " + dev.logast.apply.MetricsFile.PATH + ": count: counter (Outcomes.count(\"" + g.name()
+                    + "\", \"" + u.event() + "\"))" + (g.tagAvailable() ? ", tag (Outcomes.tag(\"" + u.event() + "\") on the running timer)" : "")
+                    + " or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.";
             dev.logast.apply.MetricsFile.Decision d = decisions.get(b.id());
             String marker = null;
             String category = d == null ? defaultCategory(ctx, g) : null;
@@ -394,18 +394,18 @@ public final class Rules {
             }
             String why = decide(ctx, b, g, d, amountMeters, marker);
             if (why != null && category == null && d != null) {
-                b.data("problem", why);   // shown next to the decision in metrics.json
+                b.data("problem", why);   // shown next to the decision in metrics.yaml
             }
             if (category != null && why == null) {
-                b.data("auto", true);   // decided by default: not an entry to decide in metrics.json
+                b.data("auto", true);   // decided by default: not an entry to decide in metrics.yaml
             } else if (category != null) {
-                b.clearEdits();   // could not be written by default: it waits in metrics.json like any other
+                b.clearEdits();   // could not be written by default: it waits in metrics.yaml like any other
             }
             b.suggestion(why != null ? why + " " + advice : advice);
         }
     }
 
-    /** Turns a metrics.json decision into edits; returns a problem to report, or null. */
+    /** Turns a metrics.yaml decision into edits; returns a problem to report, or null. */
     /** The log call sits in a lambda inside {@code stmt}, under an if / switch / ternary / catch within that lambda. */
     static boolean conditionalInLambda(org.openrewrite.java.tree.J stmt, org.openrewrite.java.tree.J.MethodInvocation call) {
         boolean[] found = {false};
@@ -578,10 +578,10 @@ public final class Rules {
             }
             case "counter", "tag" -> {
                 if (!name.matches("[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*") || !outcome.matches("[a-z][a-z0-9_.-]*")) {
-                    return "metrics.json: name and outcome must be lower case words joined by dots (got \"" + name + "\", \"" + outcome + "\").";
+                    return "metrics.yaml: name and outcome must be lower case words joined by dots (got \"" + name + "\", \"" + outcome + "\").";
                 }
                 if (d.count().equals("tag") && !g.tagAvailable()) {
-                    return "metrics.json: \"tag\" needs an observation running here and none is known; use \"counter\".";
+                    return "metrics.yaml: \"tag\" needs an observation running here and none is known; use \"counter\".";
                 }
                 if (!ctx.supportHas("Outcomes") || !ctx.a.project.probe().hasClass("io.micrometer.core.instrument.Metrics")) {
                     return "Needs Micrometer and a logging-support version with Outcomes.";
@@ -596,7 +596,7 @@ public final class Rules {
                     String meter = meterWord(d.amount());
                     String other = amountMeters.putIfAbsent(name + "." + meter, as);
                     if (other != null && !other.equals(as)) {
-                        return "metrics.json: " + name + "." + meter + " is a " + other + " elsewhere; one meter name takes one \"as\".";
+                        return "metrics.yaml: " + name + "." + meter + " is a " + other + " elsewhere; one meter name takes one \"as\".";
                     }
                     call = "Outcomes." + (as.equals("per-run") ? "record" : "count") + "(\"" + name + "\", \"" + outcome + "\", \""
                             + meter + "\", " + g.amounts().get(d.amount()).printTrimmed() + ");";
@@ -607,33 +607,33 @@ public final class Rules {
                 return null;
             }
             default -> {
-                return "metrics.json: \"count\" must be counter, tag or skip (got \"" + d.count() + "\").";
+                return "metrics.yaml: \"count\" must be counter, tag or skip (got \"" + d.count() + "\").";
             }
         }
     }
 
     /**
-     * Why a metrics.json "amount" cannot be written, or null. The logged value is evaluated a second time in the
+     * Why a metrics.yaml "amount" cannot be written, or null. The logged value is evaluated a second time in the
      * counting line, so it must be one without side effects: a variable, a field, or a size/length/getter/record
      * accessor called on one.
      */
     private static String amountProblem(RuleContext ctx, MetricsMap.Gap g, dev.logast.apply.MetricsFile.Decision d) {
         if (ctx.policy.metrics().amounts().equals("off")) {
-            return "metrics.json: \"amount\" is set, but metrics.amounts is off in logast.yaml.";
+            return "metrics.yaml: \"amount\" is set, but metrics.amounts is off in logast.yaml.";
         }
         if (!d.count().equals("counter")) {
-            return "metrics.json: \"amount\" needs \"count\": \"counter\" (a tag carries no number).";
+            return "metrics.yaml: \"amount\" needs count: counter (a tag carries no number).";
         }
         if (!d.as().isBlank() && !d.as().equals("total") && !d.as().equals("per-run")) {
-            return "metrics.json: \"as\" must be total or per-run (got \"" + d.as() + "\").";
+            return "metrics.yaml: \"as\" must be total or per-run (got \"" + d.as() + "\").";
         }
         org.openrewrite.java.tree.Expression e = g.amounts().get(d.amount());
         if (e == null) {
-            return "metrics.json: the line logs no number named \"" + d.amount() + "\" (it logs: "
+            return "metrics.yaml: the line logs no number named \"" + d.amount() + "\" (it logs: "
                     + (g.amounts().isEmpty() ? "none" : String.join(", ", g.amounts().keySet())) + ").";
         }
         if (!sideEffectFree(e)) {
-            return "metrics.json: the logged value " + e.printTrimmed() + " would be evaluated twice; put it in a variable first.";
+            return "metrics.yaml: the logged value " + e.printTrimmed() + " would be evaluated twice; put it in a variable first.";
         }
         return null;
     }

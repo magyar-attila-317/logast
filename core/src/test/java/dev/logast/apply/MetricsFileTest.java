@@ -7,7 +7,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** metrics.json decisions survive an id change of their outcome; ambiguous cases are never guessed. */
+/** metrics.yaml decisions survive an id change of their outcome; ambiguous cases are never guessed. */
 class MetricsFileTest {
     private static MetricsFile.Decision counter(String file, String method, String event) {
         return new MetricsFile.Decision("counter", "", "", file, method, event);

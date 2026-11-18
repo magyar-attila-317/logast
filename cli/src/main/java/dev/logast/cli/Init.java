@@ -40,7 +40,7 @@ final class Init implements Callable<Integer> {
     boolean baseline;
     @Option(names = "--no-classpath", description = "Skip the Gradle run (scans then resolve far fewer types)")
     boolean noClasspath;
-    @Option(names = "--no-traffic", description = "Skip writing the .logast/traffic.yaml template")
+    @Option(names = "--no-traffic", description = "Skip writing the .logast/decisions/traffic.yaml template")
     boolean noTraffic;
     @Option(names = "--force", description = "Overwrite an existing logast.yaml")
     boolean force;
@@ -57,6 +57,7 @@ final class Init implements Callable<Integer> {
         System.out.println(Ansi.dim("Sets up this service once. Re-running keeps what you already edited."));
         System.out.println();
 
+        Main.migrate(r);
         Path policyFile = dev.logast.policy.PolicyLoader.defaultFile(r);
         if (Files.exists(policyFile) && !force) {
             Out.kept("logast.yaml", "already there, kept (--force writes a fresh one)");
@@ -81,7 +82,7 @@ final class Init implements Callable<Integer> {
         if (added.isEmpty()) {
             Out.kept(".gitignore", "already ignores .logast/ (except the shared files)");
         } else {
-            Out.step(".gitignore", "ignores .logast/, but keeps baseline.json, traffic.yaml and README.md shared");
+            Out.step(".gitignore", "ignores .logast/, but keeps baseline.json, decisions/ and README.md shared");
         }
         Path readme = r.resolve(".logast/README.md");
         Files.createDirectories(readme.getParent());
@@ -123,10 +124,11 @@ final class Init implements Callable<Integer> {
                 a = Logast.analyse(r, cp, policy);
             }
             if (!noTraffic) {
-                Path file = r.resolve(".logast/traffic.yaml");
+                Path file = r.resolve(dev.logast.LogastDir.TRAFFIC);
                 Traffic existing = Files.exists(file) ? Traffic.load(r, file) : Traffic.none();
+                Files.createDirectories(file.getParent());
                 Files.writeString(file, Traffic.template(a.entrypoints, existing));
-                Out.step(".logast/traffic.yaml", a.entrypoints.size() + " entrypoints; optional: add calls/day so logast can judge log volume");
+                Out.step(".logast/decisions/traffic.yaml", a.entrypoints.size() + " entrypoints; optional: add calls/day so logast can judge log volume");
             }
         }
         if (!baseline) {
@@ -140,9 +142,9 @@ final class Init implements Callable<Integer> {
         // the whole flow, in order: the files to fill in only exist after the first apply (their entries belong to the
         // code apply writes), and the second apply runs on top of the migrated code
         next.add(new String[]{"open logast.yaml", "organise the found terms as its example shows; the comments explain every setting"});
-        next.add(new String[]{"logast apply . --auto --write", "changes the code and creates .logast/fills.json and .logast/metrics.json "
+        next.add(new String[]{"logast apply . --auto --write", "changes the code and creates .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml "
                 + "(without --write: a preview)"});
-        next.add(new String[]{"fill in .logast/fills.json and .logast/metrics.json", "the texts and metric decisions only a person knows"});
+        next.add(new String[]{"fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml", "the texts and metric decisions only a person knows"});
         next.add(new String[]{"logast apply . --auto --write", "again, on the migrated code (don't revert it): writes what you filled in"});
         next.add(new String[]{"git diff", "review the result"});
         Out.next(next);

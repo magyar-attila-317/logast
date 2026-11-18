@@ -18,12 +18,12 @@ import java.util.*;
 /**
  * What is left after scan/apply, grouped by what has to happen next (#101): the fixes logast makes itself, then what
  * waits on a person (wording, metric decisions, other decisions), then the optional checks. Also creates
- * .logast/traffic.yaml when it is missing and a selected pack uses it, and keeps .logast/retry.yaml listing the
+ * .logast/decisions/traffic.yaml when it is missing and a selected pack uses it, and keeps .logast/decisions/retry.yaml listing the
  * retry usages (resilience pack), so every file to fill exists.
  *
  * @param auto      fixes that need nothing from a person
- * @param text      orders waiting for a message text in fills.json
- * @param outcomes  logged outcomes waiting for a count/tag/skip decision in metrics.json
+ * @param text      orders waiting for a message text in messages.yaml
+ * @param outcomes  logged outcomes waiting for a count/tag/skip decision in metrics.yaml
  * @param decisions the other report-only findings, per rule
  * @param first     what has to happen before anything else (refresh the classpath), or null
  * @param also      the optional and follow-up checks, one line each
@@ -60,7 +60,7 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
         List<Item> also = new ArrayList<>();
         // the rates set log levels (logging) and metrics frequency: other packs alone have no use for them (#88)
         if (a != null && !a.entrypoints.isEmpty() && (policy.packSelected("logging") || policy.packSelected("metrics"))) {
-            Path file = root.resolve(".logast/traffic.yaml");
+            Path file = root.resolve(LogastDir.TRAFFIC);
             Traffic existing = Files.exists(file) ? Traffic.load(root, file) : Traffic.none();
             if (!Files.exists(file)) {
                 try {
@@ -74,7 +74,7 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
             a.entrypoints.forEach(ep -> labels.add(ep.label()));
             long known = labels.stream().filter(l -> existing.perDay(l) != null).count();
             if (known < labels.size()) {
-                also.add(new Item("fill calls/day in .logast/traffic.yaml (optional)", (labels.size() - known) + " of " + labels.size()
+                also.add(new Item("fill calls/day in .logast/decisions/traffic.yaml (optional)", (labels.size() - known) + " of " + labels.size()
                         + " entrypoints have no rate: log levels and metrics frequency stay cautious there"));
             }
         }
@@ -107,8 +107,8 @@ public record Todo(long auto, long text, long outcomes, Map<String, Long> decisi
      *
      * @param next          the command that applies the pending fixes, with why; null: {@link #APPLY} when fixes are pending
      * @param decisionsHint where the decisions are listed ("logast scan .", "listed above")
-     * @param fills         the fills.json state after this run, or null when unknown
-     * @param metrics       the metrics.json state after this run, or null when unknown
+     * @param fills         the messages.yaml state after this run, or null when unknown
+     * @param metrics       the metrics.yaml state after this run, or null when unknown
      */
     public record View(Item next, String decisionsHint, FillsFile.Update fills, FillsFile.Update metrics) {
     }

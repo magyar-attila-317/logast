@@ -39,7 +39,7 @@ of the earlier one. The shared plan state (`plannedOwnKeys`, `plannedLocalKeys`,
 | 2b messages | LOG_FORMAT (incl. dropping keys MDC carries), STRING_CONCAT_LOG, LOG_KEY_STYLE, GLOSSARY_VIOLATION, MESSAGE_PHRASING, PII_IN_LOG, LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_KEY_VALUE_IN_MDC, BUSINESS_EVENT_TIMESTAMP, MESSAGE_SUGGESTED, MESSAGE_VAGUE (report), LOG_HELPER (report) | MDC scopes are in the code |
 | 2c exceptions | LOG_AND_RETHROW, EXCEPTION_LOGGED_TWICE | context is in MDC where it will be |
 | 2d levels | LOG_LEVEL (client errors, loops over data, DB read frequency), LOG_IN_LOOP (report), LOG_VOLUME (report) | final lines and wording |
-| 2e reports | METRIC_* incl. METRIC_OUTCOME_UNMEASURED (metrics.json decisions), UNBOUNDED_EXECUTOR, KAFKA_NO_ERROR_HANDLER, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE, ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED, AUDIT_*, MANUAL_TRACE_MDC | final code |
+| 2e reports | METRIC_* incl. METRIC_OUTCOME_UNMEASURED (metrics.yaml decisions), UNBOUNDED_EXECUTOR, KAFKA_NO_ERROR_HANDLER, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE, ERROR_DETAILS_EXPOSED, UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED, AUDIT_*, MANUAL_TRACE_MDC | final code |
 
 ## Ownership (written precedence)
 
@@ -64,8 +64,8 @@ Lines added in 1b carry the values in scope as `[k=v]` (vocabulary ids among the
 
 - Every rule declares its step; `Rules.scan(analysis, step)` runs one step.
 - `Applier` runs the steps in order on the scratch copy: per step, apply rounds until no automatic order is left,
-  then rescan (a full parse from source each time: results never depend on compiled classes) and continue. Filled texts (fills.json) and metric decisions
-  (metrics.json) apply in their step.
+  then rescan (a full parse from source each time: results never depend on compiled classes) and continue. Filled texts (messages.yaml) and metric decisions
+  (metrics.yaml) apply in their step.
 - Order ids are anchored on content (method, kind, message), never on line numbers, so they survive earlier steps.
 - `logast scan`: unchanged single-pass diagnostic (decision 2).
 
@@ -91,7 +91,7 @@ Lines added in 1b carry the values in scope as `[k=v]` (vocabulary ids among the
 
 ## Decisions
 
-1. Added lines get generated wording, marked `// logast:wording`; fills.json asks for better words.
+1. Added lines get generated wording, marked `// logast:wording`; messages.yaml asks for better words.
 2. `logast scan` stays a quick single-pass diagnostic; no effort goes into it. `logast apply` runs the full pipeline,
    and the person reviews the diff and drops or changes what they don't like.
 3. Values in added lines: every id-like variable in scope (vocabulary ids first), at most 5 per line.

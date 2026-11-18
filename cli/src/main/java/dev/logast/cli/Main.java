@@ -69,6 +69,18 @@ public final class Main {
         }
     }
 
+    /**
+     * Moves an earlier .logast layout into the current one (#108) and says so in one line; old files left in place get
+     * a warning each. Runs before a command reads anything in .logast.
+     */
+    static void migrate(Path root) {
+        dev.logast.LogastDir.Migration m = dev.logast.LogastDir.migrate(root);
+        if (m.line() != null) {
+            Out.progress(m.line());
+        }
+        m.warnings().forEach(Out::warn);
+    }
+
     static class Common {
         @Parameters(index = "0", description = "Project root", defaultValue = ".")
         Path root;
@@ -79,11 +91,19 @@ public final class Main {
         @Option(names = "--pack", split = ",", completionCandidates = PackNames.class,
                 description = "Rule packs to run: ${COMPLETION-CANDIDATES} (default: policy packs)")
         List<String> packs = new ArrayList<>();
-        @Option(names = "--traffic", description = "Entrypoint calls/day (YAML 'entrypoints:' or a Prometheus query result; default: <root>/.logast/traffic.*)")
+        @Option(names = "--traffic", description = "Entrypoint calls/day (YAML 'entrypoints:' or a Prometheus query result; default: <root>/.logast/decisions/traffic.*)")
         Path traffic;
 
+        private boolean migrated;
+
+        /** The project root; the first call moves an earlier .logast layout into the current one (#108). */
         Path root() {
-            return root.toAbsolutePath().normalize();
+            Path r = root.toAbsolutePath().normalize();
+            if (!migrated) {
+                migrated = true;
+                migrate(r);
+            }
+            return r;
         }
 
         Policy policy() {
@@ -97,7 +117,7 @@ public final class Main {
         }
     }
 
-    @Command(name = "scan", description = "Analyse the project and write work orders to <root>/.logast/orders.json")
+    @Command(name = "scan", description = "Analyse the project and write work orders to <root>/.logast/reports/orders.json")
     static class Scan extends Common implements Callable<Integer> {
         @Option(names = "--format", description = "human (default in a terminal: grouped, one line per finding) | compact "
                 + "(default otherwise: every order in full, for an LLM) | json | summary | sarif | fills-template")
@@ -110,7 +130,7 @@ public final class Main {
         String severity;
         @Option(names = "--limit", description = "Print at most N orders")
         Integer limit;
-        @Option(names = "--out", description = "Full JSON output (default: <root>/.logast/orders.json)")
+        @Option(names = "--out", description = "Full JSON output (default: <root>/.logast/reports/orders.json)")
         Path out;
         @Option(names = "--fail-on", description = "Exit with 2 when an order of this severity or higher exists (CI); "
                 + "with 4 when the analysis is incomplete (files not parsed, no classpath)")
@@ -150,7 +170,7 @@ public final class Main {
                         + (unmatched.isEmpty() ? "" : "; labels matching no entrypoint (check spelling with `logast explain`): " + unmatched));
             }
             List<dev.logast.LogLedger.Entry> ledger = null;
-            Path target = out != null ? out : root().resolve(".logast/orders.json");
+            Path target = out != null ? out : root().resolve(dev.logast.LogastDir.ORDERS);
             Files.createDirectories(target.toAbsolutePath().getParent());
             OrderJson.MAPPER.writeValue(target.toFile(), r);
             dev.logast.apply.FillsFile.Update fu = null;
@@ -165,7 +185,7 @@ public final class Main {
                 dev.logast.apply.FindingComments.update(root(), Logast.lastAnalysis, r.orders());
             }
 
-            Path baselineFile = baseline == null || baseline.isEmpty() ? root().resolve(".logast/baseline.json") : Path.of(baseline);
+            Path baselineFile = baseline == null || baseline.isEmpty() ? root().resolve(dev.logast.LogastDir.BASELINE) : Path.of(baseline);
             if (updateBaseline) {
                 // what was not analysed is not in the baseline: a later complete scan reports it all as new (#55)
                 r.stats().gaps().forEach(g -> Out.warn("analysis incomplete: " + g + "; the baseline does not cover it"));
@@ -209,7 +229,7 @@ public final class Main {
             switch (format) {
                 case "json" -> System.out.println(OrderJson.MAPPER.writeValueAsString(shown));
                 case "sarif" -> System.out.println(OrderJson.MAPPER.writeValueAsString(dev.logast.orders.Sarif.of(shown, gaps)));
-                case "fills-template" -> System.out.println(OrderJson.MAPPER.writeValueAsString(FillsTemplate.of(shown)));
+                case "fills-template" -> System.out.print(dev.logast.apply.DecisionYaml.MAPPER.writeValueAsString(FillsTemplate.of(shown)));
                 case "summary" -> {
                     if (!r.stats().coverageComplete()) {
                         Out.warn("coverage incomplete: " + r.stats().files() + " of " + r.stats().discoveredFiles()
@@ -291,7 +311,7 @@ public final class Main {
 
     @Command(name = "apply", description = "Apply orders (dry run unless --write). Rescans between rounds; ids are stable.")
     static class Apply extends Common implements Callable<Integer> {
-        @Option(names = "--fills", description = "Message texts (default: .logast/fills.json, kept up to date by `logast scan`)")
+        @Option(names = "--fills", description = "Message texts (default: .logast/decisions/messages.yaml, kept up to date by `logast scan`)")
         Path fills;
         @Option(names = "--auto", description = "Also apply every order that needs no text (including ones that appear after earlier fixes)")
         boolean auto;
@@ -311,7 +331,7 @@ public final class Main {
                 System.err.println("""
                         logast apply: nothing selected. Choose what to apply:
                           --auto     every fix that needs no message text
-                          texts      fixes that need a message: write them into .logast/fills.json (`logast scan`
+                          texts      fixes that need a message: write them into .logast/decisions/messages.yaml (`logast scan`
                                      creates it) and they are picked up automatically
                         and add --write to change files; without it you get a preview.
                         e.g.  logast apply . --auto            # preview
@@ -347,7 +367,7 @@ public final class Main {
             }
             // what the last apply that changed files did: a later scan starts with it ("Applied earlier", #101)
             if (write && !r.applied().isEmpty() && !r.changedFiles().isEmpty()) {
-                Files.createDirectories(root().resolve(".logast"));
+                Files.createDirectories(root().resolve(LAST_APPLY).getParent());
                 Files.writeString(root().resolve(LAST_APPLY), dev.logast.Todo.plural(r.applied().size(), "change") + " in "
                         + dev.logast.Todo.plural(r.changedFiles().size(), "file") + "\n");
             }
@@ -358,11 +378,11 @@ public final class Main {
             }
             // what each round applied and what its rescan brought up: where extra rounds come from
             if (!r.trace().isEmpty()) {
-                Files.createDirectories(root().resolve(".logast"));
-                Files.write(root().resolve(".logast/apply-trace.txt"), r.trace());
+                Files.createDirectories(root().resolve(dev.logast.LogastDir.REPORTS));
+                Files.write(root().resolve(dev.logast.LogastDir.APPLY_TRACE), r.trace());
             }
             // one diff per pipeline step, applicable in order: review or drop a whole kind of change at once
-            Path stepsDir = root().resolve(".logast/steps");
+            Path stepsDir = root().resolve(dev.logast.LogastDir.STEPS);
             if (Files.exists(stepsDir) && !r.stepDiffs().isEmpty()) {   // a run that changes nothing keeps the last ones
                 try (var old = Files.list(stepsDir)) {
                     for (Path p : old.toList()) {
@@ -380,7 +400,7 @@ public final class Main {
                     names.add(file);
                 }
                 if (!format.equals("json")) {
-                    Out.progress("per step (apply in order, drop what you don't want): .logast/steps/ " + String.join(" ", names));
+                    Out.progress("per step (apply in order, drop what you don't want): .logast/reports/steps/ " + String.join(" ", names));
                 }
             }
             if (format.equals("json")) {
@@ -438,7 +458,7 @@ public final class Main {
                         + " could not be applied; each says why"));
             }
             if (write && !r.changedFiles().isEmpty()) {
-                also.add(new dev.logast.Todo.Item("git diff", "review the changes (one diff per kind of change in .logast/steps/)"));
+                also.add(new dev.logast.Todo.Item("git diff", "review the changes (one diff per kind of change in .logast/reports/steps/)"));
             }
             // what is left after this run: what logast still applies, what waits on the person, the optional checks (#101)
             dev.logast.orders.ScanResult left = write ? r.after() : r.before();
@@ -451,7 +471,7 @@ public final class Main {
     }
 
     /** Where apply records what it changed, for the "Applied earlier" line of a later scan (#101). */
-    static final String LAST_APPLY = ".logast/last-apply.txt";
+    static final String LAST_APPLY = dev.logast.LogastDir.LAST_APPLY;
 
     /** "Applied earlier: 38 changes in 12 files (git diff to review)" when an apply left its record; else nothing. */
     static List<String> appliedEarlier(Path root) {
@@ -551,12 +571,12 @@ public final class Main {
         }
     }
 
-    @Command(name = "traffic", description = "Write .logast/traffic.yaml listing every entrypoint (rates empty to fill in; existing values kept)")
+    @Command(name = "traffic", description = "Write .logast/decisions/traffic.yaml listing every entrypoint (rates empty to fill in; existing values kept)")
     static class TrafficCmd extends Common implements Callable<Integer> {
         @Override
         public Integer call() throws IOException {
             Analysis a = Logast.analyse(root(), classpath(), policy());
-            Path file = traffic != null ? traffic : root().resolve(".logast/traffic.yaml");
+            Path file = traffic != null ? traffic : root().resolve(dev.logast.LogastDir.TRAFFIC);
             dev.logast.Traffic existing = Files.exists(file) ? dev.logast.Traffic.load(root(), file) : dev.logast.Traffic.none();
             Files.createDirectories(file.toAbsolutePath().getParent());
             Files.writeString(file, dev.logast.Traffic.template(a.entrypoints, existing));
@@ -607,10 +627,10 @@ public final class Main {
     }
 
     @Command(name = "queries", description = "Ready-made queries for the service's metrics and logs: PromQL, NRQL and "
-            + "Splunk SPL per entrypoint, business outcome and MDC key, written to <root>/.logast/queries.md (backends and "
+            + "Splunk SPL per entrypoint, business outcome and MDC key, written to <root>/.logast/reports/queries.md (backends and "
             + "the Splunk index: queries: in logast.yaml)")
     static class QueriesCmd extends Common implements Callable<Integer> {
-        @Option(names = "--stdout", description = "Print the queries instead of writing .logast/queries.md")
+        @Option(names = "--stdout", description = "Print the queries instead of writing .logast/reports/queries.md")
         boolean stdout;
 
         @Override
@@ -622,7 +642,7 @@ public final class Main {
                 System.out.print(r.text());
                 return 0;
             }
-            Path file = root().resolve(".logast/queries.md");
+            Path file = root().resolve(dev.logast.LogastDir.QUERIES);
             Files.createDirectories(file.getParent());
             Files.writeString(file, r.text());
             System.out.println("queries: " + r.summary() + " in " + root().relativize(file));
