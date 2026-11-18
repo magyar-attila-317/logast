@@ -53,3 +53,15 @@ To your company repository:
 
 Then point services at it in their policy: `support.coordinates: com.example:logging-support:<version>`. The version
 comes from `gradle.properties`. `test-capture` is the jar `logast verify` adds to test runs.
+
+### Releases and versions
+
+- The version lives in one place, `gradle.properties` (`version=…`): the starter jar, `logast --version` and the
+  coordinates logast writes by default (`dev.logast:logging-support:<that version>`) all carry it.
+- A release: raise `version`, tag the commit `v<version>` (the `release-check` workflow fails when tag and version
+  differ), then `./gradlew publish -PrepoUrl=…` to the repository your services resolve from (company Nexus, GitHub
+  Packages, any Maven repository; Maven Local without `-PrepoUrl`).
+- A service that pins an older starter (`support.coordinates: …:<older>`) in dependency mode gets a warning from
+  `scan`, `apply` and `logast policy . --check`: generated code may call members the older release does not have.
+  Pin the version of the logast you run, or use `support.mode: vendor` (the classes are copied into the service).
+

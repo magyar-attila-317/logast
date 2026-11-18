@@ -152,4 +152,14 @@ class PolicyCheckCliTest {
         assertThat(run("scan", app.toString(), "--format", "json").err())
                 .contains("the service builds for Java 99, logast runs on Java " + Runtime.version().feature());
     }
+
+    /** #24: logast.yaml pins a starter older than this logast's (dependency mode): said at load. */
+    @Test
+    void anOlderPinnedStarterIsAWarning() throws IOException {
+        Path app = project("support:\n  coordinates: dev.logast:logging-support:0.0.9\n");
+        Run r = run("policy", app.toString(), "--check");
+        assertThat(r.out()).contains("support.coordinates: pins logging-support 0.0.9, but this logast (");
+        assertThat(run("policy", project("support:\n  coordinates: dev.logast:logging-support:0.0.9\n  mode: vendor\n")
+                .toString(), "--check").out()).as("vendor mode copies the classes: no pin to match").doesNotContain("pins logging-support");
+    }
 }
