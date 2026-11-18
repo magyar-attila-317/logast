@@ -84,21 +84,25 @@ public final class SetupRules {
                 vendor(scripts);
             } else if (ctx.a.supportStarterPresent && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
                 updateVendored();
+                featuresOfPresentStarter();
             }
         } else if (!ctx.a.supportStarterPresent && !text.contains(ctx.policy.support().groupAndArtifact())
                 && ctx.enabled(Rules.SETUP_SUPPORT_STARTER) && (core || ErrorRules.untracedFixable(ctx))) {
             OrderBuilder b = ctx.order(Rules.SETUP_SUPPORT_STARTER, "support|" + rel).at(rel, 1)
                     .title("Add the logging-support starter (" + support + ")")
-                    .suggestion("Provides ObservedContext, MdcScope, ContextExecutors, MDC/trace propagation for @Async "
-                            + "and Spring executors, batch trace bootstrap (TRACEPARENT / TRACE_ID) and ECS JSON log defaults.");
+                    .suggestion("Provides ObservedContext, MdcScope, ContextExecutors and the support classes generated code uses.");
             BuildScripts.Insert e = scripts.insert(support);
             if (e == null) {
                 b.suggestion(b.suggestion + " No top-level dependencies {} block found: add it manually." + scripts.unresolvedNote());
             } else {
                 b.edit(e.edit()).at(e.file(), e.line());
             }
+            switchOn(b, supportFeatures());
             asyncLocations(b);
             ctx.supportOrderId = b.id();
+        } else if (!ctx.policy.support().vendor() && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)
+                && (ctx.a.supportStarterPresent || text.contains(ctx.policy.support().groupAndArtifact()))) {
+            featuresOfPresentStarter();   // on the classpath, or on the build file and not yet on the classpath logast reads
         }
 
         if (ctx.enabled(Rules.SETUP_OTEL_STARTER)) {
@@ -133,6 +137,72 @@ public final class SetupRules {
                         .suggestion("Could not identify a supported Spring Boot version; choose the tracing dependencies manually.");
             }
         }
+    }
+
+    // ---- the starter's behaviours, switched on per pack (#93) ---------------------------------------
+
+    /**
+     * The starter's behaviours the selected packs use and the service does not configure yet, property → what it does.
+     * Each is off until its property is true, so the starter added for one pack (errors needs only ProblemTraceId)
+     * changes nothing another pack owns: the log format and MDC hygiene are logging's, context propagation logging's
+     * and tracing's (ASYNC_CONTEXT_LOSS), the batch trace tracing's.
+     */
+    private Map<String, String> supportFeatures() {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (ctx.enabled(Rules.SETUP_STRUCTURED_LOGGING)) {
+            out.put(LOG_DEFAULTS, "ECS JSON console logs by default, service.name/version from SERVICE_NAME/APP_VERSION");
+        }
+        if (ctx.policy.packSelected("logging") && servlet()) {
+            out.put(MDC_HYGIENE, "MdcHygieneFilter clears and reports MDC leaking across requests");
+        }
+        if (ctx.enabled(Rules.ASYNC_CONTEXT_LOSS)) {
+            out.put(CONTEXT_PROPAGATION, "a TaskDecorator carries MDC and trace context into @Async and Spring executors");
+        }
+        if (ctx.policy.packSelected("tracing")) {
+            out.put(BATCH_TRACE, "batch runs continue the trace from TRACEPARENT / TRACE_ID");
+        }
+        out.keySet().removeIf(ctx.a.springProperties::containsKey);   // a value the service set (true or false) stays
+        return out;
+    }
+
+    static final String LOG_DEFAULTS = "logging-support.log-defaults.enabled";
+    static final String MDC_HYGIENE = "logging-support.mdc-hygiene.enabled";
+    static final String CONTEXT_PROPAGATION = "logging-support.context-propagation.enabled";
+    static final String BATCH_TRACE = "logging-support.batch-trace.enabled";
+
+    /** Writes the features' properties into the service's configuration, as part of {@code b}. */
+    private void switchOn(OrderBuilder b, Map<String, String> features) {
+        if (features.isEmpty()) {
+            return;
+        }
+        StringBuilder yaml = new StringBuilder("logging-support:\n");
+        features.keySet().forEach(k -> yaml.append("  ").append(k.split("\\.")[1]).append(":\n    enabled: true\n"));
+        ServiceYaml.merge(ctx, b, yaml.toString());
+        b.suggestion(b.suggestion + " Switches on what the selected packs use: " + String.join("; ", features.values()) + ".");
+    }
+
+    /**
+     * The starter (or its copy) is already there: its behaviours the selected packs use are switched on by their
+     * properties. A service that took the starter before #93 got them by default; this keeps them after its upgrade.
+     */
+    private void featuresOfPresentStarter() {
+        Map<String, String> features = supportFeatures();
+        if (features.isEmpty()) {
+            return;
+        }
+        String where = ServiceYaml.path(ctx);
+        OrderBuilder b = ctx.order(Rules.SETUP_SUPPORT_STARTER, "support-features|" + where).at(where, 1)
+                .title("Switch on the logging-support behaviours the selected packs use: " + String.join(", ", features.keySet()))
+                .suggestion("The starter switches nothing on by itself.");
+        switchOn(b, features);
+        if (features.containsKey(CONTEXT_PROPAGATION)) {
+            asyncLocations(b);
+        }
+    }
+
+    private boolean servlet() {
+        return ctx.a.project.probe().hasClass("jakarta.servlet.Filter")
+                && ctx.a.project.probe().hasClass("org.springframework.web.filter.OncePerRequestFilter");
     }
 
     private void asyncLocations(OrderBuilder b) {
@@ -194,11 +264,11 @@ public final class SetupRules {
         OrderBuilder b = ctx.order(Rules.SETUP_SUPPORT_STARTER, "vendor|" + pkg).at(rel(dir.resolve("ObservedContext.java")), 1)
                 .title("Copy the logging support classes into " + pkg + " (vendor mode, no library dependency)")
                 .suggestion("Generated code imports " + pkg + ".{ObservedContext, MdcScope, ContextExecutors}; the TaskDecorator, "
-                        + "batch trace listener and ECS defaults are registered by component scan and spring.factories. "
+                        + "batch trace listener and ECS defaults are registered by component scan and spring.factories, each "
+                        + "behind its logging-support.*.enabled property. "
                         + "Switching to the Nexus starter later = delete this package and set support.mode: dependency.");
         List<String> classes = new ArrayList<>(VENDORED);
-        if (ctx.a.project.probe().hasClass("jakarta.servlet.Filter")
-                && ctx.a.project.probe().hasClass("org.springframework.web.filter.OncePerRequestFilter")) {
+        if (servlet()) {
             classes.addAll(VENDORED_SERVLET);
         }
         if (ctx.a.project.probe().hasClass("io.micrometer.tracing.Tracer")) {
@@ -234,6 +304,7 @@ public final class SetupRules {
                 b.edit(e == null ? null : e.edit());
             }
         }
+        switchOn(b, supportFeatures());
         asyncLocations(b);
         ctx.supportOrderId = b.id();
     }

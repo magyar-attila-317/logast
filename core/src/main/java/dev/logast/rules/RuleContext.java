@@ -75,12 +75,20 @@ public final class RuleContext {
         return a.supportStarterPresent || supportOrderId != null;
     }
 
+    /**
+     * True once a TaskDecorator carries MDC into executors, or the starter's will: the set-up switches it on with the
+     * starter when ASYNC_CONTEXT_LOSS runs (logging-support.context-propagation.enabled, #93).
+     */
+    boolean decoratorPlanned() {
+        return a.decoratorPresent || starterPlanned() && enabled(Rules.ASYNC_CONTEXT_LOSS) && enabled(Rules.SETUP_SUPPORT_STARTER);
+    }
+
     /** Called after the entrypoint rules: MDC context as it will be once their orders are applied. */
     void freezePlan() {
         planned = new PathContext(a.graph, a.entrypoints, new TreeSet<>(policy.mdc().ambientKeys()),
-                a.httpFilterKeys, a.decoratorPresent || starterPlanned(), plannedEntryKeys, plannedOwnKeys)
+                a.httpFilterKeys, decoratorPlanned(), plannedEntryKeys, plannedOwnKeys)
                 .withCanonicalKeys(dev.logast.Analysis.canonicalKeys(policy), new TreeSet<>(policy.mdc().ambientKeys()),
-                        a.httpFilterKeys, a.decoratorPresent || starterPlanned());
+                        a.httpFilterKeys, decoratorPlanned());
     }
 
     /** MDC keys guaranteed on entry to {@code m}, with the planned entrypoint/whole-method scopes applied. */

@@ -7,10 +7,13 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.Ordered;
 
-/** Registers {@link MdcHygieneFilter} before every other filter in servlet applications. */
+/**
+ * Registers {@link MdcHygieneFilter} before every other filter in servlet applications, when
+ * {@code logging-support.mdc-hygiene.enabled} is {@code true} (off by default: the starter alone changes nothing).
+ */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-@ConditionalOnProperty(name = "logging-support.mdc-hygiene.enabled", matchIfMissing = true)
+@ConditionalOnProperty(name = "logging-support.mdc-hygiene.enabled", havingValue = "true")
 public class MdcHygieneConfiguration {
 
     @Bean

@@ -25,7 +25,11 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.application.name=nightly-reconciliation",
         "management.otlp.metrics.export.enabled=false",
         "management.tracing.export.otlp.enabled=false",
-        "management.logging.export.otlp.enabled=false"})
+        "management.logging.export.otlp.enabled=false",
+        // the behaviours a pack switches on (#93); without them the starter changes nothing (StarterOptInTest)
+        "logging-support.log-defaults.enabled=true",
+        "logging-support.context-propagation.enabled=true",
+        "logging-support.batch-trace.enabled=true"})
 class LoggingSupportIntegrationTest {
     static final AtomicReference<String> RUNNER_TRACE = new AtomicReference<>();
 

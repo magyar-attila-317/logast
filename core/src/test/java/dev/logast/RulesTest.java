@@ -81,8 +81,13 @@ class RulesTest {
         assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.SETUP_SUPPORT_STARTER)).singleElement()
                 .satisfies(o -> {
                     assertThat(o.file()).isEqualTo("build.gradle.kts");
-                    assertThat(o.edits()).singleElement().satisfies(e ->
-                            assertThat(e.text()).contains("implementation(\"dev.logast:logging-support:"));
+                    assertThat(o.edits()).extracting(e -> e.kind() + " " + e.file())
+                            .containsExactly("replace build.gradle.kts", "yaml-merge src/main/resources/application.yml");
+                    assertThat(o.edits().get(0).text()).contains("implementation(\"dev.logast:logging-support:");
+                    // the behaviours the selected packs (logging, tracing) use come with the starter, each by its property (#93)
+                    assertThat(o.edits().get(1).text()).isEqualTo("logging-support:\n  log-defaults:\n    enabled: true\n"
+                            + "  mdc-hygiene:\n    enabled: true\n  context-propagation:\n    enabled: true\n"
+                            + "  batch-trace:\n    enabled: true\n");
                 });
         assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.SETUP_OTEL_STARTER)).isEmpty();
         assertThat(r.orders()).filteredOn(o -> o.rule().equals(Rules.SETUP_LOGBACK_XML)).singleElement()

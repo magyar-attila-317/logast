@@ -29,6 +29,14 @@ logging:
           name: ${spring.application.name}
           version: ${spring.application.version}
 logging-support:
+  log-defaults:
+    enabled: true
+  mdc-hygiene:
+    enabled: true
+  context-propagation:
+    enabled: true
+  batch-trace:
+    enabled: true
   problem-trace-id:
     enabled: true
 management:

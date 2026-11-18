@@ -763,6 +763,9 @@ class E2eGoldenTest {
      * starter only another pack would add. Packs whose fixes use none (resilience, audit) leave the build file alone.
      * The starter is not on the classpath logast reads (this run adds it); javac gets its classes, as the service's
      * build does once the dependency resolves.
+     * <p>#93: the starter switches nothing on by itself (its tests); each pack writes the properties of the starter
+     * behaviours it owns, and only those. The service sets no console log format here, so a pack other than logging
+     * leaves the log format as it was: neither the format nor the starter's log defaults are switched on.
      */
     @org.junit.jupiter.params.ParameterizedTest(name = "packs: [{0}]")
     @org.junit.jupiter.params.provider.ValueSource(strings = {"logging", "tracing", "metrics", "resilience", "errors", "audit"})
@@ -776,13 +779,25 @@ class E2eGoldenTest {
             assertThat(only).as("the scenario selects its packs, in dependency mode").contains("packs: [" + pack + "]")
                     .doesNotContain("support:");
             Files.writeString(yml, only);
+            Path config = a.resolve("src/main/resources/application.yml");
+            String unformatted = Files.readString(config).replace("logging:\n  structured:\n    format:\n      console: ecs\n", "");
+            assertThat(unformatted).as("the service sets no console log format").doesNotContain("console:");
+            Files.writeString(config, unformatted);
         });
         assertThat(app.resolve("src/main/java/com/example/e2e/logging")).as("dependency mode copies no support class").doesNotExist();
         boolean usesSupport = !Set.of("resilience", "audit").contains(pack);
         assertThat(actual.get("build.gradle.kts").contains("dev.logast:logging-support"))
                 .as("the starter comes with a pack whose fixes use it, and only with one").isEqualTo(usesSupport);
+        String config = actual.get("src/main/resources/application.yml");
+        Map<String, List<String>> owned = Map.of("logging", List.of("log-defaults", "mdc-hygiene", "context-propagation"),
+                "tracing", List.of("context-propagation", "batch-trace"), "errors", List.of("problem-trace-id"));
+        java.util.regex.Matcher block = java.util.regex.Pattern.compile("(?m)^logging-support:\\R((?: .*\\R?)*)").matcher(config);
+        assertThat(java.util.regex.Pattern.compile("(?m)^  ([\\w-]+):\\R    enabled: true$").matcher(block.find() ? block.group(1) : "")
+                .results().map(m -> m.group(1)).toList())
+                .as("the starter behaviours switched on are the pack's own").containsExactlyInAnyOrderElementsOf(owned.getOrDefault(pack, List.of()));
+        assertThat(config.contains("console:")).as("only the logging pack sets the console log format").isEqualTo(pack.equals("logging"));
         if (pack.equals("errors")) {
-            assertThat(actual.get("src/main/resources/application.yml")).contains("problem-trace-id:\n    enabled: true");
+            assertThat(config).contains("problem-trace-id:\n    enabled: true");
             assertThat(actual.get("FINDINGS.txt")).as("applied, not left as a report").doesNotContain("ERROR_RESPONSE_UNTRACED");
             golden(EXPECTED.resolveSibling("expected-errors-pack-dependency"), actual);
         }

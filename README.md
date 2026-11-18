@@ -818,11 +818,21 @@ policy (`rules: { LOG_FORMAT: { severity: low } }`, `{ enabled: false }`).
 | upgrades | bump the version | re-copy, or switch to the dependency later |
 | when | you publish the starter to your repository | no shared artifact yet, or the service must not take new dependencies |
 
-Both give the same generated code. The starter also protects services that logast never touched:
-- `MdcHygieneFilter` clears and reports MDC that leaks across requests;
-- the `TaskDecorator` carries MDC and trace context into `@Async` and Spring executors;
-- batch apps continue the trace from `TRACEPARENT` / `TRACE_ID`;
-- logs default to ECS JSON with `SERVICE_NAME` / `APP_VERSION`.
+Both give the same generated code. On its own the starter switches nothing on: a pack may add it for one class (the
+errors pack for `ProblemTraceId`) without changing what another pack owns, such as the log format. Each behaviour
+has a property, off unless `true`; logast writes it to `application.yml` for the pack that uses it:
+
+| property | behaviour | written by |
+|---|---|---|
+| `logging-support.log-defaults.enabled` | logs default to ECS JSON with `SERVICE_NAME` / `APP_VERSION` (a format the service sets wins) | logging |
+| `logging-support.mdc-hygiene.enabled` | `MdcHygieneFilter` clears and reports MDC that leaks across requests (servlet apps) | logging |
+| `logging-support.context-propagation.enabled` | the `TaskDecorator` carries MDC and trace context into `@Async` and Spring executors | logging, tracing |
+| `logging-support.batch-trace.enabled` | batch apps continue the trace from `TRACEPARENT` / `TRACE_ID` | tracing |
+| `logging-support.problem-trace-id.enabled` | `"traceId"` in error responses | errors |
+
+Upgrading a service that took an earlier starter, where the first four were on by default: run `logast apply` with
+its packs (logging and tracing by default) and it writes the properties, or set them yourself. A value the service
+already sets, `true` or `false`, is left as it is.
 
 ## Troubleshooting
 
