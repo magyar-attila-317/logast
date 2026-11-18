@@ -178,6 +178,26 @@ entrypoints:
 HTTP endpoints, `@Scheduled`, Kafka/JMS/Rabbit listeners, event listeners, WebSocket handlers and
 `CommandLineRunner`s are found automatically.
 
+HTTP endpoints are found the way Spring MVC finds them (#51):
+- a `@Controller` / `@RestController` class, also through your own annotation that carries one (one to three levels
+  of meta-annotation, in source or in a jar);
+- the mapping on the method, or on the method it overrides in an interface or superclass: in source, in a library jar
+  (read from the class file) or in generated sources;
+- `@GetMapping`, `@PostMapping`, …, `@RequestMapping`, or your own annotation meta-annotated with `@RequestMapping`
+  (its own `value`/`path`, the `@AliasFor` attribute, wins over the meta-annotation's);
+- the class-level `@RequestMapping` from the controller (or its meta-annotation), else the nearest supertype;
+- paths from literals, `static final String` constants and their `+` concatenation.
+
+A mapping with several paths (`@GetMapping({"/a", "/b"})`) stays one entrypoint (one handler: one entry MDC scope, one
+entry line), named after its first path. Every path is a line of its own in `.logast/traffic.yaml` (the handler's rate
+is their sum) and `audit.actions.http` matches any of them; the `http.server.requests` query names the first.
+
+Generated sources (`build/generated/**`, `target/generated-sources/**` of each module: OpenAPI interfaces, annotation
+processor output) are compiled together with the sources so their types and annotations resolve, but they are never
+analysed, reported or edited. Generate them before running logast (e.g. `./gradlew openApiGenerate compileJava`);
+without them a controller implementing a generated interface has no HTTP entrypoints. A generated file declaring a
+class the sources also declare is ignored.
+
 ### `support`: the runtime helper library
 
 ```yaml

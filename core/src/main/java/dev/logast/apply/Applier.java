@@ -582,7 +582,7 @@ public final class Applier {
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    if (!dir.equals(root) && SKIP.contains(dir.getFileName().toString())) {
+                    if (!dir.equals(root) && skipped(dir)) {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
                     Files.createDirectories(work.resolve(root.relativize(dir).toString()));
@@ -592,7 +592,7 @@ public final class Applier {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     // sockets, pipes and devices (e.g. a tool's daemon.sock) cannot be copied and are never edited
-                    if (attrs.isRegularFile() || attrs.isSymbolicLink()) {
+                    if ((attrs.isRegularFile() || attrs.isSymbolicLink()) && !BUILD_OUTPUT.contains(String.valueOf(file.getParent().getFileName()))) {
                         Files.copy(file, work.resolve(root.relativize(file).toString()),
                                 StandardCopyOption.COPY_ATTRIBUTES, LinkOption.NOFOLLOW_LINKS);
                     }
@@ -608,6 +608,20 @@ public final class Applier {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    private static final Set<String> BUILD_OUTPUT = Set.of("build", "target");
+
+    /**
+     * Left out of the scratch copy: build output and tool folders, except the generated sources in build/ and target/
+     * (#51: their types resolve the analysis; they are never compared or written back).
+     */
+    private static boolean skipped(Path dir) {
+        String name = dir.getFileName().toString();
+        if (BUILD_OUTPUT.contains(String.valueOf(dir.getParent().getFileName()))) {
+            return !name.equals("generated") && !name.equals("generated-sources");
+        }
+        return SKIP.contains(name) && !BUILD_OUTPUT.contains(name);
     }
 
     private static void compare(Path root, Path work, List<String> changed, StringBuilder diff) {

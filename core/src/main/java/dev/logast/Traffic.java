@@ -99,10 +99,11 @@ public final class Traffic {
                 .thenComparing(ep -> ep.kind().ordinal()).thenComparing(dev.logast.model.Entrypoint::label));
         // one key per label: endpoints that differ only in produces/consumes/params share one http.server.requests series
         Map<String, List<String>> sameLabel = new LinkedHashMap<>();
-        sorted.forEach(ep -> sameLabel.computeIfAbsent(ep.label(), k -> new ArrayList<>()).add(ep.method().label()));
+        sorted.forEach(ep -> ep.labels().forEach(l -> sameLabel.computeIfAbsent(l, k -> new ArrayList<>()).add(ep.method().label())));
         dev.logast.model.Entrypoint.Kind current = null;
-        for (dev.logast.model.Entrypoint ep : sorted) {
-            if (labels.contains(ep.label())) {
+        // a handler mapped to several paths gets a line per path (#51): its rate is their sum
+        for (dev.logast.model.Entrypoint ep : sorted) for (String label : ep.labels()) {
+            if (labels.contains(label)) {
                 continue;
             }
             if (ep.kind() != current) {
@@ -111,12 +112,12 @@ public final class Traffic {
                         ? "  # in-process event listeners: their rate follows whoever publishes the event (fill only if you know it)\n"
                         : "  # " + current.name().toLowerCase(Locale.ROOT) + "\n");
             }
-            labels.add(ep.label());
-            Double v = existing.perDay(ep.label());
-            sb.append("  \"").append(ep.label().replace("\"", "\\\"")).append("\": ")
+            labels.add(label);
+            Double v = existing.perDay(label);
+            sb.append("  \"").append(label.replace("\"", "\\\"")).append("\": ")
                     .append(v == null ? "" : (v == Math.rint(v) ? String.valueOf(v.longValue()) : String.valueOf(v)))
                     .append("    # ").append(ep.kind().name().toLowerCase(Locale.ROOT)).append(", ")
-                    .append(String.join(" + ", sameLabel.get(ep.label())))
+                    .append(String.join(" + ", sameLabel.get(label)))
                     .append('\n');
         }
         List<String> gone = existing.labels().stream().filter(l -> !labels.contains(l)).toList();
@@ -134,6 +135,18 @@ public final class Traffic {
     /** Calls per day for an entrypoint label, or null when not provided. */
     public Double perDay(String entrypointLabel) {
         return perDay.get(entrypointLabel);
+    }
+
+    /** Calls per day for an entrypoint: the sum over its labels (a handler mapped to several paths), or null when none is provided. */
+    public Double perDay(dev.logast.model.Entrypoint ep) {
+        Double sum = null;
+        for (String l : ep.labels()) {
+            Double v = perDay.get(l);
+            if (v != null) {
+                sum = sum == null ? v : sum + v;
+            }
+        }
+        return sum;
     }
 
     public String source() {

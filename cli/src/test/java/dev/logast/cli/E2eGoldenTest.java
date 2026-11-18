@@ -4346,6 +4346,224 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-mapped-interface"), actual);
     }
 
+    /** #51: a library jar (published OpenAPI interfaces) with a mapped interface and a composed mapping annotation. */
+    private static final Map<String, String> SHELF_LIBRARY = Map.of(
+            "com/example/lib/shelf/ShelfApi.java", """
+                    package com.example.lib.shelf;
+
+                    import org.springframework.web.bind.annotation.PathVariable;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RequestMapping;
+
+                    @RequestMapping("/shelves")
+                    public interface ShelfApi {
+                        String SHELF = "/{shelfId}";
+
+                        @ReadOnlyGet(SHELF)
+                        String shelf(@PathVariable("shelfId") String shelfId);
+
+                        @PostMapping(path = SHELF + "/restock")
+                        String restock(@PathVariable("shelfId") String shelfId);
+                    }
+                    """,
+            "com/example/lib/shelf/ApiController.java", """
+                    package com.example.lib.shelf;
+
+                    import java.lang.annotation.ElementType;
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+                    import java.lang.annotation.Target;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.RUNTIME)
+                    @RestController
+                    public @interface ApiController {
+                    }
+                    """,
+            "com/example/lib/shelf/ReadOnlyGet.java", """
+                    package com.example.lib.shelf;
+
+                    import java.lang.annotation.ElementType;
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+                    import java.lang.annotation.Target;
+                    import org.springframework.core.annotation.AliasFor;
+                    import org.springframework.web.bind.annotation.RequestMapping;
+                    import org.springframework.web.bind.annotation.RequestMethod;
+
+                    @Target(ElementType.METHOD)
+                    @Retention(RetentionPolicy.RUNTIME)
+                    @RequestMapping(method = RequestMethod.GET)
+                    public @interface ReadOnlyGet {
+                        @AliasFor(annotation = RequestMapping.class)
+                        String[] value() default {};
+                    }
+                    """);
+
+    /**
+     * #51, the rest of it: a controller implementing a mapped interface from a library jar (read from the class
+     * file, a composed mapping annotation there too; the controller marked through the jar's meta-annotation), one
+     * implementing an interface in generated sources under build/generated (compiled with the sources for
+     * its types, never analysed or edited), a controller marked through a source meta-annotation that also carries the
+     * class-level mapping, composed mapping annotations from source and from the jar, and path arrays (every path is a
+     * label: traffic.yaml lists each, an audit glob matching the second path counts). Every file must equal
+     * e2e/expected-mapping-sources.
+     */
+    @Test
+    void seesMappingsFromJarsGeneratedSourcesMetaAnnotationsAndPathArrays() throws IOException {
+        String classpath = libraryClasspath("shelf-api", SHELF_LIBRARY).toString();
+        String generatedBinApi = """
+                package com.example.e2e.gen;
+
+                import org.springframework.web.bind.annotation.DeleteMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.RequestMapping;
+
+                @RequestMapping("/bins")
+                public interface BinApi {
+                    @DeleteMapping("/{binId}")
+                    String empty(@PathVariable("binId") String binId);
+                }
+                """;
+        Path[] generated = new Path[1];
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replace("vocabulary:\n", """
+                    audit:
+                      actions:
+                        - http: "POST /shelves/*/restock"
+                        - http: "PUT /trays/by-label/*/seal"
+                    vocabulary:
+                    """));
+            generated[0] = app.resolve("build/generated/openapi/src/main/java/com/example/e2e/gen/BinApi.java");
+            Files.createDirectories(generated[0].getParent());
+            Files.writeString(generated[0], generatedBinApi);
+            Path dir = app.resolve("src/main/java/com/example/e2e/shelf");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("ShelfController.java"), """
+                    package com.example.e2e.shelf;
+
+                    import com.example.lib.shelf.ApiController;
+                    import com.example.lib.shelf.ShelfApi;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    @ApiController
+                    public class ShelfController implements ShelfApi {
+                        private static final Logger log = LoggerFactory.getLogger(ShelfController.class);
+
+                        @Override
+                        public String shelf(String shelfId) {
+                            log.debug("Shelf requested");
+                            return "shelf";
+                        }
+
+                        @Override
+                        public String restock(String shelfId) {
+                            log.debug("Shelf restocked");
+                            return "restocked";
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("BinController.java"), """
+                    package com.example.e2e.shelf;
+
+                    import com.example.e2e.gen.BinApi;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    public class BinController implements BinApi {
+                        @Override
+                        public String empty(String binId) {
+                            return "emptied";
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("TrayEndpoint.java"), """
+                    package com.example.e2e.shelf;
+
+                    import java.lang.annotation.ElementType;
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+                    import java.lang.annotation.Target;
+                    import org.springframework.web.bind.annotation.RequestMapping;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    /** A team's controller annotation: a @RestController with its base path. */
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.RUNTIME)
+                    @RestController
+                    @RequestMapping("/trays")
+                    public @interface TrayEndpoint {
+                    }
+                    """);
+            Files.writeString(dir.resolve("JsonGet.java"), """
+                    package com.example.e2e.shelf;
+
+                    import java.lang.annotation.ElementType;
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+                    import java.lang.annotation.Target;
+                    import org.springframework.core.annotation.AliasFor;
+                    import org.springframework.web.bind.annotation.RequestMapping;
+                    import org.springframework.web.bind.annotation.RequestMethod;
+
+                    @Target(ElementType.METHOD)
+                    @Retention(RetentionPolicy.RUNTIME)
+                    @RequestMapping(method = RequestMethod.GET, produces = "application/json")
+                    public @interface JsonGet {
+                        @AliasFor(annotation = RequestMapping.class)
+                        String[] value() default {};
+                    }
+                    """);
+            Files.writeString(dir.resolve("TrayController.java"), """
+                    package com.example.e2e.shelf;
+
+                    import com.example.lib.shelf.ReadOnlyGet;
+                    import org.springframework.web.bind.annotation.GetMapping;
+                    import org.springframework.web.bind.annotation.PathVariable;
+                    import org.springframework.web.bind.annotation.PutMapping;
+
+                    @TrayEndpoint
+                    public class TrayController {
+                        @GetMapping({"/{trayId}", "/by-label/{label}"})
+                        public String tray(@PathVariable(required = false) String trayId, @PathVariable(required = false) String label) {
+                            return "tray";
+                        }
+
+                        @PutMapping(path = {"/{trayId}/seal", "/by-label/{label}/seal"})
+                        public String seal(@PathVariable(required = false) String trayId, @PathVariable(required = false) String label) {
+                            return "sealed";
+                        }
+
+                        @JsonGet("/count")
+                        public int count() {
+                            return 3;
+                        }
+
+                        @ReadOnlyGet("/latest")
+                        public String latest() {
+                            return "latest";
+                        }
+                    }
+                    """);
+        });
+
+        assertThat(Files.readString(generated[0])).as("generated sources are never edited").isEqualTo(generatedBinApi);
+        assertThat(actual.get("FINDINGS.txt")).as("generated sources are never reported").doesNotContain("build/generated");
+        String traffic = actual.get(".logast/traffic.yaml");
+        assertThat(traffic).as("mappings on an interface from a library jar, in a controller marked by the jar's annotation")
+                .contains("\"GET /shelves/{shelfId}\":").contains("\"POST /shelves/{shelfId}/restock\":")
+                .as("mappings on an interface in generated sources").contains("\"DELETE /bins/{binId}\":")
+                .as("a controller through a meta-annotation, with its class-level mapping; every path of an array")
+                .contains("\"GET /trays/{trayId}\":").contains("\"GET /trays/by-label/{label}\":")
+                .contains("\"PUT /trays/{trayId}/seal\":").contains("\"PUT /trays/by-label/{label}/seal\":")
+                .as("composed mapping annotations from source and from a jar")
+                .contains("\"GET /trays/count\":").contains("\"GET /trays/latest\":");
+        golden(EXPECTED.resolveSibling("expected-mapping-sources"), actual);
+    }
+
     /**
      * #50: audit emitters, actor and target are recognised by type and value origin, not by name. A save of an entity
      * whose superclass is named *Audit* records nothing; the actor read from a {@code Principal} (directly, through
@@ -6314,7 +6532,13 @@ class E2eGoldenTest {
     private static void compile(Path root, String encoding, Path... classes) throws IOException {
         List<String> sources;
         try (Stream<Path> s = Files.walk(root.resolve("src/main/java"))) {
-            sources = s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).toList();
+            sources = new ArrayList<>(s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).toList());
+        }
+        if (Files.isDirectory(root.resolve("build/generated"))) {
+            // generated sources the build adds to the main source set (#51)
+            try (Stream<Path> s = Files.walk(root.resolve("build/generated"))) {
+                s.filter(p -> p.toString().endsWith(".java")).map(Path::toString).forEach(sources::add);
+            }
         }
         List<String> cp = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList());
         Stream.of(classes).map(Path::toString).forEach(cp::add);

@@ -77,7 +77,7 @@ final class VolumeRules {
     private Map<String, Double> rates(MethodInfo m) {
         Map<String, Double> out = new LinkedHashMap<>();
         for (Entrypoint ep : ctx.a.paths.entrypointsReaching(m)) {
-            Double r = ctx.a.traffic.perDay(ep.label());
+            Double r = ctx.a.traffic.perDay(ep);
             if (r != null) {
                 out.put(ep.label(), r);
             }

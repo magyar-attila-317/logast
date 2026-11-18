@@ -27,7 +27,8 @@ public final class ProjectParser {
     public ParsedProject parse(Path root, List<Path> classpath) {
         Path absRoot = root.toAbsolutePath().normalize();
         List<Path> jars = classpath.stream().filter(p -> !Files.isDirectory(p)).toList();
-        ParsedProject p = parseFiles(absRoot, findSources(absRoot), jars, List.of());
+        List<Path> sources = findSources(absRoot);
+        ParsedProject p = parseFiles(absRoot, sources, generatedSources(absRoot, sources), jars, List.of());
         return new ParsedProject(p.root(), p.files(), List.copyOf(classpath), p.parseErrors(), p.probe(), p.discovered());
     }
 
@@ -47,9 +48,13 @@ public final class ProjectParser {
         return false;
     }
 
-    private ParsedProject parseFiles(Path absRoot, List<Path> sources, List<Path> classpath, List<SourceFileInfo> kept) {
+    private ParsedProject parseFiles(Path absRoot, List<Path> sources, List<Path> generated, List<Path> classpath, List<SourceFileInfo> kept) {
         List<String> errors = new ArrayList<>();
-        List<SourceFile> parsed = sources.isEmpty() ? List.of() : parseSlice(absRoot, sources, classpath, errors);
+        List<Path> compiled = new ArrayList<>(sources);
+        compiled.addAll(generated);
+        List<SourceFile> parsed = sources.isEmpty() ? List.of() : parseSlice(absRoot, compiled, classpath, errors);
+        Set<Path> generatedRel = new HashSet<>();
+        generated.forEach(g -> generatedRel.add(absRoot.relativize(g.toAbsolutePath().normalize())));
         ExecutionContext ctx = new InMemoryExecutionContext(t -> errors.add(String.valueOf(t.getMessage())));
 
         List<SourceFileInfo> files = new ArrayList<>(kept);
@@ -58,8 +63,8 @@ public final class ProjectParser {
                 errors.add("parse error: " + pe.getSourcePath());
                 continue;
             }
-            if (!(sf instanceof J.CompilationUnit cu)) {
-                continue;
+            if (!(sf instanceof J.CompilationUnit cu) || generatedRel.contains(cu.getSourcePath())) {
+                continue;   // generated sources only give their types: never analysed, reported or edited
             }
             Path abs = absRoot.resolve(cu.getSourcePath());
             String text = read(abs);
@@ -126,6 +131,47 @@ public final class ProjectParser {
         }
         out.sort(Comparator.naturalOrder());
         return out;
+    }
+
+    /** Where Gradle and Maven builds put generated sources (OpenAPI, annotation processors, protobuf, jOOQ). */
+    private static final List<Path> GENERATED_ROOTS = List.of(Path.of("build", "generated"), Path.of("target", "generated-sources"));
+
+    /**
+     * The generated main sources of every module (#51: OpenAPI-generated API interfaces a hand-written controller
+     * implements). They are compiled with the sources so their types and annotations resolve, and are never analysed
+     * or edited. A generated file declaring a class the sources declare too (a stale copy) is left out.
+     */
+    static List<Path> generatedSources(Path root, List<Path> sources) {
+        Set<String> declared = new HashSet<>();
+        sources.forEach(s -> declared.add(topLevelName(s)));
+        List<Path> out = new ArrayList<>();
+        walkDirs(root, dir -> {
+            for (Path g : GENERATED_ROOTS) {
+                Path gen = dir.resolve(g);
+                if (!Files.isDirectory(gen)) {
+                    continue;
+                }
+                try (Stream<Path> s = Files.walk(gen)) {
+                    s.filter(p -> p.toString().endsWith(".java"))
+                            .filter(p -> !isTestPath(gen.relativize(p)))
+                            .filter(p -> declared.add(topLevelName(p)))
+                            .forEach(out::add);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            }
+        });
+        out.sort(Comparator.naturalOrder());
+        return out;
+    }
+
+    private static final java.util.regex.Pattern PACKAGE = java.util.regex.Pattern.compile("^\\s*package\\s+([\\w.]+)\\s*;", java.util.regex.Pattern.MULTILINE);
+
+    /** {@code com.example.Foo} for {@code .../Foo.java} declaring {@code package com.example;}. */
+    private static String topLevelName(Path file) {
+        java.util.regex.Matcher m = PACKAGE.matcher(read(file));
+        String name = file.getFileName().toString().replaceFirst("\\.java$", "");
+        return m.find() ? m.group(1) + "." + name : name;
     }
 
     private static boolean isTestPath(Path rel) {
