@@ -144,6 +144,7 @@ public final class Main {
                 Out.progress("traffic (" + t.source() + "): " + covered + " of " + labels.size() + " entrypoints have rates"
                         + (unmatched.isEmpty() ? "" : "; labels matching no entrypoint (check spelling with `logast explain`): " + unmatched));
             }
+            List<dev.logast.LogLedger.Entry> ledger = null;
             Path target = out != null ? out : root().resolve(".logast/orders.json");
             Files.createDirectories(target.toAbsolutePath().getParent());
             OrderJson.MAPPER.writeValue(target.toFile(), r);
@@ -155,6 +156,9 @@ public final class Main {
                 var mu = dev.logast.apply.MetricsFile.update(root(), r.orders());
                 if (mu.written() && (format.equals("compact") || format.equals("summary"))) {
                     Out.progress(metricsLine(mu));
+                }
+                if (policy.packSelected("logging")) {   // the logging pack's account of every log call (#72, as #88)
+                    ledger = Logast.lastAnalysis.ledger.write(root(), Logast.lastAnalysis, r.orders(), Map.of());
                 }
                 dev.logast.apply.FindingComments.update(root(), Logast.lastAnalysis, r.orders());
             }
@@ -220,9 +224,11 @@ public final class Main {
                     if (r.coverage() != null && r.coverage().total() > 0) {
                         System.out.println("log coverage " + r.coverage().line());
                     }
+                    printLedger(ledger);
                 }
                 default -> {
                     System.out.print(CompactFormat.render(r, shown, policy.terms()));
+                    printLedger(ledger);
                     if (!policy.overrides().isEmpty()) {
                         System.out.println(Ansi.dim("\npolicy overrides (" + policy.overrides().size() + "): "
                                 + String.join("; ", policy.overrides().stream().limit(8).toList())));
@@ -337,6 +343,11 @@ public final class Main {
                     Out.progress(metricsLine(mu));
                 }
             }
+            // every log call of the result, with the ones this run fixed (#72); the logging pack's report, as in scan
+            List<dev.logast.LogLedger.Entry> ledger = null;
+            if (write && scanner.lastAnalysis != null && policy.packSelected("logging")) {
+                ledger = scanner.lastAnalysis.ledger.write(root(), scanner.lastAnalysis, r.after().orders(), r.fixed());
+            }
             // what each round applied and what its rescan brought up: where extra rounds come from
             if (!r.trace().isEmpty()) {
                 Files.createDirectories(root().resolve(".logast"));
@@ -384,6 +395,7 @@ public final class Main {
                 System.out.println(Ansi.dim("resolved by other changes: " + String.join(" ", r.resolvedIndirectly())));
             }
             r.rejected().forEach((id, why) -> System.out.println(Ansi.red("REJECTED " + id) + ": " + why));
+            printLedger(ledger);
             if (r.before() != null && r.before().stats() != null && r.before().stats().logCallsByName() > 0) {
                 System.out.println(Ansi.warn(loggersByNameLine(r.before().stats().logCallsByName())));
             }
@@ -433,6 +445,14 @@ public final class Main {
                 Out.next(next);
             }
             return r.rejected().isEmpty() ? 0 : 1;
+        }
+    }
+
+    /** One line per outcome of coverage.txt (#72); nothing when it was not written. */
+    static void printLedger(List<dev.logast.LogLedger.Entry> ledger) {
+        if (ledger != null) {
+            System.out.println();
+            dev.logast.LogLedger.summary(ledger).forEach(System.out::println);
         }
     }
 

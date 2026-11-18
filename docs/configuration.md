@@ -233,6 +233,18 @@ audit:
 With no `emitters`, any call on a type named `*Audit*`, or with an `*Audit*` argument (an `AuditAction` value, an
 event implementing `AuditableDomainEvent`) counts.
 
+### `reporting`: what scan writes besides the findings
+
+```yaml
+reporting:
+  sourceComments: false   # true: add "// logast: RULE ID" beside findings that need an entry in fills.json or
+                          #   metrics.json (a debugging aid; scan adds and removes them)
+```
+
+Independent of this setting, `scan` and `apply --write` with the logging pack write `.logast/coverage.txt`: every log
+call with what logast did with it (fixed, reported, ignored, skipped with the reason, checked). See "Every log call is
+accounted for" in [commands](commands.md#every-log-call-is-accounted-for).
+
 ### `verify`
 
 ```yaml

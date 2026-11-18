@@ -1,0 +1,116 @@
+# every log call logast knows and what it did with it: fixed, reported, ignored, skipped (with the reason) or checked (no finding)
+src/main/java/com/example/e2e/audit/AuditLog.java:15                  checked  no finding
+src/main/java/com/example/e2e/audit/AuditLog.java:25                  checked  no finding
+src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:23         checked  no finding
+src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:24         fixed    MESSAGE_SUGGESTED SUG-bc8896
+src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:27         checked  no finding
+src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:30         fixed    MESSAGE_SUGGESTED SUG-44443e
+src/main/java/com/example/e2e/coupon/CouponLookup.java:22             fixed    METRIC_OUTCOME_UNMEASURED OUM-02f9e9; reported LOG_AND_RETHROW LAR-fd8fcd
+src/main/java/com/example/e2e/coupon/CouponReloadJob.java:18          fixed    MESSAGE_SUGGESTED SUG-a4b461
+src/main/java/com/example/e2e/coupon/CouponReloadJob.java:20          fixed    MESSAGE_SUGGESTED SUG-dd88b2
+src/main/java/com/example/e2e/coupon/CouponRepository.java:27         fixed    METRIC_OUTCOME_UNMEASURED OUM-8a8603; reported MESSAGE_SUGGESTED SUG-d99e11
+src/main/java/com/example/e2e/coupon/CouponRepository.java:33         reported MESSAGE_SUGGESTED SUG-3b5d90, METRIC_OUTCOME_UNMEASURED OUM-03f513
+src/main/java/com/example/e2e/coupon/CouponRepository.java:39         reported MESSAGE_SUGGESTED SUG-56cdac
+src/main/java/com/example/e2e/coupon/CouponSender.java:13             fixed    LOG_FORMAT FMT-adb87b
+src/main/java/com/example/e2e/coupon/CouponSender.java:14             fixed    LOG_FORMAT FMT-486887; reported METRIC_OUTCOME_UNMEASURED OUM-027987
+src/main/java/com/example/e2e/coupon/CouponSender.java:24             fixed    REPEATED_LOG_VALUE RLV-4f783c, LOG_FORMAT FMT-41864d, METRIC_OUTCOME_UNMEASURED OUM-e22a2d
+src/main/java/com/example/e2e/coupon/CouponService.java:41            fixed    LOG_FORMAT FMT-e10ae3; reported MESSAGE_VAGUE MVG-53c6bf
+src/main/java/com/example/e2e/coupon/CouponService.java:44            fixed    LOG_FORMAT FMT-6acce2; reported METRIC_OUTCOME_UNMEASURED OUM-773d35
+src/main/java/com/example/e2e/coupon/CouponService.java:49            fixed    REPEATED_LOG_VALUE RLV-77dee0, LOG_FORMAT FMT-13a9ed
+src/main/java/com/example/e2e/coupon/CouponService.java:51            fixed    LOG_FORMAT FMT-f17eb0; reported METRIC_OUTCOME_UNMEASURED OUM-4809f0
+src/main/java/com/example/e2e/edge/Audited.java:11                    fixed    LOG_FORMAT FMT-0b77e4; reported METRIC_OUTCOME_UNMEASURED OUM-49d3bd
+src/main/java/com/example/e2e/edge/CouponRules.java:11                fixed    LOG_FORMAT FMT-aba02a
+src/main/java/com/example/e2e/edge/CouponRules.java:13                fixed    LOG_FORMAT FMT-95d099
+src/main/java/com/example/e2e/edge/CouponTask.java:15                 fixed    LOG_FORMAT FMT-4801c5
+src/main/java/com/example/e2e/edge/CouponTask.java:16                 fixed    LOG_FORMAT FMT-473593
+src/main/java/com/example/e2e/edge/EdgeFlow.java:20                   checked  no finding
+src/main/java/com/example/e2e/edge/EdgeFlow.java:29                   checked  no finding
+src/main/java/com/example/e2e/edge/EdgeFlow.java:36                   checked  no finding
+src/main/java/com/example/e2e/edge/EdgeFlow.java:45                   reported METRIC_OUTCOME_UNMEASURED OUM-3c3200
+src/main/java/com/example/e2e/edge/EdgeFlow.java:48                   fixed    MESSAGE_SUGGESTED SUG-6b173f; reported METRIC_OUTCOME_UNMEASURED OUM-bb1ac8
+src/main/java/com/example/e2e/edge/EdgeFlow.java:51                   reported METRIC_OUTCOME_UNMEASURED OUM-be530b
+src/main/java/com/example/e2e/edge/EdgeFlow.java:53                   checked  no finding
+src/main/java/com/example/e2e/edge/EdgeFlow.java:60                   reported MESSAGE_VAGUE MVG-9330c1
+src/main/java/com/example/e2e/edge/EdgeJob.java:23                    fixed    MESSAGE_SUGGESTED SUG-2f8476
+src/main/java/com/example/e2e/edge/EdgeJob.java:28                    fixed    MESSAGE_SUGGESTED SUG-bd5779
+src/main/java/com/example/e2e/edge/EdgeLogHelper.java:14              skipped  inside a log helper (LOG_HELPER reports the helper)
+src/main/java/com/example/e2e/edge/Exclusion.java:13                  fixed    LOG_FORMAT FMT-768e46
+src/main/java/com/example/e2e/edge/Exclusion.java:20                  fixed    LOG_FORMAT FMT-cbdc4a
+src/main/java/com/example/e2e/edge/OriginCheck.java:11                fixed    LOG_FORMAT FMT-dca357
+src/main/java/com/example/e2e/income/CalculationService.java:22       fixed    REPEATED_LOG_VALUE RLV-d4e07b, LOG_FORMAT FMT-6c56a0
+src/main/java/com/example/e2e/income/CouponChecks.java:23             skipped  TRACE level (arguments not checked), message not a literal (built at runtime)
+src/main/java/com/example/e2e/income/CouponChecks.java:25             fixed    LOG_FORMAT FMT-f12230
+src/main/java/com/example/e2e/income/CouponChecks.java:35             skipped  TRACE level (arguments not checked), message not a literal (built at runtime)
+src/main/java/com/example/e2e/income/CouponChecks.java:37             fixed    LOG_FORMAT FMT-4e451e
+src/main/java/com/example/e2e/income/IncomeCalculator.java:18         fixed    LOG_FORMAT FMT-19b82a
+src/main/java/com/example/e2e/income/IncomeCalculator.java:20         fixed    LOG_FORMAT FMT-b3bfa2
+src/main/java/com/example/e2e/income/IncomeCalculator.java:32         fixed    LOG_FORMAT FMT-b2b961; skipped TRACE level (arguments not checked)
+src/main/java/com/example/e2e/income/IncomeCalculator.java:51         fixed    LOG_FORMAT FMT-5fa8bf
+src/main/java/com/example/e2e/job/CalculationJob.java:15              fixed    MESSAGE_SUGGESTED SUG-a2a43c
+src/main/java/com/example/e2e/job/CalculationJob.java:16              checked  no finding
+src/main/java/com/example/e2e/job/ExportJob.java:13                   fixed    MESSAGE_SUGGESTED SUG-4dc17a
+src/main/java/com/example/e2e/job/ExportJob.java:14                   fixed    MESSAGE_SUGGESTED SUG-7055a3
+src/main/java/com/example/e2e/job/PreloadJob.java:15                  checked  no finding
+src/main/java/com/example/e2e/job/PreloadJob.java:16                  fixed    METRIC_OUTCOME_UNMEASURED OUM-553423
+src/main/java/com/example/e2e/job/PublishRunJob.java:21               fixed    BUSINESS_EVENT_UNMEASURED BEU-f11deb, LOG_FORMAT FMT-c52929; reported MESSAGE_VAGUE MVG-c21d8c
+src/main/java/com/example/e2e/job/PublishRunJob.java:25               fixed    LOG_FORMAT FMT-6f7059; reported MESSAGE_VAGUE MVG-35393e
+src/main/java/com/example/e2e/job/PublishRunJob.java:27               fixed    LOG_FORMAT FMT-b2dbbc; reported MESSAGE_VAGUE MVG-340194
+src/main/java/com/example/e2e/job/PublishRunJob.java:33               fixed    LOG_FORMAT FMT-9c563d; reported MESSAGE_VAGUE MVG-4a4ce2
+src/main/java/com/example/e2e/job/PublishRunJob.java:37               fixed    LOG_FORMAT FMT-d7597d
+src/main/java/com/example/e2e/job/PublishRunJob.java:41               checked  no finding
+src/main/java/com/example/e2e/logging/MdcHygiene.java:52              skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:143        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:145        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:147        skipped  logging-support code
+src/main/java/com/example/e2e/logging/ObservedContext.java:149        skipped  logging-support code
+src/main/java/com/example/e2e/messaging/CouponMessages.java:23        checked  no finding
+src/main/java/com/example/e2e/messaging/CouponMessages.java:30        checked  no finding
+src/main/java/com/example/e2e/messaging/CouponMessages.java:31        fixed    MESSAGE_SUGGESTED SUG-1fede7
+src/main/java/com/example/e2e/messaging/CouponMessages.java:39        checked  no finding
+src/main/java/com/example/e2e/messaging/CouponMessages.java:40        fixed    MESSAGE_SUGGESTED SUG-15854c
+src/main/java/com/example/e2e/messaging/ReactiveCouponLookup.java:14  checked  no finding
+src/main/java/com/example/e2e/messaging/ReactiveCouponLookup.java:16  checked  no finding
+src/main/java/com/example/e2e/messaging/ReactiveCouponLookup.java:17  reported METRIC_OUTCOME_UNMEASURED OUM-4284aa
+src/main/java/com/example/e2e/order/OrderEvents.java:18               checked  no finding
+src/main/java/com/example/e2e/order/OrderEvents.java:21               checked  no finding
+src/main/java/com/example/e2e/order/OrderNotifications.java:17        reported METRIC_OUTCOME_UNMEASURED OUM-0f37ab
+src/main/java/com/example/e2e/order/OrderNotifications.java:18        checked  no finding
+src/main/java/com/example/e2e/order/OrderNotifications.java:27        checked  no finding
+src/main/java/com/example/e2e/order/OrderNotifications.java:28        fixed    MESSAGE_SUGGESTED SUG-85eb33
+src/main/java/com/example/e2e/order/OrderService.java:34              fixed    LOG_FORMAT FMT-60c40d
+src/main/java/com/example/e2e/order/OrderService.java:37              fixed    LOG_FORMAT FMT-0447e4; reported METRIC_OUTCOME_UNMEASURED OUM-d691d7
+src/main/java/com/example/e2e/order/OrderService.java:43              fixed    METRIC_OUTCOME_UNMEASURED OUM-164f3d
+src/main/java/com/example/e2e/order/OrderService.java:48              reported METRIC_OUTCOME_UNMEASURED OUM-00f4c0
+src/main/java/com/example/e2e/order/PaymentClient.java:15             checked  no finding
+src/main/java/com/example/e2e/order/PaymentClient.java:16             fixed    LOG_FORMAT FMT-9cb82a
+src/main/java/com/example/e2e/order/PaymentClient.java:19             reported LOG_AND_RETHROW LAR-8db2b9
+src/main/java/com/example/e2e/web/AuditController.java:16             checked  no finding
+src/main/java/com/example/e2e/web/CouponController.java:59            checked  no finding
+src/main/java/com/example/e2e/web/CouponDetailsController.java:31     checked  no finding
+src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    MESSAGE_SUGGESTED SUG-08dd18
+# fixed lines are kept while their file is unchanged:
+# src/main/java/com/example/e2e/coupon/CouponCleanupJob.java 2bbfaa58221c
+# src/main/java/com/example/e2e/coupon/CouponLookup.java ca359f16485b
+# src/main/java/com/example/e2e/coupon/CouponReloadJob.java 250b497b1a18
+# src/main/java/com/example/e2e/coupon/CouponRepository.java 851005189a5b
+# src/main/java/com/example/e2e/coupon/CouponSender.java 8f57345979b9
+# src/main/java/com/example/e2e/coupon/CouponService.java a26dd7497a22
+# src/main/java/com/example/e2e/edge/Audited.java bb26341ea076
+# src/main/java/com/example/e2e/edge/CouponRules.java 42f089834dd5
+# src/main/java/com/example/e2e/edge/CouponTask.java 916dfeb2074e
+# src/main/java/com/example/e2e/edge/EdgeFlow.java 83e62637bb66
+# src/main/java/com/example/e2e/edge/EdgeJob.java 1b31cbaa5430
+# src/main/java/com/example/e2e/edge/Exclusion.java 8cc90ce76fba
+# src/main/java/com/example/e2e/edge/OriginCheck.java e1c7bf22c91d
+# src/main/java/com/example/e2e/income/CalculationService.java 5c6e7a2af56c
+# src/main/java/com/example/e2e/income/CouponChecks.java d93b035b6a76
+# src/main/java/com/example/e2e/income/IncomeCalculator.java 124c2077d0ee
+# src/main/java/com/example/e2e/job/CalculationJob.java be865353c020
+# src/main/java/com/example/e2e/job/ExportJob.java 2a1cd307e431
+# src/main/java/com/example/e2e/job/PreloadJob.java 3eec3af4278e
+# src/main/java/com/example/e2e/job/PublishRunJob.java 1d943ba9db11
+# src/main/java/com/example/e2e/messaging/CouponMessages.java 9b8438b63da0
+# src/main/java/com/example/e2e/order/OrderNotifications.java 27da271139bb
+# src/main/java/com/example/e2e/order/OrderService.java 3e84740bdd33
+# src/main/java/com/example/e2e/order/PaymentClient.java ca79dfc5e8d2
+# src/main/java/com/example/e2e/web/QuoteController.java 7c69c11dbebe

@@ -356,6 +356,9 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
             if (c != null && args(mi).stream().anyMatch(x -> x instanceof J.Identifier i && i.getSimpleName().equals(c.param))) {
                 c.passesException = true;
             }
+            if (LoggerScope.loggingMethod(mi.getSimpleName())) {
+                f.otherLogs.add(new OtherLogCall(mi, byName.api()));
+            }
             return mi;
         }
         if (byName != null && LEVELS.containsKey(mi.getSimpleName()) && !args(mi).isEmpty()) {
@@ -376,6 +379,10 @@ public final class FactsExtractor extends JavaIsoVisitor<MethodFacts> {
         String name = mt.getName();
         CatchInfo inCatch = catchStack.peek();
         boolean statement = getCursor().getParentTreeCursor().getValue() instanceof J.Block;
+        String otherApi = LoggerScope.otherApi(owner);
+        if (otherApi != null && LoggerScope.loggingMethod(name)) {
+            f.otherLogs.add(new OtherLogCall(mi, otherApi));   // the same line as above when the type resolves (#53)
+        }
 
         if (owner.equals("org.slf4j.Logger") && LEVELS.containsKey(name)) {
             List<Expression> args = args(mi);

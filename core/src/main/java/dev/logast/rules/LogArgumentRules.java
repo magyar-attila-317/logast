@@ -64,11 +64,15 @@ final class LogArgumentRules {
         if (collections || objects) {
             for (MethodInfo m : ctx.methods()) {
                 if (ctx.logHelper(m)) {
+                    m.facts().logs.forEach(lc -> ctx.skip(lc, dev.logast.LogLedger.HELPER));
                     continue;
                 }
                 int n = 0;
                 for (LogCall lc : m.facts().logs) {
                     if (lc.level() == dev.logast.model.Level.TRACE) {
+                        if (!lc.args().isEmpty()) {
+                            ctx.skip(lc, dev.logast.LogLedger.TRACE);
+                        }
                         continue;   // TRACE is the deliberate "show me everything" level (usually behind isTraceEnabled)
                     }
                     for (int i = 0; i < lc.args().size(); i++) {

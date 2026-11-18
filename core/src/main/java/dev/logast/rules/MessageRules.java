@@ -1,5 +1,6 @@
 package dev.logast.rules;
 
+import dev.logast.LogLedger;
 import dev.logast.model.LogCall;
 import dev.logast.model.MethodInfo;
 import dev.logast.orders.Edit;
@@ -61,14 +62,17 @@ final class MessageRules {
     void run() {
         for (MethodInfo m : ctx.methods()) {
             if (ctx.logHelper(m)) {
+                m.facts().logs.forEach(lc -> ctx.skip(lc, LogLedger.HELPER));
                 continue;
             }
             int n = 0;
             for (LogCall lc : m.facts().logs) {
                 if (ctx.policy.logging().protectedMessage(MessageTemplate.text(lc.template()))) {
+                    ctx.skip(lc, LogLedger.PROTECTED);
                     continue;   // alert-linked: expand-contract only, by hand
                 }
                 if (!(lc.template() instanceof J.Literal l) || !(l.getValue() instanceof String raw)) {
+                    ctx.skip(lc, lc.template() == null ? LogLedger.NO_MESSAGE : LogLedger.NOT_LITERAL);
                     continue;
                 }
                 if (ctx.enabled(Rules.BUSINESS_EVENT_TIMESTAMP) && removeBusinessEventTimestamp(m, lc, raw)) {

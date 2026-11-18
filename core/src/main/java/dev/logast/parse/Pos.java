@@ -18,6 +18,12 @@ public final class Pos {
         return r == null ? -1 : r.getStart().getLine();
     }
 
+    /** 1-based line of the element's last character, or -1 when unknown. */
+    public static int endLine(Tree t) {
+        Range r = range(t);
+        return r == null ? -1 : r.getEnd().getLine();
+    }
+
     /** Offset of the first character of the element (prefix whitespace excluded). */
     public static int start(Tree t) {
         Range r = range(t);

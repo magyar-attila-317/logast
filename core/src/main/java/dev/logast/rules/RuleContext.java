@@ -68,6 +68,12 @@ public final class RuleContext {
         this.domain = new DomainValues(policy);
         this.glossary = new Glossary(policy);
         this.phrasing = new Phrasing(policy);
+        a.ledger.clear();
+    }
+
+    /** {@code lc} is passed over on purpose: the coverage report says why (#72). */
+    void skip(dev.logast.model.LogCall lc, String reason) {
+        a.ledger.skip(lc.call(), reason);
     }
 
     /** True once the support starter is present or an order adds it. */
@@ -162,9 +168,23 @@ public final class RuleContext {
     }
 
     /** Methods rules look at: everything except the support classes themselves (vendored copies included). */
+    private java.util.List<MethodInfo> methods;
+
+    /** The service's own methods: the logging-support classes copied into it are not checked (their log calls are skipped). */
     public java.util.List<MethodInfo> methods() {
-        String prefix = a.supportPackage + ".";
-        return a.index.methods().stream().filter(m -> !m.owner().fqn().startsWith(prefix)).toList();
+        if (methods == null) {
+            String prefix = a.supportPackage + ".";
+            java.util.List<MethodInfo> own = new ArrayList<>();
+            for (MethodInfo m : a.index.methods()) {
+                if (m.owner().fqn().startsWith(prefix)) {
+                    m.facts().logs.forEach(lc -> skip(lc, dev.logast.LogLedger.SUPPORT));
+                } else {
+                    own.add(m);
+                }
+            }
+            methods = java.util.List.copyOf(own);
+        }
+        return methods;
     }
 
     public String support(String simpleName) {
@@ -243,10 +263,12 @@ public final class RuleContext {
      * {@code // logast:ignore-file RULE} anywhere in the file (see {@link Suppressions}).
      */
     public boolean ignored(SourceFileInfo f, int line, String rule) {
-        if (fileIgnores.computeIfAbsent(f.relPath(), k -> Suppressions.fileIgnores(f.text())).contains(rule)) {
-            return true;
+        boolean ignored = fileIgnores.computeIfAbsent(f.relPath(), k -> Suppressions.fileIgnores(f.text())).contains(rule)
+                || Suppressions.lineIgnores(f.lineText(line), rule) || line > 1 && Suppressions.lineIgnores(f.lineText(line - 1), rule);
+        if (ignored) {
+            a.ledger.ignored(f.relPath(), line, rule);   // the coverage report shows the log call there as ignored (#72)
         }
-        return Suppressions.lineIgnores(f.lineText(line), rule) || line > 1 && Suppressions.lineIgnores(f.lineText(line - 1), rule);
+        return ignored;
     }
 
     public void dependOnStarter(OrderBuilder b) {

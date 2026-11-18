@@ -200,7 +200,7 @@ public final class MetricsMap {
                     Matcher o = OUTCOME.matcher(text);
                     event = o.find() ? o.group(1).toLowerCase(Locale.ROOT) : null;
                 }
-                if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(m, lc, catalogs)) {
+                if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(a, m, lc, catalogs)) {
                     continue;
                 }
                 // a plain "completed"/"failed" of an entrypoint the framework or a wrapper times is in its timer already
@@ -230,11 +230,12 @@ public final class MetricsMap {
     }
 
     /** An Outcomes.count/tag right after the log line, or an ignore comment for this rule on it, above it or for the file. */
-    private static boolean countedOrSkipped(MethodInfo m, LogCall lc, Set<String> catalogs) {
+    private static boolean countedOrSkipped(Analysis a, MethodInfo m, LogCall lc, Set<String> catalogs) {
+        int line = Pos.line(lc.call());
         if (Suppressions.fileIgnores(m.file().text()).contains(Rules.METRIC_OUTCOME_UNMEASURED)) {
+            a.ledger.ignored(m.file().relPath(), line, Rules.METRIC_OUTCOME_UNMEASURED);
             return true;
         }
-        int line = Pos.line(lc.call());
         // the counting line goes after the whole statement (a chained call can run on for lines): look up to its end
         org.openrewrite.java.tree.J stmt = CoverageRules.enclosingStatement(m, lc.call());
         int end = stmt == null ? Pos.end(lc.call()) : Math.max(Pos.end(lc.call()), Pos.end(stmt));
@@ -251,6 +252,7 @@ public final class MetricsMap {
                 return true;
             }
             if (l <= last && Suppressions.lineIgnores(t, Rules.METRIC_OUTCOME_UNMEASURED)) {
+                a.ledger.ignored(m.file().relPath(), line, Rules.METRIC_OUTCOME_UNMEASURED);   // "skip" in metrics.json
                 return true;
             }
         }
