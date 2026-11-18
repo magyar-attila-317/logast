@@ -160,6 +160,10 @@ public final class Main {
             try (Out.Progress p = new Out.Progress("analysing the code (parsing dominates: about 30 s for 2,000 files)")) {
                 r = Logast.scan(root(), classpath(), policy, traffic);
             }
+            String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
+            if (olderJdk != null) {
+                Out.warn(olderJdk);
+            }
             // #56: names in the policy and ignore comments that match nothing (also: logast policy . --check)
             dev.logast.rules.PolicyUsage.warnings(Logast.lastAnalysis).forEach(w -> Out.warn("policy: " + w));
             dev.logast.Traffic t = Logast.lastAnalysis.traffic;
@@ -329,6 +333,10 @@ public final class Main {
         @Override
         public Integer call() throws IOException {
             Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
+            String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
+            if (olderJdk != null) {
+                Out.warn(olderJdk);
+            }
             if (!auto && fillMap.isEmpty() && only.isEmpty()) {   // #56: --only ids are a selection too
                 System.err.println("""
                         logast apply: nothing selected. Choose what to apply:
