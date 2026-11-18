@@ -16,7 +16,7 @@ Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
 | rule | severity | finds | fix |
 |---|---|---|---|
 | SETUP_OTEL_STARTER | high | no tracer bridge or exporter (Boot 4: `spring-boot-starter-opentelemetry`; Boot 3: actuator + `micrometer-tracing-bridge-otel` + `opentelemetry-exporter-otlp`); conflicting setups (a Boot 4 starter in a Boot 3 build, Brave next to OpenTelemetry, the OpenTelemetry Spring starter or Java agent next to Boot's) | AUTO: adds the dependencies of the Boot generation in the build; report for conflicts |
-| ENTRYPOINT_NOT_OBSERVED | high | an entrypoint Spring does not observe (`@EventListener` / `@TransactionalEventListener` starting a flow of its own, WebSocket handlers, batch runners and `main`, annotations from `entrypoints.extraAnnotations`, Kafka / RabbitMQ listeners until their observation is on, batch listeners): its logs have no trace id and it records no span | AUTO: `ObservedContext.entrypoint(…)` around the body (see above) |
+| ENTRYPOINT_NOT_OBSERVED | high | an entrypoint Spring does not observe (`@EventListener` / `@TransactionalEventListener` starting a flow of its own, WebSocket handlers, batch runners and `main`, annotations from `entrypoints.extraAnnotations`, Kafka / RabbitMQ listeners until their observation is on, batch listeners, Spring Batch steps, `@SqsListener`, Redis pub/sub listeners, Spring Integration `@ServiceActivator` methods, gRPC calls with Spring gRPC's observation off): its logs have no trace id and it records no span | AUTO: `ObservedContext.entrypoint(…)` around the body (see above); report for a Redis adapter delegate logast cannot name and a gRPC call that completes after its method returns |
 | OBSERVED_ANNOTATION_INACTIVE | high | `@Observed` / `@NewSpan` without `management.observations.annotations.enabled: true` or without aspectjweaver: the annotated methods run without an observation or span | AUTO: sets the property and adds `spring-boot-starter-aspectj` (Boot 4) / `spring-boot-starter-aop` (Boot 3); report when the build file or Boot's observation auto-configuration is missing. Also switches on `@Timed` / `@Counted`. In the metrics pack too, for `@Observed` / `@Timed` / `@Counted` (the same switch) |
 | HTTP_CLIENT_UNTRACED | high | `RestTemplate` / `RestClient` / `WebClient` built by hand instead of from Spring Boot's builder, JDK `HttpClient`, Apache, OkHttp, OpenFeign without `feign-micrometer`: no `traceparent` header, the called service starts a new trace | AUTO where a Boot builder can be injected; report otherwise (Feign: add `feign-micrometer`) |
 | KAFKA_OBSERVATION_DISABLED / RABBIT_OBSERVATION_DISABLED | high | `KafkaTemplate` / `@KafkaListener`, `@RabbitListener` without observation (off by default): the trace stops at the topic or queue | AUTO: `spring.kafka.template/listener.observation-enabled`, `spring.rabbitmq.listener.*.observation-enabled` |
@@ -88,6 +88,30 @@ More entrypoints, each checked against its framework's documentation:
   `route().GET("/x", h::get)`, `path("/p", b -> …)` and `RouterFunctions.route(RequestPredicates.GET("/x"), h::get)` are
   HTTP entrypoints with their paths, observed like controllers (Boot reference, Metrics › Spring WebFlux: "all requests
   handled by Spring WebFlux controllers and functional handlers").
+- **Redis pub/sub** (Spring Data Redis, `redis X.method`): a `MessageListener.onMessage` implementation, and the
+  method a `new MessageListenerAdapter(delegate, "name")` calls (the name a literal or constant; `handleMessage` when
+  none is given, or `setDefaultListenerMethod("…")`; overloads with the message and optionally the channel). Spring
+  Data Redis observes Redis commands through Lettuce, not the listener container (reference, Observability), so each
+  gets an ObservedContext. An adapter whose method name is not a constant, or whose delegate has no such source method,
+  is reported where it is created. RedisMessageListenerContainer logs a listener's exception itself (WARN, when no
+  ErrorHandler is set).
+- **Spring Integration** `@ServiceActivator` methods (`@ServiceActivator <inputChannel>`): Spring Integration observes
+  a handler only when its name matches an observation pattern (`@EnableIntegrationManagement(observationPatterns = …)`
+  or `spring.integration.management.observation-patterns`, which Boot passes to it); by default none is instrumented
+  (Spring Integration reference, Metrics and Management › Micrometer Observation). The handler's name is
+  `<bean>.<method>.serviceActivator[.handler]`, matched like `PatternMatchUtils.smartMatch` (first match decides, `!`
+  negates, `*` wildcard): matched methods get MDC and lines, the rest an ObservedContext. A `@Bean @ServiceActivator`
+  method defines a handler bean and is no entrypoint. `@Transformer`, `@Filter`, `@Splitter` and `IntegrationFlow`
+  lambdas are not seen yet.
+- **gRPC services** (`grpc X.method`): the public `void` methods of a `BindableService` (the generated `*ImplBase`)
+  whose last parameter is the `StreamObserver` (unary and server streaming). Spring gRPC observes every call
+  (Boot's `GrpcServerObservationAutoConfiguration` registers `ObservationGrpcServerInterceptor` globally;
+  `spring.grpc.server.observation.enabled`, default true, Boot properties appendix), so they get MDC only and no
+  outcome line: the call ends with `onCompleted`, which may come after the method returns, and its status and the
+  server observation are the outcome (like an HTTP access log). With the observation off or without Spring gRPC, a
+  method that calls `responseObserver.onCompleted()` in its own body gets an ObservedContext; one that hands the
+  observer to a lambda, an inner class or another call is reported (a wrapper would end before the call does).
+  Client and bidirectional streaming methods return the request observer and are not seen.
 
 ### `@Observed` and `@NewSpan`
 

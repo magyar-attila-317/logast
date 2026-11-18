@@ -4,6 +4,7 @@ import dev.logast.model.Annotations;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.Entrypoint.Kind;
 import dev.logast.model.MethodInfo;
+import dev.logast.parse.Pos;
 import org.openrewrite.Cursor;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.Expression;
@@ -143,6 +144,71 @@ final class FunctionalEntrypoints {
             MethodInfo handler = returned(index, e.getValue());
             if (handler != null) {
                 out.putIfAbsent(handler.key(), new Entrypoint(handler, Kind.STREAM, "stream " + e.getKey() + "-in-0", true));
+            }
+        }
+    }
+
+    /**
+     * Delegates of Spring Data Redis {@code new MessageListenerAdapter(delegate[, "method"])}: the adapter calls the
+     * delegate's method of that name (default {@code handleMessage}, or {@code setDefaultListenerMethod("..")}) with the
+     * converted message and optionally the channel (Spring Data Redis reference, Redis Messaging › Message Listener
+     * Adapters). A delegate that is a MessageListener itself is called through onMessage (found by type). A name that is
+     * not a constant, a delegate that is not a source class, or no method of that name is reported.
+     */
+    static void redisAdapters(CodeIndex index, Map<String, Entrypoint> out, List<EntrypointFinder.Unresolved> unresolved) {
+        for (MethodInfo m : index.methods()) {
+            if (!m.hasBody()) {
+                continue;
+            }
+            List<J.NewClass> adapters = new ArrayList<>();
+            List<J.MethodInvocation> setters = new ArrayList<>();
+            new JavaIsoVisitor<Integer>() {
+                @Override
+                public J.NewClass visitNewClass(J.NewClass nc, Integer p) {
+                    if (nc.getType() instanceof JavaType.FullyQualified t && Types.fqn(t).equals(EntrypointFinder.REDIS_ADAPTER)) {
+                        adapters.add(nc);
+                    }
+                    return super.visitNewClass(nc, p);
+                }
+
+                @Override
+                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                    if (mi.getSimpleName().equals("setDefaultListenerMethod") && mi.getArguments().size() == 1) {
+                        setters.add(mi);
+                    }
+                    return super.visitMethodInvocation(mi, p);
+                }
+            }.visit(m.decl().getBody(), 0, new Cursor(new Cursor(null, Cursor.ROOT_VALUE), m.decl()));
+            for (J.NewClass nc : adapters) {
+                List<Expression> args = nc.getArguments().stream().filter(a -> !(a instanceof J.Empty)).toList();
+                int line = Pos.line(nc);
+                if (args.isEmpty() || !(args.getFirst().getType() instanceof JavaType.FullyQualified delegate)) {
+                    unresolved.add(new EntrypointFinder.Unresolved(m, line, "MessageListenerAdapter in " + m.label(),
+                            "the delegate is set later (setDelegate)"));
+                    continue;
+                }
+                if (TypeUtils.isAssignableTo("org.springframework.data.redis.connection.MessageListener", delegate)) {
+                    continue;   // called through its own onMessage
+                }
+                String name = args.size() > 1 ? Constants.concatenated(index, args.get(1))
+                        : setters.isEmpty() ? "handleMessage"
+                        : setters.size() == 1 ? Constants.concatenated(index, setters.getFirst().getArguments().getFirst()) : null;
+                if (name == null) {
+                    unresolved.add(new EntrypointFinder.Unresolved(m, line, "MessageListenerAdapter for " + delegate.getClassName(),
+                            "the listener method name is not a constant"));
+                    continue;
+                }
+                List<MethodInfo> handlers = index.methods().stream()
+                        .filter(h -> h.hasBody() && h.name().equals(name) && Types.fqn(delegate).equals(h.owner().fqn())
+                                && !h.type().getParameterTypes().isEmpty() && h.type().getParameterTypes().size() <= 2)
+                        .toList();
+                if (handlers.isEmpty()) {
+                    unresolved.add(new EntrypointFinder.Unresolved(m, line, "MessageListenerAdapter for " + delegate.getClassName(),
+                            "no source method " + name + "(message[, channel]) in " + delegate.getClassName()));
+                }
+                for (MethodInfo h : handlers) {
+                    out.putIfAbsent(h.key(), new Entrypoint(h, Kind.REDIS, "redis " + h.label(), false));
+                }
             }
         }
     }

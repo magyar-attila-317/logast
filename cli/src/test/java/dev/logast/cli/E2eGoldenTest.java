@@ -3362,6 +3362,463 @@ class E2eGoldenTest {
                 .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|CouponQueueListener|CouponImportTasklet|OrderLineProcessor)");
     }
 
+    /**
+     * Stand-ins for Spring Data Redis pub/sub, Spring Integration's {@code @ServiceActivator}, grpc-java (with a generated
+     * service base class) and Spring gRPC, none of which is on the e2e classpath (#15).
+     */
+    private static final Map<String, String> RELAY_LIBRARY_STUBS = Map.ofEntries(
+            Map.entry("org/springframework/data/redis/connection/Message.java", """
+                    package org.springframework.data.redis.connection;
+
+                    public interface Message {
+                        byte[] getBody();
+
+                        byte[] getChannel();
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/connection/MessageListener.java", """
+                    package org.springframework.data.redis.connection;
+
+                    public interface MessageListener {
+                        void onMessage(Message message, byte[] pattern);
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/listener/Topic.java", """
+                    package org.springframework.data.redis.listener;
+
+                    public interface Topic {
+                        String getTopic();
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/listener/ChannelTopic.java", """
+                    package org.springframework.data.redis.listener;
+
+                    public class ChannelTopic implements Topic {
+                        private final String name;
+
+                        public ChannelTopic(String name) {
+                            this.name = name;
+                        }
+
+                        public String getTopic() {
+                            return name;
+                        }
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/listener/RedisMessageListenerContainer.java", """
+                    package org.springframework.data.redis.listener;
+
+                    import org.springframework.data.redis.connection.MessageListener;
+
+                    public class RedisMessageListenerContainer {
+                        public void addMessageListener(MessageListener listener, Topic topic) {
+                        }
+                    }
+                    """),
+            Map.entry("org/springframework/data/redis/listener/adapter/MessageListenerAdapter.java", """
+                    package org.springframework.data.redis.listener.adapter;
+
+                    import org.springframework.data.redis.connection.Message;
+                    import org.springframework.data.redis.connection.MessageListener;
+
+                    public class MessageListenerAdapter implements MessageListener {
+                        public MessageListenerAdapter() {
+                        }
+
+                        public MessageListenerAdapter(Object delegate) {
+                        }
+
+                        public MessageListenerAdapter(Object delegate, String defaultListenerMethod) {
+                        }
+
+                        public void setDefaultListenerMethod(String defaultListenerMethod) {
+                        }
+
+                        public void onMessage(Message message, byte[] pattern) {
+                        }
+                    }
+                    """),
+            Map.entry("org/springframework/integration/annotation/ServiceActivator.java", """
+                    package org.springframework.integration.annotation;
+
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface ServiceActivator {
+                        String inputChannel() default "";
+
+                        String outputChannel() default "";
+                    }
+                    """),
+            Map.entry("io/grpc/ServerServiceDefinition.java", """
+                    package io.grpc;
+
+                    public final class ServerServiceDefinition {
+                    }
+                    """),
+            Map.entry("io/grpc/BindableService.java", """
+                    package io.grpc;
+
+                    public interface BindableService {
+                        ServerServiceDefinition bindService();
+                    }
+                    """),
+            Map.entry("io/grpc/stub/StreamObserver.java", """
+                    package io.grpc.stub;
+
+                    public interface StreamObserver<V> {
+                        void onNext(V value);
+
+                        void onError(Throwable t);
+
+                        void onCompleted();
+                    }
+                    """),
+            Map.entry("com/example/proto/CouponRequest.java", """
+                    package com.example.proto;
+
+                    public final class CouponRequest {
+                        public String getCouponId() {
+                            return "";
+                        }
+                    }
+                    """),
+            Map.entry("com/example/proto/CouponReply.java", """
+                    package com.example.proto;
+
+                    public final class CouponReply {
+                        public static CouponReply of(String status) {
+                            return new CouponReply();
+                        }
+                    }
+                    """),
+            Map.entry("com/example/proto/CouponServiceGrpc.java", """
+                    package com.example.proto;
+
+                    import io.grpc.stub.StreamObserver;
+
+                    /** What protoc-gen-grpc-java generates: the service base class implementations extend. */
+                    public final class CouponServiceGrpc {
+                        public abstract static class CouponServiceImplBase implements io.grpc.BindableService {
+                            public void lookup(CouponRequest request, StreamObserver<CouponReply> responseObserver) {
+                            }
+
+                            public void watch(CouponRequest request, StreamObserver<CouponReply> responseObserver) {
+                            }
+
+                            public StreamObserver<CouponRequest> upload(StreamObserver<CouponReply> responseObserver) {
+                                return null;
+                            }
+
+                            public final io.grpc.ServerServiceDefinition bindService() {
+                                return new io.grpc.ServerServiceDefinition();
+                            }
+                        }
+                    }
+                    """),
+            Map.entry("org/springframework/grpc/server/GrpcServerFactory.java", """
+                    package org.springframework.grpc.server;
+
+                    public interface GrpcServerFactory {
+                    }
+                    """));
+
+    /** #15: Redis pub/sub listeners and adapter delegates, Spring Integration service activators, a gRPC service. */
+    private static final IoAction RELAY_ENTRYPOINTS = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/relay");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("RelayLog.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class RelayLog {
+                    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RelayLog.class);
+
+                    void record(String what) {
+                        log.info("Relay recorded {}", what);
+                    }
+
+                    /** Only the Redis listener calls it: the container logs what it rethrows. */
+                    void forward(byte[] body) {
+                        try {
+                            record(new String(body, java.nio.charset.StandardCharsets.UTF_8));
+                        } catch (RuntimeException e) {
+                            log.error("Relay forward failed", e);
+                            throw e;
+                        }
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CouponChannelListener.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.data.redis.connection.Message;
+                import org.springframework.data.redis.connection.MessageListener;
+                import org.springframework.stereotype.Component;
+
+                /** A Redis pub/sub listener registered on the container. */
+                @Component
+                public class CouponChannelListener implements MessageListener {
+                    private final RelayLog relayLog;
+
+                    CouponChannelListener(RelayLog relayLog) {
+                        this.relayLog = relayLog;
+                    }
+
+                    @Override
+                    public void onMessage(Message message, byte[] pattern) {
+                        relayLog.forward(message.getBody());
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CouponRelay.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.stereotype.Component;
+
+                /** A plain bean Redis calls through MessageListenerAdapters. */
+                @Component
+                public class CouponRelay {
+                    private final RelayLog relayLog;
+
+                    CouponRelay(RelayLog relayLog) {
+                        this.relayLog = relayLog;
+                    }
+
+                    public void onCoupon(String couponId) {
+                        relayLog.record(couponId);
+                    }
+
+                    public void onRefund(String refundId, String channel) {
+                        relayLog.record(refundId);
+                    }
+
+                    public void handleMessage(String voucherId) {
+                        relayLog.record(voucherId);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("RedisRelaySetup.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.beans.factory.annotation.Value;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.data.redis.listener.ChannelTopic;
+                import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+                import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
+
+                @Configuration
+                public class RedisRelaySetup {
+                    static final String REFUND_METHOD = "onRefund";
+
+                    @Value("${relay.method:onCoupon}")
+                    private String relayMethod;
+
+                    @Bean
+                    public RedisMessageListenerContainer relayContainer(CouponChannelListener listener, CouponRelay relay) {
+                        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+                        container.addMessageListener(listener, new ChannelTopic("coupon-events"));
+                        container.addMessageListener(new MessageListenerAdapter(relay, "onCoupon"), new ChannelTopic("coupons"));
+                        container.addMessageListener(new MessageListenerAdapter(relay, REFUND_METHOD), new ChannelTopic("refunds"));
+                        container.addMessageListener(new MessageListenerAdapter(relay), new ChannelTopic("vouchers"));
+                        return container;
+                    }
+
+                    @Bean
+                    public MessageListenerAdapter configuredAdapter(CouponRelay relay) {
+                        return new MessageListenerAdapter(relay, relayMethod);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CouponActivator.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.integration.annotation.ServiceActivator;
+                import org.springframework.stereotype.Component;
+
+                /** A Spring Integration endpoint: each message on the input channel calls the method. */
+                @Component
+                public class CouponActivator {
+                    private final RelayLog relayLog;
+
+                    CouponActivator(RelayLog relayLog) {
+                        this.relayLog = relayLog;
+                    }
+
+                    @ServiceActivator(inputChannel = "couponRequests")
+                    public void redeem(String couponId) {
+                        relayLog.record(couponId);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("VoucherActivator.java"), """
+                package com.example.e2e.relay;
+
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.integration.annotation.ServiceActivator;
+                import org.springframework.messaging.MessageHandler;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class VoucherActivator {
+                    private final RelayLog relayLog;
+
+                    VoucherActivator(RelayLog relayLog) {
+                        this.relayLog = relayLog;
+                    }
+
+                    @ServiceActivator(inputChannel = "voucherRequests")
+                    public void issue(String voucherId) {
+                        relayLog.record(voucherId);
+                    }
+
+                    /** Defines a handler bean: the method is configuration, not a handler. */
+                    @Bean
+                    @ServiceActivator(inputChannel = "voucherAudits")
+                    public MessageHandler voucherAuditHandler() {
+                        return message -> relayLog.record("audit");
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CouponGrpcService.java"), """
+                package com.example.e2e.relay;
+
+                import com.example.proto.CouponReply;
+                import com.example.proto.CouponRequest;
+                import com.example.proto.CouponServiceGrpc;
+                import io.grpc.stub.StreamObserver;
+                import java.util.concurrent.Executor;
+                import org.springframework.stereotype.Service;
+
+                /** A gRPC service: one call answered before the method returns, one answered later on another thread. */
+                @Service
+                public class CouponGrpcService extends CouponServiceGrpc.CouponServiceImplBase {
+                    private final RelayLog relayLog;
+                    private final Executor relayExecutor;
+
+                    CouponGrpcService(RelayLog relayLog, Executor relayExecutor) {
+                        this.relayLog = relayLog;
+                        this.relayExecutor = relayExecutor;
+                    }
+
+                    @Override
+                    public void lookup(CouponRequest request, StreamObserver<CouponReply> responseObserver) {
+                        String couponId = request.getCouponId();
+                        relayLog.record(couponId);
+                        responseObserver.onNext(CouponReply.of("found"));
+                        responseObserver.onCompleted();
+                    }
+
+                    @Override
+                    public void watch(CouponRequest request, StreamObserver<CouponReply> responseObserver) {
+                        String couponId = request.getCouponId();
+                        relayLog.record(couponId);
+                        relayExecutor.execute(() -> {
+                            responseObserver.onNext(CouponReply.of("changed"));
+                            responseObserver.onCompleted();
+                        });
+                    }
+
+                    @Override
+                    public StreamObserver<CouponRequest> upload(StreamObserver<CouponReply> responseObserver) {
+                        return new StreamObserver<>() {
+                            @Override
+                            public void onNext(CouponRequest value) {
+                                relayLog.record(value.getCouponId());
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {
+                                responseObserver.onError(t);
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                responseObserver.onCompleted();
+                            }
+                        };
+                    }
+                }
+                """);
+    };
+
+    private static final String RELAY = "src/main/java/com/example/e2e/relay/";
+
+    /**
+     * #15: Redis pub/sub, Spring Integration and gRPC entrypoints. A Redis {@code MessageListener} and the methods a
+     * {@code MessageListenerAdapter} delegates to (a literal name, a constant, the default handleMessage) are not observed
+     * by Spring Data Redis: ObservedContext; an adapter whose method name comes from a property is reported. A
+     * {@code @ServiceActivator} method is observed only when Spring Integration's observation patterns match it (none by
+     * default): ObservedContext; a {@code @Bean @ServiceActivator} is not a handler. The unary and server-streaming
+     * methods of a gRPC service are observed by Spring gRPC: MDC and lines only (here none: the flow logs, and a protobuf
+     * request is no MDC value); with its observation switched off, the
+     * method that completes in its body is wrapped and the one that completes later on another thread is reported.
+     * Client streaming (returns the request observer) is not an entrypoint. Every file must equal
+     * e2e/expected-relay-entrypoints; tracing alone does its part.
+     */
+    @Test
+    void seesRedisListenersServiceActivatorsAndGrpcServices() throws IOException {
+        String classpath = libraryClasspath("relay-libraries", RELAY_LIBRARY_STUBS).toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, RELAY_ENTRYPOINTS);
+        assertThat(actual.get(".logast/traffic.yaml")).as("every new kind is an entrypoint")
+                .contains("\"redis CouponChannelListener.onMessage\"").contains("\"redis CouponRelay.onCoupon\"")
+                .contains("\"redis CouponRelay.onRefund\"").contains("\"redis CouponRelay.handleMessage\"")
+                .contains("\"@ServiceActivator couponRequests\"").contains("\"@ServiceActivator voucherRequests\"")
+                .doesNotContain("voucherAudits").doesNotContain("voucherAuditHandler")
+                .contains("\"grpc CouponGrpcService.lookup\"").contains("\"grpc CouponGrpcService.watch\"")
+                .doesNotContain("CouponGrpcService.upload");
+        assertThat(actual.get(RELAY + "CouponChannelListener.java")).as("Redis pub/sub is not observed")
+                .contains("ObservedContext.entrypoint(");
+        assertThat(actual.get(RELAY + "CouponRelay.java")).as("each adapter delegate, with its MDC")
+                .contains("ObservedContext.entrypoint(RelayMetrics.COUPON_RELAY_ON_COUPON)").contains(".mdc(\"couponId\", couponId)")
+                .contains("ObservedContext.entrypoint(RelayMetrics.COUPON_RELAY_ON_REFUND)")
+                .contains("ObservedContext.entrypoint(RelayMetrics.COUPON_RELAY_HANDLE_MESSAGE)");
+        assertThat(actual.get("FINDINGS.txt")).as("an adapter method from a property is reported")
+                .contains("MessageListenerAdapter for CouponRelay: the handler Redis calls is not known");
+        assertThat(actual.get(RELAY + "CouponActivator.java")).as("Spring Integration observes nothing by default")
+                .contains("ObservedContext.entrypoint(");
+        assertThat(actual.get(RELAY + "CouponGrpcService.java")).as("observed by Spring gRPC: no wrapper (its flow logs; the "
+                + "request carries no MDC key logast knows)").doesNotContain("ObservedContext");
+        assertThat(actual.get(RELAY + "RelayLog.java")).as("RedisMessageListenerContainer logs a listener's exception: the "
+                + "logged-and-rethrown line goes").doesNotContain("Relay forward failed");
+        String lifecycle = run(tmp.resolve("app"), "lifecycle", tmp.resolve("app").toString(), "--classpath-file", classpath);
+        assertThat(lifecycle.indexOf("grpc CouponGrpcService.watch")).as("gRPC: the call's status is its outcome, like HTTP:\n" + lifecycle)
+                .isGreaterThan(lifecycle.indexOf("http (")).isLessThan(lifecycle.indexOf("message ("));
+        golden(EXPECTED.resolveSibling("expected-relay-entrypoints"), actual);
+
+        // the tracing pack alone: the wrappers, no MDC scopes or lines
+        Map<String, String> tracing = migrate(tmp.resolve("tracing-only"), classpath, withPacks(RELAY_ENTRYPOINTS, "[tracing]", ""));
+        assertThat(tracing.get(RELAY + "CouponRelay.java")).contains("ObservedContext.entrypoint(\"coupon-relay.on-coupon\")")
+                .doesNotContain("MdcScope");
+        assertThat(tracing.get(RELAY + "CouponActivator.java")).contains("ObservedContext.entrypoint(\"coupon-activator.redeem\")");
+        assertThat(tracing.get(RELAY + "CouponGrpcService.java")).doesNotContain("ObservedContext").doesNotContain("MdcScope");
+
+        // Spring Integration observes couponActivator's handler by its pattern; Spring gRPC observation switched off
+        Map<String, String> switched = migrate(tmp.resolve("switched"), classpath, app -> {
+            RELAY_ENTRYPOINTS.run(app);
+            Path yml = app.resolve("src/main/resources/application.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("spring:\n", """
+                    spring:
+                      integration:
+                        management:
+                          observation-patterns: "!voucher*, couponActivator.*"
+                      grpc:
+                        server:
+                          observation:
+                            enabled: false
+                    """));
+        });
+        assertThat(switched.get(RELAY + "CouponActivator.java")).doesNotContain("ObservedContext");
+        assertThat(switched.get(RELAY + "VoucherActivator.java")).contains("ObservedContext.entrypoint(");
+        assertThat(switched.get(RELAY + "CouponGrpcService.java")).as("only the call that completes in its body is wrapped")
+                .containsOnlyOnce("ObservedContext.entrypoint(").contains("ObservedContext.entrypoint(RelayMetrics.COUPON_GRPC_SERVICE_LOOKUP)");
+        assertThat(switched.get("FINDINGS.txt")).contains("grpc CouponGrpcService.watch is not observed");
+    }
+
     /** #14: a WebFlux controller and reactive router functions next to the existing Mono service (messaging). */
     private static final IoAction REACTIVE_ENTRYPOINTS = app -> {
         Path dir = app.resolve("src/main/java/com/example/e2e/reactive");

@@ -34,6 +34,17 @@ final class EntrypointRules {
             }
             entrypoint(ep);
         }
+        for (var u : ctx.a.unresolvedHandlers) {
+            if (!ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED) || ctx.ignored(u.site().file(), u.line(), Rules.ENTRYPOINT_NOT_OBSERVED)) {
+                continue;
+            }
+            ctx.order(Rules.ENTRYPOINT_NOT_OBSERVED, u.site(), u.line(), "handler-unresolved")
+                    .title(u.what() + ": the handler Redis calls is not known (" + u.why() + "), so it is not traced or scoped")
+                    .suggestion("Name the delegate method with a constant (new MessageListenerAdapter(delegate, \"onCoupon\")), or "
+                            + "implement MessageListener in the listener class: logast then wraps the handler in an ObservedContext "
+                            + "with its MDC. RedisMessageListenerContainer opens no observation of its own.")
+                    .doneWhen("the delegate method is resolvable, or the line is marked // logast:ignore ENTRYPOINT_NOT_OBSERVED");
+        }
     }
 
     private void entrypoint(Entrypoint ep) {
@@ -51,6 +62,18 @@ final class EntrypointRules {
         boolean reactive = ctx.reactive(m);
         boolean notObserved = !observed && !reactive && ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED)
                 && !ctx.ignored(f, line, Rules.ENTRYPOINT_NOT_OBSERVED) && !alreadyObserved(m);
+        if (notObserved && ep.kind() == Entrypoint.Kind.GRPC && !completesInBody(m)) {
+            // a wrapper would stop its observation and log "completed" when the method returns, before onCompleted
+            notObserved = false;
+            ctx.order(Rules.ENTRYPOINT_NOT_OBSERVED, m, line, "entry-grpc")
+                    .title(ep.label() + " is not observed (Spring gRPC observation off or absent), and it answers through its "
+                            + "StreamObserver after the method returns")
+                    .suggestion("Register Spring gRPC's ObservationGrpcServerInterceptor (spring.grpc.server.observation.enabled: "
+                            + "true, the default) or io.micrometer.core.instrument.binder.grpc.ObservationGrpcServerInterceptor as a "
+                            + "server interceptor: it observes the call until it closes. Not wrapped automatically: an observation "
+                            + "around the method would end before onCompleted.")
+                    .doneWhen("the call is observed by an interceptor, or the line is marked // logast:ignore ENTRYPOINT_NOT_OBSERVED");
+        }
         List<DomainValues.Value> missing = ctx.enabled(Rules.MISSING_DOMAIN_MDC) && !reactive
                 && !ctx.ignored(f, line, Rules.MISSING_DOMAIN_MDC) && !ctx.legacyMdc(m)
                 ? ctx.domain.fromVars(params(m)).stream()
@@ -117,7 +140,8 @@ final class EntrypointRules {
             }
             if (ep.kind() == Entrypoint.Kind.KAFKA || ep.kind() == Entrypoint.Kind.JMS || ep.kind() == Entrypoint.Kind.RABBIT
                     || ep.kind() == Entrypoint.Kind.WEBSOCKET || ep.kind() == Entrypoint.Kind.HTTP || ep.kind() == Entrypoint.Kind.SQS
-                    || ep.kind() == Entrypoint.Kind.STREAM || ep.kind() == Entrypoint.Kind.ITEM) {
+                    || ep.kind() == Entrypoint.Kind.STREAM || ep.kind() == Entrypoint.Kind.ITEM || ep.kind() == Entrypoint.Kind.REDIS
+                    || ep.kind() == Entrypoint.Kind.INTEGRATION || ep.kind() == Entrypoint.Kind.GRPC) {
                 chain.add(".debugOnSuccess()"); // one per message/request: "completed" at DEBUG; failures stay ERROR
             }
             if (ep.kind() == Entrypoint.Kind.EVENT && !m.hasAnnotation("org.springframework.scheduling.annotation.Async")
@@ -358,6 +382,48 @@ final class EntrypointRules {
 
     private static boolean isNull(org.openrewrite.java.tree.Expression e) {
         return e instanceof J.Literal l && l.getValue() == null && "null".equals(l.getValueSource());
+    }
+
+    /**
+     * A gRPC method that ends its call itself: {@code responseObserver.onCompleted()} in its own body (not in a lambda or
+     * an inner class), and the observer is not handed to another call that could complete it later.
+     */
+    static boolean completesInBody(MethodInfo m) {
+        if (!(m.decl().getParameters().getLast() instanceof J.VariableDeclarations vd) || vd.getVariables().isEmpty()) {
+            return false;
+        }
+        String observer = vd.getVariables().getFirst().getSimpleName();
+        boolean[] completes = {false};
+        boolean[] escapes = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Lambda visitLambda(J.Lambda l, Integer p) {
+                if (l.printTrimmed().contains(observer)) {
+                    escapes[0] = true;
+                }
+                return l;
+            }
+
+            @Override
+            public J.NewClass visitNewClass(J.NewClass nc, Integer p) {
+                if (nc.printTrimmed().contains(observer)) {
+                    escapes[0] = true;
+                }
+                return nc;
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                if (mi.getSimpleName().equals("onCompleted") && mi.getSelect() instanceof J.Identifier id && id.getSimpleName().equals(observer)) {
+                    completes[0] = true;
+                }
+                if (mi.getArguments().stream().anyMatch(a -> a instanceof J.Identifier id && id.getSimpleName().equals(observer))) {
+                    escapes[0] = true;
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return completes[0] && !escapes[0];
     }
 
     private static Map<String, JavaType> params(MethodInfo m) {

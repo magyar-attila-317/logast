@@ -202,7 +202,8 @@ final class LogCallRules {
                         }
                     }
                     // Spring Batch (AbstractStep) and Spring Cloud AWS (the listener sink) log what a step or message throws
-                    case SCHEDULED, KAFKA, JMS, RABBIT, BATCH, MAIN, STEP, ITEM, SQS -> {
+                    // RedisMessageListenerContainer logs a listener exception at WARN when no ErrorHandler is set
+                    case SCHEDULED, KAFKA, JMS, RABBIT, BATCH, MAIN, STEP, ITEM, SQS, REDIS -> {
                     }
                     default -> {
                         return ep.label() + " (" + ep.kind().name().toLowerCase(java.util.Locale.ROOT) + ": not known to log it)";

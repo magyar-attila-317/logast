@@ -1,0 +1,195 @@
+diff --git a/src/main/java/com/example/e2e/relay/CouponRelay.java b/src/main/java/com/example/e2e/relay/CouponRelay.java
+index 0ea8cf9..52d69be 100644
+--- a/src/main/java/com/example/e2e/relay/CouponRelay.java
++++ b/src/main/java/com/example/e2e/relay/CouponRelay.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.relay;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.stereotype.Component;
+ 
+ /** A plain bean Redis calls through MessageListenerAdapters. */
+@@ -12,14 +13,27 @@
+     }
+ 
+     public void onCoupon(String couponId) {
+-        relayLog.record(couponId);
++        ObservedContext.entrypoint("coupon-relay.on-coupon")
++                .mdc("couponId", couponId)
++                .debugOnSuccess()
++                .run(() -> {
++                    relayLog.record(couponId);
++                });
+     }
+ 
+     public void onRefund(String refundId, String channel) {
+-        relayLog.record(refundId);
++        ObservedContext.entrypoint("coupon-relay.on-refund")
++                .debugOnSuccess()
++                .run(() -> {
++                    relayLog.record(refundId);
++                });
+     }
+ 
+     public void handleMessage(String voucherId) {
+-        relayLog.record(voucherId);
++        ObservedContext.entrypoint("coupon-relay.handle-message")
++                .debugOnSuccess()
++                .run(() -> {
++                    relayLog.record(voucherId);
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/relay/VoucherActivator.java b/src/main/java/com/example/e2e/relay/VoucherActivator.java
+index a88b830..d618c81 100644
+--- a/src/main/java/com/example/e2e/relay/VoucherActivator.java
++++ b/src/main/java/com/example/e2e/relay/VoucherActivator.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.relay;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.context.annotation.Bean;
+ import org.springframework.integration.annotation.ServiceActivator;
+ import org.springframework.messaging.MessageHandler;
+@@ -15,7 +16,11 @@
+ 
+     @ServiceActivator(inputChannel = "voucherRequests")
+     public void issue(String voucherId) {
+-        relayLog.record(voucherId);
++        ObservedContext.entrypoint("voucher-activator.issue")
++                .debugOnSuccess()
++                .run(() -> {
++                    relayLog.record(voucherId);
++                });
+     }
+ 
+     /** Defines a handler bean: the method is configuration, not a handler. */
+diff --git a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
+index b09d628..8e05f57 100644
+--- a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
++++ b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.boot.context.event.ApplicationReadyEvent;
+ import org.springframework.context.event.EventListener;
+ import org.springframework.stereotype.Component;
+@@ -14,6 +15,10 @@
+ 
+     @EventListener(ApplicationReadyEvent.class)
+     public void onReady() {
+-        job.execute();
++        ObservedContext.entrypoint("settlement-job-executor.on-ready")
++                .failureLoggedByCaller()
++                .run(() -> {
++                    job.execute();
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/relay/CouponChannelListener.java b/src/main/java/com/example/e2e/relay/CouponChannelListener.java
+index 64941c8..87dfa48 100644
+--- a/src/main/java/com/example/e2e/relay/CouponChannelListener.java
++++ b/src/main/java/com/example/e2e/relay/CouponChannelListener.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.relay;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.data.redis.connection.Message;
+ import org.springframework.data.redis.connection.MessageListener;
+ import org.springframework.stereotype.Component;
+@@ -15,6 +16,10 @@
+ 
+     @Override
+     public void onMessage(Message message, byte[] pattern) {
+-        relayLog.forward(message.getBody());
++        ObservedContext.entrypoint("coupon-channel-listener.on-message")
++                .debugOnSuccess()
++                .run(() -> {
++                    relayLog.forward(message.getBody());
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/messaging/CouponMessages.java b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+index 4be0fa1..d5cf243 100644
+--- a/src/main/java/com/example/e2e/messaging/CouponMessages.java
++++ b/src/main/java/com/example/e2e/messaging/CouponMessages.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.messaging;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import java.util.List;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -15,7 +16,11 @@
+ 
+     @KafkaListener(topics = "coupon-batches", batch = "true")
+     public void onBatch(List<String> couponIds) {
+-        log.info("Coupon batch received [count={}]", couponIds.size());
++        ObservedContext.entrypoint("coupon-messages.on-batch")
++                .debugOnSuccess()
++                .run(() -> {
++                    log.info("Coupon batch received [count={}]", couponIds.size());
++                });
+     }
+ 
+     @RabbitListener(queues = "coupon-returns")
+diff --git a/src/main/java/com/example/e2e/relay/CouponActivator.java b/src/main/java/com/example/e2e/relay/CouponActivator.java
+index 2fe37c7..0ee0287 100644
+--- a/src/main/java/com/example/e2e/relay/CouponActivator.java
++++ b/src/main/java/com/example/e2e/relay/CouponActivator.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.relay;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.springframework.integration.annotation.ServiceActivator;
+ import org.springframework.stereotype.Component;
+ 
+@@ -14,6 +15,11 @@
+ 
+     @ServiceActivator(inputChannel = "couponRequests")
+     public void redeem(String couponId) {
+-        relayLog.record(couponId);
++        ObservedContext.entrypoint("coupon-activator.redeem")
++                .mdc("couponId", couponId)
++                .debugOnSuccess()
++                .run(() -> {
++                    relayLog.record(couponId);
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/BaseRunJob.java b/src/main/java/com/example/e2e/job/BaseRunJob.java
+index e247843..b0cbfe4 100644
+--- a/src/main/java/com/example/e2e/job/BaseRunJob.java
++++ b/src/main/java/com/example/e2e/job/BaseRunJob.java
+@@ -1,7 +1,7 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.platformlib.Week;
+-import org.slf4j.MDC;
+ 
+ /** A job base that puts its own context key (outside the vocabulary) into MDC around the abstract step. */
+ public abstract class BaseRunJob extends SettlementJob {
+@@ -9,7 +9,7 @@
+     protected void doExecute() {
+         String runCode = resolveRunCode();
+         Week week = Week.current();
+-        try (var mdc = MDC.putCloseable("runCode", runCode)) {
++        try (var mdc = MdcScope.of("runCode", runCode)) {
+             doRun(runCode, week);   // a value of a library type logast cannot see: the call must still resolve
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
+index e6d521d..52e0cde 100644
+--- a/src/main/java/com/example/e2e/edge/Audited.java
++++ b/src/main/java/com/example/e2e/edge/Audited.java
+@@ -5,7 +5,7 @@ 
+ 
+ /** A default method that logs: the template sits in the interface. */
+ public interface Audited {
+-    Logger AUDIT_LOG = LoggerFactory.getLogger(Audited.class);
++    Logger AUDIT_LOG = LoggerFactory.getLogger("audit");
+ 
+     default void audit(String couponId) {
+         AUDIT_LOG.info("Coupon audited [couponId={}]", couponId);
