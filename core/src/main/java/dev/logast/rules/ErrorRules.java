@@ -37,8 +37,9 @@ import java.util.*;
  * Handlers count from the sources and from {@code @ControllerAdvice} classes in libraries on the classpath (#52).
  * <p>A WebFlux-only service (#102: spring-webflux without spring-webmvc, which Spring Boot runs as a reactive web
  * application) gets the WebFlux names: spring.webflux.problemdetails.enabled, the reactive ResponseEntityExceptionHandler,
- * WebExchangeBindException for a failed {@code @Valid}; ERROR_RESPONSE_UNTRACED is a report there (ProblemTraceId is a
- * Spring MVC ResponseBodyAdvice). A service with both runs Spring MVC and keeps the MVC behaviour.
+ * WebExchangeBindException for a failed {@code @Valid}; ERROR_RESPONSE_UNTRACED switches on logging-support's
+ * ReactiveProblemTraceId there (#103: an ErrorResponse.Interceptor, WebFlux has no ResponseBodyAdvice). A service with
+ * both runs Spring MVC and keeps the MVC behaviour.
  */
 final class ErrorRules {
     private static final String EXCEPTION_HANDLER = "org.springframework.web.bind.annotation.ExceptionHandler";
@@ -137,10 +138,16 @@ final class ErrorRules {
         }
     }
 
-    /** Spring MVC and Micrometer Tracing are there: an error response can carry the trace id. */
+    /**
+     * Micrometer Tracing and Spring MVC (a ResponseBodyAdvice) or, on a WebFlux-only service, Spring Framework 6.2+'s
+     * ErrorResponse.Interceptor (registered through WebFluxConfigurer; Framework reference, WebFlux › Error Responses ›
+     * Render) are there: an error response can carry the trace id.
+     */
     static boolean traceableErrors(RuleContext ctx) {
-        return ctx.a.project.probe().hasClass("io.micrometer.tracing.Tracer")
-                && ctx.a.project.probe().hasClass("org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice")
+        var probe = ctx.a.project.probe();
+        return probe.hasClass("io.micrometer.tracing.Tracer")
+                && (webfluxOnly(ctx) ? probe.hasClass("org.springframework.web.ErrorResponse$Interceptor")
+                : probe.hasClass("org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice"))
                 && ctx.a.entrypoints.stream().anyMatch(ep -> ep.kind() == Entrypoint.Kind.HTTP);
     }
 
@@ -155,16 +162,16 @@ final class ErrorRules {
      * leads to its log lines; with {@code traceId} in every ProblemDetail (and Spring Boot's error map) it does.
      */
     private void untraced() {
-        if (webflux) {
-            untracedWebflux();
-            return;
-        }
         if (!untracedFixable(ctx)) {
             return;
         }
         OrderBuilder b = ctx.order(Rules.ERROR_RESPONSE_UNTRACED, "problem-trace-id").at(ServiceYaml.path(ctx), 1)
-                .title("Error responses do not carry the trace id: a client reporting an error has nothing that leads to its logs")
-                .suggestion("logging-support adds \"traceId\" to every ProblemDetail response and to Spring Boot's error map "
+                .title("Error responses do not carry the trace id" + (webflux ? " (Spring WebFlux)" : "")
+                        + ": a client reporting an error has nothing that leads to its logs")
+                .suggestion(webflux
+                        ? "logging-support adds \"traceId\" to every ProblemDetail response through an ErrorResponse.Interceptor "
+                        + "(logging-support.problem-trace-id.enabled: true); a traceId a handler already set is kept."
+                        : "logging-support adds \"traceId\" to every ProblemDetail response and to Spring Boot's error map "
                         + "(logging-support.problem-trace-id.enabled: true); a traceId a handler already set is kept.");
         // the errors pack on its own in vendor mode: no set-up copies the support classes, so this rule copies the one it
         // needs (in dependency mode the set-up adds the starter for it, Rules.SUPPORT_SINGLE_CLASS)
@@ -175,31 +182,37 @@ final class ErrorRules {
             return;
         }
         if (!supportComing) {
-            Edit copy = SetupRules.vendorOne(ctx, Rules.SUPPORT_SINGLE_CLASS.get(Rules.ERROR_RESPONSE_UNTRACED));
+            Edit copy = SetupRules.vendorOne(ctx, webflux ? SetupRules.VENDORED_ERRORS_REACTIVE.getFirst()
+                    : Rules.SUPPORT_SINGLE_CLASS.get(Rules.ERROR_RESPONSE_UNTRACED));
             if (copy != null) {
                 b.edit(copy);
             }
         }
         ServiceYaml.merge(ctx, b, "logging-support:\n  problem-trace-id:\n    enabled: true\n");
+        if (webflux) {
+            reactorContext(b);
+        }
         ctx.dependOnStarter(b);
     }
 
     /**
-     * ERROR_RESPONSE_UNTRACED on a WebFlux-only service: a report. logging-support's ProblemTraceId is a Spring MVC
-     * ResponseBodyAdvice, conditional on a servlet web application: switching its property on would do nothing.
+     * WebFlux keeps the current observation in the Reactor context (HttpWebHandlerAdapter): the interceptor sees its trace
+     * only when Reactor restores ThreadLocals in its operators, spring.reactor.context-propagation: auto (Boot reference,
+     * Observability › Context Propagation). Set here too, so the errors pack works on its own; a value set on purpose stays.
      */
-    private void untracedWebflux() {
-        if (!ctx.a.project.probe().hasClass("io.micrometer.tracing.Tracer")) {
+    private void reactorContext(OrderBuilder b) {
+        String value = ctx.a.springProperties.get(ReactiveRules.PROPERTY);
+        if (value != null && value.strip().equalsIgnoreCase("auto")) {
             return;
         }
-        ctx.order(Rules.ERROR_RESPONSE_UNTRACED, "problem-trace-id-webflux").at(ServiceYaml.path(ctx), 1)
-                .title("Error responses do not carry the trace id (Spring WebFlux): a client reporting an error has nothing "
-                        + "that leads to its logs")
-                .suggestion("Not applied: logging-support's trace id in ProblemDetail responses works with Spring MVC only. Add "
-                        + "\"traceId\" to the ProblemDetail responses yourself (ProblemDetail.setProperty in the @ExceptionHandler "
-                        + "methods, or for all of them in an ErrorResponse interceptor of the WebFlux config).")
-                .basis("Spring WebFlux without Spring MVC, with Micrometer Tracing")
-                .doneWhen("error responses carry the trace id (then suppress this finding)");
+        if (value == null && ReactiveRules.REACTOR_AUTO_CONFIGURATION.stream().anyMatch(ctx.a.project.probe()::hasClass)) {
+            ServiceYaml.merge(ctx, b, "spring:\n  reactor:\n    context-propagation: auto\n");
+            b.suggestion(b.suggestion + " Sets " + ReactiveRules.PROPERTY + ": auto too: the trace id lives in the Reactor "
+                    + "context, and Reactor then restores it in every operator.");
+            return;
+        }
+        b.suggestion(b.suggestion + " The trace id lives in the Reactor context: it reaches the error response only with "
+                + ReactiveRules.PROPERTY + ": auto (or Hooks.enableAutomaticContextPropagation() at startup).");
     }
 
     /** {@code @ExceptionHandler({A.class, B.class})}, else the Throwable parameters. */
@@ -829,8 +842,24 @@ final class ErrorRules {
                     if (mi.getSimpleName().equals("orElseThrow") && mi.getArguments().size() == 1) {
                         thrown(supplied(mi), mi);
                     }
+                    // Mono.error(new X(id)) / Flux.error(() -> new X(id)): the error signal reaches the handlers like a throw (#103)
+                    if (mi.getSimpleName().equals("error") && mi.getArguments().size() == 1 && reactive(mi)) {
+                        Expression arg = mi.getArguments().getFirst();
+                        if (arg instanceof J.Lambda l && l.getBody() instanceof Expression body) {
+                            arg = body;
+                        }
+                        signalled(arg.getType(), mi);
+                    }
                     Downstream family = downstream(mi);
-                    if (family != null && !caughtLocally(getCursor(), family::catches)) {
+                    boolean signalled = false;
+                    if (family == null && webClientResponse(mi) && !laterInChain(getCursor(), BLOCK)) {
+                        // retrieve().bodyToMono(X.class) returned to WebFlux: the request fails in the pipeline, and the
+                        // WebClientResponseException reaches the handlers (#103; blocked on, block() counts it). An
+                        // onErrorResume / onErrorMap / onErrorReturn on the chain handles it there; a try catches nothing.
+                        family = laterInChain(getCursor(), ON_ERROR) ? null : Downstream.WEBCLIENT;
+                        signalled = true;
+                    }
+                    if (family != null && (signalled || !caughtLocally(getCursor(), family::catches))) {
                         downstreamSites.computeIfAbsent(family, k -> new ArrayList<>())
                                 .add(new String[]{m.file().relPath(), String.valueOf(Pos.line(mi)), m.label(), call(mi)});
                     }
@@ -839,8 +868,15 @@ final class ErrorRules {
 
                 private void thrown(JavaType type, J at) {
                     if (TypeUtils.asFullyQualified(type) instanceof JavaType.FullyQualified x
-                            && ctx.a.index.clazz(x.getFullyQualifiedName()) != null
                             && !caughtLocally(getCursor(), caught -> TypeUtils.isAssignableTo(caught, x))) {
+                        signalled(x, at);
+                    }
+                }
+
+                /** An error signal is not thrown: a try around it catches nothing. */
+                private void signalled(JavaType type, J at) {
+                    if (TypeUtils.asFullyQualified(type) instanceof JavaType.FullyQualified x
+                            && ctx.a.index.clazz(x.getFullyQualifiedName()) != null) {
                         types.put(x.getFullyQualifiedName(), x);
                         throwsByType.computeIfAbsent(x.getFullyQualifiedName(), k -> new ArrayList<>())
                                 .add(new String[]{m.file().relPath(), String.valueOf(Pos.line(at))});
@@ -950,6 +986,38 @@ final class ErrorRules {
             }
         }
         return null;
+    }
+
+    /** Mono.error / Flux.error. */
+    private static boolean reactive(J.MethodInvocation mi) {
+        JavaType.Method t = mi.getMethodType();
+        return t != null && t.getDeclaringType() != null && (t.getDeclaringType().getFullyQualifiedName().equals("reactor.core.publisher.Mono")
+                || t.getDeclaringType().getFullyQualifiedName().equals("reactor.core.publisher.Flux"));
+    }
+
+    /** WebClient.ResponseSpec's terminals: the publisher that runs the request (bodyToMono, bodyToFlux, toEntity, …). */
+    private static final Set<String> RESPONSE_SPEC = Set.of("bodyToMono", "bodyToFlux", "toEntity", "toEntityList", "toEntityFlux",
+            "toBodilessEntity");
+
+    private static boolean webClientResponse(J.MethodInvocation mi) {
+        JavaType.Method t = mi.getMethodType();
+        return t != null && t.getDeclaringType() != null && RESPONSE_SPEC.contains(t.getName())
+                && t.getDeclaringType().getFullyQualifiedName().equals("org.springframework.web.reactive.function.client.WebClient$ResponseSpec");
+    }
+
+    private static final Set<String> ON_ERROR = Set.of("onErrorResume", "onErrorMap", "onErrorReturn", "onErrorComplete");
+
+    /** One of these calls further along the same call chain (a block(): that call is counted already). */
+    private static boolean laterInChain(Cursor c, Set<String> names) {
+        Object current = c.getValue();
+        for (Cursor p = c.getParentTreeCursor(); p.getValue() instanceof J.MethodInvocation outer && outer.getSelect() == current;
+             p = p.getParentTreeCursor()) {
+            if (names.contains(outer.getSimpleName())) {
+                return true;
+            }
+            current = outer;
+        }
+        return false;
     }
 
     private static String call(J.MethodInvocation mi) {

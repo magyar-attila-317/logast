@@ -3,7 +3,7 @@
 Generated code calls a small Spring Boot starter instead of repeating plumbing in every service: `ObservedContext`
 (observed entrypoints), `MdcScope` (MDC that restores what it changed), `ContextExecutors` and a
 context-propagating `TaskDecorator` (MDC and trace across threads), `TraceContextEnv` (trace into launched
-processes), `AfterCommit`, `Outcomes` (counting), `ProblemTraceId`, MDC hygiene and ECS log defaults. One class only
+processes), `AfterCommit`, `Outcomes` (counting), `ProblemTraceId` (`ReactiveProblemTraceId` on WebFlux), MDC hygiene and ECS log defaults. One class only
 your own code calls: `BusinessBaggage` (a business id as trace baggage, see
 [tracing](packs/tracing.md#business-ids-across-services-baggage)); in vendor mode it is copied once your code uses it.
 
@@ -23,7 +23,7 @@ Both give the same generated code. In vendor mode, copied classes from an older 
 (`support.coordinates`, `support.vendorPackage`) are in [configuration.md](configuration.md#support-the-runtime-helper-library).
 
 A pack may add the starter for one class without changing what another pack owns: the errors pack alone adds it for
-`ProblemTraceId` (in vendor mode it copies only that class), and does not switch on the log format.
+`ProblemTraceId` (in vendor mode it copies only that class, `ReactiveProblemTraceId` on a WebFlux-only service), and does not switch on the log format.
 
 ## Properties
 
@@ -33,7 +33,7 @@ A pack may add the starter for one class without changing what another pack owns
 | `logging-support.mdc-hygiene.enabled` | `MdcHygieneFilter` clears and reports MDC that leaks across requests (servlet apps) | logging |
 | `logging-support.context-propagation.enabled` | the `TaskDecorator` carries MDC and trace context into `@Async` and Spring executors | logging, tracing |
 | `logging-support.batch-trace.enabled` | batch apps continue the trace from `TRACEPARENT` / `TRACE_ID` | tracing |
-| `logging-support.problem-trace-id.enabled` | `"traceId"` in error responses | errors |
+| `logging-support.problem-trace-id.enabled` | `"traceId"` in error responses: `ProblemTraceId` (Spring MVC: ProblemDetail and Boot's error map), `ReactiveProblemTraceId` (WebFlux: ProblemDetail, through an `ErrorResponse.Interceptor`; needs `spring.reactor.context-propagation: auto`) | errors |
 
 Upgrading a service that took an earlier starter, where the first four were on by default: run `logast apply` with
 its packs (logging and tracing by default) and it writes the properties, or set them yourself. A value the service

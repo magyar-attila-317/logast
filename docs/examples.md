@@ -663,6 +663,45 @@ class ParcelErrors {
 </tr>
 </table>
 
+### WebFlux error responses carry the trace id
+
+A WebFlux-only service had no way to get the trace id into its `ProblemDetail` responses. The errors pack switches on
+logging-support's `ReactiveProblemTraceId` (in vendor mode it copies that class into `<app package>.logging`), an
+`ErrorResponse.Interceptor` that adds `"traceId"` to every RFC 9457 response WebFlux renders.
+*Scenario `expected-webflux-errors`, `application.yml`.*
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```yaml
+spring:
+  application:
+    name: e2e-shop
+```
+
+</td>
+<td>
+
+```yaml
+spring:
+  application:
+    name: e2e-shop
+logging-support:
+  problem-trace-id:
+    enabled: true
+```
+
+```json
+{ "status": 404, "title": "Not Found",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" }
+```
+
+</td>
+</tr>
+</table>
+
 ### A fire-and-forget future no longer loses its exception
 
 A `CompletableFuture` whose result nobody reads keeps its exception to itself; nothing is ever logged.

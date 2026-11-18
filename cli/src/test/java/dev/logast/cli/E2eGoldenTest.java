@@ -4019,7 +4019,7 @@ class E2eGoldenTest {
                 public record CrateAnswer(String state) {
                 }
                 """);
-        for (String name : List.of("CrateMissing", "CrateLate", "CrateBlocked")) {
+        for (String name : List.of("CrateMissing", "CrateLate", "CrateBlocked", "CrateSealed")) {
             Files.writeString(dir.resolve(name + ".java"), """
                     package com.example.e2e.crate;
 
@@ -4040,10 +4040,13 @@ class E2eGoldenTest {
                 import org.springframework.web.bind.annotation.PutMapping;
                 import org.springframework.web.bind.annotation.RequestBody;
                 import org.springframework.web.bind.annotation.RestController;
+                import org.springframework.web.reactive.function.client.WebClient;
                 import reactor.core.publisher.Mono;
 
                 @RestController
                 public class CrateController {
+                    private final WebClient labels = WebClient.create("http://labels");
+
                     @PostMapping("/crates")
                     public Mono<String> register(@Valid @RequestBody CrateRequest request) {
                         return Mono.just(request.label());
@@ -4057,6 +4060,22 @@ class E2eGoldenTest {
                     @GetMapping("/crates/{crateCode}")
                     public Mono<String> show(@PathVariable String crateCode) {
                         return crateCode.isBlank() ? Mono.error(new CrateMissing("no crate code")) : Mono.just(crateCode);
+                    }
+
+                    @PostMapping("/crates/{crateCode}/seal")
+                    public Mono<String> seal(@PathVariable String crateCode) {
+                        return Mono.error(() -> new CrateSealed(crateCode));
+                    }
+
+                    @GetMapping("/crates/{crateCode}/label")
+                    public Mono<String> label(@PathVariable String crateCode) {
+                        return labels.get().uri("/labels/{code}", crateCode).retrieve().bodyToMono(String.class);
+                    }
+
+                    @GetMapping("/crates/{crateCode}/fallback-label")
+                    public Mono<String> fallbackLabel(@PathVariable String crateCode) {
+                        return labels.get().uri("/labels/{code}", crateCode).retrieve().bodyToMono(String.class)
+                                .onErrorResume(e -> Mono.just("unlabelled"));
                     }
                 }
                 """);
@@ -4127,14 +4146,19 @@ class E2eGoldenTest {
         assertWebFluxErrorFindings(findings);
         assertThat(actual.get("src/main/java/com/example/e2e/crate/CrateErrors.java")).as("the catch-all logs the exception")
                 .contains("log.error(\"Request failed unexpectedly\", e);");
-        assertThat(actual.keySet()).as("no ProblemTraceId copied: it is a Spring MVC advice")
-                .noneMatch(k -> k.endsWith("/ProblemTraceId.java"));
-        assertThat(actual.get("src/main/resources/application.yml")).doesNotContain("problem-trace-id");
+        Path support = tmp.resolve("app/src/main/java/com/example/e2e/logging");
+        assertThat(support.resolve("ReactiveProblemTraceId.java")).as("WebFlux's ReactiveProblemTraceId copied (#103)").exists();
+        assertThat(support.resolve("ProblemTraceId.java")).as("not the Spring MVC advice").doesNotExist();
+        assertThat(actual.get("src/main/resources/application.yml")).contains("problem-trace-id:\n    enabled: true");
         golden(EXPECTED.resolveSibling("expected-webflux-errors"), actual);
 
-        // the errors pack alone: the same findings, a compiling and settled result
+        // the errors pack alone: the same findings, a compiling and settled result; the trace id class and both properties
         Map<String, String> alone = migrate(tmp.resolve("errors-only"), webflux, withPacks(WEBFLUX_ERRORS, "[errors]", ""));
         assertWebFluxErrorFindings(alone.get("FINDINGS.txt"));
+        Path aloneSupport = tmp.resolve("errors-only/src/main/java/com/example/e2e/logging");
+        assertThat(aloneSupport.resolve("ReactiveProblemTraceId.java")).exists();
+        assertThat(aloneSupport.resolve("ProblemTraceId.java")).doesNotExist();
+        assertThat(alone.get("src/main/resources/application.yml")).contains("problem-trace-id:\n    enabled: true");
 
         // what settles each finding on WebFlux: the property, WebFlux's ResponseEntityExceptionHandler, a handler for
         // WebExchangeBindException
@@ -4229,8 +4253,13 @@ class E2eGoldenTest {
                 .contains("Handler for CrateLate returns CrateAnswer without @ResponseStatus")
                 .doesNotContain("Handler for CrateMissing").doesNotContain("returns Mono")
                 .as("the status set on the reactive response").doesNotContain("Handler for CrateBlocked")
-                .as("no trace id in error responses: a report")
-                .contains("Error responses do not carry the trace id (Spring WebFlux)");
+                .as("an exception signalled with Mono.error on an HTTP path is unmapped (#103)")
+                .contains("CrateSealed is thrown on HTTP paths")
+                .as("a non-blocking WebClient call fails into the handlers; one with onErrorResume does not (#103)")
+                .contains("Failures of downstream calls (WebClient, 1× on HTTP paths, e.g. WebClient.ResponseSpec.bodyToMono in "
+                        + "CrateController.label")
+                .as("the trace id in error responses: switched on, not a report (#103)")
+                .doesNotContain("Error responses do not carry the trace id");
     }
 
     /**

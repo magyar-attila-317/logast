@@ -232,6 +232,8 @@ public final class SetupRules {
     static final List<String> VENDORED_METRICS = List.of("Outcomes");
     /** Only copied for Spring MVC with Micrometer Tracing, when the errors pack's ERROR_RESPONSE_UNTRACED is on. */
     static final List<String> VENDORED_ERRORS = List.of("ProblemTraceId");   // component scan finds it; no configuration
+    /** Its WebFlux counterpart, copied instead on a WebFlux-only service (#103). */
+    static final List<String> VENDORED_ERRORS_REACTIVE = List.of("ReactiveProblemTraceId");
     /**
      * Only copied when the service's own code uses BusinessBaggage (#16): logast never generates that call, so the
      * helper arrives the moment someone writes it; its Tracer wiring only with Micrometer Tracing on the classpath.
@@ -257,7 +259,7 @@ public final class SetupRules {
             out.addAll(VENDORED_METRICS);
         }
         if (ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED) && ErrorRules.traceableErrors(ctx)) {
-            out.addAll(VENDORED_ERRORS);
+            out.addAll(ErrorRules.webfluxOnly(ctx) ? VENDORED_ERRORS_REACTIVE : VENDORED_ERRORS);
         }
         if (usesBusinessBaggage()) {
             out.add(VENDORED_BAGGAGE.get(0));
@@ -342,6 +344,7 @@ public final class SetupRules {
         classes.addAll(VENDORED_TX);
         classes.addAll(VENDORED_METRICS);
         classes.addAll(VENDORED_ERRORS);
+        classes.addAll(VENDORED_ERRORS_REACTIVE);
         classes.addAll(VENDORED_BAGGAGE);
         OrderBuilder b = null;
         List<String> changed = new ArrayList<>();

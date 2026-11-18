@@ -32,7 +32,7 @@ import java.util.*;
 final class ReactiveRules {
     static final String PROPERTY = "spring.reactor.context-propagation";
     /** Boot 4 (spring-boot-reactor) and Boot 3.2+ (spring-boot-autoconfigure): the property is read. */
-    private static final List<String> REACTOR_AUTO_CONFIGURATION = List.of(
+    static final List<String> REACTOR_AUTO_CONFIGURATION = List.of(
             "org.springframework.boot.reactor.autoconfigure.ReactorAutoConfiguration",
             "org.springframework.boot.autoconfigure.reactor.ReactorAutoConfiguration");
     private static final String CONTEXT_REGISTRY = "io.micrometer.context.ContextRegistry";

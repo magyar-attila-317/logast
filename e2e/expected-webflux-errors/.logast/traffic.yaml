@@ -9,6 +9,8 @@ entrypoints:
   "GET /coupons":     # http, CouponController.open
   "GET /coupons/{couponId}/details":     # http, CouponDetailsController.details
   "GET /crates/{crateCode}":     # http, CrateController.show
+  "GET /crates/{crateCode}/fallback-label":     # http, CrateController.fallbackLabel
+  "GET /crates/{crateCode}/label":     # http, CrateController.label
   "GET /quotes/{productId}":     # http, QuoteController.quote
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
   "POST /admin/coupons/{couponId}/revoke":     # http, CouponController.revoke
@@ -17,6 +19,7 @@ entrypoints:
   "POST /coupons/{couponId}/publish":     # http, CouponController.publish
   "POST /coupons/{couponId}/use":     # http, CouponController.use
   "POST /crates":     # http, CrateController.register
+  "POST /crates/{crateCode}/seal":     # http, CrateController.seal
   "POST /orders":     # http, CouponController.place
   "PUT /crates/{crateCode}":     # http, CrateController.relabel
   # scheduled
