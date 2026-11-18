@@ -28,6 +28,12 @@ on real services; the background is in issue #7.
   keeping them, and say in the commit why the expected output changed. A change of shared code (rule output, ids,
   report text) can touch every scenario: then update and run all of them (`./gradlew build -Pe2e`).
 
+## Documentation
+- README.md is the stable overview (what logast is, install, quick start, workflow, packs in a line each, pointers).
+  Rule tables, per-rule details, property tables and anything that drifts (counts, timings, version lists) belong in
+  `docs/` (`docs/packs/<pack>.md`, `docs/rules.md`, `docs/starter.md`, `docs/configuration.md`): a new or changed rule
+  updates its pack page, not the README.
+
 ## Before pushing
 - `./gradlew build` (unit tests, a few seconds) and the targeted e2e scenarios must pass. CI builds every push from a
   clean checkout with the full e2e matrix (an ignored file once kept a snapshot out of git): check its result after
