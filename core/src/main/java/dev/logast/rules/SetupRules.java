@@ -321,10 +321,28 @@ public final class SetupRules {
         return !boot4OnClasspath && boot3OnClasspath ? BOOT3_EPP : BOOT4_EPP;
     }
 
+    /** #116: the EnvironmentPostProcessor (and spring.factories key) of the service's Spring Boot line. */
+    private String epp() {
+        return environmentPostProcessor(ctx.a.project.probe().hasClass(BOOT4_EPP), ctx.a.project.probe().hasClass(BOOT3_EPP));
+    }
+
+    /**
+     * A support class as copied into this service: {@link #vendoredSource} for the service's Spring Boot line. Every
+     * copy goes through here (the first copy, the refresh of an older copy, a class a newer logast added), or a refresh
+     * writes the other line back (#116).
+     */
+    private String vendoredFor(String cls, String pkg) {
+        String src = vendoredSource(cls, pkg);
+        String epp = epp();
+        if (cls.equals("LoggingDefaultsEnvironmentPostProcessor") && !epp.equals(BOOT4_EPP)) {
+            src = src.replace("import " + BOOT4_EPP + ";", "import " + epp + ";");
+        }
+        return src;
+    }
+
     private void vendor(BuildScripts scripts) {
         String pkg = ctx.a.supportPackage;
-        // #116: the interface (and spring.factories key) of the service's Spring Boot line: Boot 4 moved it
-        String epp = environmentPostProcessor(ctx.a.project.probe().hasClass(BOOT4_EPP), ctx.a.project.probe().hasClass(BOOT3_EPP));
+        String epp = epp();
         Path javaRoot = ctx.a.index.classes().stream().map(c -> sourceRoot(c.file().absPath())).filter(Objects::nonNull)
                 .findFirst().orElse(root.resolve("src/main/java"));
         Path dir = javaRoot.resolve(pkg.replace('.', '/'));
@@ -348,11 +366,7 @@ public final class SetupRules {
                 b.suggestion(b.suggestion + " " + rel(target) + " already exists and was left as is.");
                 continue;
             }
-            String src = vendoredSource(cls, pkg);
-            if (cls.equals("LoggingDefaultsEnvironmentPostProcessor") && !epp.equals(BOOT4_EPP)) {
-                src = src.replace("import " + BOOT4_EPP + ";", "import " + epp + ";");   // #116: Spring Boot 3's package
-            }
-            b.edit(Edit.create(rel(target), src));
+            b.edit(Edit.create(rel(target), vendoredFor(cls, pkg)));
         }
         Path factories = resourcesDir(javaRoot.resolve("x.java")).resolve("META-INF/spring.factories");
         String entry = epp + "=\\\n  " + pkg + ".LoggingDefaultsEnvironmentPostProcessor\n";
@@ -405,7 +419,7 @@ public final class SetupRules {
             if (!Files.exists(target)) {
                 continue;
             }
-            String current = vendoredSource(cls, ctx.a.supportPackage);
+            String current = vendoredFor(cls, ctx.a.supportPackage);
             String existing = read(target);
             if (existing.strip().equals(current.strip())) {
                 continue;
@@ -425,7 +439,7 @@ public final class SetupRules {
             if (b == null) {
                 b = ctx.order(Rules.SETUP_SUPPORT_STARTER, "vendor-update|" + ctx.a.supportPackage).at(rel(target), 1);
             }
-            b.edit(Edit.create(rel(target), vendoredSource(cls, ctx.a.supportPackage)));
+            b.edit(Edit.create(rel(target), vendoredFor(cls, ctx.a.supportPackage)));
             changed.add(cls + " (new)");
         }
         if (b != null) {
@@ -467,7 +481,7 @@ public final class SetupRules {
         if (Files.exists(target)) {
             return null;
         }
-        return Edit.create(root.relativize(target).toString().replace('\\', '/'), vendoredSource(cls, ctx.a.supportPackage));
+        return Edit.create(root.relativize(target).toString().replace('\\', '/'), vendoredSource(cls, ctx.a.supportPackage));   // single classes (ProblemTraceId): no Boot-line variant
     }
 
     private static Path sourceRoot(Path javaFile) {
