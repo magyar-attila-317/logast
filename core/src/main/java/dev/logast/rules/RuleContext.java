@@ -237,6 +237,10 @@ public final class RuleContext {
     }
 
     public void dependOnStarter(OrderBuilder b) {
+        if (!Rules.SUPPORT_USERS.contains(b.rule)) {
+            // its packs would not bring the support set-up: selected alone, the fix would not compile (#87)
+            throw new IllegalStateException("rule " + b.rule + " uses the support classes but is not in Rules.SUPPORT_USERS");
+        }
         if (!a.supportStarterPresent || supportUpdateOrderId != null) {
             b.dependsOn(supportUpdateOrderId != null ? supportUpdateOrderId : supportOrderId);
         }

@@ -106,6 +106,22 @@ public final class Rules {
     public static final String AUDIT_MISSING = "AUDIT_MISSING";
     public static final String AUDIT_SECURITY_EVENTS = "AUDIT_SECURITY_EVENTS";
 
+    /**
+     * Rules whose AUTO fixes use logast's support classes ({@link RuleContext#dependOnStarter} checks the list).
+     * SETUP_SUPPORT_STARTER belongs to each of their packs.
+     */
+    static final Set<String> SUPPORT_USERS = Set.of(ENTRYPOINT_NOT_OBSERVED, MISSING_DOMAIN_MDC, ENTRYPOINT_SILENT,
+            ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED, REPEATED_LOG_VALUE, MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NESTED_KEY,
+            MDC_KEY_ALIAS, JOB_OUTCOME_MISSING, DB_OUTCOME_UNLOGGED, BUSINESS_EVENT_UNMEASURED, METRIC_OUTCOME_UNMEASURED,
+            JOB_LAUNCH_UNTRACED, ERROR_RESPONSE_UNTRACED);
+
+    /**
+     * The support class a rule's fix needs alone, for the rules whose fixes need one class and not the core set
+     * (ObservedContext, MdcScope, …). With only such rules selected, vendor mode copies just that class (the rule does,
+     * see ErrorRules) and dependency mode adds the starter only when the fix applies.
+     */
+    static final Map<String, String> SUPPORT_SINGLE_CLASS = Map.of(ERROR_RESPONSE_UNTRACED, "ProblemTraceId");
+
     /** Rule → packs it belongs to. A rule runs when any of its packs is selected (policy.packs / --pack). */
     private static final Map<String, Set<String>> PACKS = new HashMap<>();
 
@@ -141,10 +157,20 @@ public final class Rules {
         for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS, AUDIT_FAILURES_UNRECORDED, AUDIT_RECORD_INCOMPLETE, AUDIT_LOG_MIXED, DATA_CHANGES_UNAUDITED)) {
             PACKS.put(r, Set.of("audit"));
         }
-        PACKS.put(SETUP_SUPPORT_STARTER, Set.of("logging", "tracing", "metrics"));
+        // service name/version on logs, meters and spans: the packs that emit telemetry
         PACKS.put(SETUP_SERVICE_IDENTITY, Set.of("logging", "tracing", "metrics"));
         PACKS.put(METRIC_OUTCOME_UNMEASURED, Set.of("metrics"));
         PACKS.put(METRIC_CATALOG, Set.of("metrics"));
+        // the support set-up belongs to every pack whose fixes use it: a pack selected on its own brings it along (#87)
+        Set<String> supportPacks = new TreeSet<>();
+        SUPPORT_USERS.forEach(r -> supportPacks.addAll(PACKS.get(r)));
+        PACKS.put(SETUP_SUPPORT_STARTER, Set.copyOf(supportPacks));
+    }
+
+    /** A selected pack's fixes use the core support set (more than the single classes of SUPPORT_SINGLE_CLASS). */
+    static boolean coreSupportSelected(Policy policy) {
+        return SUPPORT_USERS.stream().filter(r -> !SUPPORT_SINGLE_CLASS.containsKey(r))
+                .anyMatch(r -> packsOf(r).stream().anyMatch(policy::packSelected));
     }
 
     /**

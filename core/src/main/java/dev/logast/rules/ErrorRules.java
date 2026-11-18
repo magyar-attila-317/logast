@@ -98,19 +98,26 @@ final class ErrorRules {
                 && ctx.a.entrypoints.stream().anyMatch(ep -> ep.kind() == Entrypoint.Kind.HTTP);
     }
 
+    /** ERROR_RESPONSE_UNTRACED is on and finds something: what makes the errors pack need the support starter (#87). */
+    static boolean untracedFixable(RuleContext ctx) {
+        return ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED) && traceableErrors(ctx)
+                && !"true".equalsIgnoreCase(ctx.a.springProperties.getOrDefault("logging-support.problem-trace-id.enabled", ""));
+    }
+
     /**
      * ERROR_RESPONSE_UNTRACED: error responses without the trace id. A client that reports an error has nothing that
      * leads to its log lines; with {@code traceId} in every ProblemDetail (and Spring Boot's error map) it does.
      */
     private void untraced() {
-        if (!traceableErrors(ctx) || "true".equalsIgnoreCase(ctx.a.springProperties.getOrDefault("logging-support.problem-trace-id.enabled", ""))) {
+        if (!untracedFixable(ctx)) {
             return;
         }
         OrderBuilder b = ctx.order(Rules.ERROR_RESPONSE_UNTRACED, "problem-trace-id").at(ServiceYaml.path(ctx), 1)
                 .title("Error responses do not carry the trace id: a client reporting an error has nothing that leads to its logs")
                 .suggestion("logging-support adds \"traceId\" to every ProblemDetail response and to Spring Boot's error map "
                         + "(logging-support.problem-trace-id.enabled: true); a traceId a handler already set is kept.");
-        // the errors pack on its own: no logging set-up brings the support classes, so this rule brings the one it needs
+        // the errors pack on its own in vendor mode: no set-up copies the support classes, so this rule copies the one it
+        // needs (in dependency mode the set-up adds the starter for it, Rules.SUPPORT_SINGLE_CLASS)
         boolean supportComing = ctx.a.supportStarterPresent || ctx.supportOrderId != null || ctx.supportUpdateOrderId != null;
         if (!supportComing && !ctx.policy.support().vendor()) {
             b.suggestion(b.suggestion + " Needs the logging-support starter (" + ctx.policy.support().coordinates()
@@ -118,7 +125,7 @@ final class ErrorRules {
             return;
         }
         if (!supportComing) {
-            Edit copy = SetupRules.vendorOne(ctx, "ProblemTraceId");
+            Edit copy = SetupRules.vendorOne(ctx, Rules.SUPPORT_SINGLE_CLASS.get(Rules.ERROR_RESPONSE_UNTRACED));
             if (copy != null) {
                 b.edit(copy);
             }

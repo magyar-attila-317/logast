@@ -76,14 +76,17 @@ public final class SetupRules {
         String rel = rel(buildFile);
 
         String support = ctx.policy.support().coordinates();
+        // only rules that need a single class selected (errors alone): vendor mode leaves the copy to them, the
+        // starter dependency comes only when such a fix applies
+        boolean core = Rules.coreSupportSelected(ctx.policy);
         if (ctx.policy.support().vendor()) {
-            if (!ctx.a.supportStarterPresent && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
+            if (!ctx.a.supportStarterPresent && ctx.enabled(Rules.SETUP_SUPPORT_STARTER) && core) {
                 vendor(scripts);
             } else if (ctx.a.supportStarterPresent && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
                 updateVendored();
             }
         } else if (!ctx.a.supportStarterPresent && !text.contains(ctx.policy.support().groupAndArtifact())
-                && ctx.enabled(Rules.SETUP_SUPPORT_STARTER)) {
+                && ctx.enabled(Rules.SETUP_SUPPORT_STARTER) && (core || ErrorRules.untracedFixable(ctx))) {
             OrderBuilder b = ctx.order(Rules.SETUP_SUPPORT_STARTER, "support|" + rel).at(rel, 1)
                     .title("Add the logging-support starter (" + support + ")")
                     .suggestion("Provides ObservedContext, MdcScope, ContextExecutors, MDC/trace propagation for @Async "
