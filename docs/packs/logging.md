@@ -30,6 +30,7 @@ can end either way, the finding's note says why.
 | MESSAGE_VAGUE | low | wording on the avoid-list (`logging.vagueMessages` plus the built-in list) | AUTO where it can be rephrased; report otherwise |
 | BUSINESS_EVENT_TIMESTAMP | low | the current time logged as a value (every log line has a timestamp) | AUTO: the value goes |
 | LOG_KEY_STYLE | low | `[k=v]` keys, and fluent `addKeyValue(..)` property keys, that differ from the vocabulary or `logging.keyStyle` | AUTO |
+| LOG_KEY_NESTING_CONFLICT | medium | a log field `x` next to a field `x.y` (vocabulary, MDC, `[k=v]`, `addKeyValue`): the search index maps `x` as an object (Elasticsearch expands dotted names; Boot's ECS format nests them), so lines with a plain `x` are rejected | report: give one of them another name |
 | PII_IN_LOG | high | a value whose name is on the `pii` list | AUTO |
 | MESSAGE_SUGGESTED | low | a line logast generated with placeholder wording (`// logast:wording`) | NEEDS TEXT: `messages.yaml` asks for better wording |
 | **What goes into a line** | | | |

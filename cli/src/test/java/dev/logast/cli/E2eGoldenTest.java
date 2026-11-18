@@ -100,6 +100,42 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #18: one line logs a plain [order=…], another the property order.id: the search index maps order as an object
+     * and rejects the first line (Elasticsearch expands dotted names; Boot's ECS format nests them). Reported, with
+     * both places. (keyStyle: keep: the keys as written; dotted is #112.) Every file must equal
+     * e2e/expected-key-nesting-conflict.
+     */
+    @Test
+    void aFieldNextToItsDottedSubFieldIsReported() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replace("keyStyle: camel", "keyStyle: keep"));
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/shipment"));
+            Files.writeString(dir.resolve("ShipmentLog.java"), """
+                    package com.example.e2e.shipment;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class ShipmentLog {
+                        private static final Logger log = LoggerFactory.getLogger(ShipmentLog.class);
+
+                        public void shipped(String order, String shipmentId) {
+                            log.info("Shipment sent [order={}]", order);
+                            log.atInfo().addKeyValue("order.id", shipmentId).log("Shipment confirmed");
+                        }
+                    }
+                    """);
+        });
+        assertThat(actual.get("FINDINGS.txt")).as("the plain order next to the property order.id")
+                .contains("REPORT-ONLY  LOG_KEY_NESTING_CONFLICT  src/main/java/com/example/e2e/shipment/ShipmentLog.java:12")
+                .contains("also fixes: LOG_KEY_NESTING_CONFLICT src/main/java/com/example/e2e/shipment/ShipmentLog.java:13");
+        golden(EXPECTED.resolveSibling("expected-key-nesting-conflict"), actual);
+    }
+
+    /**
      * #21: BUSINESS_EVENT_UNMEASURED reads the wording a team really uses: the phrasing variants ("Starting X" …
      * "Finished X") and "Processing X" with X's completion in the same method ("Ledger import done"). "Processing X"
      * alone (a per-item line) is no business event, and it is not a phrasing variant: the line keeps its words. Every
