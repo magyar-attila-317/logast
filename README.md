@@ -728,14 +728,14 @@ They use the same entrypoint and call-path analysis, so a finding says *which re
 
 **audit**: actions that must leave an audit record, not just a log line.
 
-| rule | finds |
-|---|---|
-| AUDIT_MISSING | an entrypoint matching `audit.actions` from which no audit emitter is reachable |
+| rule | finds | fix |
+|---|---|---|
+| AUDIT_MISSING | an entrypoint matching `audit.actions` from which no audit emitter is reachable | report |
 | AUDIT_FAILURES_UNRECORDED | an auditable action that records its audit event only after its work succeeded (no audit call in a catch or finally): a rejected or failed attempt leaves no record | report (record the outcome either way, or the attempt before the work) |
 | AUDIT_RECORD_INCOMPLETE | an audit call that does not say who did it (an argument from the security context, or named like `userId`/`actor`/`principal`; or the audit method reads the security context itself) or to which record (a vocabulary id, or named like `…Id`) | report |
 | AUDIT_LOG_MIXED | an audit class (named `*Audit*`, or a configured emitter) logs through a logger named after the class: its lines mix with the application log | AUTO: logs through the logger `audit` (policy `audit.logger`): `LoggerFactory.getLogger("audit")` / `@Slf4j(topic = "audit")`, so the log pipeline can route audit lines apart (own index, longer retention) |
-| DATA_CHANGES_UNAUDITED | an entity changed through a Spring Data repository with no `@LastModifiedBy` field; or `@CreatedBy`/`@LastModifiedBy` fields with no `AuditorAware` bean to fill them | report (add the fields, `@EnableJpaAuditing`/`@EnableJdbcAuditing`, an `AuditorAware` reading the current user) |
-| AUDIT_SECURITY_EVENTS | Spring Security in use, but failed/successful logins and denied access are not recorded |
+| DATA_CHANGES_UNAUDITED | an entity changed through a Spring Data repository with no `@LastModifiedBy` field; or `@CreatedBy`/`@LastModifiedBy` fields with no `AuditorAware` bean to fill them; or a bulk statement on an audited entity (`@Modifying @Query("update …")`, `JdbcTemplate.update`/`batchUpdate`, `JdbcClient.sql("insert into …")` on its table): Spring Data auditing only runs when the entity is saved, so `@LastModifiedBy` keeps the previous editor | report (add the fields, `@EnableJpaAuditing`/`@EnableJdbcAuditing`, an `AuditorAware` reading the current user; for a bulk statement: go through `save()`, or set the editor column in the statement). Deletes are not reported |
+| AUDIT_SECURITY_EVENTS | Spring Security in use, but failed/successful logins and denied access are not recorded durably: no listener of its authentication events and no `AuditEventRepository` bean; or only Boot's `InMemoryAuditEventRepository` outside a dev/test `@Profile` (Boot recommends it [only for development](https://docs.spring.io/spring-boot/reference/actuator/auditing.html): bounded, lost on restart); or a listener of authorization events with no `AuthorizationEventPublisher` bean, which Spring Security [requires](https://docs.spring.io/spring-security/reference/servlet/authorization/events.html) to publish them | report |
 
 ```yaml
 audit:
@@ -786,7 +786,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · DB_NO_TIMEOUT · REMOTE_CALL_IN_TRANSACTION · SCHEDULED_WITHOUT_LOCK · SCHEDULER_SINGLE_THREAD · RETRY_INACTIVE · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED · ROW_BY_ROW_WRITE |
 | errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED · ASYNC_ERROR_LOST · CAUSE_DROPPED · CATCH_ALL_DEFAULT · UNEXPECTED_ERROR_UNLOGGED · ERROR_HANDLER_STATUS_OK · TX_COMMITS_ON_CHECKED |
-| audit (opt-in) | AUDIT_MISSING · AUDIT_SECURITY_EVENTS |
+| audit (opt-in) | AUDIT_MISSING · AUDIT_FAILURES_UNRECORDED · AUDIT_RECORD_INCOMPLETE · AUDIT_LOG_MIXED · DATA_CHANGES_UNAUDITED · AUDIT_SECURITY_EVENTS |
 | metrics (opt-in) | BUSINESS_EVENT_UNMEASURED · METRIC_OUTCOME_UNMEASURED · METRIC_NAMING · METRIC_TAG_KEY · METRIC_TAG_VALUE · METRIC_TAG_KEYS_MISMATCH · METRIC_HIGH_CARDINALITY_TAG · METRIC_GAUGE_WEAK_REF · METRIC_REGISTERED_PER_CALL · METRIC_DIRECT_REGISTRY |
 | runtime (`verify`) | RUNTIME_TRACE_LOST · RUNTIME_MDC_LOST · RUNTIME_NULL_VALUE |
 

@@ -79,6 +79,8 @@ class E2eGoldenTest {
     private String sourceEncoding = "UTF-8";
     /** Compiled logging-support classes javac gets on top of the classpath (dependency mode: what the starter brings). */
     private Path starterClasses;
+    /** Jars javac gets on top of the e2e classpath: stand-ins for libraries one scenario needs. */
+    private Path[] extraClasses = {};
 
     @Test
     void migrationMatchesTheGoldenSnapshot() throws IOException {
@@ -2113,6 +2115,283 @@ class E2eGoldenTest {
     }
 
     /**
+     * Stand-ins for Spring Security, Spring Boot Actuator's audit types and Spring Data JPA, which are not on the e2e
+     * classpath (adding them would change every scenario): only the types and members the audit scenario uses.
+     */
+    private static final Map<String, String> AUDIT_LIBRARY_STUBS = Map.of(
+            "org/springframework/security/authentication/event/AbstractAuthenticationEvent.java", """
+                    package org.springframework.security.authentication.event;
+
+                    public abstract class AbstractAuthenticationEvent extends org.springframework.context.ApplicationEvent {
+                        protected AbstractAuthenticationEvent(Object source) {
+                            super(source);
+                        }
+                    }
+                    """,
+            "org/springframework/security/authorization/event/AuthorizationEvent.java", """
+                    package org.springframework.security.authorization.event;
+
+                    public class AuthorizationEvent extends org.springframework.context.ApplicationEvent {
+                        public AuthorizationEvent(Object source) {
+                            super(source);
+                        }
+                    }
+                    """,
+            "org/springframework/security/authorization/event/AuthorizationDeniedEvent.java", """
+                    package org.springframework.security.authorization.event;
+
+                    public class AuthorizationDeniedEvent extends AuthorizationEvent {
+                        public AuthorizationDeniedEvent(Object source) {
+                            super(source);
+                        }
+                    }
+                    """,
+            "org/springframework/security/authorization/AuthorizationEventPublisher.java", """
+                    package org.springframework.security.authorization;
+
+                    public interface AuthorizationEventPublisher {
+                    }
+                    """,
+            "org/springframework/boot/actuate/audit/AuditEventRepository.java", """
+                    package org.springframework.boot.actuate.audit;
+
+                    public interface AuditEventRepository {
+                    }
+                    """,
+            "org/springframework/boot/actuate/audit/InMemoryAuditEventRepository.java", """
+                    package org.springframework.boot.actuate.audit;
+
+                    public class InMemoryAuditEventRepository implements AuditEventRepository {
+                    }
+                    """,
+            "org/springframework/data/jpa/repository/JpaRepository.java", """
+                    package org.springframework.data.jpa.repository;
+
+                    public interface JpaRepository<T, ID> extends org.springframework.data.repository.ListCrudRepository<T, ID> {
+                    }
+                    """,
+            "org/springframework/data/jpa/repository/Modifying.java", """
+                    package org.springframework.data.jpa.repository;
+
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface Modifying {
+                    }
+                    """,
+            "org/springframework/data/jpa/repository/Query.java", """
+                    package org.springframework.data.jpa.repository;
+
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+
+                    @Retention(RetentionPolicy.RUNTIME)
+                    public @interface Query {
+                        String value() default "";
+                    }
+                    """);
+
+    /** The stubs compiled into a jar, and a classpath file of the e2e classpath plus that jar. */
+    private Path auditLibraryClasspath() throws IOException {
+        Path src = tmp.resolve("audit-stubs/src");
+        Path out = Files.createDirectories(tmp.resolve("audit-stubs/classes"));
+        List<String> args = new ArrayList<>(List.of("-d", out.toString(), "-cp",
+                String.join(java.io.File.pathSeparator, Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList())));
+        for (Map.Entry<String, String> e : new TreeMap<>(AUDIT_LIBRARY_STUBS).entrySet()) {
+            Path f = src.resolve(e.getKey());
+            Files.createDirectories(f.getParent());
+            Files.writeString(f, e.getValue());
+            args.add(f.toString());
+        }
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        assertThat(ToolProvider.getSystemJavaCompiler().run(null, null, err, args.toArray(String[]::new)))
+                .as("the audit library stubs compile:\n" + err).isZero();
+        // a jar, as libraries come: logast leaves class folders out of type attribution
+        Path jar = tmp.resolve("audit-stubs/audit-libraries.jar");
+        try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar)); Stream<Path> s = Files.walk(out)) {
+            for (Path c : s.filter(Files::isRegularFile).sorted().toList()) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(out.relativize(c).toString().replace('\\', '/')));
+                zip.write(Files.readAllBytes(c));
+                zip.closeEntry();
+            }
+        }
+        extraClasses = new Path[]{jar};
+        Path cp = tmp.resolve("classpath-audit-libraries.txt");
+        List<String> lines = new ArrayList<>(Files.readAllLines(Path.of(CLASSPATH)));
+        lines.add(jar.toString());
+        Files.write(cp, lines);
+        return cp;
+    }
+
+    private static final IoAction SHELF_AUDIT = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/shelf");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("ShelfSlot.java"), """
+                package com.example.e2e.shelf;
+
+                import org.springframework.data.annotation.Id;
+                import org.springframework.data.annotation.LastModifiedBy;
+
+                /** Audited: Spring Data fills lastModifiedBy when a slot is saved (table shelf_slot). */
+                public class ShelfSlot {
+                    @Id
+                    private String id;
+                    private String status;
+                    @LastModifiedBy
+                    private String lastModifiedBy;
+                }
+                """);
+        Files.writeString(dir.resolve("ShelfSlotRepository.java"), """
+                package com.example.e2e.shelf;
+
+                import org.springframework.data.jpa.repository.JpaRepository;
+                import org.springframework.data.jpa.repository.Modifying;
+                import org.springframework.data.jpa.repository.Query;
+
+                public interface ShelfSlotRepository extends JpaRepository<ShelfSlot, String> {
+                    /** A bulk update: the auditing listener does not run, lastModifiedBy stays as it was. */
+                    @Modifying
+                    @Query("update ShelfSlot s set s.status = :status where s.id = :id")
+                    int markStatus(String id, String status);
+
+                    /** Sets the editor itself: audited. */
+                    @Modifying
+                    @Query("update ShelfSlot s set s.status = :status, s.lastModifiedBy = :by where s.id = :id")
+                    int markStatusBy(String id, String status, String by);
+
+                    /** A delete: no row left to say who changed it last. */
+                    @Modifying
+                    @Query("delete from ShelfSlot s where s.status = 'EMPTY'")
+                    int purgeEmpty();
+                }
+                """);
+        Files.writeString(dir.resolve("ShelfSlotWriter.java"), """
+                package com.example.e2e.shelf;
+
+                import org.springframework.jdbc.core.JdbcTemplate;
+                import org.springframework.jdbc.core.simple.JdbcClient;
+                import org.springframework.stereotype.Repository;
+
+                @Repository
+                public class ShelfSlotWriter {
+                    private static final String ADD_SLOT = "insert into shelf_slot (id, status) values (?, ?)";
+
+                    private final JdbcTemplate jdbc;
+                    private final JdbcClient client;
+
+                    public ShelfSlotWriter(JdbcTemplate jdbc, JdbcClient client) {
+                        this.jdbc = jdbc;
+                        this.client = client;
+                    }
+
+                    public int block(String slotId) {
+                        return jdbc.update("update shelf_slot set status = 'BLOCKED' where id = ?", slotId);
+                    }
+
+                    public int release(String slotId, String by) {
+                        return jdbc.update("update shelf_slot set status = 'FREE', last_modified_by = ? where id = ?", by, slotId);
+                    }
+
+                    public int add(String slotId) {
+                        return client.sql(ADD_SLOT).param(slotId).param("FREE").update();
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("ShelfAuditing.java"), """
+                package com.example.e2e.shelf;
+
+                import java.util.Optional;
+                import org.springframework.boot.actuate.audit.InMemoryAuditEventRepository;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.context.annotation.Profile;
+                import org.springframework.data.domain.AuditorAware;
+
+                @Configuration
+                public class ShelfAuditing {
+                    @Bean
+                    AuditorAware<String> shelfAuditor() {
+                        return () -> Optional.of("system");
+                    }
+
+                    /** Boot records logins and denied access here: in memory, bounded, gone on restart. */
+                    @Bean
+                    InMemoryAuditEventRepository auditEvents() {
+                        return new InMemoryAuditEventRepository();
+                    }
+
+                    /** Only for local runs: what Boot recommends it for. */
+                    @Bean
+                    @Profile("local")
+                    InMemoryAuditEventRepository localAuditEvents() {
+                        return new InMemoryAuditEventRepository();
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("ShelfAccessWatch.java"), """
+                package com.example.e2e.shelf;
+
+                import java.util.concurrent.atomic.AtomicLong;
+                import org.springframework.context.event.EventListener;
+                import org.springframework.security.authorization.event.AuthorizationDeniedEvent;
+                import org.springframework.stereotype.Component;
+
+                /** Counts denied access, but nothing publishes authorization events. */
+                @Component
+                public class ShelfAccessWatch {
+                    private final AtomicLong denied = new AtomicLong();
+
+                    @EventListener
+                    public void onDenied(AuthorizationDeniedEvent event) {
+                        denied.incrementAndGet();
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #92: the audit pack's deeper checks. Security events kept in Boot's InMemoryAuditEventRepository (development
+     * only, per the Boot reference) are reported, the bean under a local profile is not; a listener for authorization
+     * events with no AuthorizationEventPublisher bean is reported. Bulk writes on an audited entity's table bypass
+     * Spring Data auditing: a {@code @Modifying @Query} update, a JdbcTemplate update and a JdbcClient insert (SQL from a
+     * constant) are reported; the statements that set the editor column, and the delete, are not. Spring Security,
+     * Actuator and JPA are stand-ins on this scenario's own classpath. The same checks with only the audit pack.
+     * Every file must equal e2e/expected-audit-pack.
+     */
+    @Test
+    void auditPackFindsInMemorySecurityEventsUnpublishedDenialsAndBulkWrites() throws IOException {
+        String classpath = auditLibraryClasspath().toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, SHELF_AUDIT);
+        String findings = actual.get("FINDINGS.txt");
+        assertThat(findings).as("an in-memory repository outside a dev profile")
+                .contains("Logins and denied access are recorded in an InMemoryAuditEventRepository (@Bean ShelfAuditing.auditEvents)");
+        assertThat(findings).as("a listener for denied access, nothing publishes")
+                .contains("ShelfAccessWatch.onDenied listens for authorization events, but no AuthorizationEventPublisher bean");
+        assertThat(findings).as("bulk writes on shelf_slot")
+                .contains("ShelfSlotRepository.markStatus (@Modifying @Query) changes ShelfSlot rows")
+                .contains("JdbcTemplate.update in ShelfSlotWriter.block changes ShelfSlot rows")
+                .contains("JdbcClient.sql in ShelfSlotWriter.add changes ShelfSlot rows")
+                .as("the statement sets the editor; a delete").doesNotContain("markStatusBy").doesNotContain("ShelfSlotWriter.release changes")
+                .doesNotContain("purgeEmpty");
+        golden(EXPECTED.resolveSibling("expected-audit-pack"), actual);
+
+        // the audit pack alone: the same findings
+        Map<String, String> alone = migrate(tmp.resolve("audit-only"), classpath, app -> {
+            SHELF_AUDIT.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [audit]"));
+        });
+        assertThat(alone.get("FINDINGS.txt"))
+                .contains("Logins and denied access are recorded in an InMemoryAuditEventRepository (@Bean ShelfAuditing.auditEvents)")
+                .contains("ShelfAccessWatch.onDenied listens for authorization events, but no AuthorizationEventPublisher bean")
+                .contains("ShelfSlotRepository.markStatus (@Modifying @Query) changes ShelfSlot rows")
+                .contains("JdbcTemplate.update in ShelfSlotWriter.block changes ShelfSlot rows")
+                .contains("JdbcClient.sql in ShelfSlotWriter.add changes ShelfSlot rows")
+                .doesNotContain("markStatusBy").doesNotContain("ShelfSlotWriter.release changes").doesNotContain("purgeEmpty");
+    }
+
+    /**
      * #53: a fix logs through the logger in scope: an inherited or enclosing SLF4J logger, or Lombok's field under the
      * name lombok.config gives it. A class logging through another API (Lombok's @Log4j2, a java.util.logging field)
      * gets no SLF4J edits, and the result is the same with and without Lombok on logast's classpath.
@@ -2284,11 +2563,12 @@ class E2eGoldenTest {
                 + "\n=== the same again (what one run left behind)\n" + second);
         // every finding left, with its text, location and path: report-only rules only show here (OUTPUT counts them)
         Files.writeString(app.resolve("FINDINGS.txt"), run(app, "scan", app.toString(), "--classpath-file", classpath));
-        if (starterClasses == null) {
-            compile(app, sourceEncoding);
-        } else {
-            compile(app, sourceEncoding, PLATFORM, starterClasses);
+        List<Path> classes = new ArrayList<>(List.of(PLATFORM));
+        if (starterClasses != null) {
+            classes.add(starterClasses);
         }
+        classes.addAll(List.of(extraClasses));
+        compile(app, sourceEncoding, classes.toArray(Path[]::new));
         return files(app);
     }
 

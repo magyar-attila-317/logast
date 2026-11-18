@@ -56,9 +56,7 @@ class RuleLedgerTest {
     private static final Pattern ISSUE = Pattern.compile("#\\d+");
 
     /** Rules with no firing case anywhere. */
-    static final Map<String, String> NO_FIRING_CASE = Map.of(
-            Rules.AUDIT_SECURITY_EVENTS, "#58: needs Spring Security on the classpath; the fixture's classpath is e2e's "
-                    + "too, so adding it would change every e2e scenario");
+    static final Map<String, String> NO_FIRING_CASE = Map.of();
 
     /** Unit tests (Class#method) that assert the rule stays silent on a near miss. */
     static final Map<String, String> SILENT_IN_UNIT_TEST = Map.of(
@@ -71,15 +69,16 @@ class RuleLedgerTest {
             Rules.KAFKA_NO_ERROR_HANDLER, "rules/RemedyTest#kafkaListenerWithACommonErrorHandlerBean",
             Rules.PROBLEM_DETAILS_DISABLED, "rules/RemedyTest#problemDetailsByPropertyOrByAdvice",
             Rules.SCHEDULED_WITHOUT_LOCK, "rules/RemedyTest#scheduledJobWithALockOrOnASingleInstance",
-            Rules.SCHEDULER_SINGLE_THREAD, "rules/RemedyTest#scheduledJobsWithAPoolOfTheirOwn");
+            Rules.SCHEDULER_SINGLE_THREAD, "rules/RemedyTest#scheduledJobsWithAPoolOfTheirOwn",
+            Rules.AUDIT_SECURITY_EVENTS, "rules/RemedyTest#securityEventsRecordedDurably");
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
-    static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus(
-            Rules.AUDIT_SECURITY_EVENTS);
+    static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus();
 
     /** Rules the core knock-out cannot test: where they fire instead, or why switching them off changes nothing. */
     static final Map<String, String> NO_KNOCKOUT = Map.of(
-            Rules.AUDIT_SECURITY_EVENTS, "#58: fires nowhere (see NO_FIRING_CASE)",
+            Rules.AUDIT_SECURITY_EVENTS, "#92: needs Spring Security on the classpath, which the corpora do not have: fires in "
+                    + "its own e2e scenario (expected-audit-pack, stand-in jar) and in RemedyTest#securityEventsRecordedDurably",
             Rules.BUSINESS_EVENT_TIMESTAMP, "#58: fires in its own e2e scenario (expected-business-timestamp); no corpus has the shape",
             Rules.MESSAGE_SUGGESTED, "#58: fires on the // logast:wording marker an apply leaves behind (e2e snapshots)",
             Rules.METRIC_CATALOG, "#58: fires once metric decisions are applied (e2e expected-decided)",
