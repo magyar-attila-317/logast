@@ -114,6 +114,10 @@ public final class Rules {
     // audit
     public static final String AUDIT_MISSING = "AUDIT_MISSING";
     public static final String AUDIT_SECURITY_EVENTS = "AUDIT_SECURITY_EVENTS";
+    public static final String AUDIT_LOGGER_UNROUTED = "AUDIT_LOGGER_UNROUTED";
+    public static final String AUDIT_BEFORE_COMMIT = "AUDIT_BEFORE_COMMIT";
+    public static final String AUDIT_RECORD_SECRET = "AUDIT_RECORD_SECRET";
+    public static final String AUDIT_ACTOR_LOST_ASYNC = "AUDIT_ACTOR_LOST_ASYNC";
 
     /**
      * Rules whose AUTO fixes use logast's support classes ({@link RuleContext#dependOnStarter} checks the list).
@@ -165,7 +169,8 @@ public final class Rules {
                 ERROR_HANDLER_STATUS_OK, TX_COMMITS_ON_CHECKED)) {
             PACKS.put(r, Set.of("errors"));
         }
-        for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS, AUDIT_FAILURES_UNRECORDED, AUDIT_RECORD_INCOMPLETE, AUDIT_LOG_MIXED, DATA_CHANGES_UNAUDITED)) {
+        for (String r : List.of(AUDIT_MISSING, AUDIT_SECURITY_EVENTS, AUDIT_FAILURES_UNRECORDED, AUDIT_RECORD_INCOMPLETE, AUDIT_LOG_MIXED, DATA_CHANGES_UNAUDITED,
+                AUDIT_LOGGER_UNROUTED, AUDIT_BEFORE_COMMIT, AUDIT_RECORD_SECRET, AUDIT_ACTOR_LOST_ASYNC)) {
             PACKS.put(r, Set.of("audit"));
         }
         // service name/version on logs, meters and spans: the packs that emit telemetry
@@ -227,6 +232,7 @@ public final class Rules {
                 METRIC_REGISTERED_PER_CALL, METRIC_GAUGE_WEAK_REF, METRIC_TAG_KEYS_MISMATCH, METRIC_OUTCOME_UNMEASURED, METRIC_CATALOG,
                 UNBOUNDED_EXECUTOR, KAFKA_NO_ERROR_HANDLER, BLOCKING_WAIT_UNBOUNDED, ROW_BY_ROW_WRITE, REMOTE_CALL_IN_TRANSACTION, SCHEDULED_WITHOUT_LOCK, SCHEDULER_SINGLE_THREAD, SHUTDOWN_NOT_GRACEFUL, HEALTH_PROBE_MISCONFIGURED, READINESS_WITHOUT_DATABASE, CACHE_UNBOUNDED, CATCH_ALL_DEFAULT, AUDIT_FAILURES_UNRECORDED, AUDIT_RECORD_INCOMPLETE, DATA_CHANGES_UNAUDITED, ERROR_DETAILS_EXPOSED,
                 UNMAPPED_EXCEPTION, CLIENT_ERROR_AS_SERVER_ERROR, PROBLEM_DETAILS_DISABLED, ERROR_HANDLER_STATUS_OK, TX_COMMITS_ON_CHECKED, AUDIT_MISSING, AUDIT_SECURITY_EVENTS,
+                AUDIT_LOGGER_UNROUTED, AUDIT_BEFORE_COMMIT, AUDIT_RECORD_SECRET, AUDIT_ACTOR_LOST_ASYNC,
                 MANUAL_TRACE_MDC, SPAN_NOT_CLOSED, TRACING_EXPORT_UNCONFIGURED, RUNTIME_TRACE_LOST, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE)) {
             STEPS.put(r, Step.REPORTS);
         }
@@ -293,6 +299,8 @@ public final class Rules {
             Map.entry(UNEXPECTED_ERROR_UNLOGGED, "high"), Map.entry(ERROR_HANDLER_STATUS_OK, "medium"), Map.entry(TX_COMMITS_ON_CHECKED, "medium"),
             Map.entry(AUDIT_MISSING, "medium"), Map.entry(AUDIT_SECURITY_EVENTS, "medium"), Map.entry(SCHEDULED_TASK_UNTRACED, "medium"), Map.entry(KAFKA_OBSERVATION_DISABLED, "high"), Map.entry(RABBIT_OBSERVATION_DISABLED, "high"), Map.entry(JOB_LAUNCH_UNTRACED, "high"),
             Map.entry(OBSERVED_ANNOTATION_INACTIVE, "high"), Map.entry(SPAN_NOT_CLOSED, "medium"), Map.entry(TRACING_EXPORT_UNCONFIGURED, "medium"),
+            Map.entry(AUDIT_LOGGER_UNROUTED, "medium"), Map.entry(AUDIT_BEFORE_COMMIT, "medium"), Map.entry(AUDIT_RECORD_SECRET, "high"),
+            Map.entry(AUDIT_ACTOR_LOST_ASYNC, "high"),
             Map.entry(RUNTIME_TRACE_LOST, "high"), Map.entry(RUNTIME_MDC_LOST, "high"), Map.entry(RUNTIME_NULL_VALUE, "medium"),
             Map.entry(LOG_IN_LOOP, "low"), Map.entry(LOG_VOLUME, "medium"),
             Map.entry(METRIC_NAMING, "low"), Map.entry(METRIC_HIGH_CARDINALITY_TAG, "high"), Map.entry(METRIC_DIRECT_REGISTRY, "low"));

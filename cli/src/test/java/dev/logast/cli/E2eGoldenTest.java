@@ -2366,7 +2366,9 @@ class E2eGoldenTest {
         Path out = Files.createDirectories(tmp.resolve("audit-stubs/classes"));
         List<String> args = new ArrayList<>(List.of("-d", out.toString(), "-cp",
                 String.join(java.io.File.pathSeparator, Files.readAllLines(Path.of(CLASSPATH)).stream().filter(l -> !l.isBlank()).toList())));
-        for (Map.Entry<String, String> e : new TreeMap<>(AUDIT_LIBRARY_STUBS).entrySet()) {
+        Map<String, String> stubs = new TreeMap<>(AUDIT_LIBRARY_STUBS);
+        stubs.putAll(SECURITY_CONTEXT_STUBS);
+        for (Map.Entry<String, String> e : stubs.entrySet()) {
             Path f = src.resolve(e.getKey());
             Files.createDirectories(f.getParent());
             Files.writeString(f, e.getValue());
@@ -2557,6 +2559,292 @@ class E2eGoldenTest {
                 .contains("JdbcTemplate.update in ShelfSlotWriter.block changes ShelfSlot rows")
                 .contains("JdbcClient.sql in ShelfSlotWriter.add changes ShelfSlot rows")
                 .doesNotContain("markStatusBy").doesNotContain("ShelfSlotWriter.release changes").doesNotContain("purgeEmpty");
+    }
+
+    /** Stand-ins for Spring Security's SecurityContextHolder, which the badge scenario reads the acting user from. */
+    private static final Map<String, String> SECURITY_CONTEXT_STUBS = Map.of(
+            "org/springframework/security/core/Authentication.java", """
+                    package org.springframework.security.core;
+
+                    public interface Authentication extends java.security.Principal {
+                    }
+                    """,
+            "org/springframework/security/core/context/SecurityContext.java", """
+                    package org.springframework.security.core.context;
+
+                    public interface SecurityContext {
+                        org.springframework.security.core.Authentication getAuthentication();
+                    }
+                    """,
+            "org/springframework/security/core/context/SecurityContextHolder.java", """
+                    package org.springframework.security.core.context;
+
+                    public final class SecurityContextHolder {
+                        private SecurityContextHolder() {
+                        }
+
+                        public static SecurityContext getContext() {
+                            return null;
+                        }
+                    }
+                    """);
+
+    private static final IoAction BADGE_AUDIT = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/badge");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("BadgeAuditLog.java"), """
+                package com.example.e2e.badge;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                /** Writes audit records as log lines on the audit logger: complete, and out the moment they are written. */
+                @Component
+                public class BadgeAuditLog {
+                    private static final Logger AUDIT = LoggerFactory.getLogger("audit");
+
+                    public void record(String action, String badgeId, String actor, String outcome) {
+                        AUDIT.info("Badge audit record [action={}, badgeId={}, actor={}, outcome={}]", action, badgeId, actor, outcome);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("BadgeAuditStore.java"), """
+                package com.example.e2e.badge;
+
+                import java.util.List;
+                import java.util.concurrent.CopyOnWriteArrayList;
+                import org.slf4j.MDC;
+                import org.springframework.security.core.context.SecurityContextHolder;
+                import org.springframework.stereotype.Component;
+
+                /** Writes audit records to a store (here: in memory). */
+                @Component
+                public class BadgeAuditStore {
+                    private final List<String> entries = new CopyOnWriteArrayList<>();
+
+                    /** Neither the outcome nor the request it belongs to. */
+                    public void note(String action, String badgeId, String actor) {
+                        entries.add(actor + " " + action + " " + badgeId);
+                    }
+
+                    /** Complete: outcome and trace id passed in. */
+                    public void record(String action, Object details, String actor, String outcome, String traceId) {
+                        entries.add(traceId + " " + actor + " " + action + " " + details + " " + outcome);
+                    }
+
+                    /** Complete, reading the actor and the trace id itself. */
+                    public void recordCurrent(String action, String badgeId, String outcome) {
+                        String actor = SecurityContextHolder.getContext().getAuthentication().getName();
+                        entries.add(MDC.get("traceId") + " " + actor + " " + action + " " + badgeId + " " + outcome);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("BadgeRequest.java"), """
+                package com.example.e2e.badge;
+
+                /** What the client sends to issue a badge, its PIN included. */
+                public record BadgeRequest(String badgeId, String holder, String pin) {
+                }
+                """);
+        Files.writeString(dir.resolve("BadgeService.java"), """
+                package com.example.e2e.badge;
+
+                import java.util.Map;
+                import java.util.concurrent.ConcurrentHashMap;
+                import org.slf4j.MDC;
+                import org.springframework.scheduling.annotation.Async;
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public class BadgeService {
+                    private final Map<String, String> badges = new ConcurrentHashMap<>();
+                    private final BadgeAuditLog auditLog;
+                    private final BadgeAuditStore auditStore;
+
+                    public BadgeService(BadgeAuditLog auditLog, BadgeAuditStore auditStore) {
+                        this.auditLog = auditLog;
+                        this.auditStore = auditStore;
+                    }
+
+                    /** The record is a log line, written before the transaction commits. */
+                    @Transactional
+                    public void revoke(String badgeId, String actor) {
+                        badges.remove(badgeId);
+                        auditLog.record("badge.revoke", badgeId, actor, "done");
+                    }
+
+                    /** The failure is recorded in the catch: the transaction rolls back and the record says so. */
+                    @Transactional
+                    public void suspend(String badgeId, String actor) {
+                        try {
+                            badges.put(badgeId, "SUSPENDED");
+                        } catch (RuntimeException e) {
+                            auditLog.record("badge.suspend", badgeId, actor, "failed");
+                            throw e;
+                        }
+                    }
+
+                    /** A record in the store, not a log line: logast cannot tell it leaves the transaction. */
+                    @Transactional
+                    public void renew(String badgeId, String actor) {
+                        badges.put(badgeId, "ACTIVE");
+                        auditStore.record("badge.renew", badgeId, actor, "done", MDC.get("traceId"));
+                    }
+
+                    /** Neither outcome nor trace id in the record. */
+                    public void lock(String badgeId, String actor) {
+                        badges.put(badgeId, "LOCKED");
+                        auditStore.note("badge.lock", badgeId, actor);
+                    }
+
+                    /** The new PIN and the request holding the PIN go into the record; the token id does not leak it. */
+                    public void changePin(String badgeId, String newPin, String tokenId, BadgeRequest request, String actor) {
+                        badges.put(badgeId, newPin);
+                        auditStore.record("badge.pin", newPin, actor, "done", MDC.get("traceId"));
+                        auditStore.record("badge.issue", request, actor, "done", MDC.get("traceId"));
+                        auditStore.record("badge.token", tokenId, actor, "done", MDC.get("traceId"));
+                    }
+
+                    /** On another thread: the store reads the security context there, which is empty. */
+                    @Async
+                    public void expire(String badgeId) {
+                        badges.remove(badgeId);
+                        auditStore.recordCurrent("badge.expire", badgeId, "done");
+                    }
+
+                    /** On another thread, with the actor read on the request thread and passed in. */
+                    @Async
+                    public void archive(String badgeId, String actor) {
+                        badges.remove(badgeId);
+                        auditStore.record("badge.archive", badgeId, actor, "done", MDC.get("traceId"));
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("BadgeController.java"), """
+                package com.example.e2e.badge;
+
+                import java.security.Principal;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RequestParam;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class BadgeController {
+                    private final BadgeService badges;
+
+                    public BadgeController(BadgeService badges) {
+                        this.badges = badges;
+                    }
+
+                    @PostMapping("/badges/{badgeId}/revoke")
+                    public void revoke(@PathVariable String badgeId, Principal principal) {
+                        badges.revoke(badgeId, principal.getName());
+                    }
+
+                    @PostMapping("/badges/{badgeId}/suspend")
+                    public void suspend(@PathVariable String badgeId, Principal principal) {
+                        badges.suspend(badgeId, principal.getName());
+                    }
+
+                    @PostMapping("/badges/{badgeId}/renew")
+                    public void renew(@PathVariable String badgeId, Principal principal) {
+                        badges.renew(badgeId, principal.getName());
+                    }
+
+                    @PostMapping("/badges/{badgeId}/lock")
+                    public void lock(@PathVariable String badgeId, Principal principal) {
+                        badges.lock(badgeId, principal.getName());
+                    }
+
+                    @PostMapping("/badges/{badgeId}/pin")
+                    public void changePin(@PathVariable String badgeId, @RequestParam String newPin, @RequestParam String tokenId,
+                                          @RequestBody BadgeRequest request, Principal principal) {
+                        badges.changePin(badgeId, newPin, tokenId, request, principal.getName());
+                    }
+
+                    @PostMapping("/badges/{badgeId}/expire")
+                    public void expire(@PathVariable String badgeId) {
+                        badges.expire(badgeId);
+                    }
+
+                    @PostMapping("/badges/{badgeId}/archive")
+                    public void archive(@PathVariable String badgeId, Principal principal) {
+                        badges.archive(badgeId, principal.getName());
+                    }
+                }
+                """);
+        Path resources = app.resolve("src/main/resources");
+        // the service's own logback file (a file appender, so the logging pack keeps it): no logger for "audit"
+        Files.writeString(resources.resolve("logback-spring.xml"), """
+                <configuration>
+                    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+                        <file>logs/service.log</file>
+                        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                            <fileNamePattern>logs/service.%d.log</fileNamePattern>
+                        </rollingPolicy>
+                        <encoder>
+                            <pattern>%d %level %logger %msg%n</pattern>
+                        </encoder>
+                    </appender>
+                    <root level="INFO">
+                        <appender-ref ref="FILE"/>
+                    </root>
+                </configuration>
+                """);
+        // the records are written at INFO
+        Files.writeString(resources.resolve("application.properties"), "logging.level.audit=WARN\n");
+    };
+
+    /**
+     * #92: complete audit records, routed and safe. An audit method whose records hold neither an outcome nor a trace
+     * id is reported once, at the method; the ones that take both, or read them, are not. A record written as a log
+     * line inside a transaction is reported (it goes out before the commit); the failure recorded in a catch and the
+     * record in a store are not. The logback file without a logger for "audit", and logging.level.audit=WARN above the
+     * records' INFO, are reported. A PIN, and a request holding one, passed to the audit call are reported; a token id is
+     * not. The security context read on an @Async thread is reported; the actor read before the hand-over is not.
+     * Spring Security's context types are stand-ins on this scenario's classpath. The same with only the audit pack.
+     * Every file must equal e2e/expected-audit-records.
+     */
+    @Test
+    void auditPackFindsIncompleteUnroutedUncommittedSecretAndAsyncRecords() throws IOException {
+        String classpath = auditLibraryClasspath().toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, BADGE_AUDIT);
+        assertBadgeFindings(actual.get("FINDINGS.txt"));
+        golden(EXPECTED.resolveSibling("expected-audit-records"), actual);
+
+        Map<String, String> alone = migrate(tmp.resolve("audit-only"), classpath, app -> {
+            BADGE_AUDIT.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [audit]"));
+        });
+        assertBadgeFindings(alone.get("FINDINGS.txt"));
+    }
+
+    private static void assertBadgeFindings(String findings) {
+        assertThat(findings).as("item 2: no outcome, no trace id")
+                .contains("The audit records BadgeAuditStore.note writes (1 call) do not say whether the action succeeded, "
+                        + "nor which request they belong to")
+                .as("both passed in, or read").doesNotContain("records BadgeAuditStore.record ")
+                .doesNotContain("records BadgeAuditStore.recordCurrent").doesNotContain("records BadgeAuditLog.record");
+        assertThat(findings).as("item 5: a log line inside the transaction")
+                .contains("The audit record record(…) in BadgeService.revoke is written inside the transaction of BadgeService.revoke")
+                .as("the failure in a catch; a store").doesNotContain("in BadgeService.suspend is written inside")
+                .doesNotContain("in BadgeService.renew is written inside");
+        assertThat(findings).as("item 6: no logger for audit in logback-spring.xml; its level above the records")
+                .contains("logback-spring.xml has no <logger name=\"audit\">")
+                .contains("logging.level.audit is WARN, but audit records are written at INFO");
+        assertThat(findings).as("item 7: a PIN, a request holding one; not a token id")
+                .contains("in BadgeService.changePin holds a secret: newPin")
+                .contains("holds a secret: request (its pin)")
+                .doesNotContain("holds a secret: tokenId");
+        assertThat(findings).as("item 3: the security context read on an @Async thread; not the actor passed in")
+                .contains("The audit record recordCurrent(…) in BadgeService.expire reads the acting user from the security "
+                        + "context on another thread")
+                .doesNotContain("in BadgeService.archive reads the acting user");
     }
 
     /**

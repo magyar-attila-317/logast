@@ -75,7 +75,12 @@ class RuleLedgerTest {
             Map.entry(Rules.READINESS_WITHOUT_DATABASE, "rules/RemedyTest#readinessWithTheDatabaseOrDecidedAgainst"),
             Map.entry(Rules.CACHE_UNBOUNDED, "rules/RemedyTest#cachesWithASizeBound"),
             Map.entry(Rules.AUDIT_SECURITY_EVENTS, "rules/RemedyTest#securityEventsRecordedDurably"),
-            Map.entry(Rules.TRACING_EXPORT_UNCONFIGURED, "rules/RemedyTest#tracingExportWithAnEndpointPerEnvironment"));
+            Map.entry(Rules.TRACING_EXPORT_UNCONFIGURED, "rules/RemedyTest#tracingExportWithAnEndpointPerEnvironment"),
+            // #92: the audit pack's report-only rules, each with the remedy its note names
+            Map.entry(Rules.AUDIT_LOGGER_UNROUTED, "rules/RemedyTest#auditLoggerRoutedApart"),
+            Map.entry(Rules.AUDIT_BEFORE_COMMIT, "rules/RemedyTest#auditRecordWrittenWhenTheOutcomeIsKnown"),
+            Map.entry(Rules.AUDIT_RECORD_SECRET, "rules/RemedyTest#auditRecordWithoutSecrets"),
+            Map.entry(Rules.AUDIT_ACTOR_LOST_ASYNC, "rules/RemedyTest#auditActorReadBeforeTheHandOver"));
 
     /** Report-only rules (no fix that could serve as the negative) without a marked near miss yet. */
     static final Map<String, String> NO_MUST_NOT_FIRE_CASE = negativeCorpus();
@@ -84,6 +89,13 @@ class RuleLedgerTest {
     static final Map<String, String> NO_KNOCKOUT = Map.of(
             Rules.AUDIT_SECURITY_EVENTS, "#92: needs Spring Security on the classpath, which the corpora do not have: fires in "
                     + "its own e2e scenario (expected-audit-pack, stand-in jar) and in RemedyTest#securityEventsRecordedDurably",
+            Rules.AUDIT_BEFORE_COMMIT, "#92: no corpus has an audit call inside a transaction: fires in its own e2e scenario "
+                    + "(expected-audit-records) and in RemedyTest#auditRecordWrittenWhenTheOutcomeIsKnown",
+            Rules.AUDIT_RECORD_SECRET, "#92: no corpus passes a secret to an audit call: fires in its own e2e scenario "
+                    + "(expected-audit-records) and in RemedyTest#auditRecordWithoutSecrets",
+            Rules.AUDIT_ACTOR_LOST_ASYNC, "#92: needs Spring Security's SecurityContextHolder, which the corpora do not have: "
+                    + "fires in its own e2e scenario (expected-audit-records, stand-in jar) and in "
+                    + "RemedyTest#auditActorReadBeforeTheHandOver",
             Rules.BUSINESS_EVENT_TIMESTAMP, "#58: fires in its own e2e scenario (expected-business-timestamp); no corpus has the shape",
             Rules.MESSAGE_SUGGESTED, "#58: fires on the // logast:wording marker an apply leaves behind (e2e snapshots)",
             Rules.METRIC_CATALOG, "#58: fires once metric decisions are applied (e2e expected-decided)",

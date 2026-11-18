@@ -196,8 +196,13 @@ public final class DomainValues {
      * and "email" does not match "emailTemplateId"... unless the words line up ("emailAddress" contains "email").
      */
     public boolean isPiiName(String name) {
+        return namesTerm(name, policy.pii());
+    }
+
+    /** {@code name}'s words contain one of the terms' words in a row (the whole-word match of {@link #isPiiName}). */
+    static boolean namesTerm(String name, Collection<String> terms) {
         List<String> words = words(name);
-        for (String term : policy.pii()) {
+        for (String term : terms) {
             List<String> t = words(term);
             for (int i = 0; i + t.size() <= words.size(); i++) {
                 if (words.subList(i, i + t.size()).equals(t)) {
@@ -206,6 +211,30 @@ public final class DomainValues {
             }
         }
         return false;
+    }
+
+    /** Secrets: credentials, tokens, full card numbers and IBANs. Never belong in a log line or an audit record. */
+    static final List<String> SECRET_TERMS = List.of("password", "passwd", "pwd", "secret", "token", "apiKey",
+            "credential", "credentials", "privateKey", "cvv", "cvc", "pin", "cardNumber", "pan", "iban");
+    /** Words that say the value is derived from the secret, not the secret: tokenId, maskedIban, passwordHash. */
+    private static final Set<String> NOT_THE_SECRET = Set.of("id", "ids", "count", "length", "size", "type", "expiry",
+            "expires", "expired", "at", "version", "status", "masked", "mask", "redacted", "last4", "hint", "hash", "hashed",
+            "changed", "reset", "policy", "name");
+
+    /**
+     * The value is a secret by its name (a variable, field or accessor; the PII name matching with the secret terms),
+     * and not a constant or a value derived from one (tokenId, maskedIban, passwordHash).
+     */
+    public boolean isSecret(Expression arg) {
+        if (isConstant(arg)) {
+            return false;
+        }
+        String name = derivedKey(arg);
+        return name != null && isSecretName(name);
+    }
+
+    static boolean isSecretName(String name) {
+        return namesTerm(name, SECRET_TERMS) && words(name).stream().noneMatch(NOT_THE_SECRET::contains);
     }
 
     static List<String> words(String s) {

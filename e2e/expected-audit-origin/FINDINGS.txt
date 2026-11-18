@@ -1,7 +1,7 @@
 logast · 81 files · 29 entrypoints · 104/233 methods reachable · 178 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 58.6% (jobs 9/9 · http 8/20)   (places that should log and do)
-76 orders: 0 AUTO, 29 NEEDS TEXT, 47 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+80 orders: 0 AUTO, 29 NEEDS TEXT, 51 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -29,6 +29,24 @@ DBT-225aab  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/resources/application.yml
   why: @Transactional methods without timeout = … exist (PledgeCleanupJob.cleanup and 1 more) and no Spring configuration file sets spring.transaction.default-timeout
   note: Decide a default (spring.transaction.default-timeout) above the longest legitimate transaction, or set timeout = … on the @Transactional methods that need one. Not applied automatically: it applies to every @Transactional, batch jobs included.
   done when: spring.transaction.default-timeout is set in the Spring configuration, or every @Transactional method (or its class) has a timeout
+ARI-10778a  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/audit/AuditLog.java:18  AuditLog.record
+  The audit records AuditLog.record writes (2 calls) do not say which request they belong to (no trace or correlation id)
+  path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke → PledgeService.revoke → AuditLog.record
+  why: its calls are audit calls (a call on AuditLog, recognised by its name (audit.emitters is empty))
+  note: Record the trace or correlation id of the request (MDC.get("traceId"), the Tracer's current span), so the record leads to the request's logs and spans. OWASP's Logging Cheat Sheet lists both among the attributes of every security event.
+  done when: it, or a method it calls, reads the trace / correlation id (MDC.get, the Tracer, Span.current()) or writes the record as a log line, or every call passes one
+ARI-c9ce5d  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/box/BoxAudit.java:12  BoxAudit.record
+  The audit records BoxAudit.record writes (5 calls) do not say whether the action succeeded, nor which request they belong to
+  path: DELETE /boxes/{boxId}/contents → BoxController.empty → BoxAudit.record  (+2 more)
+  why: its calls are audit calls (a call on BoxAudit, recognised by its name (audit.emitters is empty))
+  note: Record the outcome (succeeded, failed, denied; with the failure's reason): an outcome parameter or field, filled at each call. Record the trace or correlation id of the request (MDC.get("traceId"), the Tracer's current span), so the record leads to the request's logs and spans. OWASP's Logging Cheat Sheet lists both among the attributes of every security event.
+  done when: a parameter (or a field of the record it takes) is named or typed as an outcome (outcome, status, success, a boolean, an exception, an …Outcome enum), or every call passes one; and it, or a method it calls, reads the trace / correlation id (MDC.get, the Tracer, Span.current()) or writes the record as a log line, or every call passes one
+ARI-618e64  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/box/BoxAudit.java:16  BoxAudit.record
+  The audit records BoxAudit.record writes (2 calls) do not say whether the action succeeded, nor which request they belong to
+  path: POST /boxes/{boxId}/close → BoxController.close → BoxAudit.record  (+1 more)
+  why: its calls are audit calls (a call on BoxAudit, recognised by its name (audit.emitters is empty))
+  note: Record the outcome (succeeded, failed, denied; with the failure's reason): an outcome parameter or field, filled at each call. Record the trace or correlation id of the request (MDC.get("traceId"), the Tracer's current span), so the record leads to the request's logs and spans. OWASP's Logging Cheat Sheet lists both among the attributes of every security event.
+  done when: a parameter (or a field of the record it takes) is named or typed as an outcome (outcome, status, success, a boolean, an exception, an …Outcome enum), or every call passes one; and it, or a method it calls, reads the trace / correlation id (MDC.get, the Tracer, Span.current()) or writes the record as a log line, or every call passes one
 AUM-513da6  medium  REPORT-ONLY  AUDIT_MISSING  src/main/java/com/example/e2e/box/BoxController.java:22  BoxController.remove
   DELETE /boxes/{boxId} is an auditable action (DELETE **) but records no audit event: who did what to which record is only in the logs, if at all
   path: DELETE /boxes/{boxId} → BoxController.remove
@@ -133,6 +151,12 @@ ARI-b9b946  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/exam
   why: the audit call is a call on AuditLog, recognised by its name (audit.emitters is empty)
   note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
   done when: an argument comes from the security context (a Principal / Authentication parameter, @AuthenticationPrincipal, SecurityContextHolder), or the audit method reads it itself
+ARI-efeed7  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/edge/Audited.java:10  Audited.audit
+  The audit records Audited.audit writes (1 call) do not say whether the action succeeded
+  path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → Audited.audit
+  why: its calls are audit calls (a call on Audited, recognised by its name (audit.emitters is empty))
+  note: Record the outcome (succeeded, failed, denied; with the failure's reason): an outcome parameter or field, filled at each call. OWASP's Logging Cheat Sheet lists both among the attributes of every security event.
+  done when: a parameter (or a field of the record it takes) is named or typed as an outcome (outcome, status, success, a boolean, an exception, an …Outcome enum), or every call passes one
 LHL-77ee4d  medium  REPORT-ONLY  LOG_HELPER  src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13  EdgeLogHelper.info
   Log helper EdgeLogHelper.info writes log lines for 1 call site(s): the message, level and logger are invisible where the event happens
   path: @Scheduled EdgeJob.run → EdgeJob.run → EdgeFlow.process → EdgeLogHelper.info
@@ -446,4 +470,4 @@ Next steps
   2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   29 of 29 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      35 findings are decisions for a person (AUDIT_RECORD_INCOMPLETE 6, MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, …); each says what to decide
+  5. logast scan . --format summary                      39 findings are decisions for a person (AUDIT_RECORD_INCOMPLETE 10, MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, …); each says what to decide
