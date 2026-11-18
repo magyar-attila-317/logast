@@ -49,5 +49,13 @@ management:
     sampling:
       probability: 1.0
 logging-support:
+  log-defaults:
+    enabled: true
+  mdc-hygiene:
+    enabled: true
+  context-propagation:
+    enabled: true
+  batch-trace:
+    enabled: true
   problem-trace-id:
     enabled: true
