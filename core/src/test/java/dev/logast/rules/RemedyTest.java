@@ -1910,18 +1910,27 @@ class RemedyTest {
 
     private static final Map<String, String> PLAIN_REST_TEMPLATE = stockClient("",
             "    private final RestTemplate rest = new RestTemplate();\n");
-    private static final Map<String, String> BUILT_REST_TEMPLATE = stockClient("import org.springframework.boot.web.client.RestTemplateBuilder;\n", """
+    private static final String BUILT_FROM_BUILDER = """
                 private final RestTemplate rest;
 
                 public StockClient(RestTemplateBuilder builder) {
                     this.rest = builder.build();
                 }
-            """);
+            """;
+    /** Boot 3's RestTemplateBuilder: unresolved on the fixture's Boot 4 classpath unless a stand-in brings it. */
+    private static final Map<String, String> BUILT_REST_TEMPLATE = stockClient(
+            "import org.springframework.boot.web.client.RestTemplateBuilder;\n", BUILT_FROM_BUILDER);
 
     @Test
     void httpClientFromTheInjectedBuilderOrWithTimeouts() throws IOException {
         fires(Rules.HTTP_CLIENT_NO_TIMEOUT, PLAIN_REST_TEMPLATE);
-        gone(Rules.HTTP_CLIENT_NO_TIMEOUT, "built from the injected RestTemplateBuilder", BUILT_REST_TEMPLATE);
+        // Boot 4's builder (the fixture's classpath): counted toward the timeout properties, so it needs them set
+        Map<String, String> boot4Builder = stockClient("import org.springframework.boot.restclient.RestTemplateBuilder;\n",
+                BUILT_FROM_BUILDER);
+        fires(Rules.HTTP_CLIENT_NO_TIMEOUT, boot4Builder);
+        gone(Rules.HTTP_CLIENT_NO_TIMEOUT, "built from the injected RestTemplateBuilder, spring.http.clients.* timeouts set",
+                with(boot4Builder, "src/main/resources/application.yml",
+                        CONFIG + "  http:\n    clients:\n      connect-timeout: 5s\n      read-timeout: 30s\n"));
         gone(Rules.HTTP_CLIENT_NO_TIMEOUT, "a requestFactory with connect and read timeouts", stockClient(
                 "import org.springframework.http.client.SimpleClientHttpRequestFactory;\n", """
                             private final RestTemplate rest;
@@ -1933,6 +1942,58 @@ class RemedyTest {
                                 this.rest = new RestTemplate(factory);
                             }
                         """));
+    }
+
+    /**
+     * #98: Spring Boot 3 has RestTemplateBuilder in org.springframework.boot.web.client (Boot 4: ...boot.restclient).
+     * On a Boot 3.5 service, a RestTemplate built from the injected one is counted toward the timeout properties, which
+     * get Boot 3.5's names (spring.http.client.*); the tracing fix for a hand-made RestTemplate imports Boot 3's
+     * builder, and the advice names Boot 3.5's properties. The fixture's classpath is Boot 4: a stand-in brings Boot 3's
+     * builder.
+     */
+    @Test
+    void httpClientsOnSpringBoot3() throws IOException {
+        Path boot3 = stubJar(Map.of("org/springframework/boot/web/client/RestTemplateBuilder.java", """
+                package org.springframework.boot.web.client;
+
+                import org.springframework.web.client.RestTemplate;
+
+                public class RestTemplateBuilder {
+                    public RestTemplate build() {
+                        return new RestTemplate();
+                    }
+                }
+                """));
+        Map<String, String> build = Map.of("build.gradle.kts", """
+                plugins {
+                    java
+                    id("org.springframework.boot") version "3.5.7"
+                }
+
+                dependencies {
+                    implementation("org.springframework.boot:spring-boot-starter-web")
+                }
+                """);
+        List<WorkOrder> built = scan(with(BUILT_REST_TEMPLATE, "build.gradle.kts", build.get("build.gradle.kts")), List.of(boot3));
+        assertThat(built).filteredOn(o -> o.rule().equals(Rules.HTTP_CLIENT_NO_TIMEOUT)).as("the injected Boot 3 builder "
+                        + "counts toward the timeout properties, with Boot 3.5's names").singleElement()
+                .satisfies(o -> assertThat(o.edits()).singleElement().satisfies(e -> assertThat(e.text())
+                        .contains("  http:\n    client:\n      connect-timeout: 5s\n      read-timeout: 30s\n")));
+
+        List<WorkOrder> handMade = scan(with(stockClient("", """
+                    private final RestTemplate rest;
+
+                    public StockClient() {
+                        this.rest = new RestTemplate();
+                    }
+                """), "build.gradle.kts", build.get("build.gradle.kts")), List.of(boot3));
+        assertThat(handMade).filteredOn(o -> o.rule().equals(Rules.HTTP_CLIENT_UNTRACED)).singleElement()
+                .satisfies(o -> assertThat(o.edits()).extracting(e -> e.text()).anySatisfy(t -> assertThat(t)
+                        .contains("import org.springframework.boot.web.client.RestTemplateBuilder;"))
+                        .noneSatisfy(t -> assertThat(t).contains("boot.restclient")));
+        assertThat(handMade).filteredOn(o -> o.rule().equals(Rules.HTTP_CLIENT_NO_TIMEOUT)).singleElement()
+                .satisfies(o -> assertThat(o.title() + " " + o.suggestion()).contains("spring.http.client.*")
+                        .doesNotContain("spring.http.clients"));
     }
 
     @Test

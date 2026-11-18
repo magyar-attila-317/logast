@@ -27,7 +27,9 @@ import java.util.*;
 final class TracingRules {
     private static final Set<String> BEAN_ANNOTATIONS = Set.of("Component", "Service", "Repository", "Controller",
             "RestController", "Configuration");
+    /** Boot 4's RestTemplateBuilder; Boot 3 has it in org.springframework.boot.web.client (#98). */
     private static final String REST_TEMPLATE_BUILDER = "org.springframework.boot.restclient.RestTemplateBuilder";
+    private static final String BOOT3_REST_TEMPLATE_BUILDER = "org.springframework.boot.web.client.RestTemplateBuilder";
 
     private final RuleContext ctx;
 
@@ -856,7 +858,9 @@ final class TracingRules {
             b.edit(param);
         }
         if (client.builderImport() != null) {
-            b.edits(JavaEdits.imports(f, client.builderImport()));
+            int bootMajor = SetupRules.springBootVersion(ctx)[0];
+            b.edits(JavaEdits.imports(f, client == REST_TEMPLATE && bootMajor >= 1 && bootMajor <= 3
+                    ? BOOT3_REST_TEMPLATE_BUILDER : client.builderImport()));
         }
     }
 

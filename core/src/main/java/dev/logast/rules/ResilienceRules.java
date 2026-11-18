@@ -63,6 +63,7 @@ final class ResilienceRules {
     private final List<String[]> untimedClients = new ArrayList<>();   // file, line: RestClient / RestTemplate builders Boot injects
     private final List<String[]> untimedWebClients = new ArrayList<>(); // file, line: WebClient builders Boot injects
     private final Set<String> seenStatements = new HashSet<>();         // a builder chain is one client
+    private int[] bootVersion;                                          // {major, minor}, read once
     private final boolean clients;
     private final boolean executors;
     private final boolean waits;
@@ -355,7 +356,7 @@ final class ResilienceRules {
     private void clientSite(Site site, J.MethodInvocation mi, String owner, String name, Cursor cursor) {
         boolean spring = (owner.equals("org.springframework.web.client.RestClient") && Set.of("builder", "create").contains(name))
                 || (owner.equals("org.springframework.web.client.RestClient$Builder") && name.equals("build"))
-                || (owner.equals("org.springframework.boot.restclient.RestTemplateBuilder") && name.equals("build"));
+                || (REST_TEMPLATE_BUILDERS.contains(owner) && name.equals("build"));
         boolean webClient = (owner.equals(WEB_CLIENT) && Set.of("builder", "create").contains(name))
                 || (owner.equals(WEB_CLIENT + "$Builder") && name.equals("build"));
         boolean jdk = owner.equals("java.net.http.HttpClient") && Set.of("newHttpClient", "newBuilder").contains(name);
@@ -379,8 +380,8 @@ final class ResilienceRules {
             if (unconfigured == null) {
                 untimedWebClients.add(new String[]{site.file().relPath(), String.valueOf(line)});   // Boot's builder: YAML
             } else {
-                unconfiguredClient(site, mi, line, unconfigured, statement, "Build it from the injected WebClient.Builder "
-                        + "(Spring Boot's HTTP client settings apply), or give it a clientConnector with a connect and a "
+                unconfiguredClient(site, mi, line, unconfigured, statement, true, "Build it from the injected WebClient.Builder "
+                        + "(" + httpClientProperties(true) + " timeouts apply), or give it a clientConnector with a connect and a "
                         + "response timeout (Reactor Netty: HttpClient.create().option(CONNECT_TIMEOUT_MILLIS, ..)"
                         + ".responseTimeout(..)); Reactor Netty sets no response timeout by default.");
             }
@@ -391,7 +392,7 @@ final class ResilienceRules {
             if (unconfigured == null) {
                 untimedClients.add(new String[]{site.file().relPath(), String.valueOf(line)});
             } else {
-                unconfiguredClient(site, mi, line, unconfigured, statement, SPRING_CLIENT_REMEDY);
+                unconfiguredClient(site, mi, line, unconfigured, statement, false, springClientRemedy());
             }
             return;
         }
@@ -402,7 +403,7 @@ final class ResilienceRules {
                 .title("java.net.http.HttpClient without connectTimeout: a dependency that never answers the TCP handshake "
                         + "blocks the caller until the OS gives up (minutes)")
                 .suggestion("HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), and HttpRequest...timeout(...) per "
-                        + "request; or use an injected RestClient.Builder (spring.http.clients.* timeouts apply).");
+                        + "request; or use an injected RestClient.Builder (" + httpClientProperties(false) + " timeouts apply).");
         site.context(ctx, b, mi, statement);
     }
 
@@ -443,19 +444,48 @@ final class ResilienceRules {
      * A client Spring Boot's spring.http.clients.* timeouts do not reach (#48): reported where it is built, and the
      * property, set or not, does not silence it.
      */
-    private void unconfiguredClient(Site site, J tree, int line, String from, String statement, String remedy) {
+    private void unconfiguredClient(Site site, J tree, int line, String from, String statement, boolean reactive, String remedy) {
         if (ctx.ignored(site.file(), line, Rules.HTTP_CLIENT_NO_TIMEOUT)) {
             return;
         }
         OrderBuilder b = site.orderNth(ctx, Rules.HTTP_CLIENT_NO_TIMEOUT, line, "unconfigured")
-                .title("HTTP client built from " + from + " without timeouts: spring.http.clients.* does not reach it "
+                .title("HTTP client built from " + from + " without timeouts: " + httpClientProperties(reactive) + " does not reach it "
                         + "(Spring Boot configures only the builders it injects), so a slow dependency holds the calling thread")
                 .suggestion(remedy);
         site.context(ctx, b, tree, statement);
     }
 
-    private static final String SPRING_CLIENT_REMEDY = "Build it from the injected RestClient.Builder / RestTemplateBuilder "
-            + "(spring.http.clients.* timeouts apply), or give it a requestFactory with connect and read timeouts.";
+    private String springClientRemedy() {
+        return "Build it from the injected RestClient.Builder / RestTemplateBuilder (" + httpClientProperties(false)
+                + " timeouts apply), or give it a requestFactory with connect and read timeouts.";
+    }
+
+    /**
+     * Spring Boot's RestTemplateBuilder: org.springframework.boot.web.client in Boot 3, org.springframework.boot.restclient
+     * from Boot 4.0, in the spring-boot-restclient module (API docs, docs.spring.io/spring-boot/3.5/api/java and /4.0/api/java)
+     * (#98).
+     */
+    private static final Set<String> REST_TEMPLATE_BUILDERS = Set.of("org.springframework.boot.web.client.RestTemplateBuilder",
+            "org.springframework.boot.restclient.RestTemplateBuilder");
+
+    /** The service's Spring Boot {major, minor} (see {@link SetupRules#springBootVersion}), read once per scan. */
+    private int[] bootVersion() {
+        if (bootVersion == null) {
+            bootVersion = SetupRules.springBootVersion(ctx);
+        }
+        return bootVersion;
+    }
+
+    /**
+     * Spring Boot's HTTP client timeout properties as this Boot version names them, for advice (#98): spring.http.clients.*
+     * from 4.0 (and for an unknown version); in 3.x spring.http.client.* for RestClient / RestTemplate and
+     * spring.http.reactiveclient.* for WebClient (application properties appendix, 3.5 and 4.0).
+     */
+    private String httpClientProperties(boolean reactive) {
+        int major = bootVersion()[0];
+        return major == 0 || major >= 4 ? "spring.http.clients.*" : reactive ? "spring.http.reactiveclient.*" : "spring.http.client.*";
+    }
+
     private static final String WEB_CLIENT = "org.springframework.web.reactive.function.client.WebClient";
     /** Apache HttpClient: 5.x (classic and async) and 4.x. */
     private static final List<String> APACHE_PACKAGES = List.of("org.apache.hc.client5.http.", "org.apache.http.impl.");
@@ -508,7 +538,7 @@ final class ResilienceRules {
                         + "a dependency that stops answering holds the calling thread")
                 .suggestion("Set the timeouts on the client: setDefaultRequestConfig(RequestConfig.custom().setResponseTimeout(..)"
                         + ".build()) and a ConnectionConfig with setConnectTimeout(..) / setSocketTimeout(..) on its "
-                        + "connection manager; or call through Spring's injected RestClient.Builder (spring.http.clients.* "
+                        + "connection manager; or call through Spring's injected RestClient.Builder (" + httpClientProperties(false) + " "
                         + "applies to the HttpComponents request factory it creates).")
                 .doneWhen("the statement that builds the client sets a timeout, a RequestConfig, a ConnectionConfig or a "
                         + "connection manager");
@@ -538,8 +568,8 @@ final class ResilienceRules {
         if (statement.contains("imeout") || statement.contains("RequestFactory")) {
             return;
         }
-        unconfiguredClient(site, nc, stmt != null ? Pos.line(stmt) : Pos.line(nc), "new RestTemplate()", statement,
-                SPRING_CLIENT_REMEDY);
+        unconfiguredClient(site, nc, stmt != null ? Pos.line(stmt) : Pos.line(nc), "new RestTemplate()", statement, false,
+                springClientRemedy());
     }
 
     /**
@@ -551,7 +581,7 @@ final class ResilienceRules {
      * property exists the clients are reported instead.
      */
     private void springClientTimeouts() {
-        int[] boot = SetupRules.springBootVersion(ctx);
+        int[] boot = bootVersion();
         if (boot[0] == 3 || boot[0] > 0 && boot[0] < 3) {
             boolean three = boot[0] == 3;
             clientTimeouts(untimedClients, "client", "http-timeouts", "HTTP clients",
