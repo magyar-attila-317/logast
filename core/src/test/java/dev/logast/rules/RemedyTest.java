@@ -889,6 +889,32 @@ class RemedyTest {
                 quoteClient("", "post")));
     }
 
+    private static final String SHIPMENT_LOG = """
+            package x;
+
+            import org.slf4j.Logger;
+            import org.slf4j.LoggerFactory;
+
+            class ShipmentLog {
+                private static final Logger log = LoggerFactory.getLogger(ShipmentLog.class);
+
+                void shipped(String order, String orderId) {
+                    log.info("Shipment sent [PLAIN={}]", order);
+                    log.atInfo().addKeyValue("order.id", orderId).log("Shipment confirmed");
+                }
+            }
+            """;
+
+    /** #18: a field and its dotted sub-field: the search index maps the first as an object, a plain value is rejected. */
+    @Test
+    void aFieldAndItsDottedSubFieldConflict() throws IOException {
+        Map<String, String> before = Map.of(java("ShipmentLog"), SHIPMENT_LOG.replace("PLAIN", "order"),
+                "logast.yaml", "logging:\n  keyStyle: keep\n");
+        fires(Rules.LOG_KEY_NESTING_CONFLICT, before);
+        gone(Rules.LOG_KEY_NESTING_CONFLICT, "the plain value named order.ref", with(before, java("ShipmentLog"),
+                SHIPMENT_LOG.replace("PLAIN", "order.ref")));
+    }
+
     /** The client's public method makes the call through a private helper it calls on itself (#109). */
     private static final String SELF_CALLING_CLIENT = """
             package x;

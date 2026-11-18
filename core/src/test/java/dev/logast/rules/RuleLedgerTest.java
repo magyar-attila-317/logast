@@ -81,6 +81,7 @@ class RuleLedgerTest {
             Map.entry(Rules.RETRY_RECOMMENDED, "rules/RemedyTest#idempotentCallRetriedOnItsPath"),
             Map.entry(Rules.NESTED_RETRY, "rules/RemedyTest#retryAtOneLayerOnly"),
             Map.entry(Rules.RETRY_BYPASSED, "rules/RemedyTest#retryGoesWhereTheProxySeesTheCall"),
+            Map.entry(Rules.LOG_KEY_NESTING_CONFLICT, "rules/RemedyTest#aFieldAndItsDottedSubFieldConflict"),
             Map.entry(Rules.AUDIT_SECURITY_EVENTS, "rules/RemedyTest#securityEventsRecordedDurably"),
             Map.entry(Rules.TRACING_EXPORT_UNCONFIGURED, "rules/RemedyTest#tracingExportWithAnEndpointPerEnvironment"),
             // #92: the audit pack's report-only rules, each with the remedy its note names
@@ -116,6 +117,8 @@ class RuleLedgerTest {
             Map.entry(Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)"),
             Map.entry(Rules.RETRY_RECOMMENDED, "#105: no corpus reaches an idempotent client call from an entrypoint without a "
                     + "retry: fires in its own e2e scenario (expected-retry-coverage) and in RemedyTest#idempotentCallRetriedOnItsPath"),
+            Map.entry(Rules.LOG_KEY_NESTING_CONFLICT, "#18: no corpus logs x next to x.y before a migration: fires in its "
+                    + "own e2e scenario (expected-key-nesting-conflict) and in RemedyTest#aFieldAndItsDottedSubFieldConflict"),
             Map.entry(Rules.RETRY_BYPASSED, "#109: no corpus self-invokes a retried method: fires in "
                     + "RemedyTest#retryGoesWhereTheProxySeesTheCall"),
             Map.entry(Rules.NESTED_RETRY, "#105: no corpus has a retried method calling another one: fires in its own e2e scenario "
