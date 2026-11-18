@@ -25,7 +25,10 @@ import java.util.*;
  *       logged and skipped;</li>
  *   <li>UNBOUNDED_EXECUTOR: thread pools with unbounded threads or queues (memory, latency under load);</li>
  *   <li>BLOCKING_WAIT_UNBOUNDED: {@code future.get()}, {@code join()}, {@code latch.await()} without a timeout on a
- *       request/message path: one stuck dependency holds the request thread forever.</li>
+ *       request/message path: one stuck dependency holds the request thread forever;</li>
+ *   <li>SHUTDOWN_NOT_GRACEFUL, HEALTH_PROBE_MISCONFIGURED, READINESS_WITHOUT_DATABASE: rollouts that cut work off and
+ *       traffic that reaches instances that cannot serve it (service-level: only with a @SpringBootApplication);</li>
+ *   <li>CACHE_UNBOUNDED: Spring caches without a size bound.</li>
  * </ul>
  * Method bodies and field initializers are both scanned (executors and clients usually live in fields).
  */
@@ -88,6 +91,15 @@ final class ResilienceRules {
         if (ctx.enabled(Rules.SCHEDULER_SINGLE_THREAD)) {
             singleThreadScheduler();
         }
+        if (ctx.enabled(Rules.SHUTDOWN_NOT_GRACEFUL)) {
+            shutdown();
+        }
+        if (ctx.enabled(Rules.HEALTH_PROBE_MISCONFIGURED) || ctx.enabled(Rules.READINESS_WITHOUT_DATABASE)) {
+            probes();
+        }
+        if (ctx.enabled(Rules.CACHE_UNBOUNDED)) {
+            caches();
+        }
         if (!clients && !executors && !waits && !jdbc && !ctx.enabled(Rules.KAFKA_NO_ERROR_HANDLER)) {
             return;
         }
@@ -134,6 +146,9 @@ final class ResilienceRules {
             @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
                 JavaType.Method mt = mi.getMethodType();
+                if (clients && apacheClient(mi, site.file())) {
+                    apacheClientSite(site, mi, getCursor());
+                }
                 if (mt != null) {
                     String owner = mt.getDeclaringType().getFullyQualifiedName();
                     String name = mt.getName();
@@ -331,8 +346,10 @@ final class ResilienceRules {
         boolean spring = (owner.equals("org.springframework.web.client.RestClient") && Set.of("builder", "create").contains(name))
                 || (owner.equals("org.springframework.web.client.RestClient$Builder") && name.equals("build"))
                 || (owner.equals("org.springframework.boot.restclient.RestTemplateBuilder") && name.equals("build"));
+        boolean webClient = (owner.equals(WEB_CLIENT) && Set.of("builder", "create").contains(name))
+                || (owner.equals(WEB_CLIENT + "$Builder") && name.equals("build"));
         boolean jdk = owner.equals("java.net.http.HttpClient") && Set.of("newHttpClient", "newBuilder").contains(name);
-        if (!spring && !jdk) {
+        if (!spring && !jdk && !webClient) {
             return;
         }
         J stmt = statement(cursor);
@@ -340,16 +357,29 @@ final class ResilienceRules {
         if (stmt != null && !seenStatements.add(site.file().relPath() + ":" + Pos.start(stmt))) {
             return;
         }
-        if (statement.contains("imeout") || statement.contains("requestFactory(") || statement.contains("RequestFactory")) {
-            return; // timeouts (or a configured request factory) set right here
+        if (statement.contains("imeout") || statement.contains("requestFactory(") || statement.contains("RequestFactory")
+                || webClient && statement.contains("clientConnector(")) {
+            return; // timeouts (or a configured request factory / connector) set right here
         }
         int line = stmt != null ? Pos.line(stmt) : Pos.line(mi.getName());
+        if (webClient) {
+            // #90 item 6: WebClient.create() / the static WebClient.builder() get no auto-configuration (Spring Boot
+            // reference, "Calling REST Services"); a builder Spring injects is left to Spring Boot's settings
+            String unconfigured = unconfiguredBuilder(mi, cursor);
+            if (unconfigured != null) {
+                unconfiguredClient(site, mi, line, unconfigured, statement, "Build it from the injected WebClient.Builder "
+                        + "(Spring Boot's HTTP client settings apply), or give it a clientConnector with a connect and a "
+                        + "response timeout (Reactor Netty: HttpClient.create().option(CONNECT_TIMEOUT_MILLIS, ..)"
+                        + ".responseTimeout(..)); Reactor Netty sets no response timeout by default.");
+            }
+            return;
+        }
         if (spring) {
             String unconfigured = unconfiguredBuilder(mi, cursor);
             if (unconfigured == null) {
                 untimedClients.add(new String[]{site.file().relPath(), String.valueOf(line)});
             } else {
-                unconfiguredClient(site, mi, line, unconfigured, statement);
+                unconfiguredClient(site, mi, line, unconfigured, statement, SPRING_CLIENT_REMEDY);
             }
             return;
         }
@@ -401,16 +431,76 @@ final class ResilienceRules {
      * A client Spring Boot's spring.http.clients.* timeouts do not reach (#48): reported where it is built, and the
      * property, set or not, does not silence it.
      */
-    private void unconfiguredClient(Site site, J tree, int line, String from, String statement) {
+    private void unconfiguredClient(Site site, J tree, int line, String from, String statement, String remedy) {
         if (ctx.ignored(site.file(), line, Rules.HTTP_CLIENT_NO_TIMEOUT)) {
             return;
         }
         OrderBuilder b = site.orderNth(ctx, Rules.HTTP_CLIENT_NO_TIMEOUT, line, "unconfigured")
                 .title("HTTP client built from " + from + " without timeouts: spring.http.clients.* does not reach it "
                         + "(Spring Boot configures only the builders it injects), so a slow dependency holds the calling thread")
-                .suggestion("Build it from the injected RestClient.Builder / RestTemplateBuilder (spring.http.clients.* "
-                        + "timeouts apply), or give it a requestFactory with connect and read timeouts.");
+                .suggestion(remedy);
         site.context(ctx, b, tree, statement);
+    }
+
+    private static final String SPRING_CLIENT_REMEDY = "Build it from the injected RestClient.Builder / RestTemplateBuilder "
+            + "(spring.http.clients.* timeouts apply), or give it a requestFactory with connect and read timeouts.";
+    private static final String WEB_CLIENT = "org.springframework.web.reactive.function.client.WebClient";
+    /** Apache HttpClient: 5.x (classic and async) and 4.x. */
+    private static final List<String> APACHE_PACKAGES = List.of("org.apache.hc.client5.http.", "org.apache.http.impl.");
+    private static final Set<String> APACHE_FACTORIES = Set.of("HttpClients", "HttpClientBuilder", "HttpAsyncClients",
+            "HttpAsyncClientBuilder");
+
+    /**
+     * #90 item 6: {@code HttpClients.createDefault()} / {@code .custom()} / {@code HttpClientBuilder.create()} of Apache
+     * HttpClient, resolved or (the library is not on logast's classpath) imported from its packages.
+     */
+    private static boolean apacheClient(J.MethodInvocation mi, SourceFileInfo f) {
+        if (!Set.of("createDefault", "createSystem", "custom", "create").contains(mi.getSimpleName())
+                || !(mi.getSelect() instanceof J.Identifier factory) || !APACHE_FACTORIES.contains(factory.getSimpleName())) {
+            return false;
+        }
+        JavaType.Method mt = mi.getMethodType();
+        if (mt != null && !(mt.getDeclaringType() instanceof JavaType.Unknown)) {
+            String owner = mt.getDeclaringType().getFullyQualifiedName();
+            return APACHE_PACKAGES.stream().anyMatch(owner::startsWith);
+        }
+        String text = f.text();
+        return APACHE_PACKAGES.stream().anyMatch(pkg -> java.util.regex.Pattern.compile("(?m)^import\\s+"
+                + java.util.regex.Pattern.quote(pkg) + "[\\w.]*\\b" + factory.getSimpleName() + ";").matcher(text).find());
+    }
+
+    /**
+     * Apache HttpClient built by hand (#90 item 6): no Spring Boot setting reaches it, its socket/response timeout is
+     * undefined by default (no timeout) and its connect timeout 3 minutes (httpclient5 ConnectionConfig /
+     * RequestConfig). Reported unless the statement configures timeouts, a RequestConfig, ConnectionConfig or
+     * connection manager.
+     */
+    private void apacheClientSite(Site site, J.MethodInvocation mi, Cursor cursor) {
+        J stmt = statement(cursor);
+        String statement = stmt == null ? "" : site.file().slice(Pos.start(stmt), Pos.end(stmt));
+        if (stmt != null && !seenStatements.add(site.file().relPath() + ":" + Pos.start(stmt))) {
+            return;
+        }
+        if (statement.contains("imeout") || statement.contains("RequestConfig") || statement.contains("ConnectionConfig")
+                || statement.contains("ConnectionManager")) {
+            return;
+        }
+        int line = stmt != null ? Pos.line(stmt) : Pos.line(mi.getName());
+        if (ctx.ignored(site.file(), line, Rules.HTTP_CLIENT_NO_TIMEOUT)) {
+            return;
+        }
+        String from = ((J.Identifier) mi.getSelect()).getSimpleName() + "." + mi.getSimpleName() + "()";
+        OrderBuilder b = site.orderNth(ctx, Rules.HTTP_CLIENT_NO_TIMEOUT, line, "apache")
+                .title("Apache HttpClient built with " + from + " without timeouts: its response (socket) timeout is "
+                        + "undefined by default and its connect timeout 3 minutes, and no Spring Boot setting reaches it, so "
+                        + "a dependency that stops answering holds the calling thread")
+                .suggestion("Set the timeouts on the client: setDefaultRequestConfig(RequestConfig.custom().setResponseTimeout(..)"
+                        + ".build()) and a ConnectionConfig with setConnectTimeout(..) / setSocketTimeout(..) on its "
+                        + "connection manager; or call through Spring's injected RestClient.Builder (spring.http.clients.* "
+                        + "applies to the HttpComponents request factory it creates).")
+                .doneWhen("the statement that builds the client sets a timeout, a RequestConfig, a ConnectionConfig or a "
+                        + "connection manager");
+        site.context(ctx, b, mi, statement);
     }
 
     /** The statement containing the cursor (the whole builder chain / declaration). */
@@ -436,7 +526,8 @@ final class ResilienceRules {
         if (statement.contains("imeout") || statement.contains("RequestFactory")) {
             return;
         }
-        unconfiguredClient(site, nc, stmt != null ? Pos.line(stmt) : Pos.line(nc), "new RestTemplate()", statement);
+        unconfiguredClient(site, nc, stmt != null ? Pos.line(stmt) : Pos.line(nc), "new RestTemplate()", statement,
+                SPRING_CLIENT_REMEDY);
     }
 
     /** One YAML order: Spring's builders apply spring.http.clients.* to every client they build. */
@@ -1001,6 +1092,351 @@ final class ResilienceRules {
                 .doneWhen("spring.task.scheduling.pool.size or spring.threads.virtual.enabled: true is set in the Spring "
                         + "configuration, or the service declares its own TaskScheduler bean / SchedulingConfigurer");
         jobs.stream().skip(1).forEach(m -> b.location(m.file().relPath(), m.line(), Rules.SCHEDULER_SINGLE_THREAD));
+    }
+
+    // ---- rollout and readiness (#29, #30) ------------------------------------------------------
+
+    /** The service's @SpringBootApplication class (the first, sorted by path), or null for a library. */
+    private ClassInfo bootApplication() {
+        return ctx.a.index.classes().stream()
+                .filter(c -> c.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, SPRING_BOOT_APPLICATION)))
+                .min(Comparator.comparing(c -> c.file().relPath())).orElse(null);
+    }
+
+    /** The value the Spring configuration sets for {@code key} (relaxed binding), or null. */
+    private String value(String key) {
+        String want = key.replace("-", "").toLowerCase(Locale.ROOT);
+        return ctx.a.springProperties.entrySet().stream()
+                .filter(e -> e.getKey().replace("-", "").toLowerCase(Locale.ROOT).equals(want))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+    }
+
+    /** The comma-separated or list values of {@code key} ({@code key: a,b} or {@code key: [a, b]}), as written. */
+    private List<String> values(String key) {
+        String want = key.replace("-", "").toLowerCase(Locale.ROOT);
+        List<String> out = new ArrayList<>();
+        ctx.a.springProperties.forEach((k, v) -> {
+            String norm = k.replace("-", "").toLowerCase(Locale.ROOT);
+            if (norm.equals(want) || norm.matches(java.util.regex.Pattern.quote(want) + "\\[\\d+]")) {
+                Arrays.stream(v.split(",")).map(String::strip).filter(x -> !x.isEmpty()).forEach(out::add);
+            }
+        });
+        return out;
+    }
+
+    /** Where the Spring configuration sets {@code key}: the config file and line, else the service's YAML at line 1. */
+    private String[] configLine(String key) {
+        java.nio.file.Path dir = dev.logast.SpringProperties.appResources(ctx.a.project.root());
+        String leaf = key.substring(key.lastIndexOf('.') + 1);
+        if (dir != null) {
+            for (String name : dev.logast.SpringProperties.FILES.reversed()) {   // the file that wins first
+                java.nio.file.Path f = dir.resolve(name);
+                if (!java.nio.file.Files.exists(f)) {
+                    continue;
+                }
+                String[] lines = SetupRules.read(f).split("\n", -1);
+                for (int i = 0; i < lines.length; i++) {
+                    String l = lines[i].strip();
+                    if (name.endsWith(".properties") ? l.startsWith(key + "=") || l.startsWith(key + " ") || l.startsWith(key + ":")
+                            : l.startsWith(leaf + ":") || l.startsWith(key + ":")) {
+                        return new String[]{ctx.a.project.root().relativize(f).toString().replace('\\', '/'), String.valueOf(i + 1)};
+                    }
+                }
+            }
+        }
+        return new String[]{ServiceYaml.path(ctx), "1"};
+    }
+
+    /** A Spring Boot duration in milliseconds: {@code secondsByDefault} for properties declared with @DurationUnit(SECONDS). */
+    private static Long durationMillis(String value, boolean secondsByDefault) {
+        if (value == null) {
+            return null;
+        }
+        String v = value.strip();
+        return v.matches("\\d+") && !secondsByDefault ? Long.valueOf(v) : millis(v);
+    }
+
+    /**
+     * SHUTDOWN_NOT_GRACEFUL (#29, #90 item 2). "Graceful shutdown is enabled by default with all three embedded web
+     * servers (Jetty, Reactor Netty, and Tomcat) and with both reactive and servlet-based web applications"; it is
+     * disabled with {@code server.shutdown: immediate}, and the grace period is
+     * {@code spring.lifecycle.timeout-per-shutdown-phase} (Spring Boot reference, "Graceful Shutdown",
+     * docs.spring.io/spring-boot/reference/web/graceful-shutdown.html; default 30s, application properties appendix,
+     * 3.5 and 4.x). Reported: a web service that turns it off, and a shutdown phase shorter than a timeout the
+     * configuration gives running work (HTTP read timeout, MVC async request timeout, transaction timeout), which then
+     * is cut off at shutdown. The query timeout logast writes (resilience.dbQueryTimeout) is a stop for "forever", not
+     * how long work takes, so it is not compared. Service-level: only with a @SpringBootApplication.
+     */
+    private void shutdown() {
+        if (bootApplication() == null) {
+            return;
+        }
+        boolean web = ctx.a.entrypoints.stream().anyMatch(ep -> ep.kind() == Entrypoint.Kind.HTTP);
+        if (web && "immediate".equalsIgnoreCase(value("server.shutdown"))) {
+            String[] at = configLine("server.shutdown");
+            ctx.order(Rules.SHUTDOWN_NOT_GRACEFUL, "shutdown-immediate").at(at[0], Integer.parseInt(at[1]))
+                    .title("server.shutdown: immediate turns graceful shutdown off: every rollout, restart or scale-down cuts "
+                            + "off the requests still running (Spring Boot shuts down gracefully by default)")
+                    .suggestion("Remove server.shutdown: immediate (graceful is the default for Tomcat, Jetty and Reactor "
+                            + "Netty): the web server then stops taking new requests and lets running ones finish within "
+                            + "spring.lifecycle.timeout-per-shutdown-phase (30s by default).")
+                    .basis("the service has HTTP endpoints and its Spring configuration sets server.shutdown: immediate")
+                    .doneWhen("server.shutdown is not immediate in the Spring configuration");
+        }
+        String phaseValue = value("spring.lifecycle.timeout-per-shutdown-phase");
+        Long phase = phaseValue == null ? Long.valueOf(30_000) : durationMillis(phaseValue, false);
+        if (phase == null) {
+            return;
+        }
+        String longest = null;
+        long longestMs = 0;
+        List<String[]> bounds = new ArrayList<>();   // key, value, seconds by default
+        ctx.a.springProperties.forEach((k, v) -> {
+            if (k.matches("spring\\.http\\.clients?\\.(?:[a-z-]+\\.)*read-timeout") || k.equals("spring.mvc.async.request-timeout")) {
+                bounds.add(new String[]{k, v, "ms"});
+            }
+        });
+        if (value("spring.transaction.default-timeout") != null) {
+            bounds.add(new String[]{"spring.transaction.default-timeout", value("spring.transaction.default-timeout"), "s"});
+        }
+        for (String[] bound : bounds) {
+            Long ms = durationMillis(bound[1], bound[2].equals("s"));
+            if (ms != null && ms > longestMs) {
+                longestMs = ms;
+                longest = bound[0] + " = " + bound[1];
+            }
+        }
+        if (longest == null || longestMs <= phase) {
+            return;
+        }
+        String[] at = phaseValue == null ? new String[]{ServiceYaml.path(ctx), "1"} : configLine("spring.lifecycle.timeout-per-shutdown-phase");
+        ctx.order(Rules.SHUTDOWN_NOT_GRACEFUL, "shutdown-phase").at(at[0], Integer.parseInt(at[1]))
+                .title("Shutdown waits " + (phaseValue == null ? "30s (spring.lifecycle.timeout-per-shutdown-phase, the default)"
+                        : phaseValue + " (spring.lifecycle.timeout-per-shutdown-phase)") + ", less than the service lets work "
+                        + "run (" + longest + "): work still running when a rollout stops the instance is cut off")
+                .suggestion("Raise spring.lifecycle.timeout-per-shutdown-phase above the longest request or transaction, and "
+                        + "the platform's grace period with it (Kubernetes kills the pod after terminationGracePeriodSeconds, "
+                        + "30s by default); or lower that timeout.")
+                .basis("timeout-per-shutdown-phase " + (phaseValue == null ? "is not set (30s)" : "is " + phaseValue)
+                        + "; the longest timeout the Spring configuration sets for requests and transactions is " + longest)
+                .doneWhen("spring.lifecycle.timeout-per-shutdown-phase (30s when not set) is at least as long as every "
+                        + "HTTP client read timeout, spring.mvc.async.request-timeout and spring.transaction.default-timeout "
+                        + "in the Spring configuration");
+    }
+
+    /** Health indicators of systems outside the instance (Spring Boot's auto-configured indicator names). */
+    private static final Set<String> EXTERNAL_INDICATORS = Set.of("db", "r2dbc", "redis", "mongo", "rabbit", "jms",
+            "elasticsearch", "cassandra", "couchbase", "neo4j", "ldap", "mail", "hazelcast", "influxdb", "solr", "*");
+
+    /**
+     * HEALTH_PROBE_MISCONFIGURED and READINESS_WITHOUT_DATABASE (#30, #90 item 2), from Spring Boot reference,
+     * "Kubernetes Probes" (docs.spring.io/spring-boot/reference/actuator/endpoints.html):
+     * <ul>
+     *   <li>the liveness/readiness groups are on by default in Boot 4 (management.endpoint.health.probes.enabled
+     *       defaults to true) and on Kubernetes in Boot 3 ("automatically enabled only if the application runs in a
+     *       Kubernetes environment"); an explicit false switches them off on Kubernetes too
+     *       (AvailabilityProbesAutoConfiguration.ProbesCondition, 3.5): reported;</li>
+     *   <li>"The liveness probe should not depend on health checks for external systems": a database, broker or cache
+     *       in the liveness group restarts every instance when it is down: reported;</li>
+     *   <li>"Spring Boot does not add other health indicators to these groups"; whether readiness includes a shared
+     *       database is "a judgement call": a low-severity report asking for the decision, never written by logast.</li>
+     * </ul>
+     * Service-level: only with a @SpringBootApplication, and the readiness note only with Actuator (on the classpath or
+     * configured under management.*).
+     */
+    private void probes() {
+        if (bootApplication() == null) {
+            return;
+        }
+        String enabledKey = value("management.endpoint.health.probes.enabled") != null ? "management.endpoint.health.probes.enabled"
+                : value("management.health.probes.enabled") != null ? "management.health.probes.enabled" : null;
+        boolean disabled = enabledKey != null && "false".equalsIgnoreCase(value(enabledKey));
+        if (ctx.enabled(Rules.HEALTH_PROBE_MISCONFIGURED) && disabled) {
+            String[] at = configLine(enabledKey);
+            ctx.order(Rules.HEALTH_PROBE_MISCONFIGURED, "probes-disabled").at(at[0], Integer.parseInt(at[1]))
+                    .title(enabledKey + ": false switches the liveness and readiness groups off, on Kubernetes too: "
+                            + "/actuator/health/liveness and /readiness disappear, and probes pointed at /actuator/health "
+                            + "restart or unroute the instance whenever any dependency is down")
+                    .suggestion("Remove the property (the probe groups are on by default in Spring Boot 4 and on Kubernetes in "
+                            + "Spring Boot 3), and point the platform's liveness and readiness probes at "
+                            + "/actuator/health/liveness and /actuator/health/readiness.")
+                    .basis("the Spring configuration sets " + enabledKey + ": false")
+                    .doneWhen(enabledKey + " is not false in the Spring configuration");
+        }
+        List<String> liveness = values("management.endpoint.health.group.liveness.include");
+        List<String> external = liveness.stream().filter(i -> EXTERNAL_INDICATORS.contains(i.toLowerCase(Locale.ROOT))).toList();
+        if (ctx.enabled(Rules.HEALTH_PROBE_MISCONFIGURED) && !external.isEmpty()) {
+            String[] at = configLine("management.endpoint.health.group.liveness.include");
+            ctx.order(Rules.HEALTH_PROBE_MISCONFIGURED, "liveness-external").at(at[0], Integer.parseInt(at[1]))
+                    .title("The liveness group includes " + String.join(", ", external) + ": when that system is down, every "
+                            + "instance fails liveness and is restarted, which does not bring it back (liveness should not "
+                            + "depend on external systems)")
+                    .suggestion("Keep liveness to the instance itself (management.endpoint.health.group.liveness.include: "
+                            + "livenessState); if the dependency should take the instance out of traffic, put it in the "
+                            + "readiness group instead.")
+                    .basis("management.endpoint.health.group.liveness.include lists " + String.join(", ", external))
+                    .doneWhen("management.endpoint.health.group.liveness.include names none of "
+                            + String.join(", ", new TreeSet<>(EXTERNAL_INDICATORS)));
+        }
+        List<String> readiness = values("management.endpoint.health.group.readiness.include");
+        if (ctx.enabled(Rules.READINESS_WITHOUT_DATABASE) && !disabled && actuator() && usesDatabase()
+                && readiness.stream().noneMatch(i -> i.equalsIgnoreCase("db") || i.equals("*"))) {
+            ctx.order(Rules.READINESS_WITHOUT_DATABASE, "readiness-db").at(ServiceYaml.path(ctx), 1)
+                    .title("The readiness group does not include the database (db): an instance that lost its database keeps "
+                            + "receiving traffic and fails it (Spring Boot adds no other checks to readiness by default)")
+                    .suggestion("Decide, as the Spring Boot reference puts it a judgement call: include it "
+                            + "(management.endpoint.health.group.readiness.include: readinessState,db), and with a database "
+                            + "every instance shares, all go out of service together while it is down; or leave it out and "
+                            + "handle the failures in the callers, then switch this rule off for the service "
+                            + "(rules: {READINESS_WITHOUT_DATABASE: {enabled: false}} in logast.yaml).")
+                    .basis("the service uses a database (JDBC / JPA) and Actuator, and "
+                            + (readiness.isEmpty() ? "management.endpoint.health.group.readiness.include is not set"
+                            : "management.endpoint.health.group.readiness.include is " + String.join(",", readiness)))
+                    .doneWhen("management.endpoint.health.group.readiness.include names db, or the rule is switched off in "
+                            + "logast.yaml");
+        }
+    }
+
+    /** Spring Boot Actuator: on the classpath (Boot 4 or Boot 3 location of the health endpoint) or configured. */
+    private boolean actuator() {
+        var probe = ctx.a.project.probe();
+        return probe.hasClass("org.springframework.boot.health.actuate.endpoint.HealthEndpoint")
+                || probe.hasClass("org.springframework.boot.actuate.health.HealthEndpoint")
+                || ctx.a.springProperties.keySet().stream().anyMatch(k -> k.startsWith("management.endpoint.")
+                || k.startsWith("management.endpoints.") || k.startsWith("management.health."));
+    }
+
+    /**
+     * A relational database: a JdbcTemplate / JdbcClient / DataSource field, JPA, or @Transactional methods (Spring
+     * Boot's auto-configured transaction manager is the DataSource's or JPA's).
+     */
+    private boolean usesDatabase() {
+        if (ctx.methods().stream().anyMatch(m -> TRANSACTIONAL.stream().anyMatch(m::hasAnnotation))) {
+            return true;
+        }
+        return ctx.methodsOwners().stream().anyMatch(c -> usesJpa(c) || c.decl().getBody().getStatements().stream()
+                .anyMatch(s -> s instanceof J.VariableDeclarations vd && (JDBC_TYPES.stream().anyMatch(t -> TypeUtils.isAssignableTo(t, vd.getType()))
+                        || TypeUtils.isOfClassType(vd.getType(), "javax.sql.DataSource"))));
+    }
+
+    // ---- caches (#90 item 7) ---------------------------------------------------------------------
+
+    /** Cache libraries in Spring Boot's detection order (Spring Boot reference, "Caching", Supported Cache Providers). */
+    private static final List<String[]> CACHE_PROVIDERS = List.of(
+            new String[]{"jcache", "javax.cache.Caching", "javax.cache"},
+            new String[]{"hazelcast", "com.hazelcast.core.HazelcastInstance", "hazelcast"},
+            new String[]{"infinispan", "org.infinispan.spring.embedded.provider.SpringEmbeddedCacheManager", "infinispan"},
+            new String[]{"couchbase", "com.couchbase.client.java.Cluster", "couchbase"},
+            new String[]{"redis", "org.springframework.data.redis.connection.RedisConnectionFactory", "redis"},
+            new String[]{"caffeine", "com.github.benmanes.caffeine.cache.Caffeine", "caffeine"},
+            new String[]{"cache2k", "org.cache2k.Cache2kBuilder", "cache2k"});
+
+    /**
+     * CACHE_UNBOUNDED (#90 item 7). With @EnableCaching and no CacheManager bean, Spring Boot picks the first cache
+     * library it finds; with none, "a simple implementation using a ConcurrentHashMap as the cache store is configured.
+     * This is the default if no caching library is present", "not really recommended for production usage" (Spring
+     * Boot reference, "Caching", docs.spring.io/spring-boot/reference/io/caching.html, 3.5 and 4.x); that cache "does
+     * not provide any management, persistence capabilities, or eviction contracts" (Spring Framework reference, "Cache
+     * Store Configuration"). Caffeine is bounded only by maximumSize / maximumWeight in its spec or bean. Reported: every
+     * distinct key stays in memory. Library detection: logast's classpath, or the library named in the build file.
+     */
+    private void caches() {
+        ClassInfo enabling = ctx.methodsOwners().stream()
+                .filter(c -> c.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, "org.springframework.cache.annotation.EnableCaching")))
+                .min(Comparator.comparing(c -> c.file().relPath())).orElse(null);
+        if (enabling == null) {
+            return;
+        }
+        int line = Pos.line(enabling.decl().getName());
+        String why = unboundedCache(enabling);
+        if (why == null || ctx.ignored(enabling.file(), line, Rules.CACHE_UNBOUNDED)) {
+            return;
+        }
+        ctx.order(Rules.CACHE_UNBOUNDED, "cache-unbounded").at(enabling.file().relPath(), line)
+                .title("Caches without a size bound (" + why + "): every distinct key stays in memory until the heap runs out")
+                .suggestion("Bound the caches: Caffeine (com.github.ben-manes.caffeine:caffeine) with spring.cache.caffeine.spec: "
+                        + "maximumSize=..,expireAfterWrite=.., or a CacheManager bean whose caches have a maximum size; "
+                        + "Spring Boot's simple ConcurrentHashMap provider never evicts.")
+                .basis("@EnableCaching on " + enabling.simpleName() + "; " + why)
+                .doneWhen("the caches have a size bound: a cache library other than the ConcurrentHashMap one is used "
+                        + "(classpath, build file, spring.cache.type or a CacheManager bean), and a Caffeine spec or bean sets "
+                        + "maximumSize or maximumWeight");
+    }
+
+    /** Why the service's caches are unbounded, or null when they are bounded (or logast cannot tell). */
+    private String unboundedCache(ClassInfo enabling) {
+        List<MethodInfo> managers = ctx.methods().stream().filter(m -> m.decl().getBody() != null
+                && (beanReturning(m, "CacheManager") || m.decl().getSimpleName().equals("cacheManager")
+                && m.owner().type() != null && TypeUtils.isAssignableTo("org.springframework.cache.annotation.CachingConfigurer", m.owner().type())))
+                .toList();
+        if (!managers.isEmpty()) {
+            String text = String.join("\n", managers.stream().map(m -> m.file().slice(Pos.start(m.decl()), Pos.end(m.decl()))).toList());
+            if (text.contains("ConcurrentMapCacheManager") || text.contains("ConcurrentMapCacheFactoryBean")
+                    || text.contains("ConcurrentMapCache(")) {
+                return "the CacheManager bean keeps them in ConcurrentHashMaps (no eviction)";
+            }
+            if (text.contains("CaffeineCacheManager") && !bounded(text) && !caffeineBounded()) {
+                return "the CaffeineCacheManager bean sets no maximumSize";
+            }
+            return null;
+        }
+        String type = value("spring.cache.type");
+        if (type != null) {
+            return switch (type.strip().toLowerCase(Locale.ROOT)) {
+                case "simple" -> "spring.cache.type: simple keeps them in ConcurrentHashMaps (no eviction)";
+                case "caffeine" -> caffeineBounded() ? null : "the Caffeine spec sets no maximumSize";
+                default -> null;
+            };
+        }
+        if (ctx.methods().stream().anyMatch(m -> beanReturning(m, "Cache") && !beanReturning(m, "CacheManager"))) {
+            return null;   // Generic: Cache beans of the service's own
+        }
+        String build = buildText(enabling);
+        for (String[] provider : CACHE_PROVIDERS) {
+            if (ctx.a.project.probe().hasClass(provider[1]) || build.contains(provider[2])) {
+                return provider[0].equals("caffeine") && !caffeineBounded() ? "the Caffeine spec sets no maximumSize" : null;
+            }
+        }
+        return "no cache library is on the classpath, so Spring Boot falls back to its simple provider (a ConcurrentHashMap "
+                + "per cache, no eviction)";
+    }
+
+    /** A @Bean method whose declared return type is named {@code simpleName} or ends with it (CaffeineCacheManager). */
+    private static boolean beanReturning(MethodInfo m, String simpleName) {
+        if (m.decl().getReturnTypeExpression() == null || m.decl().getLeadingAnnotations().stream()
+                .noneMatch(a -> Annotations.is(a, "org.springframework.context.annotation.Bean"))) {
+            return false;
+        }
+        String written = m.decl().getReturnTypeExpression().printTrimmed().replaceAll("<.*", "");
+        return written.equals(simpleName) || written.endsWith(simpleName) && simpleName.equals("CacheManager");
+    }
+
+    private static boolean bounded(String text) {
+        return text.contains("maximumSize") || text.contains("maximumWeight");
+    }
+
+    /** spring.cache.caffeine.spec, or a Caffeine / CaffeineSpec bean, sets a maximum size. */
+    private boolean caffeineBounded() {
+        String spec = value("spring.cache.caffeine.spec");
+        if (spec != null && bounded(spec)) {
+            return true;
+        }
+        return ctx.methods().stream().filter(m -> beanReturning(m, "Caffeine") || beanReturning(m, "CaffeineSpec"))
+                .anyMatch(m -> bounded(m.file().slice(Pos.start(m.decl()), Pos.end(m.decl()))));
+    }
+
+    /** The Gradle or Maven build of the class's module (with the scripts it applies), or "". */
+    private String buildText(ClassInfo c) {
+        java.nio.file.Path root = ctx.a.project.root();
+        for (java.nio.file.Path dir = c.file().absPath().getParent(); dir != null && dir.startsWith(root); dir = dir.getParent()) {
+            for (String n : List.of("build.gradle.kts", "build.gradle", "pom.xml")) {
+                java.nio.file.Path f = dir.resolve(n);
+                if (java.nio.file.Files.exists(f)) {
+                    return n.equals("pom.xml") ? SetupRules.read(f) : BuildScripts.of(root, f).text();
+                }
+            }
+        }
+        return "";
     }
 
     // ---- Kafka ----------------------------------------------------------------------------------

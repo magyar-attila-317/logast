@@ -2822,6 +2822,113 @@ class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-spring-resilience"), actual);
     }
 
+    /** #90 items 2, 6, 7: the shapes of {@link #rolloutReadinessClientsAndCachesAreReported()}. */
+    private static final IoAction ROLLOUT_AND_CACHES = app -> {
+        Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/depot"));
+        // WebClient.create() gets no Spring Boot configuration; one with its own connector is configured
+        Files.writeString(dir.resolve("DepotClient.java"), """
+                package com.example.e2e.depot;
+
+                import org.springframework.http.client.reactive.ClientHttpConnector;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.reactive.function.client.WebClient;
+
+                @Component
+                public class DepotClient {
+                    private final WebClient depots;
+
+                    public DepotClient(ClientHttpConnector connector) {
+                        this.depots = WebClient.builder().clientConnector(connector).baseUrl("http://depots").build();
+                    }
+
+                    public String slot(String depotId) {
+                        WebClient slots = WebClient.create("http://slots");
+                        return slots.get().uri("/slots/{id}", depotId).retrieve().bodyToMono(String.class).block();
+                    }
+
+                    public String depot(String depotId) {
+                        return depots.get().uri("/depots/{id}", depotId).retrieve().bodyToMono(String.class).block();
+                    }
+                }
+                """);
+        // Apache HttpClient: createDefault() has no response timeout; the one with a RequestConfig is configured
+        Files.writeString(dir.resolve("DepotFeeds.java"), """
+                package com.example.e2e.depot;
+
+                import java.util.concurrent.TimeUnit;
+                import org.apache.hc.client5.http.config.RequestConfig;
+                import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+                import org.apache.hc.client5.http.impl.classic.HttpClients;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class DepotFeeds {
+                    private final CloseableHttpClient feeds = HttpClients.createDefault();
+                    private final CloseableHttpClient alerts = HttpClients.custom()
+                            .setDefaultRequestConfig(RequestConfig.custom().setResponseTimeout(5, TimeUnit.SECONDS).build())
+                            .build();
+
+                    public boolean ready() {
+                        return feeds != null && alerts != null;
+                    }
+                }
+                """);
+        // no cache library on the classpath: Spring Boot's simple provider never evicts
+        Files.writeString(dir.resolve("DepotCacheConfig.java"), """
+                package com.example.e2e.depot;
+
+                import org.springframework.cache.annotation.EnableCaching;
+                import org.springframework.context.annotation.Configuration;
+
+                @Configuration
+                @EnableCaching
+                public class DepotCacheConfig {
+                }
+                """);
+        // graceful shutdown switched off, a shutdown phase shorter than a transaction, the database in liveness
+        Path yml = app.resolve("src/main/resources/application.yml");
+        String text = Files.readString(yml);
+        String rollout = text.replaceFirst("(?m)^spring:\n", "spring:\n  lifecycle:\n    timeout-per-shutdown-phase: 20s\n"
+                + "  transaction:\n    default-timeout: 60s\n")
+                + "server:\n  shutdown: immediate\n"
+                + "management:\n  endpoint:\n    health:\n      group:\n        liveness:\n          include: livenessState,db\n";
+        assertThat(rollout).as("the spring: block takes the lifecycle settings").contains("timeout-per-shutdown-phase");
+        Files.writeString(yml, rollout);
+    };
+
+    /**
+     * #90 items 2, 6 and 7 (#29, #30): what a rollout, a slow dependency or a growing cache does to a service.
+     * {@code server.shutdown: immediate} and a shutdown phase (20s) shorter than the transaction timeout (60s) are
+     * reported (SHUTDOWN_NOT_GRACEFUL); the database in the liveness group (HEALTH_PROBE_MISCONFIGURED) and missing from
+     * readiness (READINESS_WITHOUT_DATABASE, a decision); {@code WebClient.create()} and Apache's
+     * {@code HttpClients.createDefault()} have no timeout Spring Boot could set (HTTP_CLIENT_NO_TIMEOUT), the ones
+     * with a connector / RequestConfig do; {@code @EnableCaching} without a cache library keeps ConcurrentHashMaps that
+     * never evict (CACHE_UNBOUNDED). Every file must equal e2e/expected-resilience-rollout; the resilience pack alone
+     * reports the same.
+     */
+    @Test
+    void rolloutReadinessClientsAndCachesAreReported() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, ROLLOUT_AND_CACHES);
+        String findings = actual.get("FINDINGS.txt");
+        List<String> expected = List.of("server.shutdown: immediate turns graceful shutdown off",
+                "(spring.lifecycle.timeout-per-shutdown-phase), less than the service lets work run "
+                        + "(spring.transaction.default-timeout = ",
+                "The liveness group includes db", "The readiness group does not include the database",
+                "HTTP client built from WebClient.create() without timeouts",
+                "Apache HttpClient built with HttpClients.createDefault() without timeouts",
+                "Caches without a size bound (no cache library is on the classpath");
+        assertThat(findings).contains(expected).doesNotContain("HttpClients.custom()").doesNotContain("WebClient.builder()");
+        golden(EXPECTED.resolveSibling("expected-resilience-rollout"), actual);
+
+        // the resilience pack on its own reports the same
+        Map<String, String> alone = migrate(tmp.resolve("resilience-only"), CLASSPATH, app -> {
+            ROLLOUT_AND_CACHES.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [resilience]"));
+        });
+        assertThat(alone.get("FINDINGS.txt")).contains(expected);
+    }
+
     /**
      * Java 22+ unnamed catch parameters (#44): {@code catch (X _)} cannot be passed on as a cause or logged, so neither
      * fix may write {@code _} into the code. Needs JDK 22+ to compile.

@@ -9,7 +9,7 @@ public class PricingClient {
     private final WebClient client;
 
     public PricingClient() {
-        this.client = WebClient.builder().baseUrl("http://pricing").build(); // expect: HTTP_CLIENT_UNTRACED
+        this.client = WebClient.builder().baseUrl("http://pricing").build(); // expect: HTTP_CLIENT_UNTRACED, HTTP_CLIENT_NO_TIMEOUT
     }
 
     public String price(String sku) {

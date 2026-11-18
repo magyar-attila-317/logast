@@ -3,5 +3,12 @@ spring:
     name: shop
 server:
   port: 8080
+  shutdown: immediate   # cuts off running requests on every rollout (SHUTDOWN_NOT_GRACEFUL)
   error:
     include-message: always   # leaks exception messages (ERROR_DETAILS_EXPOSED)
+management:
+  endpoint:
+    health:
+      group:
+        liveness:
+          include: livenessState,db   # every instance restarts while the database is down (HEALTH_PROBE_MISCONFIGURED)
