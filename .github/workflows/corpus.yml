@@ -1,11 +1,9 @@
 # #9: logast on public Spring Boot services (corpus/corpus.yaml), cloned at pinned commits. It runs their Gradle builds
-# (third-party build scripts), so it runs here on a throwaway runner, nightly and on demand, never on a developer machine
-# by default and not on every push (minutes per service).
+# (third-party build scripts), so it runs here on a throwaway runner, on demand (owner: no nightly run), and locally
+# only by choice (./gradlew :cli:corpus); not on every push (minutes per service).
 name: corpus
 
 on:
-  schedule:
-    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       only:
