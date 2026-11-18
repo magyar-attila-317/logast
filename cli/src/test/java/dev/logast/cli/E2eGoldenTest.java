@@ -1673,8 +1673,11 @@ abstract class E2eGoldenTest {
         assertThat(actual.get(weekly + "WeeklyCloseRunner.java")).as("the job scopes the values of its run")
                 .contains("try (var mdc = MdcScope.of(\"countryCode\", countryCodeResolver.countryCode(), \"targetWeek\", "
                         + "targetWeekResolver.targetWeek())) {").doesNotContain("MDC.clear()");
-        assertThat(actual.get(weekly + "WeeklyReportStarter.java")).as("the startup hook scopes its own run")
-                .contains("try (var mdc = MdcScope.of(\"targetWeek\", targetWeekResolver.targetWeek())) {");
+        assertThat(actual.get(weekly + "WeeklyReportStarter.java")).as("the startup hook scopes its own run; #20: in the "
+                        + "ObservedContext chain, not in an MdcScope inside it")
+                .contains("        ObservedContext.entrypoint(WeeklyMetrics.WEEKLY_REPORT_STARTER_ON_READY)\n"
+                        + "                .mdc(\"targetWeek\", targetWeekResolver.targetWeek())\n")
+                .doesNotContain("MdcScope.of");
         golden(EXPECTED.resolveSibling("expected-resolver-context"), actual);
     }
 
@@ -3562,8 +3565,10 @@ abstract class E2eGoldenTest {
                 .contains("ObservedContext.entrypoint(IntakeMetrics.PLEDGE_QUEUE_LISTENER_ON_BULK)");
         assertThat(actual.get(".logast/reports/apply-trace.txt")).as("#99: Stream times \"Order desk completed\": no second timer")
                 .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|PledgeQueueListener|PledgeImportTasklet|OrderLineProcessor)");
-        assertThat(actual.get(INTAKE + "OrderLedger.java")).as("#99: an MdcScope measures nothing: the timer comes in pass 1")
-                .contains("MdcScope.of(\"orderId\", order.id())").contains("ObservedContext.entrypoint(");
+        assertThat(actual.get(INTAKE + "OrderLedger.java")).as("#99: an MdcScope measures nothing: the timer comes in pass 1; "
+                        + "#20: its MDC goes into the ObservedContext chain, not into an MdcScope around it")
+                .contains("        ObservedContext.entrypoint(IntakeMetrics.ORDER_LEDGER)\n                .mdc(\"orderId\", order.id())\n")
+                .doesNotContain("MdcScope.of");
         assertThat(actual.get(INTAKE + "OrderDesk.java")).as("observed by Spring Cloud Stream: MDC only")
                 .doesNotContain("ObservedContext").contains("MdcScope.of(\"orderId\", order.id())");
         assertThat(actual.get(INTAKE + "CodeNormalizer.java")).as("bound: MDC; pledgeArchive is not bound")

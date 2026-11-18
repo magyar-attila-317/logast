@@ -154,6 +154,11 @@ final class EntrypointRules {
             extra.addAll(JavaEdits.imports(f, ctx.support("ObservedContext")));
             ctx.dependOnStarter(b);
             ctx.observedWrapped.add(m.key());   // its runtime line is the outcome; a plain MdcScope logs none
+        } else if (!missing.isEmpty() && top.isEmpty() && observedMdcAt(m, text, inner[0], inner[1]) >= 0) {
+            // #20: the method is one ObservedContext: its MDC goes into the chain, not around it
+            replacement = null;
+            b.edit(Edit.insert(f.relPath(), observedMdcAt(m, text, inner[0], inner[1]), observedMdc(m, text, missing)));
+            ctx.dependOnStarter(b);
         } else if (!missing.isEmpty()) {
             String var = unique("mdc", taken);
             replacement = indent + "try (var " + var + " = " + mdcScope(missing) + ") {\n"
@@ -314,6 +319,51 @@ final class EntrypointRules {
             }
         }.visit(m.decl().getBody(), 0);
         return !reassigned[0];
+    }
+
+    /**
+     * #20: where {@code .mdc(k, v)} goes instead of an MdcScope around {@code [start, end)}: right after
+     * {@code ObservedContext.entrypoint(..)} when the method is one ObservedContext chain ({@code …run(..)} /
+     * {@code return …call(..)}) and the range is its whole body or the whole body of the chain's lambda. One scope then,
+     * not an MdcScope around (or inside) the observation. -1 when the range is anything else.
+     */
+    static int observedMdcAt(MethodInfo m, String text, int start, int end) {
+        J.Block body = m.decl().getBody();
+        if (body == null || body.getStatements().size() != 1) {
+            return -1;
+        }
+        Statement st = body.getStatements().getFirst();
+        Expression e = st instanceof J.Return r ? r.getExpression() : st instanceof J.MethodInvocation mi ? mi : null;
+        if (!(e instanceof J.MethodInvocation last) || !(last.getSimpleName().equals("run") || last.getSimpleName().equals("call"))) {
+            return -1;
+        }
+        J.MethodInvocation head = last;
+        while (head.getSelect() instanceof J.MethodInvocation sel) {
+            head = sel;
+        }
+        if (!head.getSimpleName().equals("entrypoint") || !(head.getSelect() instanceof J.Identifier id)
+                || !id.getSimpleName().equals("ObservedContext")) {
+            return -1;
+        }
+        // the same code, whatever whitespace the range starts or ends with (a rule may replace whole lines)
+        String range = text.substring(start, end).strip();
+        int[] whole = JavaEdits.blockInner(text, body);
+        boolean wholeBody = whole != null && text.substring(whole[0], whole[1]).strip().equals(range);
+        boolean wholeLambda = false;
+        List<Expression> args = last.getArguments();
+        if (args.size() == 1 && args.getFirst() instanceof J.Lambda l && l.getBody() instanceof J.Block lb) {
+            int[] li = JavaEdits.blockInner(text, lb);
+            wholeLambda = li != null && !range.isEmpty() && text.substring(li[0], li[1]).strip().equals(range);
+        }
+        return wholeBody || wholeLambda ? Pos.end(head) : -1;
+    }
+
+    /** The {@code .mdc(k, v)} calls for {@link #observedMdcAt}, one per line at the chain's indentation. */
+    static String observedMdc(MethodInfo m, String text, List<DomainValues.Value> values) {
+        String cont = Text.indentAt(text, Pos.start(m.decl().getBody().getStatements().getFirst())) + Text.indentUnit(text) + Text.indentUnit(text);
+        StringBuilder sb = new StringBuilder();
+        values.forEach(v -> sb.append('\n').append(cont).append(".mdc(\"").append(v.key()).append("\", ").append(v.expr()).append(')'));
+        return sb.toString();
     }
 
     static String mdcScope(List<DomainValues.Value> values) {
