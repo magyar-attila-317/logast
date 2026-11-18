@@ -118,6 +118,9 @@ public final class PolicyValidator {
         duration("resilience.httpReadTimeout", p.resilience().httpReadTimeout());
         duration("resilience.dbQueryTimeout", p.resilience().dbQueryTimeout());
 
+        if (!p.support().repository().isEmpty() && !p.support().repository().matches("https?://\\S+")) {
+            error("support.repository", "'" + p.support().repository() + "' is not an http(s) URL of a Maven repository");
+        }
         // #24: a pinned starter older than the calls this logast writes
         if (!p.support().vendor() && sources.explicit("support.coordinates")) {
             String older = Policy.Support.olderStarter(p.support().version(), Policy.Support.releaseVersion());

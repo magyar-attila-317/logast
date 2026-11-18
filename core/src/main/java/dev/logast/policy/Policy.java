@@ -260,11 +260,12 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      *                       the service, no library dependency)
      * @param vendorPackage  target package in vendor mode; default {@code <@SpringBootApplication package>.logging}
      */
-    public record Support(String coordinates, String packageName, String mode, String vendorPackage) {
+    public record Support(String coordinates, String packageName, String mode, String vendorPackage, String repository) {
         public Support {
             // #24: the starter of the same release as this logast (its version is the one the generated calls exist in)
             coordinates = coordinates == null ? "dev.logast:logging-support:" + releaseVersion() : coordinates;
             packageName = packageName == null ? "dev.logast.support" : packageName;
+            repository = repository == null ? "" : repository.strip();   // #24: where the starter comes from
             mode = mode == null ? "dependency" : mode.toLowerCase(Locale.ROOT);
             if (!mode.equals("dependency") && !mode.equals("vendor")) {
                 throw new IllegalArgumentException("support.mode must be 'dependency' or 'vendor', was " + mode);
@@ -417,7 +418,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         pii = pii == null ? List.of() : List.copyOf(pii);
         entrypoints = entrypoints == null ? new Entrypoints(null, null, null) : entrypoints;
         logging = logging == null ? new Logging(null, null, null, null, null, null) : logging;
-        support = support == null ? new Support(null, null, null, null) : support;
+        support = support == null ? new Support(null, null, null, null, null) : support;
         rules = rules == null ? Map.of() : Map.copyOf(rules);
         verify = verify == null ? new Verify(null, null) : verify;
         metrics = metrics == null ? new Metrics(null, null, null, null, null, null) : metrics;

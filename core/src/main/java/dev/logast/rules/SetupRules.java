@@ -97,6 +97,7 @@ public final class SetupRules {
             } else {
                 b.edit(e.edit()).at(e.file(), e.line());
             }
+            repository(b, buildFile, text);
             switchOn(b, supportFeatures());
             asyncLocations(b);
             ctx.supportOrderId = b.id();
@@ -274,6 +275,42 @@ public final class SetupRules {
         return ctx.a.project.probe().hasClass("org.springframework.transaction.support.TransactionSynchronizationManager");
     }
     private static final Pattern AUTO_CONFIGURATION = Pattern.compile("@AutoConfiguration(\\([^)]*\\))?", Pattern.DOTALL);
+
+    private static final Pattern REPOSITORIES = Pattern.compile("(?m)^repositories\\s*\\{[^\\n]*$");
+    private static final Pattern DEPENDENCIES_BLOCK = Pattern.compile("(?m)^dependencies\\s*\\{");
+
+    /**
+     * #24: support.repository: the Maven repository the starter comes from, added to the build next to the starter
+     * when no build script names it yet. Repositories managed in settings.gradle (dependencyResolutionManagement) may
+     * forbid project repositories: there it is said, not written.
+     */
+    private void repository(OrderBuilder b, Path buildFile, String scriptsText) {
+        String repo = ctx.policy.support().repository();
+        if (repo.isEmpty() || scriptsText.contains(repo)) {
+            return;
+        }
+        Path dir = buildFile.getParent();
+        String settings = java.util.stream.Stream.of("settings.gradle.kts", "settings.gradle").map(dir::resolve).filter(Files::exists)
+                .map(SetupRules::read).findFirst().orElse("");
+        if (settings.contains("dependencyResolutionManagement")) {
+            b.suggestion(b.suggestion + " Repositories are managed in settings.gradle: add maven { url = uri(\"" + repo
+                    + "\") } to dependencyResolutionManagement.repositories there.");
+            return;
+        }
+        String text = read(buildFile);
+        boolean kts = buildFile.getFileName().toString().endsWith(".kts");
+        String entry = kts ? "maven { url = uri(\"" + repo + "\") }" : "maven { url '" + repo + "' }";
+        Matcher m = REPOSITORIES.matcher(text);
+        if (m.find()) {
+            b.edit(Edit.insert(rel(buildFile), m.end(), "\n    " + entry));
+        } else {
+            Matcher d = DEPENDENCIES_BLOCK.matcher(text);
+            int at = d.find() ? d.start() : text.length();
+            b.edit(Edit.insert(rel(buildFile), at, (at == text.length() && !text.endsWith("\n") ? "\n" : "")
+                    + "repositories {\n    " + entry + "\n}\n\n"));
+        }
+        b.suggestion(b.suggestion + " Adds the repository it comes from (support.repository).");
+    }
 
     /** Spring Boot 4's EnvironmentPostProcessor; Boot 3 has it in org.springframework.boot.env. */
     static final String BOOT4_EPP = "org.springframework.boot.EnvironmentPostProcessor";

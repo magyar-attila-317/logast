@@ -211,11 +211,18 @@ class the sources also declare is ignored.
 support:
   mode: dependency                               # dependency = add the logging-support library
                                                  # vendor     = copy its classes into the service (no library)
-  coordinates: dev.logast:logging-support:0.1.0  # where to get the library (dependency mode)
+  coordinates: dev.logast:logging-support:0.1.0  # which library (dependency mode); default: this logast's version
+  repository: https://nexus.example.com/repository/maven-releases/   # optional: where it comes from
   vendorPackage: com.example.shop.logging        # where to copy the classes (vendor mode; default <app>.logging)
 ```
 
-Use `vendor` until the library is in your company repository.
+- Use `vendor` until the library is in your company repository.
+- `repository`: when logast adds the starter, it also adds this Maven repository to the service's build, unless a
+  build script already names it. Not needed when your Gradle setup already reaches it (a repository in the build, or
+  an init script in `~/.gradle/init.d/`, which logast's Gradle runs respect). When `settings.gradle` manages the
+  repositories (`dependencyResolutionManagement`), logast says where to add it instead of writing a project
+  repository there.
+- A pinned version older than this logast's is a warning: see [starter.md](starter.md#releases-and-versions).
 
 ### `metrics` (pack `metrics`)
 
