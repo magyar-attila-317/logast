@@ -24,29 +24,6 @@ index 87d2b4f..81449da 100644
      }
  
      public void archive(String couponId) {
-diff --git a/src/main/java/com/example/e2e/intake/IntakeDesk.java b/src/main/java/com/example/e2e/intake/IntakeDesk.java
-index df76d9f..efa0ecc 100644
---- a/src/main/java/com/example/e2e/intake/IntakeDesk.java
-+++ b/src/main/java/com/example/e2e/intake/IntakeDesk.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.intake;
- 
-+import com.example.e2e.logging.MdcScope;
- import com.example.e2e.order.Order;
- import lombok.extern.slf4j.Slf4j;
- import org.springframework.stereotype.Component;
-@@ -14,7 +15,9 @@
-     }
- 
-     public void accept(Order order) {
--        feed.load();
--        log.info("Intake desk completed"); // logast:wording
-+        try (var mdc = MdcScope.of("orderId", order.id())) {
-+            feed.load();
-+            log.info("Intake desk completed"); // logast:wording
-+        }
-     }
- }
 diff --git a/src/main/java/com/example/e2e/web/CouponController.java b/src/main/java/com/example/e2e/web/CouponController.java
 index ac901ff..644a8d2 100644
 --- a/src/main/java/com/example/e2e/web/CouponController.java
@@ -160,6 +137,37 @@ index c2fd777..2bcb184 100644
 -        log.info("Order event received [amountCents={}]", order.amountCents());
      }
  }
+diff --git a/src/main/java/com/example/e2e/intake/OrderLedger.java b/src/main/java/com/example/e2e/intake/OrderLedger.java
+index de028fd..dc32e0b 100644
+--- a/src/main/java/com/example/e2e/intake/OrderLedger.java
++++ b/src/main/java/com/example/e2e/intake/OrderLedger.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.intake;
+ 
++import com.example.e2e.logging.MdcScope;
+ import com.example.e2e.logging.ObservedContext;
+ import com.example.e2e.order.Order;
+ import lombok.extern.slf4j.Slf4j;
+@@ -18,11 +19,13 @@
+ 
+     @TransactionalEventListener
+     public void onSettled(Order order) {
+-        ObservedContext.entrypoint("order.ledger")
+-                .quiet()
+-                .run(() -> {
+-                    feed.load();
+-                    log.info("Order ledger completed"); // logast:wording
+-                });
++        try (var mdc = MdcScope.of("orderId", order.id())) {
++            ObservedContext.entrypoint("order.ledger")
++                    .quiet()
++                    .run(() -> {
++                        feed.load();
++                        log.info("Order ledger completed"); // logast:wording
++                    });
++        }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/web/CouponDetailsController.java b/src/main/java/com/example/e2e/web/CouponDetailsController.java
 index 6ebd808..74714ec 100644
 --- a/src/main/java/com/example/e2e/web/CouponDetailsController.java
@@ -183,6 +191,29 @@ index 6ebd808..74714ec 100644
      }
  
      @PostMapping("/coupons/{couponId}/hold")
+diff --git a/src/main/java/com/example/e2e/intake/OrderDesk.java b/src/main/java/com/example/e2e/intake/OrderDesk.java
+index 38a532e..014cb30 100644
+--- a/src/main/java/com/example/e2e/intake/OrderDesk.java
++++ b/src/main/java/com/example/e2e/intake/OrderDesk.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.intake;
+ 
++import com.example.e2e.logging.MdcScope;
+ import com.example.e2e.order.Order;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.stereotype.Component;
+@@ -14,7 +15,9 @@
+     }
+ 
+     public void accept(Order order) {
+-        feed.load();
+-        log.info("Order desk completed"); // logast:wording
++        try (var mdc = MdcScope.of("orderId", order.id())) {
++            feed.load();
++            log.info("Order desk completed"); // logast:wording
++        }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponSender.java b/src/main/java/com/example/e2e/coupon/CouponSender.java
 index bb218a8..6178d15 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponSender.java

@@ -1,9 +1,9 @@
 diff --git a/src/main/java/com/example/e2e/intake/IntakeMetrics.java b/src/main/java/com/example/e2e/intake/IntakeMetrics.java
 new file mode 100644
-index 0000000..0be7216
+index 0000000..2671e9a
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/intake/IntakeMetrics.java
-@@ -0,0 +1,36 @@ 
+@@ -0,0 +1,39 @@ 
 +package com.example.e2e.intake;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -28,6 +28,9 @@ index 0000000..0be7216
 +    public static final String COUPON_QUEUE_LISTENER_ON_BULK = "coupon-queue-listener.on-bulk";
 +
 +    /** Observation (timer and span) name. */
++    public static final String ORDER_LEDGER = "order.ledger";
++
++    /** Observation (timer and span) name. */
 +    public static final String ORDER_LINE_PROCESSOR_PROCESS = "order-line-processor.process";
 +
 +    /** code.normalizer{outcome="completed"} +1. */
@@ -35,9 +38,9 @@ index 0000000..0be7216
 +        Outcomes.count("code.normalizer", "completed");
 +    }
 +
-+    /** intake.desk{outcome="completed"} +1. */
-+    public static void intakeDeskCompleted() {
-+        Outcomes.count("intake.desk", "completed");
++    /** order.desk{outcome="completed"} +1. */
++    public static void orderDeskCompleted() {
++        Outcomes.count("order.desk", "completed");
 +    }
 +}
 diff --git a/src/main/java/com/example/e2e/job/JobMetrics.java b/src/main/java/com/example/e2e/job/JobMetrics.java
@@ -172,6 +175,19 @@ index 6e45e1e..9d92fd9 100644
                  .debugOnSuccess()
                  .run(() -> {
                      feed.load();
+diff --git a/src/main/java/com/example/e2e/intake/OrderLedger.java b/src/main/java/com/example/e2e/intake/OrderLedger.java
+index dc32e0b..77e632d 100644
+--- a/src/main/java/com/example/e2e/intake/OrderLedger.java
++++ b/src/main/java/com/example/e2e/intake/OrderLedger.java
+@@ -20,7 +20,7 @@ 
+     @TransactionalEventListener
+     public void onSettled(Order order) {
+         try (var mdc = MdcScope.of("orderId", order.id())) {
+-            ObservedContext.entrypoint("order.ledger")
++            ObservedContext.entrypoint(IntakeMetrics.ORDER_LEDGER)
+                     .quiet()
+                     .run(() -> {
+                         feed.load();
 diff --git a/src/main/java/com/example/e2e/intake/OrderLineProcessor.java b/src/main/java/com/example/e2e/intake/OrderLineProcessor.java
 index abf6c40..f193e2e 100644
 --- a/src/main/java/com/example/e2e/intake/OrderLineProcessor.java
@@ -289,6 +305,18 @@ index 5f70c44..8537b6b 100644
              return;
          }
          orders.forEach(payments::charge);
+diff --git a/src/main/java/com/example/e2e/intake/OrderDesk.java b/src/main/java/com/example/e2e/intake/OrderDesk.java
+index 014cb30..a27326f 100644
+--- a/src/main/java/com/example/e2e/intake/OrderDesk.java
++++ b/src/main/java/com/example/e2e/intake/OrderDesk.java
+@@ -18,6 +18,7 @@ 
+         try (var mdc = MdcScope.of("orderId", order.id())) {
+             feed.load();
+             log.info("Order desk completed"); // logast:wording
++            IntakeMetrics.orderDeskCompleted(); // logast:metric review, confidence: low
+         }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
 index 4f47def..8e84b9d 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
@@ -358,18 +386,6 @@ index c2e743a..5b04172 100644
                  return false;
              }
          }
-diff --git a/src/main/java/com/example/e2e/intake/IntakeDesk.java b/src/main/java/com/example/e2e/intake/IntakeDesk.java
-index efa0ecc..5127aaa 100644
---- a/src/main/java/com/example/e2e/intake/IntakeDesk.java
-+++ b/src/main/java/com/example/e2e/intake/IntakeDesk.java
-@@ -18,6 +18,7 @@ 
-         try (var mdc = MdcScope.of("orderId", order.id())) {
-             feed.load();
-             log.info("Intake desk completed"); // logast:wording
-+            IntakeMetrics.intakeDeskCompleted(); // logast:metric review, confidence: low
-         }
-     }
- }
 diff --git a/src/main/java/com/example/e2e/coupon/CouponMetrics.java b/src/main/java/com/example/e2e/coupon/CouponMetrics.java
 new file mode 100644
 index 0000000..ded21e8

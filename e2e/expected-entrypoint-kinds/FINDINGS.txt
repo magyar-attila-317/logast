@@ -1,7 +1,7 @@
-logast · 84 files · 31 entrypoints · 97/234 methods reachable · 189 call edges
+logast · 85 files · 32 entrypoints · 98/236 methods reachable · 193 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 80.6% (jobs 15/15 · http 10/16)   (places that should log and do)
-72 orders: 0 AUTO, 25 NEEDS TEXT, 47 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 81.3% (jobs 16/16 · http 10/16)   (places that should log and do)
+73 orders: 0 AUTO, 26 NEEDS TEXT, 47 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: coupon, order, agreement
 
 ASY-5f4200  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -304,13 +304,20 @@ SUG-566d5d  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/in
   + "{{MSG}}"
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Coupon import tasklet started" | must read as '{subject} started'
-SUG-78b191  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/intake/IntakeDesk.java:20  IntakeDesk.accept
-  Generated wording "Intake desk completed": say it in domain terms
-  path: stream orderIntake-in-0 → IntakeDesk.accept
-  - "Intake desk completed"
+SUG-3ab22d  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/intake/OrderDesk.java:20  OrderDesk.accept
+  Generated wording "Order desk completed": say it in domain terms
+  path: stream orderIntake-in-0 → OrderDesk.accept
+  - "Order desk completed"
   + "{{MSG}}"
   (+1 more edits)
-  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Intake desk completed" | must read as '{subject} completed'
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Order desk completed" | must read as '{subject} completed'
+SUG-418bf6  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/intake/OrderLedger.java:27  OrderLedger.onSettled
+  Generated wording "Order ledger completed": say it in domain terms
+  path: @TransactionalEventListener OrderLedger.onSettled(Order) → OrderLedger.onSettled
+  - "Order ledger completed"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Order ledger completed" | must read as '{subject} completed'
 SUG-a2a43c  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/job/CalculationJob.java:15  CalculationJob.doExecute
   Generated wording "Calculation started": say it in domain terms
   path: @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) → SettlementJobExecutor.onReady → SettlementJob.execute → CalculationJob.doExecute
@@ -420,8 +427,8 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 fills.json: "MSG" is plain text, no {} and no [k=v]; optional "args": ["var"] adds variables
 
 Next steps
-  1. write "MSG" texts in .logast/fills.json             25 log lines need wording only a person knows
+  1. write "MSG" texts in .logast/fills.json             26 log lines need wording only a person knows
   2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
-  4. fill calls/day in .logast/traffic.yaml (optional)   31 of 31 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  4. fill calls/day in .logast/traffic.yaml (optional)   32 of 32 entrypoints have no rate: log levels and metrics frequency stay cautious there
   5. logast scan . --format summary                      35 findings are decisions for a person (MESSAGE_VAGUE 6, AUDIT_RECORD_INCOMPLETE 5, ASYNC_CONTEXT_LOSS 4, …); each says what to decide
