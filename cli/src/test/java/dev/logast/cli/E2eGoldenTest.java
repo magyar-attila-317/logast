@@ -3331,6 +3331,240 @@ class E2eGoldenTest {
 
     private static final String MAIN_CLASS = "src/main/java/com/example/e2e/E2eApplication.java";
 
+    /** #102: a WebFlux-only service's error handling: a reactive controller with request bodies and its controller advice. */
+    private static final IoAction WEBFLUX_ERRORS = app -> {
+        Path build = app.resolve("build.gradle.kts");
+        Files.writeString(build, Files.readString(build).replace("spring-boot-starter-webmvc", "spring-boot-starter-webflux"));
+        Path dir = app.resolve("src/main/java/com/example/e2e/crate");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("CrateRequest.java"), """
+                package com.example.e2e.crate;
+
+                import jakarta.validation.constraints.NotBlank;
+
+                public record CrateRequest(@NotBlank String label) {
+                }
+                """);
+        Files.writeString(dir.resolve("CrateAnswer.java"), """
+                package com.example.e2e.crate;
+
+                public record CrateAnswer(String state) {
+                }
+                """);
+        for (String name : List.of("CrateMissing", "CrateLate", "CrateBlocked")) {
+            Files.writeString(dir.resolve(name + ".java"), """
+                    package com.example.e2e.crate;
+
+                    public class %s extends RuntimeException {
+                        public %s(String message) {
+                            super(message);
+                        }
+                    }
+                    """.formatted(name, name));
+        }
+        Files.writeString(dir.resolve("CrateController.java"), """
+                package com.example.e2e.crate;
+
+                import jakarta.validation.Valid;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.PutMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+                import reactor.core.publisher.Mono;
+
+                @RestController
+                public class CrateController {
+                    @PostMapping("/crates")
+                    public Mono<String> register(@Valid @RequestBody CrateRequest request) {
+                        return Mono.just(request.label());
+                    }
+
+                    @PutMapping("/crates/{crateCode}")
+                    public Mono<String> relabel(@PathVariable String crateCode, @RequestBody CrateRequest request) {
+                        return Mono.just(crateCode + request.label());
+                    }
+
+                    @GetMapping("/crates/{crateCode}")
+                    public Mono<String> show(@PathVariable String crateCode) {
+                        return crateCode.isBlank() ? Mono.error(new CrateMissing("no crate code")) : Mono.just(crateCode);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("CrateErrors.java"), """
+                package com.example.e2e.crate;
+
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ProblemDetail;
+                import org.springframework.http.ResponseEntity;
+                import org.springframework.http.server.reactive.ServerHttpResponse;
+                import org.springframework.web.bind.annotation.ExceptionHandler;
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+                import reactor.core.publisher.Mono;
+
+                @RestControllerAdvice
+                public class CrateErrors {
+                    @ExceptionHandler(Exception.class)
+                    Mono<ResponseEntity<ProblemDetail>> unexpected(Exception e) {
+                        return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                .body(ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR)));
+                    }
+
+                    @ExceptionHandler(CrateMissing.class)
+                    Mono<ProblemDetail> missing(CrateMissing e) {
+                        return Mono.just(ProblemDetail.forStatus(HttpStatus.NOT_FOUND));
+                    }
+
+                    @ExceptionHandler(CrateLate.class)
+                    Mono<CrateAnswer> late(CrateLate e) {
+                        return Mono.just(new CrateAnswer("late"));
+                    }
+
+                    @ExceptionHandler(CrateBlocked.class)
+                    Mono<CrateAnswer> blocked(CrateBlocked e, ServerHttpResponse response) {
+                        response.setStatusCode(HttpStatus.LOCKED);
+                        return Mono.just(new CrateAnswer("blocked"));
+                    }
+                }
+                """);
+    };
+
+    /** The e2e classpath without Spring MVC (spring-webmvc and Boot's webmvc modules): spring-webflux stays, as in a WebFlux-only service. */
+    private static Path withoutWebMvc(Path classpath, Path out) throws IOException {
+        List<String> all = Files.readAllLines(classpath);
+        List<String> kept = all.stream().filter(l -> !l.contains("webmvc")).toList();
+        assertThat(kept).as("the classpath had Spring MVC").hasSizeLessThan(all.size());
+        assertThat(kept).as("and Spring WebFlux").anyMatch(l -> l.contains("spring-webflux"));
+        Files.write(out, kept);
+        return out;
+    }
+
+    /**
+     * #102: the errors pack on a WebFlux-only service (spring-webflux without spring-webmvc: Spring Boot runs it as a
+     * reactive web application). PROBLEM_DETAILS_DISABLED names spring.webflux.problemdetails.enabled and is satisfied by
+     * it or by an advice extending WebFlux's ResponseEntityExceptionHandler (from the sources or a library); the catch-all
+     * answering 500 takes the WebExchangeBindException of a failed @Valid (CLIENT_ERROR_AS_SERVER_ERROR, REQUEST_NOT_VALIDATED
+     * name it; a handler for it settles it); ERROR_HANDLER_STATUS_OK looks into Mono&lt;T&gt; (a Mono&lt;ProblemDetail&gt;
+     * carries its status, a Mono&lt;CrateAnswer&gt; does not) and leaves a handler that sets the status on the reactive
+     * ServerHttpResponse alone; ERROR_RESPONSE_UNTRACED is a report (logging-support's ProblemTraceId is Spring MVC only),
+     * so no support class is copied for it. Every file must equal e2e/expected-webflux-errors; the errors pack alone gives
+     * the same findings; on the shared classpath (MVC and WebFlux) the MVC names stay.
+     */
+    @Test
+    void errorsPackOnAWebFluxOnlyServiceUsesTheReactiveNames() throws IOException {
+        String webflux = withoutWebMvc(Path.of(CLASSPATH), tmp.resolve("classpath-webflux.txt")).toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), webflux, WEBFLUX_ERRORS);
+        String findings = actual.get("FINDINGS.txt");
+        assertWebFluxErrorFindings(findings);
+        assertThat(actual.get("src/main/java/com/example/e2e/crate/CrateErrors.java")).as("the catch-all logs the exception")
+                .contains("log.error(\"Request failed unexpectedly\", e);");
+        assertThat(actual.keySet()).as("no ProblemTraceId copied: it is a Spring MVC advice")
+                .noneMatch(k -> k.endsWith("/ProblemTraceId.java"));
+        assertThat(actual.get("src/main/resources/application.yml")).doesNotContain("problem-trace-id");
+        golden(EXPECTED.resolveSibling("expected-webflux-errors"), actual);
+
+        // the errors pack alone: the same findings, a compiling and settled result
+        Map<String, String> alone = migrate(tmp.resolve("errors-only"), webflux, withPacks(WEBFLUX_ERRORS, "[errors]", ""));
+        assertWebFluxErrorFindings(alone.get("FINDINGS.txt"));
+
+        // what settles each finding on WebFlux: the property, WebFlux's ResponseEntityExceptionHandler, a handler for
+        // WebExchangeBindException
+        Path property = tmp.resolve("property");
+        copy(BEFORE, property);
+        WEBFLUX_ERRORS.run(property);
+        Path yml = property.resolve("src/main/resources/application.yml");
+        Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^spring:\n", "spring:\n  webflux:\n    problemdetails:\n      enabled: true\n"));
+        assertThat(Files.readString(yml)).contains("problemdetails");
+        assertThat(run(property, "scan", property.toString(), "--classpath-file", webflux)).doesNotContain("PROBLEM_DETAILS_DISABLED");
+
+        Path advice = tmp.resolve("advice");
+        copy(BEFORE, advice);
+        WEBFLUX_ERRORS.run(advice);
+        Files.writeString(advice.resolve("src/main/java/com/example/e2e/crate/CrateFrameworkErrors.java"), """
+                package com.example.e2e.crate;
+
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ProblemDetail;
+                import org.springframework.web.bind.annotation.ExceptionHandler;
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+                import org.springframework.web.reactive.result.method.annotation.ResponseEntityExceptionHandler;
+
+                @RestControllerAdvice
+                public class CrateFrameworkErrors extends ResponseEntityExceptionHandler {
+                    @ExceptionHandler(IllegalStateException.class)
+                    ProblemDetail conflict(IllegalStateException e) {
+                        return ProblemDetail.forStatus(HttpStatus.CONFLICT);
+                    }
+                }
+                """);
+        assertThat(run(advice, "scan", advice.toString(), "--classpath-file", webflux)).doesNotContain("PROBLEM_DETAILS_DISABLED")
+                .doesNotContain("also takes the validation failures");
+
+        Path mapped = tmp.resolve("mapped");
+        copy(BEFORE, mapped);
+        WEBFLUX_ERRORS.run(mapped);
+        Files.writeString(mapped.resolve("src/main/java/com/example/e2e/crate/CrateValidationErrors.java"), """
+                package com.example.e2e.crate;
+
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ProblemDetail;
+                import org.springframework.web.bind.annotation.ExceptionHandler;
+                import org.springframework.web.bind.annotation.RestControllerAdvice;
+                import org.springframework.web.bind.support.WebExchangeBindException;
+
+                @RestControllerAdvice
+                public class CrateValidationErrors {
+                    @ExceptionHandler(WebExchangeBindException.class)
+                    ProblemDetail invalid(WebExchangeBindException e) {
+                        return ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+                    }
+                }
+                """);
+        assertThat(run(mapped, "scan", mapped.toString(), "--classpath-file", webflux)).doesNotContain("also takes the validation failures");
+
+        // Spring MVC and WebFlux both on the classpath: Spring Boot runs Spring MVC, the MVC names stay
+        Path both = tmp.resolve("both");
+        copy(BEFORE, both);
+        WEBFLUX_ERRORS.run(both);
+        assertThat(run(both, "scan", both.toString(), "--classpath-file", CLASSPATH))
+                .contains("Set spring.mvc.problemdetails.enabled: true").doesNotContain("spring.webflux.problemdetails")
+                .contains("Map MethodArgumentNotValidException to 400").doesNotContain("WebExchangeBindException");
+
+        // a library's advice extending WebFlux's ResponseEntityExceptionHandler answers the framework errors too (#52)
+        Path library = tmp.resolve("library");
+        copy(BEFORE, library);
+        WEBFLUX_ERRORS.run(library);
+        Path libraryCp = withoutWebMvc(libraryClasspath("reactive-errors-library", Map.of(
+                "org/platformlib/reactive/PlatformErrors.java", """
+                        package org.platformlib.reactive;
+
+                        import org.springframework.web.bind.annotation.RestControllerAdvice;
+                        import org.springframework.web.reactive.result.method.annotation.ResponseEntityExceptionHandler;
+
+                        @RestControllerAdvice
+                        public class PlatformErrors extends ResponseEntityExceptionHandler {
+                        }
+                        """)), tmp.resolve("classpath-webflux-library.txt"));
+        assertThat(run(library, "scan", library.toString(), "--classpath-file", libraryCp.toString()))
+                .doesNotContain("PROBLEM_DETAILS_DISABLED").doesNotContain("also takes the validation failures");
+    }
+
+    private static void assertWebFluxErrorFindings(String findings) {
+        assertThat(findings).as("WebFlux's property")
+                .contains("Spring WebFlux errors (400 bad input, 405, 415, ...) are not RFC 9457 ProblemDetail responses")
+                .contains("Set spring.webflux.problemdetails.enabled: true").doesNotContain("spring.mvc.problemdetails")
+                .as("WebFlux's validation exception")
+                .contains("Map WebExchangeBindException to 400").doesNotContain("MethodArgumentNotValidException")
+                .contains("CrateController.relabel takes request")
+                .as("a Mono<ProblemDetail> carries its status, a Mono<CrateAnswer> does not")
+                .contains("Handler for CrateLate returns CrateAnswer without @ResponseStatus")
+                .doesNotContain("Handler for CrateMissing").doesNotContain("returns Mono")
+                .as("the status set on the reactive response").doesNotContain("Handler for CrateBlocked")
+                .as("no trace id in error responses: a report")
+                .contains("Error responses do not carry the trace id (Spring WebFlux)");
+    }
+
     /**
      * #51: API-first controllers. The request mappings sit on an interface the controller implements, the class-level
      * {@code @RequestMapping} too, and the paths come from {@code static final String} constants and their

@@ -27,7 +27,7 @@ import java.util.*;
  *   <li>UNMAPPED_EXCEPTION: an application exception thrown on an HTTP path that no handler or
  *       {@code @ResponseStatus} maps: the client gets a 500 for what is usually a business outcome;</li>
  *   <li>CLIENT_ERROR_AS_SERVER_ERROR: a handler answering 500 for a client error (validation, not found, denied);</li>
- *   <li>PROBLEM_DETAILS_DISABLED: Spring MVC errors are not RFC 9457 ProblemDetail responses;</li>
+ *   <li>PROBLEM_DETAILS_DISABLED: Spring MVC (or WebFlux) errors are not RFC 9457 ProblemDetail responses;</li>
  *   <li>UNEXPECTED_ERROR_UNLOGGED: a catch-all handler answers without logging the exception (no stack trace anywhere);</li>
  *   <li>ERROR_HANDLER_STATUS_OK: a handler whose answer carries no error status (the client gets 200);</li>
  *   <li>TX_COMMITS_ON_CHECKED: a {@code @Transactional} method that throws a checked exception commits by default;</li>
@@ -35,6 +35,10 @@ import java.util.*;
  *       {@code @Valid}: the constraints are never checked.</li>
  * </ul>
  * Handlers count from the sources and from {@code @ControllerAdvice} classes in libraries on the classpath (#52).
+ * <p>A WebFlux-only service (#102: spring-webflux without spring-webmvc, which Spring Boot runs as a reactive web
+ * application) gets the WebFlux names: spring.webflux.problemdetails.enabled, the reactive ResponseEntityExceptionHandler,
+ * WebExchangeBindException for a failed {@code @Valid}; ERROR_RESPONSE_UNTRACED is a report there (ProblemTraceId is a
+ * Spring MVC ResponseBodyAdvice). A service with both runs Spring MVC and keeps the MVC behaviour.
  */
 final class ErrorRules {
     private static final String EXCEPTION_HANDLER = "org.springframework.web.bind.annotation.ExceptionHandler";
@@ -50,13 +54,31 @@ final class ErrorRules {
     private final List<Handler> handlers = new ArrayList<>();
     /** Exception types handled by global {@code @ControllerAdvice} classes in libraries on the classpath (#52). */
     private final List<JavaType.FullyQualified> libraryHandled = new ArrayList<>();
-    /** A library advice extends ResponseEntityExceptionHandler: Spring MVC's exceptions get their 4xx ProblemDetail. */
+    /** A library advice extends ResponseEntityExceptionHandler (MVC's or WebFlux's): the framework's exceptions get their 4xx ProblemDetail. */
     private boolean libraryAnswersMvcErrors;
     private final Set<String> clientErrors;
+    /** Spring WebFlux without Spring MVC: the reactive names apply (#102). */
+    private final boolean webflux;
 
     ErrorRules(RuleContext ctx) {
         this.ctx = ctx;
         this.clientErrors = new HashSet<>(ctx.policy.levels().clientErrors());
+        this.webflux = webfluxOnly(ctx);
+    }
+
+    /**
+     * Spring WebFlux is there and Spring MVC is not: Spring Boot runs a reactive web application (Boot reference,
+     * SpringApplication › Web Environment: "If Spring MVC is not present and Spring WebFlux is present, an
+     * AnnotationConfigReactiveWebServerApplicationContext is used"). With both, Spring MVC is used.
+     */
+    static boolean webfluxOnly(RuleContext ctx) {
+        return ctx.a.project.probe().hasClass("org.springframework.web.reactive.DispatcherHandler")
+                && !ctx.a.project.probe().hasClass("org.springframework.web.servlet.DispatcherServlet");
+    }
+
+    /** What a failed {@code @Valid} body raises: MVC's MethodArgumentNotValidException, WebFlux's WebExchangeBindException. */
+    private String validationException() {
+        return webflux ? "WebExchangeBindException" : "MethodArgumentNotValidException";
     }
 
     void run() {
@@ -78,7 +100,7 @@ final class ErrorRules {
         for (LibraryAdvice advice : ctx.a.project.probe().controllerAdvice()) {
             if (advice.global() && ctx.a.index.clazz(advice.className()) == null) {   // a source class is read from source
                 advice.handled().forEach(t -> libraryHandled.add(JavaType.ShallowClass.build(t)));
-                libraryAnswersMvcErrors |= REEH.equals(advice.superName());
+                libraryAnswersMvcErrors |= REEH.equals(advice.superName()) || REACTIVE_REEH.equals(advice.superName());
             }
         }
         if (ctx.enabled(Rules.ERROR_DETAILS_EXPOSED)) {
@@ -133,6 +155,10 @@ final class ErrorRules {
      * leads to its log lines; with {@code traceId} in every ProblemDetail (and Spring Boot's error map) it does.
      */
     private void untraced() {
+        if (webflux) {
+            untracedWebflux();
+            return;
+        }
         if (!untracedFixable(ctx)) {
             return;
         }
@@ -156,6 +182,24 @@ final class ErrorRules {
         }
         ServiceYaml.merge(ctx, b, "logging-support:\n  problem-trace-id:\n    enabled: true\n");
         ctx.dependOnStarter(b);
+    }
+
+    /**
+     * ERROR_RESPONSE_UNTRACED on a WebFlux-only service: a report. logging-support's ProblemTraceId is a Spring MVC
+     * ResponseBodyAdvice, conditional on a servlet web application: switching its property on would do nothing.
+     */
+    private void untracedWebflux() {
+        if (!ctx.a.project.probe().hasClass("io.micrometer.tracing.Tracer")) {
+            return;
+        }
+        ctx.order(Rules.ERROR_RESPONSE_UNTRACED, "problem-trace-id-webflux").at(ServiceYaml.path(ctx), 1)
+                .title("Error responses do not carry the trace id (Spring WebFlux): a client reporting an error has nothing "
+                        + "that leads to its logs")
+                .suggestion("Not applied: logging-support's trace id in ProblemDetail responses works with Spring MVC only. Add "
+                        + "\"traceId\" to the ProblemDetail responses yourself (ProblemDetail.setProperty in the @ExceptionHandler "
+                        + "methods, or for all of them in an ErrorResponse interceptor of the WebFlux config).")
+                .basis("Spring WebFlux without Spring MVC, with Micrometer Tracing")
+                .doneWhen("error responses carry the trace id (then suppress this finding)");
     }
 
     /** {@code @ExceptionHandler({A.class, B.class})}, else the Throwable parameters. */
@@ -311,6 +355,8 @@ final class ErrorRules {
     // ---- request bodies without @Valid ----------------------------------------------------------
 
     private static final String REEH = "org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler";
+    /** WebFlux's ResponseEntityExceptionHandler (Framework reference, WebFlux › Error Responses). */
+    private static final String REACTIVE_REEH = "org.springframework.web.reactive.result.method.annotation.ResponseEntityExceptionHandler";
     private static final List<String> BODY = List.of("org.springframework.web.bind.annotation.RequestBody",
             "org.springframework.web.bind.annotation.ModelAttribute");
     private static final List<String> VALID = List.of("jakarta.validation.Valid", "javax.validation.Valid",
@@ -319,7 +365,7 @@ final class ErrorRules {
             "javax.validation.constraints.", "org.hibernate.validator.constraints.");
     /** The types a handler may name for what a failed {@code @Valid} on a body or model attribute raises. */
     private static final Set<String> MANVE_TYPES = Set.of("org.springframework.web.bind.MethodArgumentNotValidException",
-            "org.springframework.validation.BindException");
+            "org.springframework.validation.BindException", "org.springframework.web.bind.support.WebExchangeBindException");
 
     /**
      * {@code @RequestBody} / {@code @ModelAttribute} parameters of HTTP entrypoints: {file, line, method label, param,
@@ -408,7 +454,8 @@ final class ErrorRules {
         Handler catchAll = null;
         for (Handler h : handlers) {
             if (h.types().stream().anyMatch(t -> MANVE_TYPES.contains(t.getFullyQualifiedName()))
-                    || TypeUtils.isAssignableTo(REEH, h.method().owner().type())) {
+                    || TypeUtils.isAssignableTo(REEH, h.method().owner().type())
+                    || TypeUtils.isAssignableTo(REACTIVE_REEH, h.method().owner().type())) {
                 return null;
             }
             if (catchAll == null && h.types().stream().anyMatch(t -> t.getFullyQualifiedName().equals("java.lang.Exception")
@@ -437,10 +484,10 @@ final class ErrorRules {
                 .title("Handler for " + names(h.types()) + " also takes the validation failures of " + validated.size()
                         + " @Valid request bod" + (validated.size() == 1 ? "y" : "ies") + " (e.g. " + first[3] + " in "
                         + first[2] + ") and answers 500: a client's bad input is reported as a server failure")
-                .suggestion("Map MethodArgumentNotValidException to 400 (an @ExceptionHandler returning a ProblemDetail with "
+                .suggestion("Map " + validationException() + " to 400 (an @ExceptionHandler returning a ProblemDetail with "
                         + "the field errors, or extend ResponseEntityExceptionHandler): @ExceptionHandler methods run before "
                         + "Spring's default 400 answer.")
-                .doneWhen("an @ExceptionHandler names MethodArgumentNotValidException or BindException, or an advice extends "
+                .doneWhen("an @ExceptionHandler names " + validationException() + " or BindException, or an advice extends "
                         + "ResponseEntityExceptionHandler");
     }
 
@@ -458,9 +505,9 @@ final class ErrorRules {
             return;
         }
         String answer = validationTo500 != null
-                ? " Map MethodArgumentNotValidException to 400 first: the catch-all " + validationTo500.method().label()
+                ? " Map " + validationException() + " to 400 first: the catch-all " + validationTo500.method().label()
                         + " would answer the rejected requests with 500."
-                : " A rejected request gets 400 (MethodArgumentNotValidException).";
+                : " A rejected request gets 400 (" + validationException() + ").";
         boolean provider = ctx.a.project.probe().hasClass("org.hibernate.validator.HibernateValidator")
                 || ctx.a.project.probe().hasClass("org.apache.bval.jsr.ApacheValidationProvider");
         String noProvider = provider ? "" : " No Bean Validation provider is on the classpath (spring-boot-starter-validation): "
@@ -546,6 +593,9 @@ final class ErrorRules {
     /** Return types whose value carries its own status (ProblemDetail, ErrorResponse) or that render a view. */
     private static final List<String> STATUS_CARRIERS = List.of("org.springframework.http.ProblemDetail",
             "org.springframework.web.ErrorResponse", "org.springframework.web.servlet.ModelAndView", "org.springframework.web.servlet.View");
+    /** Parameters through which a handler writes the response itself: Servlet's and WebFlux's (#102). */
+    private static final List<String> RESPONSE_WRITERS = List.of("jakarta.servlet.ServletResponse", "java.io.OutputStream",
+            "org.springframework.web.server.ServerWebExchange", "org.springframework.http.server.reactive.ServerHttpResponse");
 
     /**
      * ERROR_HANDLER_STATUS_OK (report): an {@code @ExceptionHandler} whose answer sets no status: no {@code @ResponseStatus}
@@ -560,13 +610,16 @@ final class ErrorRules {
             return;
         }
         for (Statement p : d.getParameters()) {
-            if (p instanceof J.VariableDeclarations vd && (TypeUtils.isAssignableTo("jakarta.servlet.ServletResponse", vd.getType())
-                    || TypeUtils.isAssignableTo("java.io.OutputStream", vd.getType()))) {
+            if (p instanceof J.VariableDeclarations vd && RESPONSE_WRITERS.stream().anyMatch(w -> TypeUtils.isAssignableTo(w, vd.getType()))) {
                 return;   // writes the response itself
             }
         }
         JavaType rt = d.getReturnTypeExpression() == null ? null : d.getReturnTypeExpression().getType();
-        JavaType.FullyQualified type = TypeUtils.asFullyQualified(rt);
+        JavaType.FullyQualified declared = TypeUtils.asFullyQualified(rt);
+        // WebFlux (#102): a Mono<T> handler answers what T answers (a Mono<ProblemDetail> carries its status)
+        JavaType.FullyQualified type = declared instanceof JavaType.Parameterized pt
+                && pt.getFullyQualifiedName().equals("reactor.core.publisher.Mono") && pt.getTypeParameters().size() == 1
+                ? TypeUtils.asFullyQualified(pt.getTypeParameters().getFirst()) : declared;
         if (statuslessProblem(h)) {
             return;
         }
@@ -986,12 +1039,20 @@ final class ErrorRules {
 
     // ---- ProblemDetail --------------------------------------------------------------------------
 
+    /**
+     * PROBLEM_DETAILS_DISABLED. Spring MVC: spring.mvc.problemdetails.enabled or an advice extending MVC's
+     * ResponseEntityExceptionHandler. A WebFlux-only service (#102): spring.webflux.problemdetails.enabled (Boot 3.5 and
+     * 4.x properties appendix, default false) or an advice extending WebFlux's ResponseEntityExceptionHandler
+     * (org.springframework.web.reactive.result.method.annotation; Framework reference, WebFlux › Error Responses).
+     */
     private void problemDetails() {
-        if ("true".equalsIgnoreCase(ctx.a.springProperties.getOrDefault("spring.mvc.problemdetails.enabled", ""))) {
+        String property = webflux ? "spring.webflux.problemdetails.enabled" : "spring.mvc.problemdetails.enabled";
+        String handler = webflux ? REACTIVE_REEH : REEH;
+        if ("true".equalsIgnoreCase(ctx.a.springProperties.getOrDefault(property, ""))) {
             return;
         }
         for (ClassInfo c : ctx.a.index.classes()) {
-            if (TypeUtils.isAssignableTo(REEH, c.type())) {
+            if (TypeUtils.isAssignableTo(handler, c.type())) {
                 return; // the advice already answers framework errors with ProblemDetail
             }
         }
@@ -999,13 +1060,13 @@ final class ErrorRules {
             return; // so does a library's (#52)
         }
         ctx.order(Rules.PROBLEM_DETAILS_DISABLED, "problemdetails").at(ServiceYaml.path(ctx), 1)
-                .title("Spring MVC errors (400 bad input, 405, 415, ...) are not RFC 9457 ProblemDetail responses: "
-                        + "every service answers them in its own shape")
-                .suggestion("Set spring.mvc.problemdetails.enabled: true (or extend ResponseEntityExceptionHandler in the controller "
-                        + "advice). Not applied automatically: it changes the error body API clients see.")
-                .basis("spring.mvc.problemdetails.enabled is " + Optional.ofNullable(ctx.a.springProperties.get("spring.mvc.problemdetails.enabled"))
+                .title((webflux ? "Spring WebFlux" : "Spring MVC") + " errors (400 bad input, 405, 415, ...) are not RFC 9457 "
+                        + "ProblemDetail responses: every service answers them in its own shape")
+                .suggestion("Set " + property + ": true (or extend " + (webflux ? "WebFlux's " : "") + "ResponseEntityExceptionHandler "
+                        + "in the controller advice). Not applied automatically: it changes the error body API clients see.")
+                .basis(property + " is " + Optional.ofNullable(ctx.a.springProperties.get(property))
                         .map(v -> "'" + v + "'").orElse("not set") + ", and no class extends ResponseEntityExceptionHandler")
-                .doneWhen("spring.mvc.problemdetails.enabled: true, or a class extends ResponseEntityExceptionHandler");
+                .doneWhen(property + ": true, or a class extends " + (webflux ? "WebFlux's " : "") + "ResponseEntityExceptionHandler");
     }
 
     private static String names(List<JavaType.FullyQualified> types) {

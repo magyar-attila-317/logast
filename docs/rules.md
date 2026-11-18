@@ -10,7 +10,7 @@ is the authority if this page and the tool ever disagree.
 | [tracing](packs/tracing.md) | on | trace context across threads, HTTP, messaging and job launches; spans; export; trace ids in logs | [table](packs/tracing.md#rules) |
 | [metrics](packs/metrics.md) | opt-in | meter names and tags, business events and outcomes without a metric | [table](packs/metrics.md#rules) |
 | [resilience](packs/resilience.md) | opt-in | timeouts, pools, retries, locks, graceful shutdown, health probes | [table](packs/resilience.md#rules) |
-| [errors](packs/errors.md) | opt-in | error responses: leaked details, unmapped exceptions, status codes, ProblemDetail, lost causes | [table](packs/errors.md#rules) |
+| [errors](packs/errors.md) | opt-in | error responses: leaked details, unmapped exceptions, status codes, ProblemDetail, lost causes (Spring MVC and WebFlux-only services) | [table](packs/errors.md#rules) |
 | [audit](packs/audit.md) | opt-in | audit records: missing, incomplete, uncommitted, unrouted, holding secrets | [table](packs/audit.md#rules) |
 
 Rules in more than one pack (a pack selected on its own brings them along):
