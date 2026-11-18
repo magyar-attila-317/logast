@@ -67,7 +67,7 @@ final class Init implements Callable<Integer> {
             dev.logast.policy.KeyStyle detected = keyStyle == null ? VocabularyHarvest.detectStyle(r) : null;
             String style = keyStyle != null ? dev.logast.policy.KeyStyle.parse(keyStyle).toString()
                     : (detected != null ? detected : dev.logast.policy.KeyStyle.CAMEL).toString();
-            String mode = support == null ? null : new dev.logast.policy.Policy.Support(null, null, support, null).mode();
+            String mode = support == null ? null : new dev.logast.policy.Policy.Support(null, null, support, null, null).mode();
             String logFormat = ServiceSetup.detectLogFormat(r);
             Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, logFormat, null));
             VocabularyHarvest.Result h = VocabularyHarvest.run(r, Logast.policy(r, null), 3);
