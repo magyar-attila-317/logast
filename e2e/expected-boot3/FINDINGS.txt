@@ -157,10 +157,10 @@ BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/exam
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
   done when: the wait takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..)), orTimeout(..) precedes it in the chain, or an earlier bounded wait on the same future (allOf(..).get(5, SECONDS)) runs first on every path
-TEX-42c898  medium  REPORT-ONLY  TRACING_EXPORT_UNCONFIGURED  src/main/resources/application.yml:1
-  Traces are exported nowhere: management.opentelemetry.tracing.export.otlp.endpoint is not set, so Spring Boot creates no OTLP exporter and the trace ids in the logs lead nowhere
-  note: Set the collector's endpoint per environment: management.opentelemetry.tracing.export.otlp.endpoint in application-<profile>.yml, or MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT in the deployment (e.g. http://otel-collector:4318/v1/traces).
-  done when: management.opentelemetry.tracing.export.otlp.endpoint is set in an application*.yml/.properties, or MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT appears in the project's deployment files
+TEX-8689e9  medium  REPORT-ONLY  TRACING_EXPORT_UNCONFIGURED  src/main/resources/application.yml:1
+  Traces are exported nowhere: management.otlp.tracing.endpoint is not set, so Spring Boot creates no OTLP exporter and the trace ids in the logs lead nowhere
+  note: Set the collector's endpoint per environment: management.otlp.tracing.endpoint in application-<profile>.yml, or MANAGEMENT_OTLP_TRACING_ENDPOINT in the deployment (e.g. http://otel-collector:4318/v1/traces).
+  done when: management.otlp.tracing.endpoint is set in an application*.yml/.properties, or MANAGEMENT_OTLP_TRACING_ENDPOINT appears in the project's deployment files
 ALM-f2e935  low  REPORT-ONLY  AUDIT_LOG_MIXED  src/main/java/com/example/e2e/audit/AuditLog.java:8
   AuditLog writes audit records and diagnostics through one logger: routed apart, the diagnostics would leave the application log; mixed, the records do
   note: Give the records their own logger (private static final Logger AUDIT = LoggerFactory.getLogger("audit")) and keep the class logger for the diagnostics: checkCapacity (WARN).

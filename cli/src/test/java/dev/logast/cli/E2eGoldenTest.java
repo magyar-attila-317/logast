@@ -827,7 +827,24 @@ class E2eGoldenTest {
         assertThat(build.split("micrometer-tracing-bridge-otel", -1)).hasSize(2);
         assertThat(build.split("opentelemetry-exporter-otlp", -1)).hasSize(2);
         assertThat(actual.get("FINDINGS.txt")).doesNotContain("Java agent");
+        assertBoot3PropertyNames(actual);
+        assertThat(actual.get("FINDINGS.txt")).as("the Boot 3.5 endpoint property").contains("management.otlp.tracing.endpoint");
         golden(EXPECTED.resolveSibling("expected-boot3"), actual);
+    }
+
+    /**
+     * #97: a Spring Boot 3.5 service gets Boot 3.5 property names only, also where logast's classpath is a Boot 4 one.
+     * The names Boot 4.0 renamed (application properties appendix, docs.spring.io/spring-boot/{3.5,4.0}/appendix/
+     * application-properties) must appear in no file of the result, as config or as advice. The names the tracing pack
+     * and the service identity write otherwise (management.opentelemetry.resource-attributes, management.tracing.sampling.*,
+     * management.observations.annotations.enabled, spring.kafka/rabbitmq.*.observation-enabled, spring.application.version,
+     * logging.structured.json.add, management.metrics.tags) are the same in 3.5 and 4.x.
+     */
+    private static void assertBoot3PropertyNames(Map<String, String> actual) {
+        List<String> boot4Only = List.of("management.opentelemetry.tracing.export", "MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT",
+                "management.tracing.export", "spring.http.clients", "clients:\n      connect-timeout");
+        actual.forEach((file, text) -> boot4Only.forEach(name ->
+                assertThat(text).as(file + " names only Spring Boot 3.5 properties").doesNotContain(name)));
     }
 
     @Test
@@ -859,6 +876,7 @@ class E2eGoldenTest {
                 .contains("only one tracer bridge")
                 .contains("OpenTelemetry Java agent")
                 .contains("OpenTelemetry Spring Boot starter is already present");
+        assertBoot3PropertyNames(actual);
         golden(EXPECTED.resolveSibling("expected-boot3-conflict"), actual);
     }
 
