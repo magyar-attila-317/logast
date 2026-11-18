@@ -24,7 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * #9: logast on public Spring Boot services (corpus/corpus.yaml), checking the properties every migration must have
  * without expected files: the classpath resolves, apply settles in one pass, a second apply changes nothing, no CHECK
- * FAILED, and the result compiles with the service's own build. Each service is cloned at its pinned commit into a
+ * FAILED, and the result compiles with the service's own build. Every pack runs, in vendor mode (the support
+ * classes are copied in, so the build needs no published logging-support). Each service is cloned at its pinned commit into a
  * folder JUnit removes afterwards. Runs only in {@code ./gradlew :cli:corpus} (network, minutes per service).
  */
 class CorpusRun {
@@ -53,6 +54,11 @@ class CorpusRun {
         exec(work, "git", "clone", "--quiet", "--filter=blob:none", repo, clone.toString());
         exec(clone, "git", "checkout", "--quiet", commit);
         Path app = clone.resolve(dir).normalize();
+        // every pack, and the support classes copied in (vendor): no logging-support release has to be reachable
+        if (!Files.exists(app.resolve("logast.yaml")) && !Files.exists(app.resolve("logast.yml"))) {
+            Files.writeString(app.resolve("logast.yaml"), "packs: [logging, tracing, metrics, resilience, errors, audit]\n"
+                    + "support:\n  mode: vendor\n");
+        }
 
         String classpath = cli("classpath", app.toString());
         assertThat(Files.list(app.resolve(".logast")).anyMatch(p -> p.getFileName().toString().startsWith("classpath")))
