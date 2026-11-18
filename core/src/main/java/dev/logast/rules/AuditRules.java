@@ -1,5 +1,6 @@
 package dev.logast.rules;
 
+import dev.logast.model.Annotations;
 import dev.logast.model.ClassInfo;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.MethodInfo;
@@ -20,8 +21,13 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>AUDIT_MISSING: an entrypoint matching {@code audit.actions} (deletes, admin endpoints, exports, grants,
  *       refunds, ...) from which no audit emitter is reachable;</li>
+ *   <li>AUDIT_FAILURES_UNRECORDED: the audit call only runs after the work succeeded;</li>
+ *   <li>AUDIT_RECORD_INCOMPLETE: the record does not say who did it, or to which record;</li>
+ *   <li>AUDIT_LOG_MIXED: an audit class logs through its class logger;</li>
+ *   <li>DATA_CHANGES_UNAUDITED: entities changed with nothing filling {@code @LastModifiedBy}, including bulk
+ *       statements that bypass Spring Data auditing;</li>
  *   <li>AUDIT_SECURITY_EVENTS: Spring Security is used but nothing records authentication failures, successes or
- *       denied access.</li>
+ *       denied access durably (an in-memory repository, a listener without an AuthorizationEventPublisher).</li>
  * </ul>
  * An emitter is a call listed in {@code audit.emitters} ({@code com.x.AuditService} or {@code com.x.ActivityLogger#log});
  * with none listed, a call that passes something to a type whose own name says *Audit* (not a builder's step), or
@@ -262,6 +268,139 @@ final class AuditRules {
                             + "auditing (@EnableJpaAuditing / @EnableJdbcAuditing).")
                     .doneWhen("a class implements AuditorAware, or a method returns one");
         }
+        bulkWrites(entities.values().stream().filter(e -> hasFieldAnnotation(e, LAST_MODIFIED_BY)).toList());
+    }
+
+    /** {@code update <table>} / {@code insert into <table>} at the start of a statement (JPQL names the entity instead). */
+    private static final Pattern WRITE_STATEMENT = Pattern.compile("^\\s*(update|insert\\s+into)\\s+([\\w.\"`\\[\\]]+)",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * DATA_CHANGES_UNAUDITED, bulk writes (#92 item 4): a statement that changes rows of an audited entity (one with
+     * {@code @LastModifiedBy}) without loading it: a {@code @Modifying @Query("update …")} repository method, a
+     * {@code JdbcTemplate / NamedParameterJdbcTemplate} update or batchUpdate, a {@code JdbcClient.sql(…)}. Spring Data
+     * fills the auditing fields only when the entity itself is saved, so these rows keep the previous editor. Not when
+     * the statement sets the {@code @LastModifiedBy} column itself. Deletes are left alone: the row is gone, and Spring
+     * Data auditing records no deletion either.
+     */
+    private void bulkWrites(List<ClassInfo> audited) {
+        if (audited.isEmpty()) {
+            return;
+        }
+        for (ClassInfo c : ctx.a.index.classes()) {
+            if (!c.isInterface()) {
+                continue;
+            }
+            for (Statement s : c.decl().getBody().getStatements()) {
+                if (!(s instanceof J.MethodDeclaration md) || md.getLeadingAnnotations().stream().noneMatch(a -> a.getSimpleName().equals("Modifying"))) {
+                    continue;
+                }
+                for (J.Annotation a : md.getLeadingAnnotations()) {
+                    if (a.getSimpleName().equals("Query")) {
+                        String sql = Annotations.attribute(a, "value").map(v -> dev.logast.graph.Constants.concatenated(ctx.a.index, v)).orElse(null);
+                        int line = Pos.line(md);
+                        bulkWrite(audited, sql, c.file(), line, () -> ctx.orderNth(Rules.DATA_CHANGES_UNAUDITED,
+                                c.fqn() + "#" + md.getSimpleName(), c.file().relPath(), line, "data-audit-bulk"),
+                                c.simpleName() + "." + md.getSimpleName() + " (@Modifying @Query)");
+                    }
+                }
+            }
+        }
+        for (MethodInfo m : ctx.a.index.methods()) {
+            if (m.decl().getBody() == null) {
+                continue;
+            }
+            new JavaIsoVisitor<Integer>() {
+                @Override
+                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                    Expression statement = jdbcStatement(mi);
+                    if (statement != null) {
+                        String what = TypeUtils.asFullyQualified(mi.getMethodType().getDeclaringType()).getClassName() + "." + mi.getSimpleName();
+                        int line = Pos.line(mi);
+                        bulkWrite(audited, dev.logast.graph.Constants.concatenated(ctx.a.index, statement), m.file(), line,
+                                () -> ctx.orderNth(Rules.DATA_CHANGES_UNAUDITED, m, line, "data-audit-bulk"), what + " in " + m.label());
+                    }
+                    return super.visitMethodInvocation(mi, p);
+                }
+            }.visit(m.decl().getBody(), 0);
+        }
+    }
+
+    /** The SQL argument of a JdbcTemplate / NamedParameterJdbcTemplate update, or of {@code JdbcClient.sql}. */
+    private static Expression jdbcStatement(J.MethodInvocation mi) {
+        if (mi.getMethodType() == null || mi.getArguments().isEmpty() || mi.getArguments().getFirst() instanceof J.Empty) {
+            return null;
+        }
+        JavaType.FullyQualified owner = mi.getMethodType().getDeclaringType();
+        boolean template = (mi.getSimpleName().equals("update") || mi.getSimpleName().equals("batchUpdate"))
+                && (TypeUtils.isAssignableTo("org.springframework.jdbc.core.JdbcOperations", owner)
+                || TypeUtils.isAssignableTo("org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations", owner));
+        boolean client = mi.getSimpleName().equals("sql") && TypeUtils.isAssignableTo("org.springframework.jdbc.core.simple.JdbcClient", owner);
+        return template || client ? mi.getArguments().getFirst() : null;
+    }
+
+    private void bulkWrite(List<ClassInfo> audited, String sql, dev.logast.parse.SourceFileInfo file, int line,
+                           java.util.function.Supplier<OrderBuilder> order, String where) {
+        if (sql == null) {
+            return;
+        }
+        java.util.regex.Matcher w = WRITE_STATEMENT.matcher(sql);
+        if (!w.find()) {
+            return;
+        }
+        String target = w.group(2).replaceAll("[\"`\\[\\]]", "");
+        String table = target.substring(target.lastIndexOf('.') + 1);
+        ClassInfo entity = audited.stream().filter(e -> e.simpleName().equalsIgnoreCase(table) || tableName(e).equalsIgnoreCase(table))
+                .findFirst().orElse(null);
+        if (entity == null || setsLastModifiedBy(entity, sql) || ctx.ignored(file, line, Rules.DATA_CHANGES_UNAUDITED)) {
+            return;
+        }
+        String statement = Text.oneLine(sql.strip(), 120);
+        order.get()
+                .title(where + " changes " + entity.simpleName() + " rows without loading them (\"" + statement + "\"): Spring Data "
+                        + "auditing does not run, so @LastModifiedBy " + (w.group(1).toLowerCase(Locale.ROOT).startsWith("insert")
+                        ? "stays empty" : "keeps the previous editor"))
+                .suggestion("Change the rows through the repository (load, change, save), or set the @LastModifiedBy column in "
+                        + "the statement from the current user (the AuditorAware bean).")
+                .doneWhen("the statement sets " + entity.simpleName() + "'s @LastModifiedBy column, or the change goes through save()");
+    }
+
+    /** The table an entity maps to: {@code @Table(name / value)}, else its name in snake case (Boot's default naming). */
+    private static String tableName(ClassInfo e) {
+        for (J.Annotation a : e.decl().getLeadingAnnotations()) {
+            if (a.getSimpleName().equals("Table")) {
+                Optional<String> name = Annotations.stringAttribute(a, "name", "value");
+                if (name.isPresent() && !name.get().isBlank()) {
+                    return name.get();
+                }
+            }
+        }
+        return snake(e.simpleName());
+    }
+
+    private static String snake(String camel) {
+        return camel.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
+    }
+
+    /** The statement names the {@code @LastModifiedBy} field or its column ({@code @Column(name)}, else snake case). */
+    private static boolean setsLastModifiedBy(ClassInfo e, String sql) {
+        for (Statement s : e.decl().getBody().getStatements()) {
+            if (s instanceof J.VariableDeclarations vd && vd.getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, LAST_MODIFIED_BY))) {
+                Set<String> names = new HashSet<>();
+                for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
+                    names.add(v.getSimpleName());
+                    names.add(snake(v.getSimpleName()));
+                }
+                vd.getLeadingAnnotations().stream().filter(a -> a.getSimpleName().equals("Column"))
+                        .forEach(a -> Annotations.stringAttribute(a, "name", "value").ifPresent(names::add));
+                for (String n : names) {
+                    if (Pattern.compile("(?i)(?<![\\w])" + Pattern.quote(n) + "(?![\\w])").matcher(sql).find()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean hasFieldAnnotation(ClassInfo c, String annotation) {
@@ -776,37 +915,68 @@ final class AuditRules {
 
     // ---- security events ------------------------------------------------------------------------
 
+    private static final String AUDIT_EVENT_REPOSITORY = "org.springframework.boot.actuate.audit.AuditEventRepository";
+    private static final String IN_MEMORY_REPOSITORY = "org.springframework.boot.actuate.audit.InMemoryAuditEventRepository";
+    private static final String AUTHORIZATION_EVENT_PUBLISHER = "org.springframework.security.authorization.AuthorizationEventPublisher";
+    /** Profiles of a development or test environment: an in-memory repository there is what Boot recommends it for. */
+    private static final Pattern DEV_PROFILE = Pattern.compile("(?i)(dev|development|local|test|it|e2e|demo)([-_.]\\w*)?");
+
+    /**
+     * AUDIT_SECURITY_EVENTS (report): Spring Security is on the classpath, but nothing records logins and denied access
+     * durably. Recorded means: the service listens to Spring Security's events itself (or has an audit type about
+     * logins), or Spring Boot's auditing is enabled with an {@code AuditEventRepository} bean. Boot's
+     * {@code InMemoryAuditEventRepository} does not count: Boot recommends it "only for development environments"
+     * (reference, Actuator, Auditing); it keeps a bounded number of events in memory and loses them on restart, so it
+     * is reported where it is declared, unless only a dev/test {@code @Profile} declares it (#92). A listener for
+     * authorization events with no {@code AuthorizationEventPublisher} bean hears nothing: "To listen for these events,
+     * you must first publish an AuthorizationEventPublisher" (Spring Security reference, Authorization Events).
+     */
     private void securityEvents() {
         if (!ctx.a.project.probe().hasClass("org.springframework.security.authentication.event.AbstractAuthenticationEvent")) {
             return;
         }
-        for (ClassInfo c : ctx.a.index.classes()) {
-            if (TypeUtils.isAssignableTo("org.springframework.boot.actuate.audit.AuditEventRepository", c.type())
-                    || TypeUtils.isAssignableTo("org.springframework.boot.actuate.security.AbstractAuthenticationAuditListener", c.type())) {
-                return;
-            }
+        if (ownLoginRecords()) {
+            return;
         }
-        // the service audits logins its own way: an audit-typed event or record about logins/authentication
+        List<Object[]> inMemory = new ArrayList<>();   // [file, line, what]
         for (ClassInfo c : ctx.a.index.classes()) {
-            if (c.simpleName().matches("(?i).*(login|logon|signin|authenticat|accessdenied).*") && auditType(c.type(), new HashSet<>())) {
-                return;
+            if (TypeUtils.isAssignableTo(IN_MEMORY_REPOSITORY, c.type())) {
+                if (!devProfile(c.decl().getLeadingAnnotations())) {
+                    inMemory.add(new Object[]{c.file(), Pos.line(c.decl()), c.simpleName() + " extends InMemoryAuditEventRepository"});
+                }
+            } else if (TypeUtils.isAssignableTo(AUDIT_EVENT_REPOSITORY, c.type())
+                    || TypeUtils.isAssignableTo("org.springframework.boot.actuate.security.AbstractAuthenticationAuditListener", c.type())) {
+                return;   // its own repository: durable as far as logast can tell
             }
         }
         for (MethodInfo m : ctx.a.index.methods()) {
-            boolean listener = m.hasAnnotation("org.springframework.context.event.EventListener")
-                    || m.name().equals("onApplicationEvent");
-            if (!listener) {
+            if (m.type() == null || !TypeUtils.isAssignableTo(AUDIT_EVENT_REPOSITORY, m.type().getReturnType())
+                    || !m.hasAnnotation("org.springframework.context.annotation.Bean")) {
                 continue;
             }
-            for (Statement p : m.decl().getParameters()) {
-                if (p instanceof J.VariableDeclarations vd && SECURITY_EVENTS.stream().anyMatch(e -> TypeUtils.isAssignableTo(e, vd.getType()))) {
-                    return;
-                }
+            boolean memory = TypeUtils.isAssignableTo(IN_MEMORY_REPOSITORY, m.type().getReturnType())
+                    || m.decl().getBody() != null && m.decl().getBody().printTrimmed().contains("new InMemoryAuditEventRepository");
+            if (!memory) {
+                return;   // a bean of another repository
             }
-            String ann = m.decl().getLeadingAnnotations().toString();
-            if (SECURITY_EVENTS.stream().anyMatch(e -> ann.contains(e.substring(e.lastIndexOf('.') + 1)))) {
-                return;
+            if (!devProfile(m.decl().getLeadingAnnotations()) && !devProfile(m.owner().decl().getLeadingAnnotations())) {
+                inMemory.add(new Object[]{m.file(), m.line(), "@Bean " + m.label()});
             }
+        }
+        if (!inMemory.isEmpty()) {
+            Object[] first = inMemory.getFirst();
+            dev.logast.parse.SourceFileInfo f = (dev.logast.parse.SourceFileInfo) first[0];
+            int line = (Integer) first[1];
+            if (!ctx.ignored(f, line, Rules.AUDIT_SECURITY_EVENTS)) {
+                ctx.order(Rules.AUDIT_SECURITY_EVENTS, "security-events-in-memory").at(f.relPath(), line)
+                        .title("Logins and denied access are recorded in an InMemoryAuditEventRepository (" + first[2] + "): a "
+                                + "bounded number of events in memory, lost on every restart; Spring Boot recommends it only for "
+                                + "development")
+                        .suggestion("Provide an AuditEventRepository that writes to durable storage (the audit store, the "
+                                + "audit logger), or declare the in-memory one only under a dev/test @Profile.")
+                        .doneWhen("the AuditEventRepository bean outside dev/test profiles is not an InMemoryAuditEventRepository");
+            }
+            return;
         }
         ClassInfo config = ctx.a.index.classes().stream()
                 .filter(c -> c.file().text().contains("SecurityFilterChain")).findFirst().orElse(null);
@@ -817,6 +987,83 @@ final class AuditRules {
                         + "brute force and privilege probing leave no audit trail")
                 .suggestion("Listen to AbstractAuthenticationFailureEvent, AuthenticationSuccessEvent and AuthorizationDeniedEvent "
                         + "(@EventListener) and record them through the audit emitter, or provide an AuditEventRepository bean "
-                        + "(Spring Boot then records them itself). Authorization events also need an AuthorizationEventPublisher bean.");
+                        + "(Spring Boot then records them itself). Authorization events also need an AuthorizationEventPublisher bean.")
+                .doneWhen("a listener takes Spring Security's authentication or authorization events, or an AuditEventRepository "
+                        + "bean other than the in-memory one exists");
+    }
+
+    /**
+     * The service records logins itself: an audit-typed event or record about logins, or a listener of Spring Security's
+     * authentication events. A listener of authorization events without an AuthorizationEventPublisher bean is reported
+     * (it does not cover logins, so the repository check still runs).
+     */
+    private boolean ownLoginRecords() {
+        for (ClassInfo c : ctx.a.index.classes()) {
+            if (c.simpleName().matches("(?i).*(login|logon|signin|authenticat|accessdenied).*") && auditType(c.type(), new HashSet<>())) {
+                return true;
+            }
+        }
+        MethodInfo authorizationListener = null;
+        boolean logins = false;
+        for (MethodInfo m : ctx.a.index.methods()) {
+            boolean listener = m.hasAnnotation("org.springframework.context.event.EventListener")
+                    || m.name().equals("onApplicationEvent");
+            if (!listener) {
+                continue;
+            }
+            Set<String> heard = new HashSet<>();
+            for (Statement p : m.decl().getParameters()) {
+                if (p instanceof J.VariableDeclarations vd) {
+                    SECURITY_EVENTS.stream().filter(e -> TypeUtils.isAssignableTo(e, vd.getType())).forEach(heard::add);
+                }
+            }
+            String ann = m.decl().getLeadingAnnotations().toString();
+            SECURITY_EVENTS.stream().filter(e -> Pattern.compile("\\b" + e.substring(e.lastIndexOf('.') + 1) + "\\b").matcher(ann).find())
+                    .forEach(heard::add);
+            if (heard.isEmpty()) {
+                continue;
+            }
+            logins |= heard.stream().anyMatch(e -> e.contains(".authentication."));
+            if (authorizationListener == null && heard.stream().anyMatch(e -> e.contains(".authorization."))) {
+                authorizationListener = m;
+            }
+        }
+        if (authorizationListener != null && !authorizationPublisher()) {
+            MethodInfo m = authorizationListener;
+            if (!ctx.ignored(m.file(), m.line(), Rules.AUDIT_SECURITY_EVENTS)) {
+                ctx.order(Rules.AUDIT_SECURITY_EVENTS, m, m.line(), "security-events-authorization")
+                        .title(m.label() + " listens for authorization events, but no AuthorizationEventPublisher bean publishes "
+                                + "them: denied access is never recorded")
+                        .suggestion("Declare an AuthorizationEventPublisher bean (new SpringAuthorizationEventPublisher("
+                                + "applicationEventPublisher)): Spring Security publishes authorization events only through one.")
+                        .doneWhen("a class implements AuthorizationEventPublisher, or a method returns one");
+            }
+        }
+        return logins;
+    }
+
+    private boolean authorizationPublisher() {
+        return ctx.a.index.classes().stream().anyMatch(c -> TypeUtils.isAssignableTo(AUTHORIZATION_EVENT_PUBLISHER, c.type()))
+                || ctx.a.index.methods().stream().anyMatch(m -> m.type() != null
+                && TypeUtils.isAssignableTo(AUTHORIZATION_EVENT_PUBLISHER, m.type().getReturnType()));
+    }
+
+    /** {@code @Profile} naming only development or test profiles. */
+    private static boolean devProfile(List<J.Annotation> annotations) {
+        for (J.Annotation a : annotations) {
+            if (a.getSimpleName().equals("Profile")) {
+                List<String> names = new ArrayList<>();
+                Annotations.attribute(a, "value").ifPresent(v -> {
+                    List<Expression> values = v instanceof J.NewArray na && na.getInitializer() != null ? na.getInitializer() : List.of(v);
+                    for (Expression x : values) {
+                        if (x instanceof J.Literal l && l.getValue() instanceof String n) {
+                            names.add(n.strip());
+                        }
+                    }
+                });
+                return !names.isEmpty() && names.stream().allMatch(n -> DEV_PROFILE.matcher(n).matches());
+            }
+        }
+        return false;
     }
 }

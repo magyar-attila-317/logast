@@ -38,6 +38,10 @@ class RemedyTest {
      * the files bring one) and returns its orders.
      */
     private List<WorkOrder> scan(Map<String, String> files) throws IOException {
+        return scan(files, List.of());
+    }
+
+    private List<WorkOrder> scan(Map<String, String> files, List<Path> extraClasspath) throws IOException {
         Path root = Files.createDirectories(dir.resolve("p" + projects++));
         Map<String, String> all = new LinkedHashMap<>(Map.of("logast.yaml", PACKS,
                 "src/main/resources/application.yml", "spring:\n  application:\n    name: remedy\n"));
@@ -48,7 +52,36 @@ class RemedyTest {
             Files.writeString(p, f.getValue());
         }
         Policy policy = Policy.resolve(root, null);
-        return Rules.scan(Analysis.run(root, Fixtures.classpath(), policy).withTraffic(Traffic.load(root, null))).orders();
+        List<Path> classpath = new java.util.ArrayList<>(Fixtures.classpath());
+        classpath.addAll(extraClasspath);
+        return Rules.scan(Analysis.run(root, classpath, policy).withTraffic(Traffic.load(root, null))).orders();
+    }
+
+    /** Compiles stand-ins for a library missing from the fixture's classpath into a jar (logast ignores class folders). */
+    private Path stubJar(Map<String, String> sources) throws IOException {
+        Path src = dir.resolve("stubs/src");
+        Path out = Files.createDirectories(dir.resolve("stubs/classes"));
+        List<String> args = new java.util.ArrayList<>(List.of("-d", out.toString(), "-cp",
+                String.join(java.io.File.pathSeparator, Fixtures.classpath().stream().map(Path::toString).toList())));
+        for (Map.Entry<String, String> e : sources.entrySet()) {
+            Path f = src.resolve(e.getKey());
+            Files.createDirectories(f.getParent());
+            Files.writeString(f, e.getValue());
+            args.add(f.toString());
+        }
+        java.io.ByteArrayOutputStream err = new java.io.ByteArrayOutputStream();
+        assertThat(javax.tools.ToolProvider.getSystemJavaCompiler().run(null, null, err, args.toArray(String[]::new)))
+                .as("stubs compile:\n" + err).isZero();
+        Path jar = dir.resolve("stubs/stubs.jar");
+        try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar));
+             java.util.stream.Stream<Path> s = Files.walk(out)) {
+            for (Path c : s.filter(Files::isRegularFile).sorted().toList()) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(out.relativize(c).toString().replace('\\', '/')));
+                zip.write(Files.readAllBytes(c));
+                zip.closeEntry();
+            }
+        }
+        return jar;
     }
 
     /** The rules a project reports. */
@@ -252,6 +285,187 @@ class RemedyTest {
                     }
                 }
                 """));
+    }
+
+    /** #92: a bulk statement on an audited entity's table bypasses auditing, unless it sets the editor column itself. */
+    @Test
+    void bulkUpdateSetsTheEditor() throws IOException {
+        String writer = """
+                package x;
+
+                import org.springframework.jdbc.core.JdbcTemplate;
+
+                public class ParcelWriter {
+                    private final JdbcTemplate jdbc;
+
+                    public ParcelWriter(JdbcTemplate jdbc) {
+                        this.jdbc = jdbc;
+                    }
+
+                    public int hold(String parcelId, String by) {
+                        return jdbc.update(%s, parcelId);
+                    }
+                }
+                """;
+        Map<String, String> audited = Map.of(java("Parcel"), """
+                package x;
+
+                import org.springframework.data.annotation.Id;
+                import org.springframework.data.annotation.LastModifiedBy;
+
+                public class Parcel {
+                    @Id
+                    private String id;
+                    @LastModifiedBy
+                    private String lastModifiedBy;
+                }
+                """, java("ParcelRepository"), """
+                package x;
+
+                import org.springframework.data.repository.CrudRepository;
+
+                public interface ParcelRepository extends CrudRepository<Parcel, String> {
+                }
+                """, java("Auditing"), """
+                package x;
+
+                import java.util.Optional;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.data.domain.AuditorAware;
+
+                public class Auditing {
+                    @Bean
+                    AuditorAware<String> auditor() {
+                        return () -> Optional.of("system");
+                    }
+                }
+                """);
+        fires(Rules.DATA_CHANGES_UNAUDITED, with(audited, java("ParcelWriter"),
+                writer.formatted("\"update parcel set status = 'HELD' where id = ?\"")));
+        gone(Rules.DATA_CHANGES_UNAUDITED, "the statement sets the @LastModifiedBy column", with(audited, java("ParcelWriter"),
+                writer.formatted("\"update parcel set status = 'HELD', last_modified_by = ? where id = ?\", by")));
+    }
+
+    // ---- AUDIT_SECURITY_EVENTS -------------------------------------------------------------------------------------
+
+    /** Stand-ins for Spring Security and Actuator's audit types, which the fixture's classpath does not have. */
+    private static final Map<String, String> SECURITY_STUBS = Map.of(
+            "org/springframework/security/authentication/event/AbstractAuthenticationEvent.java", """
+                    package org.springframework.security.authentication.event;
+
+                    public abstract class AbstractAuthenticationEvent extends org.springframework.context.ApplicationEvent {
+                        protected AbstractAuthenticationEvent(Object source) {
+                            super(source);
+                        }
+                    }
+                    """,
+            "org/springframework/security/authorization/event/AuthorizationEvent.java", """
+                    package org.springframework.security.authorization.event;
+
+                    public class AuthorizationEvent extends org.springframework.context.ApplicationEvent {
+                        public AuthorizationEvent(Object source) {
+                            super(source);
+                        }
+                    }
+                    """,
+            "org/springframework/security/authorization/AuthorizationEventPublisher.java", """
+                    package org.springframework.security.authorization;
+
+                    public interface AuthorizationEventPublisher {
+                    }
+                    """,
+            "org/springframework/boot/actuate/audit/AuditEventRepository.java", """
+                    package org.springframework.boot.actuate.audit;
+
+                    public interface AuditEventRepository {
+                    }
+                    """,
+            "org/springframework/boot/actuate/audit/InMemoryAuditEventRepository.java", """
+                    package org.springframework.boot.actuate.audit;
+
+                    public class InMemoryAuditEventRepository implements AuditEventRepository {
+                    }
+                    """);
+
+    private Set<String> securityTitles(List<Path> cp, String... pathsAndTexts) throws IOException {
+        return scan(with(Map.of(), pathsAndTexts), cp).stream().filter(o -> o.rule().equals(Rules.AUDIT_SECURITY_EVENTS))
+                .map(WorkOrder::title).collect(java.util.stream.Collectors.toSet());
+    }
+
+    /**
+     * #92: security events recorded nowhere durable. Nothing at all fires; Boot's in-memory repository is reported
+     * (Boot recommends it only for development), under a dev profile it does not count; a repository of the service's
+     * own is the remedy. A listener for authorization events needs an AuthorizationEventPublisher bean.
+     */
+    @Test
+    void securityEventsRecordedDurably() throws IOException {
+        List<Path> cp = List.of(stubJar(SECURITY_STUBS));
+        String config = """
+                package x;
+
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.context.annotation.Profile;
+                import org.springframework.boot.actuate.audit.InMemoryAuditEventRepository;
+
+                @Configuration
+                public class AuditConfig {
+                    @Bean
+                    %s
+                    InMemoryAuditEventRepository auditEvents() {
+                        return new InMemoryAuditEventRepository();
+                    }
+                }
+                """;
+        assertThat(securityTitles(cp, java("Plain"), "package x;\n\npublic class Plain {\n}\n"))
+                .singleElement().asString().contains("nothing records failed logins");
+        assertThat(securityTitles(cp, java("AuditConfig"), config.formatted("")))
+                .singleElement().asString().contains("recorded in an InMemoryAuditEventRepository (@Bean AuditConfig.auditEvents)");
+        assertThat(securityTitles(cp, java("AuditConfig"), config.formatted("@Profile(\"dev\")")))
+                .as("under a dev profile it is no production record, and not reported as one")
+                .singleElement().asString().contains("nothing records failed logins");
+        assertThat(securityTitles(cp, java("AuditConfig"), config.formatted(""), java("DurableAuditEvents"), """
+                package x;
+
+                import org.springframework.boot.actuate.audit.AuditEventRepository;
+
+                public class DurableAuditEvents implements AuditEventRepository {
+                }
+                """)).as("a durable repository of its own").isEmpty();
+
+        String listener = """
+                package x;
+
+                import org.springframework.context.event.EventListener;
+                import org.springframework.security.authentication.event.AbstractAuthenticationEvent;
+                import org.springframework.security.authorization.event.AuthorizationEvent;
+
+                public class SecurityAudit {
+                    @EventListener
+                    public void onLogin(AbstractAuthenticationEvent event) {
+                    }
+
+                    @EventListener
+                    public void onAccess(AuthorizationEvent event) {
+                    }
+                }
+                """;
+        assertThat(securityTitles(cp, java("SecurityAudit"), listener)).singleElement().asString()
+                .contains("SecurityAudit.onAccess listens for authorization events, but no AuthorizationEventPublisher bean");
+        assertThat(securityTitles(cp, java("SecurityAudit"), listener, java("Publishing"), """
+                package x;
+
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.security.authorization.AuthorizationEventPublisher;
+
+                public class Publishing {
+                    @Bean
+                    AuthorizationEventPublisher authorizationEventPublisher() {
+                        return new AuthorizationEventPublisher() {
+                        };
+                    }
+                }
+                """)).as("with an AuthorizationEventPublisher bean").isEmpty();
     }
 
     // ---- UNBOUNDED_EXECUTOR ----------------------------------------------------------------------------------------
