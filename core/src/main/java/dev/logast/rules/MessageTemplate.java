@@ -15,7 +15,8 @@ import java.util.regex.Pattern;
  * {@code Text [key1={}, key2={}]}.
  */
 public final class MessageTemplate {
-    private static final Pattern COMPLIANT = Pattern.compile("^(.*?)(?: \\[((?:[\\w.\\-]+=\\{\\})(?:, [\\w.\\-]+=\\{\\})*)])?$");
+    /** House format {@code Text [k1={}, k2={}]}; the comma may come without the space or with spaces around it. */
+    private static final Pattern COMPLIANT = Pattern.compile("^(.*?)(?: \\[((?:[\\w.\\-]+=\\{\\})(?:\\s*,\\s*[\\w.\\-]+=\\{\\})*)])?$");
     private static final Pattern PREP = Pattern.compile("(?i)\\s+(for|of|to|with|from|by|on|in)(\\s+(the|a|an))?\\s*$");
 
     /**
@@ -150,7 +151,7 @@ public final class MessageTemplate {
         if (m.group(2) == null) {
             return List.of();
         }
-        return Arrays.stream(m.group(2).split(", ")).map(kv -> kv.substring(0, kv.indexOf('='))).toList();
+        return Arrays.stream(m.group(2).split("\\s*,\\s*")).map(kv -> kv.substring(0, kv.indexOf('='))).toList();
     }
 
     public static String compliantBase(String raw) {
