@@ -55,7 +55,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         }
     }
 
-    /** Source comments linking review findings to fills.json or metrics.json entries. */
+    /** Source comments linking review findings to messages.yaml or metrics.yaml entries. */
     public record Reporting(Boolean sourceComments) {
         public Reporting {
             sourceComments = sourceComments != null && sourceComments;
@@ -111,14 +111,14 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param tags   tag vocabulary: canonical key → aliases (renamed by METRIC_TAG_KEY) and allowed values
      * @param events business events (lifecycle log messages) without a metric get an Observation
      *               (BUSINESS_EVENT_UNMEASURED); default true
-     * @param amounts what metrics.json offers for an outcome line that logs a number ([rows={}], [count={}]): "total"
+     * @param amounts what metrics.yaml offers for an outcome line that logs a number ([rows={}], [count={}]): "total"
      *                (default: a counter that grows by the number), "per-run" (each number one sample of a
      *                distribution summary) or "off" (only counts how often). An entry's "as" overrides the default.
      * @param catalog where metric names live (METRIC_CATALOG): "per-package" (default: one XMetrics class per package
      *                that counts, next to its code), "single" (all in {@code catalogClass}) or "off" (names stay at the
      *                call sites)
      * @param catalogClass the class for "single"; default {@code <app package>.metrics.BusinessMetrics}
-     * @param defaults     logged outcomes counted without a metrics.json decision, best effort and marked for review:
+     * @param defaults     logged outcomes counted without a metrics.yaml decision, best effort and marked for review:
      *                     failures, jobs (job/listener outcomes), skips, db-writes (all by default; [] for none)
      */
     public record Metrics(Map<String, MetricTag> tags, Boolean events, String amounts, String catalog, String catalogClass,

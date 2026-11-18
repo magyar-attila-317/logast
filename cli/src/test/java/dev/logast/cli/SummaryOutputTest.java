@@ -81,10 +81,10 @@ class SummaryOutputTest {
         return o.toString(StandardCharsets.UTF_8).replaceAll("\u001b\\[[0-9;]*m", "");
     }
 
-    /** Writes a text for every empty "MSG" of fills.json, in the form its hint asks for. */
+    /** Writes a text for every empty "MSG" of messages.yaml, in the form its hint asks for. */
     private static void fillEveryMessage(Path app) throws IOException {
-        Path fills = app.resolve(".logast/fills.json");
-        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Path fills = app.resolve(".logast/decisions/messages.yaml");
+        var mapper = dev.logast.apply.DecisionYaml.MAPPER;
         var root = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(fills.toFile());
         for (var it = root.fields(); it.hasNext(); ) {
             var e = it.next();
@@ -94,7 +94,7 @@ class SummaryOutputTest {
                 entry.put("MSG", form.find() ? form.group(1).replace("{subject}", "Expired pledge cleanup") : "Expired pledges removed");
             }
         }
-        mapper.writerWithDefaultPrettyPrinter().writeValue(fills.toFile(), root);
+        Files.writeString(fills, dev.logast.apply.DecisionYaml.text(dev.logast.apply.DecisionYaml.header(fills), root));
     }
 
     private static String summary(Path app, String cp) {
@@ -110,7 +110,7 @@ class SummaryOutputTest {
         String before = summary(app, cp);
         assertThat(before).as(before).doesNotContain("Applied earlier")
                 .contains("Next: logast apply . --auto --write   3 fixes logast makes itself")
-                .contains("Log lines: 1 — 1 with a finding (.logast/coverage.txt)")
+                .contains("Log lines: 1 — 1 with a finding (.logast/reports/coverage.txt)")
                 .contains("Places that should log: 0 of 1 do (jobs 0/1)")
                 .doesNotContain("high=").doesNotContain("log calls ").doesNotContain("Next steps");
 
@@ -124,18 +124,18 @@ class SummaryOutputTest {
         assertThat(after).as(after).doesNotContain("Next:").containsSubsequence(
                 "Applied earlier: 3 changes in 2 files (git diff to review)\n",
                 "Waiting on you — logast can't continue without these:\n",
-                "  1 log line needs wording  → write \"MSG\" in .logast/fills.json\n",
+                "  1 log line needs wording  → write \"MSG\" in .logast/decisions/messages.yaml\n",
                 "  then run: logast apply . --auto --write",
                 "Fix first (low):\n",
                 "  generated wording   src/…/CleanupJob.java:13   MESSAGE_SUGGESTED\n",
-                "Log lines: 2 — 1 fixed, 1 with a finding (.logast/coverage.txt)\n");
+                "Log lines: 2 — 1 fixed, 1 with a finding (.logast/reports/coverage.txt)\n");
 
         // the wording written and applied: nothing is left, and the summary says so
         fillEveryMessage(app);
         run("apply", app.toString(), "--pack", "logging", "--auto", "--write", "--classpath-file", cp);
         String done = summary(app, cp);
         assertThat(done).as(done).containsSubsequence("Applied earlier: 1 change in 1 file (git diff to review)\n",
-                        "Nothing left: no fixes pending and nothing waits on you.\n", "Log lines: 2 — 1 fixed, 1 fine (.logast/coverage.txt)")
+                        "Nothing left: no fixes pending and nothing waits on you.\n", "Log lines: 2 — 1 fixed, 1 fine (.logast/reports/coverage.txt)")
                 .doesNotContain("Waiting on you").doesNotContain("Fix first").doesNotContain("then run");
     }
 }

@@ -91,7 +91,7 @@ final class FamilyRules {
         b.edits(logger.edits());
         b.suggestion("Adds " + String.join(", ", added.stream().map(s -> "\"" + s + "\"").toList())
                 + (returns && missing.contains("completed") ? "; the method returns early, so the completed line is left to you" : "")
-                + ". The wording is marked " + DbRules.WORDING_MARKER + " (fills.json asks for better words).");
+                + ". The wording is marked " + DbRules.WORDING_MARKER + " (messages.yaml asks for better words).");
         b.context(ctx.context(m, inner[0], Text.oneLine(text.substring(Pos.start(m.decl()), Math.min(inner[0] + 120, text.length())), 160), null));
     }
 

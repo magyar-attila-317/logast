@@ -26,7 +26,7 @@ public final class Applier {
     private static final int MAX_ROUNDS = 6;
     private static final Set<String> SKIP = Set.of("build", "target", ".git", ".gradle", ".idea", "node_modules", "out");
 
-    /** @param lenientFills texts for orders that no longer exist are skipped silently (the automatic .logast/fills.json) */
+    /** @param lenientFills texts for orders that no longer exist are skipped silently (the automatic .logast/decisions/messages.yaml) */
     public record Selection(boolean auto, Set<String> only, Map<String, Fill> fills, boolean lenientFills) {
         public Selection(boolean auto, Set<String> only, Map<String, Fill> fills) {
             this(auto, only, fills, false);
@@ -136,7 +136,7 @@ public final class Applier {
         List<String> selfCheck = new ArrayList<>();
         Set<String> stuck = new HashSet<>();
         Set<String> passEnds = new HashSet<>(List.of(treeHash(work)));
-        // what apply did and what each round's rescan brought up: .logast/apply-trace.txt, to find where rounds come from
+        // what apply did and what each round's rescan brought up: .logast/reports/apply-trace.txt, to find where rounds come from
         List<String> trace = new ArrayList<>();
         // an id applied in an earlier pass runs again only if another order changed one of its files since
         Map<String, Integer> appliedAt = new HashMap<>();
@@ -396,7 +396,7 @@ public final class Applier {
         scan.orders().forEach(o -> present.add(o.id()));
         for (String id : sel.fills().keySet()) {
             if (present.contains(id) || sel.lenientFills() || !first) {
-                continue;   // selected in its step above; a finished entry of .logast/fills.json; or already reported
+                continue;   // selected in its step above; a finished entry of .logast/decisions/messages.yaml; or already reported
             }
             if (everSelected.add(id)) {
                 pending.add(id); // reported as stale: no such order

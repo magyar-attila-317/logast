@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** #88: a run talks about the packs it runs; a pack other than logging gets no logging advice. */
 class PackOutputTest {
-    private static final String TRAFFIC_HINT = "fill calls/day in .logast/traffic.yaml";
+    private static final String TRAFFIC_HINT = "fill calls/day in .logast/decisions/traffic.yaml";
 
     @TempDir
     Path tmp;
@@ -100,14 +100,14 @@ class PackOutputTest {
     void logCallCoverageOnlyWithTheLoggingPack() throws IOException {
         Path app = project();
         String cp = classpathFile().toString();
-        Path coverage = app.resolve(".logast/coverage.txt");
+        Path coverage = app.resolve(".logast/reports/coverage.txt");
         for (String pack : new String[]{"tracing", "metrics", "resilience", "errors", "audit"}) {
             assertThat(run("scan", app.toString(), "--pack", pack, "--classpath-file", cp)).as("--pack " + pack)
                     .doesNotContain("Log lines: ");
             assertThat(coverage).as("--pack " + pack).doesNotExist();
         }
         assertThat(run("scan", app.toString(), "--pack", "metrics,logging", "--format", "summary", "--classpath-file", cp))
-                .contains("Log lines: 0 (.logast/coverage.txt)");
+                .contains("Log lines: 0 (.logast/reports/coverage.txt)");
         assertThat(coverage).exists();
     }
 

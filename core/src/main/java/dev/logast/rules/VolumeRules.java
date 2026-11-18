@@ -65,7 +65,7 @@ final class VolumeRules {
                             .title("INFO log once per item of a collection whose size logast cannot tell: 10 items is fine, 50,000 is not")
                             .suggestion("If it is always small, add `// logast:loop-size 10` above the loop (any number up to "
                                     + ctx.policy.levels().boundedLoopMax() + " keeps INFO). If it can be large, add `// logast:loop-size large`: "
-                                    + "the line becomes DEBUG with a summary after the loop. With .logast/traffic.yaml, LOG_VOLUME shows lines/day.")
+                                    + "the line becomes DEBUG with a summary after the loop. With .logast/decisions/traffic.yaml, LOG_VOLUME shows lines/day.")
                             .doneWhen("the loop has a // logast:loop-size comment, or the line no longer logs at INFO")
                             .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
                 }

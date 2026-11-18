@@ -47,7 +47,7 @@ public final class HumanFormat {
 
         List<WorkOrder> auto = orders.stream().filter(WorkOrder::mechanical).toList();
         List<WorkOrder> text = orders.stream().filter(o -> !o.reportOnly() && !o.slots().isEmpty()).toList();
-        // an uncounted outcome is an entry of metrics.json (count, tag or skip), not a decision to read about
+        // an uncounted outcome is an entry of metrics.yaml (count, tag or skip), not a decision to read about
         List<WorkOrder> outcomes = orders.stream().filter(o -> o.reportOnly() && o.rule().equals(Rules.METRIC_OUTCOME_UNMEASURED)).toList();
         List<WorkOrder> decisions = orders.stream().filter(o -> o.reportOnly() && !o.rule().equals(Rules.METRIC_OUTCOME_UNMEASURED)).toList();
         sb.append('\n').append(Ansi.bold(orders.size() + " findings")).append(": ")
@@ -60,12 +60,12 @@ public final class HumanFormat {
             sb.append("  ").append(Ansi.green("logast fixes")).append("     ").append(cut(byLabel(auto), width - 19)).append('\n');
         }
         if (!text.isEmpty()) {
-            String where = "write in .logast/fills.json or `logast review .`: ";
+            String where = "write in .logast/decisions/messages.yaml or `logast review .`: ";
             sb.append("  ").append(Ansi.cyan("messages")).append("         ").append(Ansi.dim(where))
                     .append(cut(byLabel(text), width - 19 - where.length())).append('\n');
         }
         if (!outcomes.isEmpty()) {
-            sb.append("  ").append(Ansi.cyan("outcomes")).append("         ").append(Ansi.dim("decide in .logast/metrics.json "
+            sb.append("  ").append(Ansi.cyan("outcomes")).append("         ").append(Ansi.dim("decide in .logast/decisions/metrics.yaml "
                     + "(`logast metrics .` has the context): ")).append(outcomes.size()).append(" logged but not counted").append('\n');
         }
 

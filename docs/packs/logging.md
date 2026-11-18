@@ -31,7 +31,7 @@ can end either way, the finding's note says why.
 | BUSINESS_EVENT_TIMESTAMP | low | the current time logged as a value (every log line has a timestamp) | AUTO: the value goes |
 | LOG_KEY_STYLE | low | `[k=v]` keys that differ from the vocabulary or `logging.keyStyle` | AUTO |
 | PII_IN_LOG | high | a value whose name is on the `pii` list | AUTO |
-| MESSAGE_SUGGESTED | low | a line logast generated with placeholder wording (`// logast:wording`) | NEEDS TEXT: `fills.json` asks for better wording |
+| MESSAGE_SUGGESTED | low | a line logast generated with placeholder wording (`// logast:wording`) | NEEDS TEXT: `messages.yaml` asks for better wording |
 | **What goes into a line** | | | |
 | LOG_OBJECT_ARGUMENT | high | a whole DTO or entity logged (its `toString`, lazy loading) | AUTO: its id |
 | LOG_COLLECTION_ARGUMENT | medium | a whole collection logged | AUTO: its size |
@@ -153,7 +153,7 @@ logging:
 
 Where logs are missing, logast adds the line and someone writes the sentence.
 
-The other direction, the log lines that exist: `.logast/coverage.txt` says for every one of them whether logast
+The other direction, the log lines that exist: `.logast/reports/coverage.txt` says for every one of them whether logast
 fixed, reported, ignored, skipped (and why) or checked it; see
 [every log call is accounted for](../commands.md#every-log-call-is-accounted-for).
 
@@ -203,7 +203,7 @@ public Invoice cancel(String invoiceId) {
   once the transaction commits (`AfterCommit`), so a rolled-back change is never announced. Reads: INFO when only
   low-frequency paths reach them (jobs, startup, or a `traffic.yaml` rate within `levels.volumeBudget`), DEBUG
   otherwise. Called inside a loop: DEBUG.
-  The wording comes from the table name; `// logast:wording` marks it, and `fills.json` asks for a better one
+  The wording comes from the table name; `// logast:wording` marks it, and `messages.yaml` asks for a better one
   (MESSAGE_SUGGESTED). Sequences and DDL are left alone.
 - **Batch summaries**: a loop on a job path that does I/O per item (repository, HTTP, messaging). Loops over a call
   (`for (Order o : repository.findAll())`) get the call extracted into a variable first, so the count doesn't run
@@ -233,5 +233,5 @@ for (Store store : stores) { ... }
 ```
 
 `never` lowers every loop that isn't known to be small, `always` turns the checks off. With rates
-in `.logast/traffic.yaml` (`logast traffic .` lists every entrypoint for you; a Prometheus query result works
+in `.logast/decisions/traffic.yaml` (`logast traffic .` lists every entrypoint for you; a Prometheus query result works
 too), `LOG_VOLUME` reports lines/day per statement over your budget. logast never guesses traffic.

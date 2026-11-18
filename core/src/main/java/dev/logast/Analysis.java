@@ -33,7 +33,7 @@ public final class Analysis {
     /** What the rules did with each log call, recorded where they decide it (#72). */
     public final LogLedger ledger = new LogLedger();
 
-    /** Real entrypoint rates when provided (.logast/traffic.yaml or --traffic); never estimated. */
+    /** Real entrypoint rates when provided (.logast/decisions/traffic.yaml or --traffic); never estimated. */
     public Traffic traffic = Traffic.none();
 
     public Analysis withTraffic(Traffic t) {

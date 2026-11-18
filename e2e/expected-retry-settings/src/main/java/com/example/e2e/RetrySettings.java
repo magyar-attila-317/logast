@@ -12,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param defaults            what Spring Framework's @Retryable usages share
  * @param springRetryDefaults what Spring Retry's @Retryable usages share
  * @param usages              usages with settings of their own: class, then method (kebab case); which ones is
- *                            decided in .logast/retry.yaml
+ *                            decided in .logast/decisions/retry.yaml
  */
 @ConfigurationProperties("resilience.retry")
 public record RetrySettings(Retry defaults, Retry springRetryDefaults, Map<String, Map<String, Retry>> usages) {

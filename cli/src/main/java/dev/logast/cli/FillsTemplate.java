@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** {@code scan --format fills-template}: a fills.json skeleton the LLM (or a human) only has to complete. */
+/** {@code scan --format fills-template}: a messages.yaml skeleton the LLM (or a human) only has to complete. */
 final class FillsTemplate {
     private FillsTemplate() {
     }

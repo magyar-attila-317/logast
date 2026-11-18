@@ -55,7 +55,7 @@ public final class Logast {
         return scan(root, classpath, policy, null);
     }
 
-    /** @param trafficFile provided entrypoint rates; null → {@code <root>/.logast/traffic.*} if present */
+    /** @param trafficFile provided entrypoint rates; null → {@code <root>/.logast/decisions/traffic.*} if present */
     public static ScanResult scan(Path root, List<Path> classpath, Policy policy, Path trafficFile) {
         long t0 = System.nanoTime();
         Analysis a = analyse(root, classpath, policy).withTraffic(Traffic.load(root.toAbsolutePath().normalize(), trafficFile));

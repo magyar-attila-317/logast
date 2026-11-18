@@ -4,7 +4,7 @@
 packs: [logging, tracing]          # metrics is opt-in: packs: [logging, tracing, metrics]
 
 reporting:
-  sourceComments: false             # debugging: add // logast: RULE ID beside findings in fills.json and metrics.json
+  sourceComments: false             # debugging: add // logast: RULE ID beside findings in messages.yaml and metrics.yaml
 
 mdc:
   ambientKeys: [traceId, spanId]   # maintained by tracing, never set by hand
@@ -73,14 +73,14 @@ levels:
 
 metrics:
   events: true                     # business events (lifecycle log messages) without a metric get an Observation
-  amounts: total                   # an outcome line that logs a number ([rows={}]) can count it too, if metrics.json
+  amounts: total                   # an outcome line that logs a number ([rows={}]) can count it too, if metrics.yaml
                                    # names it ("amount"): total = a counter grows by it, per-run = each one a sample of
-                                   # a distribution summary, off = metrics.json does not offer it
+                                   # a distribution summary, off = metrics.yaml does not offer it
   catalog: per-package             # metric names in one place (METRIC_CATALOG): per-package = an XMetrics class per
                                    # package that counts; single = all in catalogClass; off = names at the call sites
   # catalogClass: com.example.metrics.BusinessMetrics   # for single (default: <app package>.metrics.BusinessMetrics)
-  defaults: [failures, jobs, skips, db-writes]   # counted without a metrics.json decision, marked
-                                   # "// logast:metric review, confidence: …"; [] = only what metrics.json decides
+  defaults: [failures, jobs, skips, db-writes]   # counted without a metrics.yaml decision, marked
+                                   # "// logast:metric review, confidence: …"; [] = only what metrics.yaml decides
   tags:                            # tag vocabulary: aliases are renamed to the key (METRIC_TAG_KEY)
     outcome:
       aliases: [result, success, succeeded]

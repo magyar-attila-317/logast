@@ -31,7 +31,7 @@ RUNTIME_NULL_VALUE belong to logging, RUNTIME_TRACE_LOST to tracing.
   change it (`rules: { LOG_FORMAT: { severity: low } }`).
 - **fix**: what a finding of the rule turns into.
   - **AUTO**: logast makes the change.
-  - **NEEDS TEXT**: logast decides the change; a person or an LLM writes one message in `.logast/fills.json`
+  - **NEEDS TEXT**: logast decides the change; a person or an LLM writes one message in `.logast/decisions/messages.yaml`
     (or in `logast review`).
   - **report** (REPORT-ONLY): a decision for a person. The finding says what to decide and when it counts as done.
   - "AUTO …; report otherwise": the rule fixes the shapes it can and reports the rest.

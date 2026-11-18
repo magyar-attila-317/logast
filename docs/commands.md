@@ -7,17 +7,17 @@ examples. Output samples are illustrations; counts and ids differ per service an
 |---|---|
 | `logast init [svc]` | one-time setup: `logast.yaml`, `.gitignore`, classpath, traffic template (`--baseline` for CI) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
-| `logast scan <svc>` | finds gaps, writes `.logast/orders.json`, prints the work orders |
-| `logast apply <svc> [--auto] [--only ids] [--write]` | applies orders on a scratch copy, rescanning between rounds; dry run unless `--write`. Message texts come from `.logast/fills.json` (or `--fills <file>`) |
+| `logast scan <svc>` | finds gaps, writes `.logast/reports/orders.json`, prints the work orders |
+| `logast apply <svc> [--auto] [--only ids] [--write]` | applies orders on a scratch copy, rescanning between rounds; dry run unless `--write`. Message texts come from `.logast/decisions/messages.yaml` (or `--fills <file>`) |
 | `logast review <svc> [--open]` | local page for people to write the messages and apply |
 | `logast verify <svc>` | runs the existing tests with log capture and checks what was really logged |
 | `logast explain <svc> [--entrypoint "POST /x"]` | lists entrypoints, or the call tree below one with log/MDC/async markers |
 | `logast lifecycle <svc>` | every flow's lifecycle lines: which exist, who owns the start and the outcome, what logast will add; implementation families that log unevenly |
 | `logast why <svc> <key>` | why an MDC key is scoped where it is: every method that logs it, the decision (scope, covered, in MDC, no scope, lifted) and the reason |
 | `logast metrics <svc>` | the metrics map: exporters, identity, metric per entrypoint, meters in code, outcomes not counted (`--format json`, `--format table` = meters only) |
-| `logast queries <svc>` | ready-made PromQL, NRQL and Splunk SPL for the service's metrics and logs, written to `.logast/queries.md` (`--stdout` prints them) |
+| `logast queries <svc>` | ready-made PromQL, NRQL and Splunk SPL for the service's metrics and logs, written to `.logast/reports/queries.md` (`--stdout` prints them) |
 | `logast vocabulary <svc>` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
-| `logast traffic <svc>` | writes `.logast/traffic.yaml` with every entrypoint, ready to fill in |
+| `logast traffic <svc>` | writes `.logast/decisions/traffic.yaml` with every entrypoint, ready to fill in |
 | `logast policy <svc>` | the effective policy after all layers, with overrides |
 | `logast rules` | every rule and its packs |
 | `logast fleet <svc>…` | compliance report across services |
@@ -25,6 +25,20 @@ examples. Output samples are illustrations; counts and ids differ per service an
 
 Options most analysing commands share: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`,
 `--traffic <file>`.
+
+### The `.logast` folder
+
+| folder | what is in it | in git? |
+|---|---|---|
+| `.logast/decisions/` | what a person decides, all YAML: `messages.yaml` (message texts), `metrics.yaml` (count, tag or skip a logged outcome), `traffic.yaml` (calls/day per entrypoint), `retry.yaml` (retry usages with settings of their own). logast keeps the entries in step with the code and keeps what you wrote | yes |
+| `.logast/reports/` | what logast writes for you to read: `orders.json`, `coverage.txt`, `steps/`, `apply-trace.txt`, `last-apply.txt`, `queries.md`, `verify.json` | no |
+| `.logast/` | `classpath-*.txt` (machine input), `baseline.json` (CI), `README.md`, `shape/` | baseline and README |
+
+A `.logast` from an earlier logast version (`fills.json`, `metrics.json`, `traffic.yaml`, `retry.yaml` and the reports
+at its top) is moved into this layout by the next command that reads it: `fills.json` and `metrics.json` become
+`decisions/messages.yaml` and `decisions/metrics.yaml` with the same entries, the rest moves as it is. One line says
+what moved. If a file exists in both places, the new one is used and the old one stays, with a warning: nothing you
+wrote is lost. `init`'s `.gitignore` entries and `.logast/README.md` are updated with it.
 
 Output is coloured in a terminal, and long steps (`scan`, `apply`) show a live progress line: the current step, the
 round, the number of fixes done and the elapsed time. In CI or a pipe each step is printed as a plain line instead.
@@ -43,7 +57,7 @@ round, the number of fixes done and the elapsed time. In CI or a pipe each step 
 | `--no-classpath` / `--no-traffic` | skip those steps |
 | `--force` | write a fresh `logast.yaml` over an existing one |
 
-`init` is safe to re-run: it keeps the files you already edited. It does not create `fills.json` / `metrics.json`:
+`init` is safe to re-run: it keeps the files you already edited. It does not create `messages.yaml` / `metrics.yaml`:
 their entries belong to the code the first `apply` writes (generated lines, database and job outcome lines) and to
 the wording it leaves, so they only make sense after it. Each step is also its own command:
 `logast classpath .`, `logast traffic .`, `logast scan . --update-baseline`.
@@ -58,8 +72,8 @@ logast · 53 files · 21 entrypoints · log coverage 42.9%
 
 143 findings: 93 logast fixes, 5 need a message, 11 outcomes to count or skip, 34 need your decision
   logast fixes     message not in house format 41, business id missing from MDC 7, …
-  messages         write in .logast/fills.json or `logast review .`: business id missing from MDC 3, …
-  outcomes         decide in .logast/metrics.json (`logast metrics .` has the context): 11 logged but not counted
+  messages         write in .logast/decisions/messages.yaml or `logast review .`: business id missing from MDC 3, …
+  outcomes         decide in .logast/decisions/metrics.yaml (`logast metrics .` has the context): 11 logged but not counted
 
 Your decisions (most important first; → what to do)
   high
@@ -92,7 +106,7 @@ SWA-d5b58b  low  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/shop
 - Narrow the list: `--rule`, `--pack`, `--severity high`, `--entrypoint "POST /orders"`, `--limit`.
 - Change the output: `--format human` (default in a terminal) `| compact` (default otherwise) `| summary | json | sarif | fills-template`.
 - CI: `--baseline`, `--update-baseline`, `--since <git ref>`, `--fail-on <severity>` (see the README's CI section).
-- `scan` also creates and updates `.logast/fills.json` and `.logast/metrics.json`: it keeps every entry you already
+- `scan` also creates and updates `.logast/decisions/messages.yaml` and `.logast/decisions/metrics.yaml`: it keeps every entry you already
   have exactly as it is, adds entries for new findings and removes the ones that are done. Nothing is rewritten when
   nothing changed.
 
@@ -105,8 +119,8 @@ The end of `scan` and `apply` is for a person: it groups what is left by what yo
 Applied earlier: 100 changes in 53 files (git diff to review)
 
 Waiting on you — logast can't continue without these:
-  21 log lines need wording        → write "MSG" in .logast/fills.json
-  12 outcomes: count, tag or skip  → .logast/metrics.json
+  21 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
+  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
   34 decisions                     → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
@@ -119,15 +133,15 @@ Fix first (high):
   transactions without a timeout     src/…/application.yml:1         DB_NO_TIMEOUT
   (23 medium, 39 low: logast scan .)
 
-Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
+Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
 Places that should log: 17 of 21 do (jobs 9/9, endpoints 8/12)
 ```
 
-- **Applied earlier** appears when an `apply --write` changed files (`.logast/last-apply.txt`).
+- **Applied earlier** appears when an `apply --write` changed files (`.logast/reports/last-apply.txt`).
 - **Next** comes first when logast still has fixes of its own to make: `logast apply . --auto --write`. The person's
   work is then listed as what follows, since the apply changes it.
-- **Waiting on you** is what logast cannot do: message wording (`fills.json`), whether to count a logged outcome
-  (`metrics.json`), and decisions it only reports (the three most frequent kinds by name). `then run` appears when
+- **Waiting on you** is what logast cannot do: message wording (`messages.yaml`), whether to count a logged outcome
+  (`metrics.yaml`), and decisions it only reports (the three most frequent kinds by name). `then run` appears when
   something you fill in is applied by the next `apply`; decisions are done by changing the code.
 - When nothing is pending and nothing waits on you, it says `Nothing left`.
 - **Fix first** lists the findings of the worst severity among those that wait on you (up to 8), by a short name, with
@@ -143,7 +157,7 @@ report.
 ### Every log call is accounted for
 
 A line without a finding could mean "checked, fine" or "never looked at", so `scan` (and `apply --write`) also writes
-`.logast/coverage.txt`: one line per log call, in file/line order, with what logast did with it:
+`.logast/reports/coverage.txt`: one line per log call, in file/line order, with what logast did with it:
 
 ```
 src/main/java/com/example/shop/service/PledgeService.java:41   fixed    LOG_FORMAT FMT-e10ae3; reported MESSAGE_VAGUE MVG-53c6bf
@@ -156,7 +170,7 @@ src/main/java/com/example/shop/service/LegacyGateway.java:9    skipped  other lo
 and one line at the end of the run's output (the skip reasons and every line's detail stay in the file):
 
 ```
-Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
+Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
 ```
 
 | outcome | meaning |
@@ -177,7 +191,7 @@ and static blocks are not in it (logast analyses method and constructor bodies).
 ## apply
 
 `apply` fixes what it can across all selected packs (best effort), refreshes the classpath when it changed a build
-file, creates the files to fill (`.logast/fills.json`, `.logast/metrics.json`, `.logast/traffic.yaml`), and ends with
+file, creates the files to fill (`.logast/decisions/messages.yaml`, `.logast/decisions/metrics.yaml`, `.logast/decisions/traffic.yaml`), and ends with
 what is left, grouped by what you do about it ([what happens next](#what-happens-next)):
 
 ```
@@ -185,35 +199,35 @@ applied (100): SLG-d7dbb8 SUP-065aa3 …
 files (53): …  ·  10 rounds, 41.2s
 
 Waiting on you — logast can't continue without these:
-  21 log lines need wording        → write "MSG" in .logast/fills.json
-  12 outcomes: count, tag or skip  → .logast/metrics.json
+  21 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
+  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
   34 decisions                     → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
-Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/coverage.txt)
+Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
-  git diff                                            review the changes (one diff per kind of change in .logast/steps/)
-  fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  git diff                                            review the changes (one diff per kind of change in .logast/reports/steps/)
+  fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
   logast verify .                                     build and run the tests with log capture: does the result really log what it should?
 ```
 
 One `apply` does everything automatic; a second one is only for what you filled in. Fill the files, run
 `logast apply . --auto --write` again on the migrated code, and repeat until nothing is left. `logast scan .` shows
-the same without changing anything. `apply --write` records what it changed in `.logast/last-apply.txt`, so a later
+the same without changing anything. `apply --write` records what it changed in `.logast/reports/last-apply.txt`, so a later
 scan starts with "Applied earlier: 100 changes in 53 files".
 
 - **Steps.** `apply` runs in steps (setup, structure, lines, mdc, messages, exceptions, levels, reports), each on the
-  result of the previous one, and saves one diff per step in `.logast/steps/` (`01-setup.diff`, `02-structure.diff`,
+  result of the previous one, and saves one diff per step in `.logast/reports/steps/` (`01-setup.diff`, `02-structure.diff`,
   …). They apply in order with `git apply`, so a whole kind of change can be reviewed on its own, or dropped: later
   steps build on earlier ones, so drop from the end, or rerun with `--until <step>`. Background:
   [pipeline-plan.md](pipeline-plan.md).
 - **Checks.** Every run checks its result before writing (no key both in MDC and in a message, no nested scope, one
   started/completed per method, the result still compiles) and prints `CHECK FAILED file:line` if something breaks
   that.
-- **Trace.** `.logast/apply-trace.txt` records what each round applied and what its rescan brought up.
-- **Coverage.** With `--write`, `.logast/coverage.txt` lists every log call of the result; the ones this run changed
+- **Trace.** `.logast/reports/apply-trace.txt` records what each round applied and what its rescan brought up.
+- **Coverage.** With `--write`, `.logast/reports/coverage.txt` lists every log call of the result; the ones this run changed
   show as `fixed` ([every log call is accounted for](#every-log-call-is-accounted-for)).
 - `--only <ids>` restricts it to some orders; `--format json` prints the result for tools.
 
@@ -223,7 +237,7 @@ scan starts with "Applied earlier: 100 changes in 53 files".
 logast review . --open
 ```
 
-Opens a local page (127.0.0.1, token-protected) with one input per message. Texts already in `.logast/fills.json`
+Opens a local page (127.0.0.1, token-protected) with one input per message. Texts already in `.logast/decisions/messages.yaml`
 are filled in, and what you type is saved there. It shows the code, the path from the entrypoint, the required
 phrasing and the suffix keys. *Dry run* shows the diff and any rejections; *Apply* writes.
 
@@ -241,7 +255,7 @@ RNV-5ecdae  medium  REPORT-ONLY  RUNTIME_NULL_VALUE  …/notification/Mailer.jav
 
 It runs your existing tests (the build isn't changed; an init script adds the capture jar), records every log
 event, and reports context that existed in a test and then got lost, plus values logged as `null`. The result goes
-to `.logast/verify.json`; `--no-run` analyses the captures of the previous run again.
+to `.logast/reports/verify.json`; `--no-run` analyses the captures of the previous run again.
 
 By default it runs `./gradlew test`. Services with other test tasks set them in `logast.yaml` (or pass
 `--tasks "test intTest bddTest"`):
@@ -273,7 +287,7 @@ Outcomes logged but not counted: …
 
 ```
 $ logast queries .
-queries: 30 PromQL, 20 NRQL, 12 SPL in .logast/queries.md
+queries: 30 PromQL, 20 NRQL, 12 SPL in .logast/reports/queries.md
 ```
 
 Queries to paste, one code block each, for what the service measures and logs as the code stands (run it after
@@ -299,7 +313,7 @@ a hint.
   that the policy doesn't cover yet; `init` writes the same harvest into `logast.yaml`. How to organise it:
   [vocabulary.md](vocabulary.md#start-from-the-code).
 - `logast policy .` prints the merged result of all layers and every override.
-- `logast traffic .` lists every entrypoint in `.logast/traffic.yaml`; fill in calls/day (or pass a Prometheus query
+- `logast traffic .` lists every entrypoint in `.logast/decisions/traffic.yaml`; fill in calls/day (or pass a Prometheus query
   result with `--traffic`) so logast can judge log volume. Existing values are kept.
 
 ## fleet
@@ -326,8 +340,8 @@ With the Claude Code skill installed (`./install.sh --skill`), ask Claude Code *
 standard"*. It follows [llm-workflow.md](llm-workflow.md):
 
 ```bash
-logast scan .                       # also writes .logast/fills.json: the LLM fills in the empty "MSG" values
-logast apply . --auto               # dry run: diff + REJECTED reasons (uses .logast/fills.json)
+logast scan .                       # also writes .logast/decisions/messages.yaml: the LLM fills in the empty "MSG" values
+logast apply . --auto               # dry run: diff + REJECTED reasons (uses .logast/decisions/messages.yaml)
 logast apply . --auto --write
 logast scan .                       # until only REPORT-ONLY remains
 ```

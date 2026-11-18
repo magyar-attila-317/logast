@@ -153,7 +153,7 @@ never counted.
 logast never guesses traffic.
 - **LOG_IN_LOOP** works from the code alone. It flags an INFO line logged once per collection element on the normal
   path. WARN/ERROR lines and catch blocks are left alone, since those are per failure.
-- **LOG_VOLUME** needs real rates. Run `logast traffic <root>`: it writes `.logast/traffic.yaml` with every
+- **LOG_VOLUME** needs real rates. Run `logast traffic <root>`: it writes `.logast/decisions/traffic.yaml` with every
   entrypoint listed and the rates empty. Fill in what you know; rerunning keeps your values and adds new
   entrypoints. A filled-in file looks like this:
 

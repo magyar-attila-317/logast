@@ -19,7 +19,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Accounts for every log call (#72): what logast did with it, written to {@code .logast/coverage.txt}, one line per
+ * Accounts for every log call (#72): what logast did with it, written to {@code .logast/reports/coverage.txt}, one line per
  * call in file/line order. The outcome is the first that applies:
  * <ul>
  *   <li>{@code fixed}: an apply changed it (kept by later runs while its file stays unchanged);</li>
@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  * The detail column names the rest too ({@code reported LOG_FORMAT FMT-…; skipped protected message}).
  */
 public final class LogLedger {
-    public static final String PATH = ".logast/coverage.txt";
+    public static final String PATH = LogastDir.COVERAGE;
 
     /** Skip reasons: a short phrase each, the same wherever the rule decides it. */
     public static final String HELPER = "inside a log helper (LOG_HELPER reports the helper)";
@@ -163,7 +163,7 @@ public final class LogLedger {
 
     /**
      * One line for a person (#101): "Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked
-     * (.logast/coverage.txt)". The skip reasons and every line's detail stay in the file.
+     * (.logast/reports/coverage.txt)". The skip reasons and every line's detail stay in the file.
      */
     public static String line(List<Entry> entries) {
         Map<String, Integer> counts = new LinkedHashMap<>();

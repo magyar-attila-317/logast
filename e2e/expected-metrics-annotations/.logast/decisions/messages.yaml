@@ -1,0 +1,7 @@
+# Write the message text for each order (MSG), then run: logast apply . --auto
+# Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it.
+# Keys starting with _ are hints (_where and "was:" find the line again when its id changes: keep them). `logast
+# scan` keeps this file up to date and keeps what you wrote.
+#
+# Nothing needs a message text right now: every finding is fixed automatically or only reported.
+{}

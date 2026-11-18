@@ -52,8 +52,8 @@ final class Verify extends Main.Common implements Callable<Integer> {
         Analysis a = Logast.analyse(root, classpath(), policy());
         RuntimeVerifier.Result r = RuntimeVerifier.verify(a, RuntimeVerifier.read(captures));
         ScanResult out = new ScanResult(1, root.toString(), a.stats(), Map.of(), r.orders());
-        Files.createDirectories(root.resolve(".logast"));
-        OrderJson.MAPPER.writeValue(root.resolve(".logast/verify.json").toFile(), Map.of("result", out,
+        Files.createDirectories(root.resolve(dev.logast.LogastDir.REPORTS));
+        OrderJson.MAPPER.writeValue(root.resolve(dev.logast.LogastDir.VERIFY).toFile(), Map.of("result", out,
                 "events", r.events(), "logStatements", r.logStatements(), "exercised", r.exercised(), "unmapped", r.unmapped()));
         if (format.equals("json")) {
             System.out.println(OrderJson.MAPPER.writeValueAsString(r));

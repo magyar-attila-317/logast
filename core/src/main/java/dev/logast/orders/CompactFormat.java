@@ -104,7 +104,7 @@ public final class CompactFormat {
             }
         }
         if (text > 0) {
-            sb.append("\n").append(Ansi.dim("fills.json: \"MSG\" is plain text, no {} and no [k=v]; optional \"args\": [\"var\"] adds variables")).append('\n');
+            sb.append("\n").append(Ansi.dim("messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables")).append('\n');
         }
         return sb.toString();
     }

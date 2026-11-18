@@ -92,7 +92,7 @@ In the service's root folder:
 logast init .                    # 1. once: logast.yaml, .gitignore, classpath, traffic.yaml
                                  # 2. review logast.yaml: organise the business terms it found
 logast apply . --auto --write    # 3. changes the code, creates the files to fill in
-                                 # 4. fill in .logast/fills.json and .logast/metrics.json
+                                 # 4. fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml
 logast apply . --auto --write    # 5. again, on the migrated code: writes what you filled in
 git diff                         # 6. review
 ```
@@ -113,10 +113,10 @@ git diff                         # 6. review
 | kind | who acts | how |
 |---|---|---|
 | **AUTO** | logast | `apply --auto` makes the change |
-| **NEEDS TEXT** | a person or an LLM | write one message in `.logast/fills.json` (or in `logast review . --open`); the next `apply` validates and writes it |
+| **NEEDS TEXT** | a person or an LLM | write one message in `.logast/decisions/messages.yaml` (or in `logast review . --open`); the next `apply` validates and writes it |
 | **REPORT-ONLY** | a person | a decision logast does not make; the finding says what to decide and when it counts as done |
 
-Metric decisions (count an outcome, tag it, or skip it) go into `.logast/metrics.json` the same way.
+Metric decisions (count an outcome, tag it, or skip it) go into `.logast/decisions/metrics.yaml` the same way.
 
 ### Who writes the text
 
@@ -127,22 +127,26 @@ Metric decisions (count an outcome, tag it, or skip it) go into `.logast/metrics
 
 ### The files it writes
 
-`init` adds `.logast/*` to `.gitignore`, keeping the shared files in git.
+`.logast/decisions/` holds what you decide (YAML, you edit it, it goes into git); `.logast/reports/` holds what logast
+writes for you to read. `init` adds `.logast/*` to `.gitignore`, keeping the decisions, the baseline and the README in
+git. A `.logast` from an earlier logast version is moved into this layout by the next command (one line says what moved).
 
 | file | what it is | written by | in git? |
 |---|---|---|---|
 | `logast.yaml` | your settings; every option is explained in comments inside the file | `init` | yes |
 | `.logast/README.md` | what each file in the folder is for | `init` | yes |
-| `.logast/classpath-*.txt` | the service's compile classpath, so logast understands types (Gradle runs once, nothing is compiled) | `init`, `classpath`; `apply` after a build-file change | no (machine-specific) |
-| `.logast/traffic.yaml` | every entrypoint, with calls/day if you fill them in (judges log volume) | `init`, `traffic`, `apply` | yes |
+| `.logast/decisions/messages.yaml` | message texts to write; kept in step with the code (entries kept, added, removed when done) | `scan`, `apply` | yes |
+| `.logast/decisions/metrics.yaml` | metric decisions to make, kept in step the same way | `scan`, `apply` | yes |
+| `.logast/decisions/traffic.yaml` | every entrypoint, with calls/day if you fill them in (judges log volume) | `init`, `traffic`, `apply` | yes |
+| `.logast/decisions/retry.yaml` | every `@Retryable` usage, to mark the ones that need settings of their own (resilience pack) | `scan`, `apply` | yes |
 | `.logast/baseline.json` | the findings CI accepts as known | `init --baseline`, `scan --update-baseline` | yes |
-| `.logast/orders.json` | the last scan's work orders, in full | `scan` | no |
-| `.logast/coverage.txt` | every log call and what logast did with it: fixed, reported, ignored, skipped (with the reason) or checked ([details](docs/commands.md#every-log-call-is-accounted-for)) | `scan`, `apply --write` (logging pack) | no |
-| `.logast/fills.json` | message texts to write; kept in step with the code (entries kept, added, removed when done) | `scan`, `apply` | no |
-| `.logast/metrics.json` | metric decisions to make, kept in step the same way | `scan`, `apply` | no |
-| `.logast/steps/*.diff` | one diff per apply step, to review or drop a kind of change | `apply` | no |
-| `.logast/apply-trace.txt` | what each apply round did and what its rescan found | `apply` | no |
-| `.logast/verify.json` | the last `verify` result | `verify` | no |
+| `.logast/classpath-*.txt` | the service's compile classpath, so logast understands types (Gradle runs once, nothing is compiled) | `init`, `classpath`; `apply` after a build-file change | no (machine-specific) |
+| `.logast/reports/orders.json` | the last scan's work orders, in full | `scan` | no |
+| `.logast/reports/coverage.txt` | every log call and what logast did with it: fixed, reported, ignored, skipped (with the reason) or checked ([details](docs/commands.md#every-log-call-is-accounted-for)) | `scan`, `apply --write` (logging pack) | no |
+| `.logast/reports/steps/*.diff` | one diff per apply step, to review or drop a kind of change | `apply` | no |
+| `.logast/reports/apply-trace.txt` | what each apply round did and what its rescan found | `apply` | no |
+| `.logast/reports/queries.md` | dashboard and alert queries for the service | `queries` | no |
+| `.logast/reports/verify.json` | the last `verify` result | `verify` | no |
 
 Details of every command, with example output: [docs/commands.md](docs/commands.md).
 

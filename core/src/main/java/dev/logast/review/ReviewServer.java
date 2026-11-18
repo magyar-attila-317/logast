@@ -114,7 +114,7 @@ public final class ReviewServer {
             m.put("code", o.context() == null ? null : o.context().code());
             m.put("vars", o.context() == null || o.context().argsSlot() == null ? List.of() : o.context().varsInScope().keySet());
             m.put("slots", o.slots());
-            m.put("text", written.containsKey(o.id()) ? written.get(o.id()).slots() : Map.of());   // from .logast/fills.json
+            m.put("text", written.containsKey(o.id()) ? written.get(o.id()).slots() : Map.of());   // from .logast/decisions/messages.yaml
             m.put("preview", CompactFormat.previewLines(Path.of(current.root()), o));
             out.add(m);
         }
