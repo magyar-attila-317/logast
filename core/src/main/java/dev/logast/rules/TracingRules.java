@@ -146,18 +146,33 @@ final class TracingRules {
                 && m.owner().decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, OBSERVED));
     }
 
+    static final String TIMED = "io.micrometer.core.annotation.Timed";
+    static final String COUNTED = "io.micrometer.core.annotation.Counted";
+
+    /** {@code @Timed} or {@code @Counted} on the method: Micrometer's TimedAspect / CountedAspect meter it. */
+    static boolean meterAnnotation(MethodInfo m) {
+        return m.hasAnnotation(TIMED) || m.hasAnnotation(COUNTED);
+    }
+
     /**
-     * OBSERVED_ANNOTATION_INACTIVE: Spring Boot processes {@code @Observed} and {@code @NewSpan} only with
-     * {@code management.observations.annotations.enabled: true} and aspectjweaver on the classpath (Boot reference,
-     * Observability, "Annotations"; ObservationAutoConfiguration.ObservedAspectConfiguration and
-     * MicrometerTracingAutoConfiguration.SpanAspectConfiguration are {@code @ConditionalOnClass(Advice.class)} and
-     * {@code @ConditionalOnBooleanProperty} on it, Boot 3.5 and 4.1). Without them the annotated method runs untraced.
-     * Sets the property and adds the AspectJ starter of the Boot generation on the classpath; until both are there (or
-     * planned), the annotation does not count as observing its method.
+     * OBSERVED_ANNOTATION_INACTIVE: Spring Boot processes {@code @Observed}, {@code @NewSpan}, {@code @Timed} and
+     * {@code @Counted} only with {@code management.observations.annotations.enabled: true} and aspectjweaver on the
+     * classpath (Boot reference, Observability, "Micrometer Observation Annotations support": "To enable scanning of
+     * observability annotations like @Observed, @Timed, @Counted, @MeterTag and @NewSpan, set the
+     * management.observations.annotations.enabled property to true. A dependency on org.aspectj:aspectjweaver [...] is
+     * also required"; ObservationAutoConfiguration.ObservedAspectConfiguration, MicrometerTracingAutoConfiguration
+     * .SpanAspectConfiguration and MetricsAspectsAutoConfiguration are {@code @ConditionalOnClass(Advice.class)} and
+     * {@code @ConditionalOnBooleanProperty} on it in Boot 3.5.7 and 4.1.2). Without them the annotated method runs
+     * untraced and unmeasured. One switch for all four, so one rule in two packs: the tracing pack looks at
+     * {@code @Observed} / {@code @NewSpan}, the metrics pack at {@code @Observed} (its timer), {@code @Timed} and
+     * {@code @Counted}; with both selected it is one order. Sets the property and adds the AspectJ starter of the Boot
+     * generation on the classpath; until both are there (or planned), no such annotation counts as observing or
+     * measuring its method.
      */
     private void observedAnnotations() {
         List<MethodInfo> annotated = ctx.methods().stream()
-                .filter(m -> !m.owner().fqn().startsWith(ctx.a.supportPackage + ".") && observedAnnotation(m)).toList();
+                .filter(m -> !m.owner().fqn().startsWith(ctx.a.supportPackage + ".") && (observedAnnotation(m) || meterAnnotation(m)))
+                .toList();
         if (annotated.isEmpty()) {
             return;
         }
@@ -182,6 +197,16 @@ final class TracingRules {
         if (!ctx.enabled(Rules.OBSERVED_ANNOTATION_INACTIVE)) {
             return;
         }
+        // each pack switches on the annotations of its own concern: a run without the metrics pack leaves @Timed alone
+        boolean tracing = ctx.policy.packSelected("tracing");
+        boolean metrics = ctx.policy.packSelected("metrics");
+        List<MethodInfo> concerned = annotated.stream().filter(m -> tracing && observedAnnotation(m)
+                || metrics && (observedAnnotation(m, false) || meterAnnotation(m))).toList();
+        if (concerned.isEmpty()) {
+            return;
+        }
+        boolean observations = concerned.stream().anyMatch(TracingRules::observedAnnotation);
+        boolean meters = concerned.stream().anyMatch(TracingRules::meterAnnotation);
         String rel = applicationYml()[0];
         List<String> missing = new ArrayList<>();
         if (!property) {
@@ -191,19 +216,23 @@ final class TracingRules {
             missing.add("aspectjweaver");
         }
         OrderBuilder b = ctx.order(Rules.OBSERVED_ANNOTATION_INACTIVE, "observed-annotations").at(rel, 1)
-                .title("@Observed / @NewSpan do nothing without " + String.join(" and ", missing)
-                        + ": the annotated methods run without an observation or span")
+                .title((observations ? "@Observed / @NewSpan" : "") + (observations && meters ? " / " : "")
+                        + (meters ? "@Timed / @Counted" : "") + " do nothing without " + String.join(" and ", missing)
+                        + ": the annotated methods run without " + (observations && meters ? "an observation, span, timer or counter"
+                        : observations ? "an observation or span" : "a timer or counter"))
                 .doneWhen(ANNOTATIONS_ENABLED + " is true in the service's configuration and aspectjweaver is on the classpath "
                         + "or a dependency (spring-boot-starter-aspectj, Boot 3: spring-boot-starter-aop)");
-        for (MethodInfo m : annotated) {
+        for (MethodInfo m : concerned) {
             if (!ctx.ignored(m.file(), m.line(), Rules.OBSERVED_ANNOTATION_INACTIVE)) {
                 b.location(m.file().relPath(), m.line(), Rules.OBSERVED_ANNOTATION_INACTIVE);
             }
         }
         // the Boot generation on the classpath names the starter that brings aspectjweaver (renamed in Boot 4)
         String starter = probe.hasClass("org.springframework.boot.micrometer.observation.autoconfigure.ObservationAutoConfiguration")
+                || probe.hasClass("org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAspectsAutoConfiguration")
                 ? "org.springframework.boot:spring-boot-starter-aspectj"
                 : probe.hasClass("org.springframework.boot.actuate.autoconfigure.observation.ObservationAutoConfiguration")
+                || probe.hasClass("org.springframework.boot.actuate.autoconfigure.metrics.MetricsAspectsAutoConfiguration")
                 ? "org.springframework.boot:spring-boot-starter-aop" : null;
         if (!weaver) {
             BuildScripts.Insert insert = starter == null || scripts == null ? null : scripts.insert(starter);
@@ -225,8 +254,10 @@ final class TracingRules {
         }
         b.suggestion((property ? "Adds " : "Sets " + ANNOTATIONS_ENABLED + ": true" + (weaver ? "" : " and adds "))
                 + (weaver ? "" : starter + " (aspectjweaver)")
-                + ". This also switches on @Timed / @Counted where they are used. A method Spring observes already "
-                + "(controller, @Scheduled) gets a second observation: remove the annotation there."
+                + (meters ? "" : ". This also switches on @Timed / @Counted where they are used")
+                + (observations ? "" : ". This also switches on @Observed / @NewSpan where they are used")
+                + ". A method Spring observes already (controller, @Scheduled) gets a second "
+                + (observations ? "observation" : "timer") + ": remove the annotation there."
                 + (weaver ? "" : " Run `logast classpath .` afterwards."));
         ctx.observedAnnotationsActive = true;   // planned: the annotated methods count as observed
     }

@@ -154,9 +154,11 @@ public final class Rules {
         }
         for (String r : List.of(ENTRYPOINT_NOT_OBSERVED, MANUAL_TRACE_MDC, SETUP_OTEL_STARTER, HTTP_CLIENT_UNTRACED,
                 KAFKA_OBSERVATION_DISABLED, RABBIT_OBSERVATION_DISABLED, JOB_LAUNCH_UNTRACED, RUNTIME_TRACE_LOST, TRACING_SAMPLING,
-                OBSERVED_ANNOTATION_INACTIVE, SPAN_NOT_CLOSED, TRACING_EXPORT_UNCONFIGURED, SPAN_NAME_DYNAMIC, TRACE_ID_NOT_LOGGED)) {
+                SPAN_NOT_CLOSED, TRACING_EXPORT_UNCONFIGURED, SPAN_NAME_DYNAMIC, TRACE_ID_NOT_LOGGED)) {
             PACKS.put(r, Set.of("tracing"));
         }
+        // one switch for @Observed / @NewSpan (tracing) and @Observed / @Timed / @Counted (metrics): each pack alone turns it on
+        PACKS.put(OBSERVED_ANNOTATION_INACTIVE, Set.of("tracing", "metrics"));
         // context propagation matters to MDC (logging) and spans (tracing); the starter serves every pack
         PACKS.put(ASYNC_CONTEXT_LOSS, Set.of("logging", "tracing"));
         PACKS.put(SCHEDULED_TASK_UNTRACED, Set.of("logging", "tracing"));

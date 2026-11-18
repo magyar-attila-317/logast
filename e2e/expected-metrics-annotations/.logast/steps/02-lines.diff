@@ -1,0 +1,61 @@
+diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
+index 64835f7..54dbf89 100644
+--- a/src/main/java/com/example/e2e/job/PreloadJob.java
++++ b/src/main/java/com/example/e2e/job/PreloadJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -12,7 +13,11 @@
+ 
+     @Override
+     protected void doExecute() {
+-        log.info("Preload export started");
+-        log.info("Preload export completed");
++        ObservedContext.entrypoint("preload.export")
++                .quiet()
++                .run(() -> {
++                    log.info("Preload export started");
++                    log.info("Preload export completed");
++                });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
+index fcbeedd..6e6c5af 100644
+--- a/src/main/java/com/example/e2e/job/PublishRunJob.java
++++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.ObservedContext;
+ import org.platformlib.Week;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -14,13 +15,17 @@
+ 
+     @Override
+     protected void doRun(String runCode, Week week) {
+-        log.info("Publishing started [runCode={}]", runCode);
+-        var summary = RunSummary.of(runCode, week);
+-        report(summary);   // overloaded: the var's type picks report(RunSummary)
+-        String current = runCode;                                       // the same value under another name
+-        log.debug("Publishing batch [runCode={}]", current);
+-        notifyDone(runCode);
+-        log.info("Publishing completed [runCode={}]", runCode);
++        ObservedContext.entrypoint("publishing")
++                .quiet()
++                .run(() -> {
++                    log.info("Publishing started [runCode={}]", runCode);
++                    var summary = RunSummary.of(runCode, week);
++                    report(summary);   // overloaded: the var's type picks report(RunSummary)
++                    String current = runCode;                                       // the same value under another name
++                    log.debug("Publishing batch [runCode={}]", current);
++                    notifyDone(runCode);
++                    log.info("Publishing completed [runCode={}]", runCode);
++                });
+     }
+ 
+     /** Every caller passes the run code: the parameter is the value MDC already carries. */

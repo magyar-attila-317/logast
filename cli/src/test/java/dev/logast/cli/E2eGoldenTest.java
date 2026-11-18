@@ -2344,10 +2344,85 @@ class E2eGoldenTest {
         assertThat(all.get("src/main/java/com/example/e2e/dispatch/DispatchPlanner.java")).as("@Observed switched on: measured")
                 .doesNotContain("ObservedContext");
 
-        // the metrics pack alone leaves @Observed inactive: it measures nothing, the business event gets its observation
-        Map<String, String> metrics = migrate(tmp.resolve("metrics-only"), CLASSPATH, withPacks(DISPATCH_TRACING, "[metrics]", ""));
+        // the metrics pack alone with the annotations left inactive: @Observed measures nothing, the business event gets
+        // its observation (the metrics pack switches them on by itself: metricsPackSwitchesOnTimedAndCountedOnItsOwn)
+        Map<String, String> metrics = migrate(tmp.resolve("metrics-only"), CLASSPATH, withPacks(DISPATCH_TRACING, "[metrics]",
+                "rules:\n  OBSERVED_ANNOTATION_INACTIVE:\n    enabled: false\n"));
         assertThat(metrics.get("src/main/java/com/example/e2e/dispatch/DispatchPlanner.java"))
                 .contains("ObservedContext.entrypoint(DispatchMetrics.DISPATCH_PLANNING)");
+    }
+
+    /** #95: business events measured only by {@code @Timed} / {@code @Counted}. */
+    private static final IoAction SHELF_METERS = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/shelf");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("ShelfKeeper.java"), """
+                package com.example.e2e.shelf;
+
+                import io.micrometer.core.annotation.Counted;
+                import io.micrometer.core.annotation.Timed;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class ShelfKeeper {
+                    private static final Logger log = LoggerFactory.getLogger(ShelfKeeper.class);
+
+                    @Timed("shelf.restock")
+                    public void restock(String shelfCode) {
+                        log.info("Shelf restock started");
+                        log.info("Shelf restock completed");
+                    }
+
+                    @Counted("shelf.inspection")
+                    public void inspect(String shelfCode) {
+                        log.info("Shelf inspection started");
+                        log.info("Shelf inspection completed");
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #95: {@code @Timed} / {@code @Counted} need the same switch as {@code @Observed}
+     * (management.observations.annotations.enabled and aspectjweaver: MetricsAspectsAutoConfiguration, Boot 3.5 / 4.1).
+     * The metrics pack alone switches them on (OBSERVED_ANNOTATION_INACTIVE belongs to both packs), so the annotated
+     * methods count as measured and get no observation of their own. Every file must equal
+     * e2e/expected-metrics-annotations. With the rule switched off they stay inactive and measure nothing: the business
+     * events get their observation (BUSINESS_EVENT_UNMEASURED). With both packs, one order switches them on.
+     */
+    @Test
+    void metricsPackSwitchesOnTimedAndCountedOnItsOwn() throws IOException {
+        Path before = tmp.resolve("scan-first");
+        copy(BEFORE, before);
+        withPacks(SHELF_METERS, "[metrics]", "").run(before);
+        assertThat(run(before, "scan", before.toString(), "--classpath-file", CLASSPATH)).as("what the order says")
+                .contains("@Timed / @Counted do nothing without management.observations.annotations.enabled: true and "
+                        + "aspectjweaver: the annotated methods run without a timer or counter");
+        Map<String, String> actual = migrate(tmp.resolve("metrics-only"), CLASSPATH, withPacks(SHELF_METERS, "[metrics]", ""));
+        assertThat(actual.get("src/main/resources/application.yml")).as("annotations switched on by the metrics pack")
+                .contains("observations:\n    annotations:\n      enabled: true");
+        assertThat(actual.get("build.gradle.kts")).as("aspectjweaver through the Boot 4 starter")
+                .contains("implementation(\"org.springframework.boot:spring-boot-starter-aspectj\")");
+        assertThat(actual.get("src/main/java/com/example/e2e/shelf/ShelfKeeper.java")).as("measured by @Timed / @Counted")
+                .doesNotContain("ObservedContext");
+        assertThat(actual.get("OUTPUT.txt")).contains("OBA-");
+        golden(EXPECTED.resolveSibling("expected-metrics-annotations"), actual);
+
+        // left inactive: the annotations measure nothing
+        Map<String, String> inactive = migrate(tmp.resolve("inactive"), CLASSPATH, withPacks(SHELF_METERS, "[metrics]",
+                "rules:\n  OBSERVED_ANNOTATION_INACTIVE:\n    enabled: false\n"));
+        assertThat(inactive.get("build.gradle.kts")).doesNotContain("spring-boot-starter-aspectj");
+        assertThat(inactive.get("src/main/java/com/example/e2e/shelf/ShelfKeeper.java"))
+                .contains("ObservedContext.entrypoint(ShelfMetrics.SHELF_RESTOCK)")
+                .contains("ObservedContext.entrypoint(ShelfMetrics.SHELF_INSPECTION)");
+
+        // both packs: one order switches them on, nothing is edited twice
+        Map<String, String> both = migrate(tmp.resolve("both"), CLASSPATH, withPacks(SHELF_METERS, "[tracing, metrics]", ""));
+        assertThat(both.get("src/main/resources/application.yml").split("annotations:", -1)).hasSize(2);
+        assertThat(both.get("build.gradle.kts").split("spring-boot-starter-aspectj", -1)).hasSize(2);
+        assertThat(both.get("src/main/java/com/example/e2e/shelf/ShelfKeeper.java")).doesNotContain("ObservedContext");
     }
 
     /**
