@@ -335,10 +335,15 @@ final class EntrypointRules {
         return out;
     }
 
-    private static boolean alreadyObserved(MethodInfo m) {
+    /**
+     * The method observes itself: ObservedContext / Observation in its body, or {@code @Observed} / {@code @NewSpan} while
+     * Spring Boot processes them (property and aspectjweaver, or an order of this scan adds them). An inactive annotation
+     * does nothing at runtime, so it does not count (OBSERVED_ANNOTATION_INACTIVE).
+     */
+    private boolean alreadyObserved(MethodInfo m) {
         String body = m.decl().getBody() == null ? "" : m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
         return body.contains("ObservedContext.") || body.contains("Observation.start(") || body.contains("Observation.createNotStarted(")
-                || m.hasAnnotation("io.micrometer.observation.annotation.Observed");
+                || ctx.observedAnnotationsActive && TracingRules.observedAnnotation(m);
     }
 
     /** How deep a log may sit and still count as the entrypoint's own: the endpoint, its service, one level below. */

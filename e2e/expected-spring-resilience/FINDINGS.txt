@@ -1,7 +1,7 @@
 logast · 79 files · 21 entrypoints · 83/214 methods reachable · 160 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
-67 orders: 0 AUTO, 22 NEEDS TEXT, 45 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+68 orders: 0 AUTO, 22 NEEDS TEXT, 46 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: coupon, order, agreement
 
 DBT-f10270  high  REPORT-ONLY  DB_NO_TIMEOUT  src/main/java/com/example/e2e/carrier/CarrierRates.java:16  CarrierRates.CarrierRates
@@ -155,6 +155,10 @@ BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/exam
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
   done when: the wait takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..)), orTimeout(..) precedes it in the chain, or an earlier bounded wait on the same future (allOf(..).get(5, SECONDS)) runs first on every path
+TEX-42c898  medium  REPORT-ONLY  TRACING_EXPORT_UNCONFIGURED  src/main/resources/application.yml:1
+  Traces are exported nowhere: management.opentelemetry.tracing.export.otlp.endpoint is not set, so Spring Boot creates no OTLP exporter and the trace ids in the logs lead nowhere
+  note: Set the collector's endpoint per environment: management.opentelemetry.tracing.export.otlp.endpoint in application-<profile>.yml, or MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT in the deployment (e.g. http://otel-collector:4318/v1/traces).
+  done when: management.opentelemetry.tracing.export.otlp.endpoint is set in an application*.yml/.properties, or MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT appears in the project's deployment files
 ALM-f2e935  low  REPORT-ONLY  AUDIT_LOG_MIXED  src/main/java/com/example/e2e/audit/AuditLog.java:8
   AuditLog writes audit records and diagnostics through one logger: routed apart, the diagnostics would leave the application log; mixed, the records do
   note: Give the records their own logger (private static final Logger AUDIT = LoggerFactory.getLogger("audit")) and keep the class logger for the diagnostics: checkCapacity (WARN).
@@ -392,4 +396,4 @@ Next steps
   2. set "count" in .logast/metrics.json                 12 logged outcomes are not counted: counter, tag or skip each
   3. logast apply . --auto --write                       after filling them in: writes your texts and decisions (on this code: don't revert it)
   4. fill calls/day in .logast/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  5. logast scan . --format summary                      33 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 3, …); each says what to decide
+  5. logast scan . --format summary                      34 findings are decisions for a person (MESSAGE_VAGUE 6, ASYNC_CONTEXT_LOSS 4, AUDIT_RECORD_INCOMPLETE 3, …); each says what to decide

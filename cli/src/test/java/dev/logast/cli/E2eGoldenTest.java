@@ -1763,6 +1763,159 @@ class E2eGoldenTest {
                 .contains("ParcelLedger.archive is @Transactional and throws IOException");
     }
 
+    /** #89: the shapes of the tracing pack's newer checks, in a stock service. */
+    private static final IoAction STOCK_TRACING = app -> {
+        Path dir = app.resolve("src/main/java/com/example/e2e/stock");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("StockPicked.java"), """
+                package com.example.e2e.stock;
+
+                public record StockPicked(String stockCode) {
+                }
+                """);
+        // a startup listener (outside any trace) and a service method observed by annotation only (inactive: no property, no aspectjweaver)
+        Files.writeString(dir.resolve("StockTracker.java"), """
+                package com.example.e2e.stock;
+
+                import io.micrometer.observation.annotation.Observed;
+                import io.micrometer.tracing.annotation.NewSpan;
+                import java.util.HashSet;
+                import java.util.Set;
+                import org.springframework.boot.context.event.ApplicationReadyEvent;
+                import org.springframework.context.event.EventListener;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                class StockTracker {
+                    private final Set<String> picked = new HashSet<>();
+
+                    @EventListener(ApplicationReadyEvent.class)
+                    @Observed(name = "stock.warm-up")
+                    void warmUp() {
+                        picked.clear();
+                    }
+
+                    @EventListener
+                    void onPicked(StockPicked event) {
+                        picked.add(event.stockCode());
+                    }
+
+                    @NewSpan("stock.count")
+                    int count() {
+                        return picked.size();
+                    }
+                }
+                """);
+        // spans and observations started by hand: left open, no error, no scope; one done right; one with observe()
+        Files.writeString(dir.resolve("StockRouting.java"), """
+                package com.example.e2e.stock;
+
+                import io.micrometer.observation.Observation;
+                import io.micrometer.observation.ObservationRegistry;
+                import io.micrometer.tracing.Span;
+                import io.micrometer.tracing.Tracer;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                class StockRouting {
+                    private final ObservationRegistry registry;
+                    private final Tracer tracer;
+
+                    StockRouting(ObservationRegistry registry, Tracer tracer) {
+                        this.registry = registry;
+                        this.tracer = tracer;
+                    }
+
+                    String route(String stockCode) {
+                        Observation observation = Observation.start("stock.route", registry);
+                        String lane = "lane-" + stockCode;
+                        observation.stop();
+                        return lane;
+                    }
+
+                    String weigh(String stockCode) {
+                        Observation observation = Observation.createNotStarted("stock.weigh", registry).start();
+                        try (Observation.Scope scope = observation.openScope()) {
+                            return "weight-" + stockCode;
+                        } finally {
+                            observation.stop();
+                        }
+                    }
+
+                    String plan(String stockCode) {
+                        Span span = tracer.nextSpan().name("stock.plan").start();
+                        try (Tracer.SpanInScope ws = tracer.withSpan(span)) {
+                            return "plan-" + stockCode;
+                        } catch (RuntimeException e) {
+                            span.error(e);
+                            throw e;
+                        } finally {
+                            span.end();
+                        }
+                    }
+
+                    String label(String stockCode) {
+                        return Observation.createNotStarted("stock.label", registry).observe(() -> "label-" + stockCode);
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #89: the tracing pack's newer checks. {@code @Observed} / {@code @NewSpan} without
+     * management.observations.annotations.enabled and aspectjweaver do nothing: the property is set and the AspectJ
+     * starter added (OBSERVED_ANNOTATION_INACTIVE, AUTO), so the annotated event listener is not wrapped in an
+     * ObservedContext too. Observations and spans started by hand without stop() in finally, error() or a scope are
+     * reported; the one done right and observe() are not (SPAN_NOT_CLOSED). No OTLP endpoint is set anywhere, so
+     * traces are exported nowhere (TRACING_EXPORT_UNCONFIGURED). The same checks with only the tracing pack selected.
+     * Every file must equal e2e/expected-tracing-pack.
+     */
+    @Test
+    void tracingPackActivatesObservedAnnotationsAndFindsOpenSpansAndMissingExport() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, STOCK_TRACING);
+        assertThat(actual.get("src/main/resources/application.yml")).as("annotations switched on")
+                .contains("observations:\n    annotations:\n      enabled: true");
+        assertThat(actual.get("build.gradle.kts")).as("aspectjweaver through the Boot 4 starter")
+                .contains("implementation(\"org.springframework.boot:spring-boot-starter-aspectj\")");
+        assertThat(actual.get("src/main/java/com/example/e2e/stock/StockTracker.java")).as("observed by its annotation now")
+                .doesNotContain("ObservedContext");
+        String findings = actual.get("FINDINGS.txt");
+        assertThat(findings).as("left open, no error, no scope")
+                .contains("Observation observation in StockRouting.route is started by hand: stop() is not in a finally block");
+        assertThat(findings).as("stopped in finally and scoped, but no error recorded")
+                .contains("Observation observation in StockRouting.weigh is started by hand: no failure is recorded");
+        assertThat(findings).as("done right, or observe()").doesNotContain("StockRouting.plan").doesNotContain("StockRouting.label");
+        assertThat(findings).as("no endpoint").contains("Traces are exported nowhere");
+        golden(EXPECTED.resolveSibling("expected-tracing-pack"), actual);
+
+        // the tracing pack alone: the same checks
+        Map<String, String> alone = migrate(tmp.resolve("tracing-only"), CLASSPATH, app -> {
+            STOCK_TRACING.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [tracing]"));
+        });
+        assertThat(alone.get("src/main/resources/application.yml")).contains("observations:\n    annotations:\n      enabled: true");
+        assertThat(alone.get("build.gradle.kts")).contains("spring-boot-starter-aspectj");
+        assertThat(alone.get("src/main/java/com/example/e2e/stock/StockTracker.java")).doesNotContain("ObservedContext");
+        assertThat(alone.get("FINDINGS.txt"))
+                .contains("Observation observation in StockRouting.route is started by hand")
+                .contains("Observation observation in StockRouting.weigh is started by hand")
+                .doesNotContain("StockRouting.plan")
+                .contains("Traces are exported nowhere");
+
+        // with the annotations left inactive (the rule switched off), @Observed no longer counts as observing: the
+        // listener gets its ObservedContext
+        Map<String, String> inactive = migrate(tmp.resolve("annotations-inactive"), CLASSPATH, app -> {
+            STOCK_TRACING.run(app);
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [tracing]")
+                    + "rules:\n  OBSERVED_ANNOTATION_INACTIVE:\n    enabled: false\n");
+        });
+        assertThat(inactive.get("build.gradle.kts")).doesNotContain("spring-boot-starter-aspectj");
+        assertThat(inactive.get("src/main/java/com/example/e2e/stock/StockTracker.java"))
+                .contains("ObservedContext.entrypoint(\"stock-tracker.warm-up\")");
+    }
+
     /**
      * #51: API-first controllers. The request mappings sit on an interface the controller implements, the class-level
      * {@code @RequestMapping} too, and the paths come from {@code static final String} constants and their

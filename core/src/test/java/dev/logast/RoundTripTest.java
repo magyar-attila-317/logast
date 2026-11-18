@@ -66,7 +66,7 @@ class RoundTripTest {
                         "PROBLEM_DETAILS_DISABLED", "MDC_CLEAR", "LOG_HELPER", "MESSAGE_VAGUE",
                         "METRIC_OUTCOME_UNMEASURED", "ROW_BY_ROW_WRITE", "SCHEDULED_WITHOUT_LOCK", "SCHEDULER_SINGLE_THREAD", "ASYNC_ERROR_LOST",
                         "SHUTDOWN_NOT_GRACEFUL", "HEALTH_PROBE_MISCONFIGURED", "READINESS_WITHOUT_DATABASE", "CACHE_UNBOUNDED", "AUDIT_RECORD_INCOMPLETE", "DATA_CHANGES_UNAUDITED",
-                        "MDC_NESTED_KEY", "METRIC_TAG_VALUE", "ERROR_HANDLER_STATUS_OK", "TX_COMMITS_ON_CHECKED",   // report-only in the fixture
+                        "MDC_NESTED_KEY", "METRIC_TAG_VALUE", "ERROR_HANDLER_STATUS_OK", "TX_COMMITS_ON_CHECKED", "SPAN_NOT_CLOSED", "TRACING_EXPORT_UNCONFIGURED",   // report-only in the fixture
                         "DB_NO_TIMEOUT");   // ShipmentBooking: @Transactional without a JdbcTemplate (#85)
         assertThat(last.orders()).filteredOn(o -> o.rule().equals("ASYNC_CONTEXT_LOSS"))
                 .singleElement().satisfies(o -> assertThat(o.title()).startsWith("Parallel stream"));

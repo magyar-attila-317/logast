@@ -339,6 +339,17 @@ sets the ObservationRegistry on the container factory), `@KafkaListener` and `@R
 (KAFKA_OBSERVATION_DISABLED and RABBIT_OBSERVATION_DISABLED add it). Batch listeners (`batch = "true"`, a `List` or
 `ConsumerRecords` parameter) are never observed per message, so they keep the ObservedContext wrapper.
 
+A method with `@Observed` (on it or its class) or `@NewSpan` counts as observed only while Spring Boot processes these
+annotations: `management.observations.annotations.enabled: true` and aspectjweaver on the classpath (Boot reference,
+Observability). Without them the annotation does nothing at runtime; the tracing pack switches them on, or the method
+gets an ObservedContext like any other entrypoint.
+
+| rule | finds | fix |
+|---|---|---|
+| OBSERVED_ANNOTATION_INACTIVE | `@Observed` / `@NewSpan` without `management.observations.annotations.enabled: true` or without aspectjweaver: the annotated methods run without an observation or span | AUTO: sets the property and adds `spring-boot-starter-aspectj` (Boot 4) / `spring-boot-starter-aop` (Boot 3); report when the build file or Boot's observation auto-configuration is missing. Also switches on `@Timed` / `@Counted` |
+| SPAN_NOT_CLOSED | an `Observation` / Micrometer `Span` / `ScopedSpan` / OpenTelemetry `Span` started by hand into a local variable that is not ended in a `finally` block, records no failure (`error(e)`, `recordException`), or is never put in scope (`openScope`, `tracer.withSpan`, `makeCurrent`): leaked spans, failures shown as successes, log lines without the span | report, with the try/catch/finally form (or `observation.observe(() -> …)`); not when the variable leaves the method (returned, passed on, ended in a callback) |
+| TRACING_EXPORT_UNCONFIGURED | Micrometer Tracing with OpenTelemetry, but no OTLP endpoint anywhere (`management.opentelemetry.tracing.export.otlp.endpoint`, Boot 3: `management.otlp.tracing.endpoint`, in any application*.yml or profile, or `OTEL_EXPORTER_OTLP_(TRACES_)ENDPOINT` / the property's environment variable in the project's deployment files): Spring Boot then creates no exporter and the trace ids in the logs lead nowhere; also export switched off in the base configuration | report (the endpoint is per environment) |
+
 A method returning a `Mono`/`Flux` only assembles a pipeline that runs later, elsewhere: logast puts no MdcScope or
 ObservedContext around it (they would end before the work starts). Use Reactor's automatic context propagation
 (`Hooks.enableAutomaticContextPropagation()` with context-propagation on the classpath) for MDC in reactive code.
@@ -786,7 +797,7 @@ Common options: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`, 
 | pack | rules |
 |---|---|
 | logging | SWALLOWED_EXCEPTION · LOST_THROWABLE · LOG_AND_RETHROW · EXCEPTION_LOGGED_TWICE · STRING_CONCAT_LOG · LOG_FORMAT · GLOSSARY_VIOLATION · MESSAGE_PHRASING · MESSAGE_VAGUE · BUSINESS_EVENT_TIMESTAMP · LOG_KEY_STYLE · PII_IN_LOG · LOG_OBJECT_ARGUMENT · LOG_COLLECTION_ARGUMENT · LOG_HELPER · REPEATED_LOG_VALUE · LOG_KEY_VALUE_IN_MDC · JOB_OUTCOME_MISSING · SKIP_UNLOGGED · STATE_CHANGE_UNLOGGED · BATCH_SUMMARY_MISSING · DB_OUTCOME_UNLOGGED · MESSAGE_SUGGESTED · SETUP_SERVICE_IDENTITY · LOG_LEVEL · LOG_IN_LOOP · LOG_VOLUME · MDC_NOT_CLOSEABLE · MDC_CLEAR · MDC_NESTED_KEY · MDC_KEY_ALIAS · MISSING_DOMAIN_MDC · AREA_MDC_MISSING · ENTRYPOINT_SILENT · SETUP_LOGBACK_XML · SETUP_STRUCTURED_LOGGING |
-| tracing | ENTRYPOINT_NOT_OBSERVED · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · RABBIT_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING |
+| tracing | ENTRYPOINT_NOT_OBSERVED · OBSERVED_ANNOTATION_INACTIVE · HTTP_CLIENT_UNTRACED · KAFKA_OBSERVATION_DISABLED · RABBIT_OBSERVATION_DISABLED · JOB_LAUNCH_UNTRACED · SPAN_NOT_CLOSED · MANUAL_TRACE_MDC · SETUP_OTEL_STARTER · TRACING_SAMPLING · TRACING_EXPORT_UNCONFIGURED |
 | logging + tracing | ASYNC_CONTEXT_LOSS · SCHEDULED_TASK_UNTRACED · SETUP_SUPPORT_STARTER |
 | resilience (opt-in) | HTTP_CLIENT_NO_TIMEOUT · DB_NO_TIMEOUT · REMOTE_CALL_IN_TRANSACTION · SCHEDULED_WITHOUT_LOCK · SCHEDULER_SINGLE_THREAD · RETRY_INACTIVE · SHUTDOWN_NOT_GRACEFUL · HEALTH_PROBE_MISCONFIGURED · READINESS_WITHOUT_DATABASE · CACHE_UNBOUNDED · KAFKA_NO_ERROR_HANDLER · UNBOUNDED_EXECUTOR · BLOCKING_WAIT_UNBOUNDED · ROW_BY_ROW_WRITE |
 | errors (opt-in) | ERROR_DETAILS_EXPOSED · UNMAPPED_EXCEPTION · CLIENT_ERROR_AS_SERVER_ERROR · PROBLEM_DETAILS_DISABLED · ERROR_RESPONSE_UNTRACED · ASYNC_ERROR_LOST · CAUSE_DROPPED · CATCH_ALL_DEFAULT · UNEXPECTED_ERROR_UNLOGGED · ERROR_HANDLER_STATUS_OK · TX_COMMITS_ON_CHECKED |

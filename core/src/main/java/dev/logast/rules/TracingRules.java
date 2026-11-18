@@ -42,11 +42,18 @@ final class TracingRules {
         if (ctx.enabled(Rules.RABBIT_OBSERVATION_DISABLED)) {
             rabbit();
         }
+        observedAnnotations();   // always: whether @Observed / @NewSpan count as observing (EntrypointRules)
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() == null) {
                 continue;
             }
             scan(m);
+            if (ctx.enabled(Rules.SPAN_NOT_CLOSED) && !m.owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
+                spans(m);
+            }
+        }
+        if (ctx.enabled(Rules.TRACING_EXPORT_UNCONFIGURED) && ctx.a.appPackage != null) {
+            export();
         }
         if (ctx.enabled(Rules.HTTP_CLIENT_UNTRACED)) {
             fieldInitializers();
@@ -101,6 +108,381 @@ final class TracingRules {
         String snippet = "management:\n  tracing:\n    sampling:\n      probability: 1.0\n";
         {
             ServiceYaml.merge(ctx, b, snippet);
+        }
+    }
+
+    // ---- @Observed / @NewSpan ---------------------------------------------------------------------------------------
+
+    static final String OBSERVED = "io.micrometer.observation.annotation.Observed";
+    static final String NEW_SPAN = "io.micrometer.tracing.annotation.NewSpan";
+    private static final String ANNOTATIONS_ENABLED = "management.observations.annotations.enabled";
+
+    /**
+     * {@code @Observed} or {@code @NewSpan} on the method, or {@code @Observed} on its class (which the aspect applies to
+     * the methods a proxy can intercept: not constructors, private or static ones).
+     */
+    static boolean observedAnnotation(MethodInfo m) {
+        if (m.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, OBSERVED) || Annotations.is(a, NEW_SPAN))) {
+            return true;
+        }
+        return !m.decl().isConstructor() && !m.decl().hasModifier(J.Modifier.Type.Private) && !m.decl().hasModifier(J.Modifier.Type.Static)
+                && m.owner().decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, OBSERVED));
+    }
+
+    /**
+     * OBSERVED_ANNOTATION_INACTIVE: Spring Boot processes {@code @Observed} and {@code @NewSpan} only with
+     * {@code management.observations.annotations.enabled: true} and aspectjweaver on the classpath (Boot reference,
+     * Observability, "Annotations"; ObservationAutoConfiguration.ObservedAspectConfiguration and
+     * MicrometerTracingAutoConfiguration.SpanAspectConfiguration are {@code @ConditionalOnClass(Advice.class)} and
+     * {@code @ConditionalOnBooleanProperty} on it, Boot 3.5 and 4.1). Without them the annotated method runs untraced.
+     * Sets the property and adds the AspectJ starter of the Boot generation on the classpath; until both are there (or
+     * planned), the annotation does not count as observing its method.
+     */
+    private void observedAnnotations() {
+        List<MethodInfo> annotated = ctx.methods().stream()
+                .filter(m -> !m.owner().fqn().startsWith(ctx.a.supportPackage + ".") && observedAnnotation(m)).toList();
+        if (annotated.isEmpty()) {
+            return;
+        }
+        var probe = ctx.a.project.probe();
+        boolean property = "true".equals(ctx.a.springProperties.get(ANNOTATIONS_ENABLED));
+        Path build = buildFile(annotated.getFirst().file());
+        for (ClassInfo c : ctx.a.index.classes()) {
+            if (c.decl().getLeadingAnnotations().stream()
+                    .anyMatch(a -> Annotations.is(a, "org.springframework.boot.autoconfigure.SpringBootApplication"))) {
+                build = buildFile(c.file());
+                break;
+            }
+        }
+        BuildScripts scripts = build == null ? null : BuildScripts.of(ctx.a.project.root(), build);
+        boolean weaver = probe.hasClass("org.aspectj.weaver.Advice") || scripts != null
+                && (scripts.text().contains("aspectjweaver") || scripts.text().contains("spring-boot-starter-aspectj")
+                || scripts.text().contains("spring-boot-starter-aop"));
+        if (property && weaver) {
+            return;
+        }
+        ctx.observedAnnotationsActive = false;
+        if (!ctx.enabled(Rules.OBSERVED_ANNOTATION_INACTIVE)) {
+            return;
+        }
+        String rel = applicationYml()[0];
+        List<String> missing = new ArrayList<>();
+        if (!property) {
+            missing.add(ANNOTATIONS_ENABLED + ": true");
+        }
+        if (!weaver) {
+            missing.add("aspectjweaver");
+        }
+        OrderBuilder b = ctx.order(Rules.OBSERVED_ANNOTATION_INACTIVE, "observed-annotations").at(rel, 1)
+                .title("@Observed / @NewSpan do nothing without " + String.join(" and ", missing)
+                        + ": the annotated methods run without an observation or span")
+                .doneWhen(ANNOTATIONS_ENABLED + " is true in the service's configuration and aspectjweaver is on the classpath "
+                        + "or a dependency (spring-boot-starter-aspectj, Boot 3: spring-boot-starter-aop)");
+        for (MethodInfo m : annotated) {
+            if (!ctx.ignored(m.file(), m.line(), Rules.OBSERVED_ANNOTATION_INACTIVE)) {
+                b.location(m.file().relPath(), m.line(), Rules.OBSERVED_ANNOTATION_INACTIVE);
+            }
+        }
+        // the Boot generation on the classpath names the starter that brings aspectjweaver (renamed in Boot 4)
+        String starter = probe.hasClass("org.springframework.boot.micrometer.observation.autoconfigure.ObservationAutoConfiguration")
+                ? "org.springframework.boot:spring-boot-starter-aspectj"
+                : probe.hasClass("org.springframework.boot.actuate.autoconfigure.observation.ObservationAutoConfiguration")
+                ? "org.springframework.boot:spring-boot-starter-aop" : null;
+        if (!weaver) {
+            BuildScripts.Insert insert = starter == null || scripts == null ? null : scripts.insert(starter);
+            if (insert == null) {
+                String why = starter == null
+                        ? " Spring Boot's observation auto-configuration is not on the classpath (Boot 4: spring-boot-starter-opentelemetry "
+                        + "or the actuator; Boot 3: spring-boot-starter-actuator)."
+                        : " No top-level dependencies {} block found: add " + starter + " manually."
+                        + (scripts == null ? "" : scripts.unresolvedNote());
+                b.suggestion("Set " + ANNOTATIONS_ENABLED + ": true and add aspectjweaver ("
+                                + (starter == null ? "spring-boot-starter-aspectj in Boot 4, spring-boot-starter-aop in Boot 3" : starter)
+                                + ")." + why);
+                return;
+            }
+            b.edit(insert.edit());
+        }
+        if (!property) {
+            ServiceYaml.merge(ctx, b, "management:\n  observations:\n    annotations:\n      enabled: true\n");
+        }
+        b.suggestion((property ? "Adds " : "Sets " + ANNOTATIONS_ENABLED + ": true" + (weaver ? "" : " and adds "))
+                + (weaver ? "" : starter + " (aspectjweaver)")
+                + ". This also switches on @Timed / @Counted where they are used. A method Spring observes already "
+                + "(controller, @Scheduled) gets a second observation: remove the annotation there."
+                + (weaver ? "" : " Run `logast classpath .` afterwards."));
+        ctx.observedAnnotationsActive = true;   // planned: the annotated methods count as observed
+    }
+
+    // ---- manual spans and observations ----------------------------------------------------------------------------
+
+    /** What ends, fails and scopes one kind of manually started span. */
+    private record SpanKind(String type, String label, Set<String> starts, String end, List<String> error, List<String> scope,
+                            boolean scoped, String template) {
+    }
+
+    private static final List<SpanKind> SPAN_KINDS = List.of(
+            new SpanKind("io.micrometer.observation.Observation", "Observation", Set.of("start"), "stop", List.of("error"),
+                    List.of("openScope"), false,
+                    "Use %1$s.observe(() -> ...) (it opens the scope, records the error and stops it), or: try (Observation.Scope "
+                            + "scope = %1$s.openScope()) { ... } catch (RuntimeException e) { %1$s.error(e); throw e; } finally { %1$s.stop(); }"),
+            new SpanKind("io.micrometer.tracing.Span", "Span", Set.of("start"), "end", List.of("error"), List.of(), false,
+                    "try (Tracer.SpanInScope ws = tracer.withSpan(%1$s)) { ... } catch (RuntimeException e) { %1$s.error(e); throw e; } "
+                            + "finally { %1$s.end(); }"),
+            new SpanKind("io.micrometer.tracing.ScopedSpan", "ScopedSpan", Set.of("startScopedSpan"), "end", List.of("error"), List.of(),
+                    true, "try { ... } catch (RuntimeException e) { %1$s.error(e); throw e; } finally { %1$s.end(); }"),
+            new SpanKind("io.opentelemetry.api.trace.Span", "Span", Set.of("startSpan"), "end", List.of("recordException", "setStatus"),
+                    List.of("makeCurrent"), false,
+                    "try (Scope scope = %1$s.makeCurrent()) { ... } catch (RuntimeException e) { %1$s.recordException(e); "
+                            + "%1$s.setStatus(StatusCode.ERROR); throw e; } finally { %1$s.end(); }"));
+
+    private static SpanKind spanKind(Expression init) {
+        if (init instanceof J.MethodInvocation mi) {
+            for (SpanKind k : SPAN_KINDS) {
+                if (k.starts().contains(mi.getSimpleName()) && TypeUtils.isOfClassType(mi.getType(), k.type())) {
+                    return k;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * SPAN_NOT_CLOSED: a span or observation started by hand into a local variable that is not ended in a finally
+     * block, records no failure, or is never put in scope. Micrometer's examples stop it in {@code finally}, call
+     * {@code error(e)} and open a scope (Micrometer Observation reference, "Observation Handler"; Micrometer Tracing
+     * reference, API: "Once done remember to end the span"). Not reported when the variable leaves the method
+     * (returned, passed on, ended in a callback): its lifecycle continues elsewhere.
+     */
+    private void spans(MethodInfo m) {
+        SourceFileInfo f = m.file();
+        Map<String, SpanKind> started = new LinkedHashMap<>();
+        Map<String, J.VariableDeclarations.NamedVariable> decls = new HashMap<>();
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration c, Integer p) {
+                return c;
+            }
+
+            @Override
+            public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable v, Integer p) {
+                SpanKind k = spanKind(v.getInitializer());
+                if (k != null && !started.containsKey(v.getSimpleName())) {
+                    started.put(v.getSimpleName(), k);
+                    decls.put(v.getSimpleName(), v);
+                }
+                return super.visitVariable(v, p);
+            }
+        }.visit(m.decl().getBody(), 0, new Cursor(new Cursor(null, Cursor.ROOT_VALUE), m.decl()));
+        for (Map.Entry<String, SpanKind> e : started.entrySet()) {
+            String v = e.getKey();
+            SpanKind k = e.getValue();
+            SpanUse use = spanUse(m, v, k);
+            if (use.escapes) {
+                continue;
+            }
+            List<String> problems = new ArrayList<>();
+            if (!use.ended) {
+                problems.add("never " + (k.end().equals("stop") ? "stopped" : "ended") + ", so it is never reported");
+            } else if (!use.endedInFinally) {
+                problems.add(k.end() + "() is not in a finally block, so an exception leaves it open");
+            }
+            if (!use.error) {
+                problems.add("no failure is recorded on it (" + String.join(" / ", k.error()) + "), so a failed call looks successful");
+            }
+            if (!use.scope && !k.scoped()) {
+                problems.add("it is never put in scope (" + (k.scope().isEmpty() ? "tracer.withSpan" : k.scope().getFirst())
+                        + "), so log lines and spans inside do not belong to it");
+            }
+            if (problems.isEmpty()) {
+                continue;
+            }
+            J.VariableDeclarations.NamedVariable decl = decls.get(v);
+            int line = Pos.line(decl);
+            if (ctx.ignored(f, line, Rules.SPAN_NOT_CLOSED)) {
+                continue;
+            }
+            ctx.orderNth(Rules.SPAN_NOT_CLOSED, m, line, "span")
+                    .title(k.label() + " " + v + " in " + m.label() + " is started by hand: " + String.join("; ", problems))
+                    .suggestion(k.template().formatted(v))
+                    .doneWhen(v + "." + k.end() + "() runs in a finally block, a catch records the failure ("
+                            + String.join(" / ", k.error()) + ")" + (k.scoped() ? "" : " and it is put in scope")
+                            + ", or the variable leaves the method");
+        }
+    }
+
+    private static final class SpanUse {
+        boolean ended;
+        boolean endedInFinally;
+        boolean error;
+        boolean scope;
+        boolean escapes;
+    }
+
+    private static SpanUse spanUse(MethodInfo m, String v, SpanKind k) {
+        SpanUse use = new SpanUse();
+        Set<Object> finallies = Collections.newSetFromMap(new IdentityHashMap<>());
+        new JavaIsoVisitor<Integer>() {
+            private boolean isVar(Expression x) {
+                return x instanceof J.Identifier id && id.getSimpleName().equals(v);
+            }
+
+            @Override
+            public J.Try visitTry(J.Try t, Integer p) {
+                if (t.getFinally() != null) {
+                    finallies.add(t.getFinally());
+                }
+                return super.visitTry(t, p);
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                if (isVar(mi.getSelect())) {
+                    if (mi.getSimpleName().equals(k.end())) {
+                        use.ended = true;
+                        use.endedInFinally |= getCursor().getPathAsStream().anyMatch(finallies::contains);
+                        // ended in a callback: an asynchronous lifecycle
+                        use.escapes |= getCursor().getPathAsStream().anyMatch(o -> o instanceof J.Lambda);
+                    } else if (k.error().contains(mi.getSimpleName())) {
+                        use.error = true;
+                    } else if (k.scope().contains(mi.getSimpleName())) {
+                        use.scope = true;
+                    }
+                }
+                for (Expression arg : mi.getArguments()) {
+                    if (isVar(arg)) {
+                        if (mi.getSimpleName().equals("withSpan")) {
+                            use.scope = true;
+                        } else {
+                            use.escapes = true;
+                        }
+                    }
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+
+            @Override
+            public J.Return visitReturn(J.Return r, Integer p) {
+                use.escapes |= isVar(r.getExpression());
+                return super.visitReturn(r, p);
+            }
+
+            @Override
+            public J.Assignment visitAssignment(J.Assignment a, Integer p) {
+                use.escapes |= isVar(a.getAssignment());
+                return super.visitAssignment(a, p);
+            }
+
+            @Override
+            public J.NewClass visitNewClass(J.NewClass nc, Integer p) {
+                if (nc.getArguments() != null && nc.getArguments().stream().anyMatch(this::isVar)) {
+                    use.escapes = true;
+                }
+                return super.visitNewClass(nc, p);
+            }
+        }.visit(m.decl().getBody(), 0, new Cursor(new Cursor(null, Cursor.ROOT_VALUE), m.decl()));
+        return use;
+    }
+
+    // ---- trace export -------------------------------------------------------------------------------------------
+
+    /**
+     * TRACING_EXPORT_UNCONFIGURED: Micrometer Tracing with OpenTelemetry and Spring Boot's OTLP export on the
+     * classpath, but no endpoint anywhere. Spring Boot creates the OTLP span exporter only when the endpoint property is
+     * set (OtlpTracingConfigurations.ConnectionDetails is {@code @ConditionalOnProperty} on
+     * management.opentelemetry.tracing.export.otlp.endpoint in Boot 4.1, management.otlp.tracing.endpoint in Boot 3.5):
+     * spans are created and their ids logged, but sent nowhere. Also reports export switched off in the base
+     * configuration. The endpoint differs per environment, so this only reports.
+     */
+    private void export() {
+        var probe = ctx.a.project.probe();
+        // Boot 4: the module comes with spring-boot-starter-opentelemetry, which brings the bridge and the exporter at
+        // runtime only (not on the compile classpath); Boot 3: the actuator always has the auto-configuration, the
+        // bridge and the exporter are declared next to it
+        boolean boot4 = probe.hasClass("org.springframework.boot.micrometer.tracing.opentelemetry.autoconfigure.otlp.OtlpTracingAutoConfiguration");
+        boolean boot3 = probe.hasClass("org.springframework.boot.actuate.autoconfigure.tracing.otlp.OtlpTracingAutoConfiguration")
+                && probe.hasClass("io.micrometer.tracing.otel.bridge.OtelTracer")
+                && probe.hasClass("io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter");
+        if (!boot4 && !boot3) {
+            return;
+        }
+        String endpoint = boot4 ? "management.opentelemetry.tracing.export.otlp.endpoint" : "management.otlp.tracing.endpoint";
+        List<String> switches = boot4 ? List.of("management.tracing.export.enabled", "management.tracing.export.otlp.enabled")
+                : List.of("management.tracing.enabled", "management.otlp.tracing.export.enabled");
+        String rel = applicationYml()[0];
+        for (String s : switches) {
+            if ("false".equals(ctx.a.springProperties.get(s))) {
+                ctx.order(Rules.TRACING_EXPORT_UNCONFIGURED, "export-off|" + s).at(rel, 1)
+                        .title(s + ": false in the base configuration: no trace is exported, the trace ids in the logs lead nowhere")
+                        .suggestion("Remove it, or switch it off only in the profiles of environments without a collector.")
+                        .doneWhen(s + " is not false in the base configuration");
+                return;
+            }
+        }
+        String env = endpoint.toUpperCase(Locale.ROOT).replace('.', '_').replace("-", "");
+        List<String> envNames = new ArrayList<>(List.of(env));
+        // Boot 4 maps the OpenTelemetry SDK variables onto its properties (Boot reference, Observability, OpenTelemetry)
+        if (probe.hasClass("org.springframework.boot.opentelemetry.autoconfigure.OpenTelemetryEnvironmentVariableEnvironmentPostProcessor")) {
+            envNames.addAll(List.of("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"));
+        }
+        if (configuredAnywhere(endpoint) || mentionedInProject(envNames) || mentionedInProject(List.of("opentelemetry-javaagent"))
+                || ctx.a.index.classes().stream().anyMatch(c -> !c.fqn().startsWith(ctx.a.supportPackage + ".")
+                && c.file().text().contains("SpanExporter"))) {
+            return;   // set per profile or by the deployment, exported by the agent, or an exporter bean of its own
+        }
+        ctx.order(Rules.TRACING_EXPORT_UNCONFIGURED, "export|" + endpoint).at(rel, 1)
+                .title("Traces are exported nowhere: " + endpoint + " is not set, so Spring Boot creates no OTLP exporter and "
+                        + "the trace ids in the logs lead nowhere")
+                .suggestion("Set the collector's endpoint per environment: " + endpoint + " in application-<profile>.yml, or "
+                        + String.join(" / ", envNames) + " in the deployment (e.g. http://otel-collector:4318/v1/traces).")
+                .doneWhen(endpoint + " is set in an application*.yml/.properties, or " + String.join(" / ", envNames)
+                        + " appears in the project's deployment files");
+    }
+
+    /** Some application*.yml/.yaml/.properties of the project (any module, any profile) sets {@code key}. */
+    private boolean configuredAnywhere(String key) {
+        for (Path dir : SpringProperties.resourceDirs(ctx.a.project.root())) {
+            try (var files = Files.list(dir)) {
+                if (files.filter(p -> p.getFileName().toString().startsWith("application"))
+                        .anyMatch(p -> SpringProperties.allKeys(p).contains(key))) {
+                    return true;
+                }
+            } catch (java.io.IOException e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static final Set<String> SKIPPED_DIRS = Set.of(".git", ".gradle", ".idea", ".logast", "build", "target", "node_modules", "out");
+
+    /** One of {@code names} appears in a text file of the project (deployment manifests, compose files, scripts, .env). */
+    private boolean mentionedInProject(List<String> names) {
+        Path root = ctx.a.project.root();
+        try (var walk = Files.walk(root, 8)) {
+            return walk.filter(Files::isRegularFile)
+                    .filter(p -> {
+                        for (Path seg : root.relativize(p)) {
+                            if (SKIPPED_DIRS.contains(seg.toString())) {
+                                return false;
+                            }
+                        }
+                        String n = p.getFileName().toString();
+                        return !n.endsWith(".java") && !n.endsWith(".class") && !n.endsWith(".jar");
+                    })
+                    .filter(p -> {
+                        try {
+                            return Files.size(p) < 512 * 1024;
+                        } catch (java.io.IOException e) {
+                            return false;
+                        }
+                    })
+                    .anyMatch(p -> {
+                        String text = SetupRules.read(p);
+                        return names.stream().anyMatch(text::contains);
+                    });
+        } catch (java.io.IOException | java.io.UncheckedIOException e) {
+            return false;
         }
     }
 
