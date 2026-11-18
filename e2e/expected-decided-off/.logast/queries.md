@@ -535,7 +535,7 @@ FROM Metric SELECT sum(preload.export) WHERE service.name = 'e2e-shop' FACET out
 
 ## Splunk (SPL)
 
-Logs as Spring Boot writes them in the `logstash` format, read as JSON (sourcetype `_json`, or `KV_MODE=json`; otherwise add `| spath` after the base search).
+Logs as Spring Boot writes them in the `logstash` format, read as JSON (sourcetype `_json`, or `KV_MODE=json`; otherwise add `| spath` after the base search). The format comes from logging.structuredFormat in logast.yaml, else Spring's logging.structured.format.console, else the encoder the service uses; if the fields below are not in your logs, set logging.structuredFormat.
 
 Base search: every line of the service.
 

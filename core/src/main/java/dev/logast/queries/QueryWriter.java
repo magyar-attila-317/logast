@@ -254,7 +254,9 @@ public final class QueryWriter {
         String message = spl(f.message());
         String trace = spl(f.mdcPrefix() + "traceId");
         d.text("\n## Splunk (SPL)\n\nLogs as Spring Boot writes them in the `" + s.logFormat() + "` format, read as JSON "
-                + "(sourcetype `_json`, or `KV_MODE=json`; otherwise add `| spath` after the base search).\n");
+                + "(sourcetype `_json`, or `KV_MODE=json`; otherwise add `| spath` after the base search). The format comes "
+                + "from logging.structuredFormat in logast.yaml, else Spring's logging.structured.format.console, else the "
+                + "encoder the service uses; if the fields below are not in your logs, set logging.structuredFormat.\n");
         d.query("spl", "Base search: every line of the service.", base);
 
         d.text("\n### Errors\n");

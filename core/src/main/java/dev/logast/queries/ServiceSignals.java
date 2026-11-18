@@ -50,7 +50,7 @@ public record ServiceSignals(String service, String logFormat, String promServic
         if (service.isBlank() || service.contains("${")) {
             service = a.project.root().getFileName().toString();
         }
-        String format = a.springProperties.getOrDefault("logging.structured.format.console", a.policy.logging().structuredFormat());
+        String format = logFormat(a);
         String label = a.policy.queries().prometheus().serviceLabel();
         if (label.isEmpty()) {
             label = a.springProperties.containsKey("management.metrics.tags.application") ? "application" : "job";
@@ -82,6 +82,23 @@ public record ServiceSignals(String service, String logFormat, String promServic
             }
         }
         return new ServiceSignals(service, format, label, flows, List.copyOf(meters.values()), List.copyOf(keys));
+    }
+
+    /**
+     * The JSON format the service's logs are in, decided as SETUP_SERVICE_IDENTITY decides it: a non-default
+     * logging.structuredFormat of logast.yaml (apply switches the service to it), else Spring Boot's
+     * logging.structured.format.console, else what the service already writes (a Logstash or GELF encoder in its
+     * Logback config or build), else ECS. Each format names its fields differently ({@code log.level} vs {@code level}).
+     */
+    static String logFormat(Analysis a) {
+        String policy = a.policy.logging().structuredFormat();
+        String format = !policy.equals("ecs") && !policy.equals("none") ? policy
+                : a.springProperties.getOrDefault("logging.structured.format.console", policy);
+        if (format.equals("ecs") || format.equals("none")) {
+            String used = dev.logast.ServiceSetup.detectLogFormat(a.project.root());
+            format = used != null ? used : "ecs";
+        }
+        return format;
     }
 
     private static Flow flow(Analysis a, Entrypoint ep) {
