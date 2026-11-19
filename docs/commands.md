@@ -311,7 +311,7 @@ question instead:
 ## fleet
 
 ```bash
-logast fleet create payments-fleet                # once; --dir <folder> keeps it in a folder of your choice
+logast fleet create payments-fleet                # once, with its company.yaml; --dir <folder> keeps it elsewhere
 logast fleet join payments-fleet                  # in each service: writes `fleet: payments-fleet` into logast.yaml
 logast fleet payments-fleet                       # the overview from the members' last scans
 logast fleet payments-fleet --vocabulary          # the fleet's vocabulary worksheet and company.yaml
@@ -321,7 +321,8 @@ logast fleet services/*/ --out fleet-report       # the earlier form: scan these
 
 A named fleet is a folder with its members, one snapshot per service and its shared `company.yaml`; every `scan` and
 `apply` of a member (and the Gradle plugin's tasks) updates the member's snapshot, and `logast fleet <name>` compares
-them without rescanning (`--refresh` rescans, `--html` writes the page below, `--json`). Where fleets live
+them without rescanning (`--refresh` rescans, `--html` writes the page below, `--json`); company.yaml gets commented
+suggestions of the settings the members agree on ([fleet.md](fleet.md#the-fleets-companyyaml)). Where fleets live
 (`--fleets-dir`, `LOGAST_FLEETS`, `fleets.dir` in `~/.config/logast/config.yaml`, default
 `~/.local/share/logast/fleets/`) and the whole workflow: [fleet.md](fleet.md). The comparison is the same in both forms:
 

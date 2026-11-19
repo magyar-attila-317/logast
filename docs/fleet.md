@@ -16,7 +16,9 @@ logast fleet payments-fleet                     # the overview
 logast fleet payments-fleet --vocabulary        # the fleet's vocabulary worksheet and company.yaml
 ```
 
-1. **Create** the fleet: `logast fleet create <name>` makes its folder (names: letters, digits, `.`, `-`, `_`).
+1. **Create** the fleet: `logast fleet create <name>` makes its folder (names: letters, digits, `.`, `-`, `_`) and
+   its `company.yaml`, the policy every member extends, with every setting still commented out
+   ([below](#the-fleets-companyyaml)).
 2. **Join** in each service: `logast fleet join <name> [service root]` writes one line into the service's
    `logast.yaml`, `fleet: <name>` (creating the file if there is none; the rest of the file and its comments stay), and
    registers the service in the fleet folder. The name is the only thing in the repository: it is committed, and each
@@ -31,7 +33,8 @@ logast fleet payments-fleet --vocabulary        # the fleet's vocabulary workshe
    machine has, but which is not on its member list yet (a colleague's clone), is added on its first scan. Writing the
    snapshot never fails the command: a problem is one warning line.
 4. **Look at the overview**: `logast fleet <name>`.
-5. **Decide the vocabulary** in the fleet's worksheet (below); every member takes the decided terms on its next run.
+5. **Decide the company's settings** in `company.yaml` (uncomment what the members agree on) and **the vocabulary** in
+   the fleet's worksheet (below); every member takes them on its next run.
 
 `logast fleet leave [service root]` takes a service out: the `fleet:` line, its member entry and its snapshot go.
 `logast fleet list` shows the fleets this machine knows, their folders and members.
@@ -55,6 +58,7 @@ One outcome, several metric names: 0 candidates (pick one name; nothing is merge
 Vocabulary: 1 conflict between keys nobody decided yet
   paymentId ~ payment_id: same type Long, source Payment.id(); differs: services checkout vs payments
   to decide: 2 (2 new): paymentId (new), payment_id (new)
+4 settings all members agree on aren't company policy yet → ~/.local/share/logast/fleets/payments-fleet/company.yaml
 ```
 
 - Per member: score (as in the [fleet report](commands.md#fleet)), open findings, the snapshot's age and commit. A
@@ -68,6 +72,8 @@ Vocabulary: 1 conflict between keys nobody decided yet
   services have no `spring.application.name` until the next scan.
 - **Vocabulary**: keys nobody decided yet that look like one value under two names (same identity, source or type)
   or one name with different types, and what is left to decide.
+- **Settings all members agree on** that `company.yaml` does not set yet (packs, log format, key style, support mode):
+  the suggestions [in company.yaml](#the-fleets-companyyaml). No line when there are none. `--html` lists them too.
 
 Options: `--refresh` rescans every member first (from the roots in the member list; a member not at its root on this
 machine keeps its snapshot); `--html` also writes the report page to `<fleet>/report/fleet.html` (or `--out <dir>`),
@@ -81,7 +87,7 @@ from the members' snapshots, keeping the decisions already in it, and regenerate
 | file in the fleet folder | holds | edited by |
 |---|---|---|
 | `vocabulary-worksheet.yaml` | every key of every member with its evidence, and your decisions (`term`, `same_as`, `local`, `owner`, `area`) | you decide; logast fills in the evidence |
-| `company.yaml` | the fleet's policy: the part between the `# >>> logast` and `# <<< logast` lines is **generated** from the decided terms (`vocabulary`, `areas`); everything outside it (packs, logging, rules, …) is yours and kept on every regeneration | you, outside the generated part |
+| `company.yaml` | the fleet's policy ([below](#the-fleets-companyyaml)): the part between the `# >>> logast:` and `# <<< logast:` lines is **generated** from the decided terms (`vocabulary`, `areas`), the one between `# >>> logast suggestions` and `# <<< logast suggestions` from the snapshots; everything outside them (packs, logging, rules, …) is yours and kept | you, outside the marked parts |
 | `members.yaml` | service → its root on this machine | `join` / `leave` |
 | `services/<service>.json` | the members' snapshots | every scan and apply of a member |
 
@@ -89,6 +95,37 @@ A member's `logast.yaml` with `fleet: <name>` extends the fleet's `company.yaml`
 `extends:` (the file's own `extends:` and settings come after it and win). Nothing is copied into the service, so a
 decision reaches every member on its next run: `scan` reports the new aliases and `apply` renames them
 (MDC_KEY_ALIAS). A fleet this machine does not know is a policy warning; the service's own rules still apply.
+
+## The fleet's company.yaml
+
+`logast fleet create` writes `company.yaml` at once: a header, the settings a company usually decides (`packs`,
+`logging.structuredFormat`, `logging.keyStyle`, `support.mode`, `support.repository`), each **commented out** with one
+line on what it does, and the empty generated vocabulary part. Nothing in it is active until you uncomment it.
+
+Every snapshot records the member's effective settings (all layers merged, defaults included). From them, logast keeps
+a marked part of **commented suggestions** with counts, rewritten whenever a member's scan or apply writes its snapshot
+and by `logast fleet <name>`. After two members scanned:
+
+```yaml
+# >>> logast suggestions: what the members' snapshots show, rewritten with every snapshot; a line you uncomment here is moved above this part and kept
+# packs: [logging, tracing, metrics, resilience, errors, audit]   # 2 of 2 members use it: uncomment to make it the company's
+# logging:
+#   structuredFormat: logstash   # 2 of 2 members use it: uncomment to make it the company's
+#   keyStyle: camel   # 1 of 2 (payments: snake): decide, then uncomment
+# support:
+#   mode: vendor   # 2 of 2 members use it: uncomment to make it the company's
+# <<< logast suggestions: end
+```
+
+- **Suggestions, never active values.** company.yaml is a layer every member extends: a value logast set by itself
+  would change other teams' services without anyone deciding it. A disagreement names the members that differ.
+- **Uncomment to decide**, in the settings at the top (with its parent: `logging:` and `  keyStyle: camel`). A
+  setting company.yaml sets gets no suggestion any more. A line uncommented inside the suggestions part is moved above
+  it on the next refresh and kept. When `logging:` (or `support:`) is already set above, the suggestions say so on
+  their own `# logging:` line: put the line under the existing one, a second `logging:` would be a duplicate key.
+- logast never rewrites lines outside its marked parts. A company.yaml that does not parse is left as it is.
+- A fleet created before this gets its company.yaml (or, in an existing one, the suggestions part before the
+  vocabulary part) on the next snapshot.
 
 ## Where fleets live
 

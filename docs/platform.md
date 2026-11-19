@@ -57,6 +57,9 @@ logging:
 - Layers, merge order and overrides: [vocabulary.md](vocabulary.md#layers); `logast explain policy .` prints the merged
   result and every override.
 - A complete company layer: [examples/restaurant-company.yaml](../examples/restaurant-company.yaml).
+- A [named fleet](fleet.md#the-fleets-companyyaml) has its own `company.yaml`, which its members extend by the fleet's
+  name: `logast fleet create` writes it with the usual company settings commented out, and logast adds commented
+  suggestions with counts from what the members use ("2 of 2 members use it: uncomment to make it the company's").
 - Every setting: [configuration.md](configuration.md).
 
 ## The central vocabulary

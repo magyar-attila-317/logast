@@ -7031,8 +7031,16 @@ abstract class E2eGoldenTest {
             Path fleet = home.resolve(".local/share/logast/fleets/payments-fleet");
             String shown = "<app>/home/.local/share/logast/fleets/payments-fleet";   // run() shows tmp as <app>
             assertThat(created).as("the default folder under the (temp) home").contains("fleet payments-fleet: " + shown);
+            // #129: the fleet's company.yaml comes with it: the settings a company decides, all commented out
+            Path company = fleet.resolve("company.yaml");
+            String initial = Files.readString(company);
+            assertThat(initial).contains("# packs: [logging, tracing, metrics, resilience, errors, audit]   # the rule packs",
+                            "# logging:\n#   structuredFormat: logstash   # the JSON", "#   keyStyle: camel   # how MDC keys",
+                            "# support:\n#   mode: vendor   #", "#   repository: ", "# >>> logast suggestions", "# >>> logast: generated")
+                    .as("nothing decided yet").doesNotContainPattern("(?m)^(packs|logging|support):");
             for (Path svc : List.of(checkout, payments)) {
-                assertThat(run(svc, "fleet", "join", "payments-fleet", svc.toString())).contains(" joined fleet payments-fleet");
+                assertThat(run(svc, "fleet", "join", "payments-fleet", svc.toString())).contains(" joined fleet payments-fleet",
+                        "(extends the fleet's company.yaml)");
                 assertThat(Files.readString(svc.resolve("logast.yaml"))).as("only the fleet's name, no machine path")
                         .isEqualTo("fleet: payments-fleet\n");
             }
@@ -7046,13 +7054,23 @@ abstract class E2eGoldenTest {
             }
             assertThat(run(payments, "policy", payments.toString())).as("nothing decided yet: no company.yaml term")
                     .doesNotContain("payment_id");
+            // #129: the snapshots record each member's settings; company.yaml suggests what they agree on, commented
+            String suggested = Files.readString(company);
+            assertThat(suggested).as("counted over both members")
+                    .contains("\n# packs: [logging, tracing, metrics, resilience, errors, audit]   # 2 of 2 members use it: "
+                                    + "uncomment to make it the company's\n",
+                            "\n#   structuredFormat: logstash   # 2 of 2 members use it", "\n#   keyStyle: camel   # 2 of 2 members use it",
+                            "\n#   mode: vendor   # 2 of 2 members use it")
+                    .as("comments only: no setting decided for the members").doesNotContainPattern("(?m)^(packs|logging|support):")
+                    .as("the rest of the file as created").startsWith(initial.substring(0, initial.indexOf("# >>> logast suggestions")));
             String overview = run(tmp, "fleet", "payments-fleet");
             assertThat(overview).as("both members from their snapshots").containsPattern("checkout\\s+score ")
                     .containsPattern("payments\\s+score ").contains("snapshot just now").doesNotContain("no snapshot")
                     .as("the trace break between them")
                     .contains("checkout -> payments  POST /payments", "breaks at the caller (checkout)")
                     .as("#128: the host names the member").contains("confirmed: host payments\n")
-                    .as("the vocabulary conflict").contains("Vocabulary: 1 conflict", "paymentId ~ payment_id: same type Long");
+                    .as("the vocabulary conflict").contains("Vocabulary: 1 conflict", "paymentId ~ payment_id: same type Long")
+                    .as("#129").contains("4 settings all members agree on aren't company policy yet → " + shown + "/company.yaml");
             String json = run(tmp, "fleet", "payments-fleet", "--json");
             assertThat(dev.logast.orders.OrderJson.MAPPER.readTree(json).path("services")).hasSize(2);
 
@@ -7078,8 +7096,15 @@ abstract class E2eGoldenTest {
             var mapper = dev.logast.orders.OrderJson.MAPPER;
             Path checkoutSnapshot = fleet.resolve("services/checkout.json");
             double scoreBefore = mapper.readTree(checkoutSnapshot.toFile()).path("report").path("score").asDouble();
-            // a fleet's company.yaml can carry policy besides the vocabulary: the key style here
-            Files.writeString(fleet.resolve("company.yaml"), Files.readString(fleet.resolve("company.yaml")) + "logging:\n  keyStyle: camel\n");
+            // a fleet's company.yaml can carry policy besides the vocabulary: the key style, uncommented by hand (#129)
+            String handLines = "\nlogging:\n#   structuredFormat: logstash   # the JSON";
+            Files.writeString(company, Files.readString(company).replaceFirst("\n# logging:\n#   structuredFormat: logstash   # the JSON",
+                    handLines).replaceFirst("\n#   keyStyle: camel   # how MDC keys", "\n  keyStyle: camel   # how MDC keys"));
+            // the member's effective policy has it: an own setting overrides the company's value
+            Files.writeString(payments.resolve("logast.yaml"), "fleet: payments-fleet\nlogging:\n  keyStyle: snake\n");
+            assertThat(run(payments, "explain", "policy", payments.toString()))
+                    .as("the company's value under the member's own").contains("logast.yaml overrides logging.keyStyle (was \\\"camel\\\" from company.yaml)");
+            Files.writeString(payments.resolve("logast.yaml"), "fleet: payments-fleet\n");
             STDERR.setLength(0);
             String applied = run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
             assertThat(mapper.readTree(checkoutSnapshot.toFile()).path("report").path("score").asDouble())
@@ -7095,9 +7120,18 @@ abstract class E2eGoldenTest {
                     .doesNotContainPattern("(?m)^  keyStyle:");
             run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
             assertThat(Files.readString(checkout.resolve("logast.yaml"))).as("set up once").isEqualTo(ownPolicy);
+            // #129: apply's snapshot refreshed the suggestions: the hand-written lines stay, the key style is no suggestion
+            String refreshed = Files.readString(company);
+            assertThat(refreshed).contains(handLines, "\n  keyStyle: camel   # how MDC keys")
+                    .contains("\n#   structuredFormat: logstash   # 2 of 2 members use it")
+                    .doesNotContain("keyStyle: camel   # 2 of 2")
+                    .as("the uncommented logging: is not offered twice")
+                    .contains("# logging:   # set above already: put the line you want under that logging: instead");
+            assertThat(run(tmp, "fleet", "payments-fleet")).contains("3 settings all members agree on aren't company policy yet");
             run(tmp, "fleet", "payments-fleet", "--vocabulary");
-            assertThat(Files.readString(fleet.resolve("company.yaml"))).as("regenerating the vocabulary keeps the fleet's own policy")
-                    .endsWith("\nlogging:\n  keyStyle: camel\n").contains("key: paymentId", "# <<< logast: end of the generated part");
+            assertThat(Files.readString(company)).as("regenerating the vocabulary keeps the fleet's own policy and the suggestions")
+                    .contains(handLines, "\n  keyStyle: camel   # how MDC keys", "\n#   structuredFormat: logstash   # 2 of 2 members use it")
+                    .contains("key: paymentId", "# <<< logast: end of the generated part");
 
             assertThat(run(checkout, "fleet", "leave", checkout.toString())).contains("checkout left fleet payments-fleet");
             assertThat(Files.readString(checkout.resolve("logast.yaml"))).doesNotContain("fleet: payments-fleet", "belongs to", "decided by fleet")

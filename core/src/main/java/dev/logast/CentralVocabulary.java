@@ -461,11 +461,12 @@ public final class CentralVocabulary {
         Files.writeString(file, mergeCompany(existing, generated));
     }
 
-    static String mergeCompany(String existing, String generated) {
+    public static String mergeCompany(String existing, String generated) {
         String block = BEGIN + "\n" + generated + (generated.endsWith("\n") ? "" : "\n") + END + "\n";
         if (existing != null) {
-            int b = existing.indexOf("# >>> logast");
-            int e = existing.indexOf("# <<< logast");
+            // "# >>> logast:" only: company.yaml has other marked parts too (#129: "# >>> logast suggestions")
+            int b = existing.indexOf("# >>> logast:");
+            int e = b < 0 ? -1 : existing.indexOf("# <<< logast:", b);
             if (b >= 0 && e > b) {
                 int eol = existing.indexOf('\n', e);
                 return existing.substring(0, b) + block + (eol < 0 ? "" : existing.substring(eol + 1));
