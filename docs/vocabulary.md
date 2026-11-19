@@ -41,6 +41,63 @@ vocabulary:
 Delete the keys that are not business terms (technical ones such as `retryCount`). Re-run `logast vocabulary` after
 editing: it lists only what the policy doesn't cover yet.
 
+## One vocabulary across services
+
+Services drift apart: `orderId` in one, `order_id` or `order.id` in another. The central vocabulary collects every
+service's keys in one place outside the repos, so merging them is a decision on evidence, not on similar names.
+
+| file | holds | edited by |
+|---|---|---|
+| `~/.logast/vocabulary-worksheet.yaml` | every key of every service with its evidence, and your decisions | you decide; logast fills in the evidence |
+| `~/.logast/company.yaml` | **generated** from the decided terms: canonical key, aliases, sources | logast only |
+| `<service>/logast.yaml` | `extends: [~/.logast/company.yaml]` and the terms only that service has | rarely |
+
+The flow:
+
+1. `logast vocabulary --central ~/.logast services/billing services/shipping …` harvests every service (MDC keys,
+   `[k=v]` keys and `addKeyValue` keys that name an identifier) into the worksheet.
+2. Decide in the worksheet, per key: `term: <name>` publishes the key as a term; `same_as: <key>` makes it an alias of
+   that key's term; `local: true` keeps it in its service. `owner: <team>` is optional.
+3. Run the same command again: it keeps your decisions, refreshes the evidence and writes `company.yaml` with the
+   decided terms only. Undecided keys never go there.
+4. Services `extends:` company.yaml. `logast fleet --vocabulary --central ~/.logast <svc>…` shows per service what
+   apply would rename, before anyone extends it; `scan` then says which of the service's own vocabulary entries
+   company.yaml now defines, and `logast vocabulary --prune <svc>` removes them from its logast.yaml.
+5. `logast apply` renames the aliases in the code (MDC_KEY_ALIAS): `MDC.put("order_id", …)` becomes `"orderId"`.
+
+A worksheet entry, after a decision:
+
+```yaml
+keys:
+  orderId:
+    term: order                      # your decision: kept across runs
+    owner: "order team"
+    services: [billing]              # from here on: rewritten on each run
+    types: ["Long"]
+    similar:
+      - "order_id: same type Long, source Order.id(); differs: services billing vs shipping"
+    evidence:
+      - {service: "billing", at: "src/main/java/com/example/billing/InvoiceDesk.java:11", use: mdc, value: "String.valueOf(order.id())", from: "Order.id()", type: "Long"}
+```
+
+- **Evidence**: per service and place, how the key is used (`mdc`, `kv` for `[k={}]` in a message, `addKeyValue`),
+  the value as written, the accessor it comes from and the value's type, read from declarations in the service's own
+  sources (a parameter, a local, a record component, an accessor's return type). `String.valueOf(x)` counts as `x`.
+- **similar** only points out keys with the same words in another style (`orderId`, `order_id`, `order.id`), with
+  what is the same and what differs (type, source, services). Nothing is merged until you write `same_as`. An id and
+  a number (`orderId`, `orderNo`) are never pointed out as the same.
+- **warning**: one name with different types (`customerId` a Long in one service, a String in another) is possibly
+  not the same value; give one of them another key if so.
+- **suggest**: `local: true?` for a key only one service uses; `same_as: <key>?` when a decided look-alike has the same
+  type.
+- **The summary at the top** lists, per run: the keys to decide (and which are new), decided terms no service uses
+  any more, keys still used against a decision (an alias still in the code, a `local` key in two services), and
+  decisions that cannot be published (a `same_as` to a key without a term, a cycle, one term decided twice).
+
+For a team, keep company.yaml in a small repository, change it by pull request, and let services pin it:
+`extends: [https://…/company.yaml#sha256=…]`. A `mdc.sources.types` entry of company.yaml that a service does not have
+is expected (it lists every service's types) and is not reported by `policy --check`; the service's own entries are.
+
 ## Layers
 
 ```

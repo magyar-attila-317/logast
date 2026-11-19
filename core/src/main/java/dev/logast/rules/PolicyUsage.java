@@ -46,14 +46,16 @@ public final class PolicyUsage {
             }
         }
 
-        // vocabulary …mdc.sources.types: the types a business id is read from
+        // vocabulary …mdc.sources.types: the types a business id is read from. A shared layer (the central company.yaml,
+        // #113) lists the types of every service: one this service lacks is expected, so only its own file's types count
+        Set<String> own = a.project.root() == null ? null : dev.logast.policy.PolicyLoader.ownSourceTypes(a.project.root());
         for (var term : a.policy.vocabulary().entrySet()) {
             Policy.TermMdc mdc = term.getValue().mdc();
             if (mdc == null || mdc.sources() == null) {
                 continue;
             }
             for (String type : mdc.sources().types().keySet()) {
-                if (!classes.contains(type) && !a.project.probe().hasClass(type)) {
+                if ((own == null || own.contains(type)) && !classes.contains(type) && !a.project.probe().hasClass(type)) {
                     out.add("logast.yaml: vocabulary." + term.getKey() + ".mdc.sources.types: " + type
                             + " is not in the code or on the classpath, so " + mdc.key() + " is never read from it"
                             + similar(type, classes));

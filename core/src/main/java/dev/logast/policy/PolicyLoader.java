@@ -45,6 +45,8 @@ public final class PolicyLoader {
     private final Deque<String> loading = new ArrayDeque<>();
     /** #56: extends: URLs without a #sha256= pin, with the hash to pin them to. */
     private final List<String> unpinned = new ArrayList<>();
+    /** A file's location → where its relative extends resolve instead (the project of apply's scratch copy). */
+    private final Map<String, String> relativeTo = new HashMap<>();
 
     private PolicyLoader() {
     }
@@ -58,12 +60,36 @@ public final class PolicyLoader {
 
     /** @param explicit policy file; null → {@code <root>/logast.yaml} (or .yml) when present, else defaults only */
     public static Policy load(Path root, Path explicit) {
+        return load(root, explicit, List.of());
+    }
+
+    /**
+     * @param extraParents layered after the defaults as if the service's file extended them first: what a central
+     *                     layer (company.yaml) would change before the service extends it (#113, fleet --vocabulary)
+     */
+    public static Policy load(Path root, Path explicit, List<String> extraParents) {
+        return load(root, explicit, extraParents, null);
+    }
+
+    /**
+     * @param project where the file's relative {@code extends:} resolve when {@code root} is a copy of the project
+     *                (apply works in a scratch copy: {@code extends: [../central/company.yaml]} points outside it, #113);
+     *                null: next to the file
+     */
+    public static Policy load(Path root, Path explicit, List<String> extraParents, Path project) {
         PolicyLoader loader = new PolicyLoader();
         ObjectNode merged = JsonNodeFactory.instance.objectNode();
         loader.layer(merged, DEFAULTS, null);
+        for (String extra : extraParents) {
+            loader.layer(merged, extra, null);
+        }
         Path file = explicit != null ? explicit : root == null ? null : defaultFile(root);
         if (file != null && Files.exists(file)) {
-            loader.layer(merged, file.toAbsolutePath().normalize().toString(), null);
+            String top = file.toAbsolutePath().normalize().toString();
+            if (project != null) {
+                loader.relativeTo.put(top, project.toAbsolutePath().normalize().resolve(file.getFileName()).toString());
+            }
+            loader.layer(merged, top, null);
         } else if (explicit != null) {
             throw new IllegalArgumentException("policy file not found: " + explicit);
         }
@@ -91,6 +117,55 @@ public final class PolicyLoader {
                     + (warnings.isEmpty() ? "" : "\nwarnings:\n  " + String.join("\n  ", warnings)));
         }
         return policy.withWarnings(warnings);
+    }
+
+    /**
+     * A policy file's own {@code vocabulary} and the one its {@code extends:} parents (and the defaults) give it, as
+     * written: which of the file's terms a parent now defines (#113).
+     *
+     * @param parents the parents' file names (or URLs)
+     */
+    public record VocabularyLayers(JsonNode own, JsonNode inherited, List<String> parents) {
+    }
+
+    /**
+     * The {@code vocabulary.*.mdc.sources.types} the service's own policy file names; null when the file extends no
+     * other layer (then every type is its own).
+     */
+    public static Set<String> ownSourceTypes(Path root) {
+        Path file = defaultFile(root);
+        if (!Files.exists(file)) {
+            return null;
+        }
+        JsonNode node;
+        try {
+            node = YAML.readTree(Files.readString(file));
+        } catch (IOException e) {
+            return null;
+        }
+        if (node == null || node.path("extends").isEmpty()) {
+            return null;
+        }
+        Set<String> out = new HashSet<>();
+        node.path("vocabulary").forEach(t -> t.path("mdc").path("sources").path("types").fieldNames().forEachRemaining(out::add));
+        return out;
+    }
+
+    public static VocabularyLayers vocabularyLayers(Path file) {
+        PolicyLoader loader = new PolicyLoader();
+        ObjectNode merged = JsonNodeFactory.instance.objectNode();
+        loader.layer(merged, DEFAULTS, null);
+        String resolved = file.toAbsolutePath().normalize().toString();
+        JsonNode node = loader.read(resolved);
+        List<String> parents = new ArrayList<>();
+        if (node != null) {
+            for (JsonNode parent : node.path("extends")) {
+                loader.layer(merged, parent.asText(), resolved);
+                parents.add(label(resolve(parent.asText(), resolved)));
+            }
+        }
+        return new VocabularyLayers(node == null ? JsonNodeFactory.instance.objectNode() : node.path("vocabulary"),
+                merged.path("vocabulary"), parents);
     }
 
     /**
@@ -129,7 +204,7 @@ public final class PolicyLoader {
         JsonNode node = read(resolved);
         if (node != null && node.isObject()) {
             for (JsonNode parent : node.path("extends")) {
-                layer(target, parent.asText(), resolved);
+                layer(target, parent.asText(), relativeTo.getOrDefault(resolved, resolved));
             }
             merge(target, (ObjectNode) node, "", label(resolved));
         }
@@ -186,6 +261,9 @@ public final class PolicyLoader {
     private static String resolve(String location, String from) {
         if (location.startsWith("classpath:") || location.startsWith("http://") || location.startsWith("https://")) {
             return location;
+        }
+        if (location.equals("~") || location.startsWith("~/")) {   // extends: [~/.logast/company.yaml] (#113)
+            location = System.getProperty("user.home") + location.substring(1);
         }
         Path p = Path.of(location);
         if (!p.isAbsolute() && from != null && !from.startsWith("classpath:") && !from.startsWith("http")) {

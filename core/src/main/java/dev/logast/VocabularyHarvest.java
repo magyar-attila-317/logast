@@ -25,17 +25,17 @@ public final class VocabularyHarvest {
     private static final Pattern MDC_CALL = Pattern.compile(
             "\\b(?:MDC\\s*\\.\\s*(?:put|putCloseable|get|remove)|MdcScope\\s*\\.\\s*of)\\s*\\(\\s*\"([A-Za-z][\\w.\\-]*)\"");
     private static final Pattern MDC_SCOPE_PAIR = Pattern.compile(",\\s*\"([A-Za-z][\\w.\\-]*)\"\\s*,");
-    private static final Pattern LOG_CALL = Pattern.compile("\\.(?:trace|debug|info|warn|error)\\s*\\(");
+    static final Pattern LOG_CALL = Pattern.compile("\\.(?:trace|debug|info|warn|error)\\s*\\(");
     /** {@code k={}}, {@code k: {}}, and {@code k=} closing a literal that is concatenated with the value. */
-    private static final Pattern LOG_KEY = Pattern.compile("(?<![\\w.\\-])([A-Za-z][\\w.\\-]*)(?:\\s*=\\s*(?:\\{}|$)|:\\s*\\{})");
+    static final Pattern LOG_KEY = Pattern.compile("(?<![\\w.\\-])([A-Za-z][\\w.\\-]*)(?:\\s*=\\s*(?:\\{}|$)|:\\s*\\{})");
     private static final Pattern DECLARED = Pattern.compile(
             "\\b(?:String|UUID|java\\.util\\.UUID|Long|long|Integer|int)\\s+([a-z][A-Za-z0-9]*(?:Id|Uuid|ID|UUID))\\b(?!\\s*\\()");   // not getOrderId() / countByVendorId()
     /** {@code orderId, order_id, order.uuid, ORDER_ID}: the suffix must start a new word, so "paid" or "valid" are not ids. */
     static final Pattern ID_SUFFIX = Pattern.compile(
             "(?:[._\\-](?i:id|uuid|number|no)|(?<=[a-z0-9])(?:Id|ID|Uuid|UUID|Number|No))$");
-    private static final Set<String> AMBIENT = Set.of("traceid", "spanid", "trace.id", "span.id", "traceparent", "tracestate");
+    static final Set<String> AMBIENT = Set.of("traceid", "spanid", "trace.id", "span.id", "traceparent", "tracestate");
     private static final Set<String> SKIP_DIRS = Set.of("build", "out", "target", ".gradle", ".git", ".logast", "node_modules", "test");
-    private static final Set<String> NOT_A_KEY = Set.of("id", "uuid", "key", "value", "name", "type", "e", "ex", "error",
+    static final Set<String> NOT_A_KEY = Set.of("id", "uuid", "key", "value", "name", "type", "e", "ex", "error",
             "http", "https", "url", "uri", "path");
     /** Plain scalars YAML reads as booleans or null. */
     private static final Set<String> YAML_WORDS = Set.of("y", "n", "yes", "no", "on", "off", "true", "false", "null");
@@ -292,7 +292,7 @@ public final class VocabularyHarvest {
     }
 
     /** The key as written; quoted only when YAML would read it as something else. */
-    private static String yamlKey(String key) {
+    static String yamlKey(String key) {
         return key.matches("[A-Za-z][\\w.\\-]*") && !YAML_WORDS.contains(key.toLowerCase(Locale.ROOT)) ? key : "\"" + key + "\"";
     }
 
@@ -354,7 +354,7 @@ public final class VocabularyHarvest {
         return s.length();
     }
 
-    private static List<Path> javaFiles(Path root) {
+    static List<Path> javaFiles(Path root) {
         try (Stream<Path> s = Files.walk(root)) {
             return s.filter(p -> p.toString().endsWith(".java")).filter(p -> {
                 Path rel = root.relativize(p);
@@ -370,7 +370,7 @@ public final class VocabularyHarvest {
         }
     }
 
-    private static String read(Path p) {
+    static String read(Path p) {
         try {
             return dev.logast.parse.SourceText.read(p);
         } catch (IOException e) {

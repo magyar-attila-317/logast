@@ -27,7 +27,11 @@ built-in defaults           phrasing, levels, PII words, packs: logging + tracin
 extends:
   - https://git.example.com/platform/observability/raw/main/company.yaml#sha256=3f2a…   # a URL, pinned, or
   - ../shared/kitchen.yaml                                                              # a file relative to this one
+  - ~/.logast/company.yaml                                                              # ~ is the home folder
 ```
+
+The central `company.yaml` that `logast vocabulary --central` generates is such a layer
+([one vocabulary across services](vocabulary.md#one-vocabulary-across-services)).
 
 - **Pin a URL** with `#sha256=<hash of the file>`: when the shared file changes, the load fails and says the new hash, so
   a change of the company rules is reviewed before it applies. An unpinned URL works, with a warning that names the
