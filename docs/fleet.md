@@ -19,10 +19,26 @@ logast fleet payments-fleet --vocabulary        # the fleet's vocabulary workshe
 1. **Create** the fleet: `logast fleet create <name>` makes its folder (names: letters, digits, `.`, `-`, `_`) and
    its `company.yaml`, the policy every member extends, with every setting still commented out
    ([below](#the-fleets-companyyaml)).
-2. **Join** in each service: `logast fleet join <name> [service root]` writes one line into the service's
-   `logast.yaml`, `fleet: <name>` (creating the file if there is none; the rest of the file and its comments stay), and
-   registers the service in the fleet folder. The name is the only thing in the repository: it is committed, and each
-   machine finds the fleet's folder itself (below). A logast.yaml with nothing but `fleet:` (and `extends:`) counts
+2. **Join** in each service: `logast fleet join <name> [service root]` writes the fleet into the service's
+   `logast.yaml` (creating the file if there is none; the rest of the file and its comments stay) and registers the
+   service in the fleet folder:
+
+   ```yaml
+   fleet: payments-fleet
+   extends:
+     - fleet:payments-fleet    # = /home/me/.local/share/logast/fleets/payments-fleet/company.yaml on this machine
+   ```
+
+   `fleet:` makes the service a member; the `extends:` entry shows where its policy comes from. An existing `extends:`
+   (a single entry or a list) gets the fleet entry first, the rest stays; joining again adds nothing. The name is the
+   only thing the repository needs: it is committed, and each machine finds the fleet's folder itself (below). The
+   comment says where that is on this machine; `scan` and `apply` refresh it when it changes.
+   Join also **tidies** the service's own settings against the fleet's company.yaml: a setting with the same value
+   as company.yaml is removed (with the comment on its line; a block such as `logging:` left empty goes too), and so are
+   the vocabulary entries company.yaml defines in full (as `logast vocabulary --prune`). A setting with another value is
+   the service's own override: it stays, and join lists it (`checkout keeps its own logging.keyStyle: snake (company:
+   camel); …`); `--follow-company` removes those too. Join prints each line it removed; nothing else in the file
+   changes. A logast.yaml with nothing but `fleet:` (and `extends:`) counts
    as not set up: the first `apply` writes its starter choices (packs, key style, log format, the vocabulary found in
    the code) below the fleet line. A setting the fleet's company.yaml (or an extended layer) already decides stays its
    decision: its line is written commented out, `# keyStyle: camel   # decided by fleet payments-fleet's company.yaml`.
@@ -36,7 +52,11 @@ logast fleet payments-fleet --vocabulary        # the fleet's vocabulary workshe
 5. **Decide the company's settings** in `company.yaml` (uncomment what the members agree on) and **the vocabulary** in
    the fleet's worksheet (below); every member takes them on its next run.
 
-`logast fleet leave [service root]` takes a service out: the `fleet:` line, its member entry and its snapshot go.
+`logast fleet leave [service root]` takes a service out: the `fleet:` line, the `fleet:<name>` entry of `extends:` (and
+an `extends:` left empty), its member entry and its snapshot go.
+`logast fleet tidy <name> [--follow-company] [--service <member>]` tidies every joined member's `logast.yaml` as join
+does (each repo's file only) and prints per member what it removed. A member whose `logast.yaml` has uncommitted
+changes is skipped with a warning (`--force` edits it anyway), so each tidy is one reviewable change.
 `logast fleet list` shows the fleets this machine knows, their folders and members.
 
 ## Adding repos without touching them
@@ -108,6 +128,9 @@ Vocabulary: 1 conflict between keys nobody decided yet
   or one name with different types, and what is left to decide.
 - **Settings all members agree on** that `company.yaml` does not set yet (packs, log format, key style, support mode):
   the suggestions [in company.yaml](#the-fleets-companyyaml). No line when there are none. `--html` lists them too.
+- **Own settings next to company.yaml**: per joined member, what `logast fleet tidy` would do, read from its
+  `logast.yaml` without changing it: `orders: 2 settings company.yaml already sets (logging.structuredFormat, packs) ·
+  1 own override (logging.keyStyle: snake) → logast fleet tidy shop`. No section when every member is tidy.
 
 Options: `--refresh` rescans every member first (from the roots in the member list; a member not at its root on this
 machine keeps its snapshot; an added member's scan writes only to the fleet folder); `--service <name>` prints one
@@ -126,8 +149,9 @@ from the members' snapshots, keeping the decisions already in it, and regenerate
 | `members.yaml` | service → its root on this machine | `join` / `leave` |
 | `services/<service>.json` | the members' snapshots | every scan and apply of a member |
 
-A member's `logast.yaml` with `fleet: <name>` extends the fleet's `company.yaml` as if it were the first entry of
-`extends:` (the file's own `extends:` and settings come after it and win). Nothing is copied into the service, so a
+A member's `logast.yaml` extends the fleet's `company.yaml` before its other layers (the file's own `extends:` and
+settings come after it and win), whether it says so with `extends: [fleet:<name>]`, with `fleet: <name>` (a file
+from before the `extends:` entry), or both: company.yaml is one layer either way. Nothing is copied into the service, so a
 decision reaches every member on its next run: `scan` reports the new aliases and `apply` renames them
 (MDC_KEY_ALIAS). A fleet this machine does not know is a policy warning; the service's own rules still apply.
 

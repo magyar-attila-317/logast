@@ -79,19 +79,170 @@ class FleetHomeTest {
     }
 
     @Test
-    void joinWritesOnlyTheFleetLineAndKeepsTheRestOfLogastYaml() throws IOException {
+    void joinWritesTheFleetLineAndExtendsEntryAndKeepsTheRestOfLogastYaml() throws IOException {
         Path fleet = NamedFleet.create(new FleetHome.Env(null, Map.of(), tmp.resolve("home")), "payments-fleet", null);
         Path svc = Files.createDirectories(tmp.resolve("checkout"));
         Files.writeString(svc.resolve("logast.yaml"), "# checkout's policy\npacks: [logging]   # only this\n");
         NamedFleet.join(fleet, "payments-fleet", svc);
-        assertThat(Files.readString(svc.resolve("logast.yaml")))
-                .isEqualTo("# checkout's policy\nfleet: payments-fleet\npacks: [logging]   # only this\n");
+        String joined = "# checkout's policy\nfleet: payments-fleet\nextends:\n  - fleet:payments-fleet    # = "
+                + fleet.resolve("company.yaml") + " on this machine\npacks: [logging]   # only this\n";
+        assertThat(Files.readString(svc.resolve("logast.yaml"))).as("#133: the inheritance shows under extends:").isEqualTo(joined);
+        NamedFleet.join(fleet, "payments-fleet", svc);
+        assertThat(Files.readString(svc.resolve("logast.yaml"))).as("a second join changes nothing").isEqualTo(joined);
         assertThat(NamedFleet.of(svc)).isEqualTo("payments-fleet");
         assertThat(NamedFleet.members(fleet)).containsEntry("checkout", svc);
 
         NamedFleet.leave(fleet, svc);
         assertThat(Files.readString(svc.resolve("logast.yaml"))).isEqualTo("# checkout's policy\npacks: [logging]   # only this\n");
         assertThat(NamedFleet.members(fleet)).isEmpty();
+    }
+
+    /** #133: an existing extends: (scalar, flow or block list) gets the fleet entry first; leave takes only that out. */
+    @Test
+    void joinPutsTheFleetFirstInAnExistingExtendsAndLeaveTakesItOut() throws IOException {
+        Path fleet = NamedFleet.create(new FleetHome.Env(null, Map.of(), tmp.resolve("home")), "shop", null);
+        String item = "  - fleet:shop    # = " + fleet.resolve("company.yaml") + " on this machine\n";
+        Map<String, String[]> cases = Map.of(
+                "scalar", new String[]{"extends: ../central/company.yaml   # shared\npacks: [logging]\n",
+                        "fleet: shop\nextends:   # shared\n" + item + "  - ../central/company.yaml\npacks: [logging]\n",
+                        "extends: ../central/company.yaml   # shared\npacks: [logging]\n"},
+                "flow", new String[]{"extends: [a.yaml, \"b.yaml\"]\n",
+                        "fleet: shop\nextends:\n" + item + "  - a.yaml\n  - b.yaml\n",
+                        "extends:\n  - a.yaml\n  - b.yaml\n"},
+                "block", new String[]{"# head\nextends:\n    - a.yaml   # area\nlogging:\n  keyStyle: snake\n",
+                        "# head\nfleet: shop\nextends:\n" + item.replaceFirst("^  ", "    ") + "    - a.yaml   # area\nlogging:\n  keyStyle: snake\n",
+                        "# head\nextends:\n    - a.yaml   # area\nlogging:\n  keyStyle: snake\n"});
+        for (var c : cases.entrySet()) {
+            Path svc = Files.createDirectories(tmp.resolve(c.getKey()));
+            Files.writeString(svc.resolve("logast.yaml"), c.getValue()[0]);
+            NamedFleet.join(fleet, "shop", svc);
+            assertThat(Files.readString(svc.resolve("logast.yaml"))).as(c.getKey()).isEqualTo(c.getValue()[1]);
+            NamedFleet.join(fleet, "shop", svc);
+            assertThat(Files.readString(svc.resolve("logast.yaml"))).as(c.getKey() + ": joined twice").isEqualTo(c.getValue()[1]);
+            NamedFleet.leave(fleet, svc);
+            String left = Files.readString(svc.resolve("logast.yaml"));
+            assertThat(left).as(c.getKey() + ": left").isEqualTo(c.getValue()[2].replace("extends: ../central/company.yaml   # shared",
+                    "extends:   # shared\n  - ../central/company.yaml"));
+        }
+        Path only = Files.createDirectories(tmp.resolve("only"));
+        NamedFleet.join(fleet, "shop", only);
+        NamedFleet.leave(fleet, only);
+        assertThat(Files.readString(only.resolve("logast.yaml"))).as("an extends: left empty goes").isEmpty();
+    }
+
+    /** #133: scan and apply refresh the comment after `- fleet:<name>` when the fleet resolves elsewhere now. */
+    @Test
+    void theResolvedPathCommentIsRefreshed() throws IOException {
+        System.setProperty(FleetHome.HOME_PROPERTY, tmp.resolve("home").toString());
+        Path svc = Files.createDirectories(tmp.resolve("svc"));
+        Path company = FleetExtends.company("shop");
+        Files.writeString(svc.resolve("logast.yaml"), "fleet: shop\nextends:\n  - fleet:shop    # = /elsewhere/company.yaml on this machine\n"
+                + "  - fleet:other   # mine\npacks: [logging]   # = not mine to touch\n");
+        assertThat(FleetExtends.refresh(svc.resolve("logast.yaml"))).isTrue();
+        String fresh = "fleet: shop\nextends:\n  - fleet:shop    # = " + company + " on this machine\n"
+                + "  - fleet:other   # mine\npacks: [logging]   # = not mine to touch\n";
+        assertThat(Files.readString(svc.resolve("logast.yaml"))).as("only that comment; a comment of the user's own stays").isEqualTo(fresh);
+        assertThat(FleetExtends.refresh(svc.resolve("logast.yaml"))).as("unchanged: not written").isFalse();
+    }
+
+    /** #133: `extends: [fleet:<name>]` is the fleet's company.yaml; with `fleet:` too it is layered once. */
+    @Test
+    void aFleetReferenceInExtendsIsLayeredOnceAndAnUnknownOneWarns() throws IOException {
+        System.setProperty(FleetHome.HOME_PROPERTY, tmp.resolve("home").toString());
+        Path fleet = NamedFleet.create(FleetHome.Env.current(), "shop", null);
+        Files.writeString(fleet.resolve("company.yaml"), "pii: [loyaltyCard]\nvocabulary:\n  payment:\n    mdc: { key: paymentId }\n");
+        Files.writeString(tmp.resolve("area.yaml"), "pii: [tableNumber]\n");
+        Path svc = Files.createDirectories(tmp.resolve("checkout"));
+        Files.writeString(svc.resolve("logast.yaml"), "extends:\n  - fleet:shop\n  - ../area.yaml\n");
+        Policy p = PolicyLoader.load(svc, null);
+        assertThat(p.vocabulary()).as("extends: fleet:shop is the fleet's company.yaml").containsKey("payment");
+        assertThat(p.warnings()).isEmpty();
+        assertThat(PolicyLoader.vocabularyLayers(svc.resolve("logast.yaml")).parents()).containsExactly("company.yaml", "area.yaml");
+
+        Files.writeString(svc.resolve("logast.yaml"), "fleet: shop\nextends:\n  - ../area.yaml\n  - fleet:shop\n");
+        assertThat(PolicyLoader.vocabularyLayers(svc.resolve("logast.yaml")).parents()).as("layered once, before the other extends")
+                .containsExactly("company.yaml", "area.yaml");
+        assertThat(PolicyLoader.parentSettings(svc.resolve("logast.yaml"))).contains("vocabulary");
+        assertThat(PolicyLoader.load(svc, null).pii()).containsSubsequence("loyaltyCard", "tableNumber");
+
+        Files.writeString(svc.resolve("logast.yaml"), "extends: [fleet:unknown]\n");
+        Policy unknown = PolicyLoader.load(svc, null);
+        assertThat(unknown.vocabulary()).doesNotContainKey("payment");
+        assertThat(unknown.warnings()).anyMatch(w -> w.contains("extends: fleet:unknown is not known on this machine"));
+    }
+
+    /** #133: join's tidy: the service's own copies of company.yaml's settings go, its overrides stay unless it follows. */
+    @Test
+    void tidyRemovesWhatCompanyYamlSetsAlreadyAndKeepsOverrides() throws IOException {
+        System.setProperty(FleetHome.HOME_PROPERTY, tmp.resolve("home").toString());
+        Path fleet = NamedFleet.create(FleetHome.Env.current(), "shop", null);
+        Path company = fleet.resolve("company.yaml");
+        Files.writeString(company, """
+                packs: [logging, tracing]
+                logging:
+                  structuredFormat: ecs
+                  keyStyle: camel
+                vocabulary:
+                  payment:
+                    mdc: { key: paymentId }
+                """);
+        Path svc = Files.createDirectories(tmp.resolve("orders"));
+        String own = """
+                # orders' policy
+                packs: [logging, tracing]   # the company's packs
+
+                logging:
+                  # how logs are written
+                  structuredFormat: ecs
+                support:
+                  mode: vendor   # own choice
+                metrics:
+                  # the style below
+                  keyStyle: x
+                vocabulary:
+                  payment:
+                    mdc:
+                      key: paymentId
+                  order:
+                    mdc:
+                      key: orderId
+                """;
+        Files.writeString(svc.resolve("logast.yaml"), own.replace("structuredFormat: ecs", "structuredFormat: ecs\n  keyStyle: snake"));
+        FleetTidy.Plan plan = FleetTidy.plan(svc, company);
+        assertThat(plan.same()).extracting(FleetTidy.Setting::path).containsExactly("logging.structuredFormat", "packs");
+        assertThat(plan.overrides()).containsExactly(new FleetTidy.Setting("logging.keyStyle", "snake", "camel"));
+        assertThat(plan.overviewLine("orders", "shop")).isEqualTo("orders: 2 settings company.yaml already sets "
+                + "(logging.structuredFormat, packs) · 1 vocabulary entry company.yaml defines (payment) · 1 own override "
+                + "(logging.keyStyle: snake) → `logast fleet tidy shop`");
+
+        FleetTidy.Result r = FleetTidy.apply(svc, company, false);
+        assertThat(r.removed()).containsExactly("logging.structuredFormat: ecs (company.yaml sets the same)",
+                "packs: [logging, tracing] (company.yaml sets the same)", "vocabulary payment (company.yaml defines it)");
+        assertThat(r.kept()).extracting(FleetTidy.Setting::path).containsExactly("logging.keyStyle");
+        String tidied = """
+                # orders' policy
+
+                logging:
+                  # how logs are written
+                  keyStyle: snake
+                support:
+                  mode: vendor   # own choice
+                metrics:
+                  # the style below
+                  keyStyle: x
+                vocabulary:
+                  order:
+                    mdc:
+                      key: orderId
+                """;
+        assertThat(Files.readString(svc.resolve("logast.yaml"))).as("only those lines; comments elsewhere stay").isEqualTo(tidied);
+        assertThat(FleetTidy.apply(svc, company, false).removed()).as("a second tidy removes nothing").isEmpty();
+
+        FleetTidy.Result follow = FleetTidy.apply(svc, company, true);
+        assertThat(follow.removed()).containsExactly("logging.keyStyle: snake (company: camel)");
+        assertThat(follow.kept()).isEmpty();
+        assertThat(Files.readString(svc.resolve("logast.yaml"))).as("the emptied logging: goes, with what stood in it")
+                .isEqualTo(tidied.replace("logging:\n  # how logs are written\n  keyStyle: snake\n", ""));
     }
 
     /** #132: an added member is registered apart from the joined ones; joining moves it, remove takes only added ones. */

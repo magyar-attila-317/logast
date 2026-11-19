@@ -6,8 +6,10 @@ import dev.logast.Logast;
 import dev.logast.LogastDir;
 import dev.logast.fleet.CompanyPolicy;
 import dev.logast.fleet.FleetHome;
+import dev.logast.fleet.FleetExtends;
 import dev.logast.fleet.FleetLinks;
 import dev.logast.fleet.FleetReport;
+import dev.logast.fleet.FleetTidy;
 import dev.logast.fleet.NamedFleet;
 import dev.logast.fleet.ServiceSurface;
 import dev.logast.orders.Ansi;
@@ -36,7 +38,8 @@ import java.util.concurrent.Callable;
         + "scores, trace breaks between services, one outcome under several metric names, vocabulary conflicts. "
         + "`logast fleet add <name> <repos…>` registers repos without touching them (#132): their scans write only to the "
         + "fleet folder. The earlier form `logast fleet <service roots…>` still scans the given roots.",
-        subcommands = {Fleet.Create.class, Fleet.Join.class, Fleet.Leave.class, Fleet.Add.class, Fleet.Remove.class, Fleet.ListFleets.class})
+        subcommands = {Fleet.Create.class, Fleet.Join.class, Fleet.Leave.class, Fleet.Add.class, Fleet.Remove.class, Fleet.ListFleets.class,
+                Fleet.Tidy.class})
 final class Fleet implements Callable<Integer> {
     @Parameters(description = "A fleet's name; or (the earlier form) service roots, or a text file with one root per line (prefix it with @)")
     List<String> services = new ArrayList<>();
@@ -284,6 +287,21 @@ final class Fleet implements Callable<Integer> {
                     r.severity().getOrDefault("low", 0), age(snap.created(), now), snap.commit() == null ? "" : ", " + snap.commit(),
                     members.containsKey(s) ? "" : " (not a member any more)"));
         }
+        // #133: what `fleet tidy` would remove from each joined member's logast.yaml (read only)
+        List<String> tidy = new ArrayList<>();
+        for (var m : NamedFleet.joined(dir).entrySet()) {
+            if (Files.isDirectory(m.getValue())) {
+                String line = FleetTidy.plan(m.getValue(), company).overviewLine(m.getKey(), name);
+                if (line != null) {
+                    tidy.add(line);
+                }
+            }
+        }
+        if (!tidy.isEmpty()) {
+            System.out.println();
+            System.out.println("Own settings next to company.yaml:");
+            tidy.forEach(l -> System.out.println("  " + l));
+        }
         System.out.println();
         System.out.print(FleetLinks.text(links));
         System.out.println();
@@ -335,6 +353,11 @@ final class Fleet implements Callable<Integer> {
      * machine's member list lacks it). Never fails the command: one warning line instead.
      */
     static void snapshot(Path root, ScanResult r, Analysis a, Policy policy) {
+        try {   // #133: the comment after `- fleet:<name>` says where it resolves on this machine
+            FleetExtends.refresh(dev.logast.policy.PolicyLoader.defaultFile(root));
+        } catch (RuntimeException e) {
+            Out.warn("fleet: " + e.getMessage());
+        }
         String name = NamedFleet.of(root);
         if (name == null || r == null || a == null) {
             return;
@@ -426,13 +449,18 @@ final class Fleet implements Callable<Integer> {
         }
     }
 
-    @Command(name = "join", description = "Make the service a member: writes `fleet: <name>` into its logast.yaml (the fleet's "
-            + "company.yaml then counts as extended) and registers it in the fleet folder; its scans and applies report to the fleet")
+    @Command(name = "join", description = "Make the service a member: writes `fleet: <name>` and `extends: [fleet:<name>]` into its "
+            + "logast.yaml (the fleet's company.yaml is extended) and registers it in the fleet folder; its scans and applies report to "
+            + "the fleet. Settings the service sets to company.yaml's value, and vocabulary company.yaml defines, are removed from "
+            + "its logast.yaml; its own overrides stay and are listed")
     static final class Join implements Callable<Integer> {
         @Parameters(index = "0", description = "The fleet's name")
         String name;
         @Parameters(index = "1", defaultValue = ".", description = "Service root (default: .)")
         Path root;
+        @Option(names = "--follow-company", description = "Also remove the settings where logast.yaml differs from company.yaml "
+                + "(the service's own overrides): the company's values apply")
+        boolean followCompany;
         @Mixin
         FleetsDir fleetsDir;
 
@@ -457,14 +485,97 @@ final class Fleet implements Callable<Integer> {
             }
             System.out.println(NamedFleet.serviceName(r) + " joined fleet " + name + " (" + at.dir() + ")");
             System.out.println("  " + dev.logast.policy.PolicyLoader.defaultFile(r).getFileName() + ": fleet: " + name
+                    + ", extends: [" + FleetExtends.PREFIX + name + "]"
                     + (Files.exists(at.dir().resolve(CentralVocabulary.COMPANY)) ? " (extends the fleet's company.yaml)"
                     : " (the fleet has no company.yaml yet: `logast fleet " + name + " --vocabulary` writes it)"));
+            tidy(r, at.dir(), followCompany, "logast fleet join " + name + " --follow-company");
             System.out.println("  every `logast scan` and `apply` here now leaves a snapshot in the fleet folder");
             return 0;
         }
     }
 
-    @Command(name = "leave", description = "Take the service out of its fleet: the `fleet:` line, its member entry and snapshot go")
+    /** #133: join's and tidy's report of one member's tidy: what went, which overrides stay. */
+    static void tidy(Path root, Path fleetDir, boolean followCompany, String follow) {
+        String svc = NamedFleet.serviceName(root);
+        FleetTidy.Result t = FleetTidy.apply(root, fleetDir.resolve(CentralVocabulary.COMPANY), followCompany);
+        t.removed().forEach(l -> System.out.println("  " + svc + ": removed " + l));
+        t.kept().forEach(s -> System.out.println("  " + svc + " keeps its own " + s.path() + ": " + s.own() + " (company: "
+                + s.company() + "); `" + follow + "` drops it"));
+    }
+
+    @Command(name = "tidy", description = "Tidy every joined member's logast.yaml against the fleet's company.yaml (#133), as "
+            + "`fleet join` does: settings with company.yaml's value and vocabulary it defines are removed, own overrides listed. "
+            + "Only each member's logast.yaml changes")
+    static final class Tidy implements Callable<Integer> {
+        @Parameters(index = "0", description = "The fleet's name")
+        String name;
+        @Option(names = "--follow-company", description = "Also remove the members' own overrides: the company's values apply")
+        boolean followCompany;
+        @Option(names = "--service", description = "Only this member")
+        String service;
+        @Option(names = "--force", description = "Edit a logast.yaml that has uncommitted changes too")
+        boolean force;
+        @Mixin
+        FleetsDir fleetsDir;
+
+        @Override
+        public Integer call() {
+            FleetHome.Location at = FleetHome.fleetDir(fleetsDir.env(), name);
+            if (!NamedFleet.exists(at.dir())) {
+                Out.warn("fleet tidy: no fleet named " + name + " at " + at.dir() + " (" + at.source() + ")");
+                return 2;
+            }
+            Map<String, Path> joined = NamedFleet.joined(at.dir());
+            if (service != null && !joined.containsKey(service)) {
+                Out.warn("fleet tidy: " + service + " is no joined member of fleet " + name + " (joined: "
+                        + String.join(", ", joined.keySet()) + ")");
+                return 2;
+            }
+            int exit = 0;
+            for (var m : joined.entrySet()) {
+                if (service != null && !service.equals(m.getKey())) {
+                    continue;
+                }
+                Path file = dev.logast.policy.PolicyLoader.defaultFile(m.getValue());
+                if (!Files.isRegularFile(file)) {
+                    Out.warn("fleet tidy: " + m.getKey() + ": no " + file + " on this machine");
+                    exit = 1;
+                    continue;
+                }
+                if (!force && dirty(m.getValue(), file)) {
+                    Out.warn("fleet tidy: " + m.getKey() + ": " + file.getFileName() + " has uncommitted changes; commit them first "
+                            + "(--force edits it anyway)");
+                    exit = 1;
+                    continue;
+                }
+                if (FleetTidy.plan(m.getValue(), at.dir().resolve(CentralVocabulary.COMPANY)).isEmpty()) {
+                    System.out.println(m.getKey() + ": nothing to tidy");
+                    continue;
+                }
+                System.out.println(m.getKey() + ":");
+                tidy(m.getValue(), at.dir(), followCompany, "logast fleet tidy " + name + " --follow-company");
+            }
+            return exit;
+        }
+
+        /** True when git shows uncommitted changes of {@code file} (untracked included); false outside a git work tree. */
+        private static boolean dirty(Path root, Path file) {
+            try {
+                Process p = new ProcessBuilder("git", "status", "--porcelain", "--", file.getFileName().toString())
+                        .directory(root.toFile()).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                String out = new String(p.getInputStream().readAllBytes()).strip();
+                return p.waitFor() == 0 && !out.isEmpty();
+            } catch (IOException e) {
+                return false;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+    }
+
+    @Command(name = "leave", description = "Take the service out of its fleet: the `fleet:` line and the `extends:` entry "
+            + "`fleet:<name>`, its member entry and snapshot go")
     static final class Leave implements Callable<Integer> {
         @Parameters(index = "0", defaultValue = ".", description = "Service root (default: .)")
         Path root;

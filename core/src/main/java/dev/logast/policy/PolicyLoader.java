@@ -168,7 +168,7 @@ public final class PolicyLoader {
         } catch (IOException e) {
             return null;
         }
-        if (node == null || node.path("extends").isEmpty() && fleetCompany(node) == null) {
+        if (node == null || entries(node.path("extends")).isEmpty() && fleetCompany(node.path("fleet").asText("")) == null) {
             return null;
         }
         Set<String> out = new HashSet<>();
@@ -187,12 +187,8 @@ public final class PolicyLoader {
         String resolved = file.toAbsolutePath().normalize().toString();
         JsonNode node = loader.read(resolved);
         if (node != null && node.isObject()) {
-            String company = loader.fleetLayer(node);
-            if (company != null) {
-                loader.layer(merged, company, null);
-            }
-            for (JsonNode parent : node.path("extends")) {
-                loader.layer(merged, parent.asText(), resolved);
+            for (String parent : loader.parents(node)) {
+                loader.layer(merged, parent, resolved);
             }
         }
         Set<String> out = new TreeSet<>();
@@ -211,21 +207,25 @@ public final class PolicyLoader {
     }
 
     public static VocabularyLayers vocabularyLayers(Path file) {
+        return vocabularyLayers(file, null);
+    }
+
+    /**
+     * #133: as {@link #vocabularyLayers(Path)}, with {@code onlyParent} (a path) as the file's only parent: what one layer
+     * (the fleet's company.yaml) defines, without the file's other {@code extends:}.
+     */
+    public static VocabularyLayers vocabularyLayers(Path file, String onlyParent) {
         PolicyLoader loader = new PolicyLoader();
         ObjectNode merged = JsonNodeFactory.instance.objectNode();
         loader.layer(merged, DEFAULTS, null);
         String resolved = file.toAbsolutePath().normalize().toString();
         JsonNode node = loader.read(resolved);
         List<String> parents = new ArrayList<>();
-        if (node != null) {
-            String company = loader.fleetLayer(node);
-            if (company != null) {   // #124: a fleet member extends the fleet's company.yaml
-                loader.layer(merged, company, null);
-                parents.add(label(company));
-            }
-            for (JsonNode parent : node.path("extends")) {
-                loader.layer(merged, parent.asText(), resolved);
-                parents.add(label(resolve(parent.asText(), resolved)));
+        if (node != null && node.isObject()) {
+            // #124: a fleet member extends the fleet's company.yaml (#133: also as `extends: [fleet:<name>]`)
+            for (String parent : onlyParent != null ? List.of(onlyParent) : loader.parents(node)) {
+                loader.layer(merged, parent, resolved);
+                parents.add(label(resolve(parent, resolved)));
             }
         }
         return new VocabularyLayers(node == null ? JsonNodeFactory.instance.objectNode() : node.path("vocabulary"),
@@ -267,12 +267,9 @@ public final class PolicyLoader {
         loading.push(resolved);
         JsonNode node = read(resolved);
         if (node != null && node.isObject()) {
-            String company = fleetLayer(node);
-            if (company != null) {   // #124: the fleet's company.yaml, before the file's own extends
-                layer(target, company, null);
-            }
-            for (JsonNode parent : node.path("extends")) {
-                layer(target, parent.asText(), relativeTo.getOrDefault(resolved, resolved));
+            // #124: the fleet's company.yaml, before the file's own extends
+            for (String parent : parents(node)) {
+                layer(target, parent, relativeTo.getOrDefault(resolved, resolved));
             }
             merge(target, (ObjectNode) node, "", label(resolved));
         }
@@ -327,20 +324,58 @@ public final class PolicyLoader {
     }
 
     /**
-     * #124: {@code fleet: <name>} makes the file extend the fleet's company.yaml, found by name on this machine
-     * ({@link dev.logast.fleet.FleetHome}); null when the file names no fleet or the fleet has no company.yaml yet. A
-     * fleet this machine does not know is a warning: the service's own rules still apply.
+     * The layers a file extends, in order: the fleet's company.yaml ({@code fleet: <name>}, #124), then each
+     * {@code extends:} entry (a scalar is one entry). An entry {@code fleet:<name>} (#133) is that fleet's company.yaml,
+     * found by name on this machine; a company.yaml already in the list is not layered again (a member with both
+     * {@code fleet:} and {@code extends: [fleet:<name>]}). Fleet layers come back as absolute paths.
      */
-    private String fleetLayer(JsonNode node) {
-        String company = fleetCompany(node);
+    private List<String> parents(JsonNode node) {
+        List<String> out = new ArrayList<>();
+        String member = fleetLayer(node.path("fleet").asText(""), "fleet: ");
+        if (member != null) {
+            out.add(member);
+        }
+        for (String entry : entries(node.path("extends"))) {
+            String name = dev.logast.fleet.FleetExtends.name(entry);
+            if (name == null) {
+                out.add(entry);
+                continue;
+            }
+            String company = fleetLayer(name, "extends: " + dev.logast.fleet.FleetExtends.PREFIX);
+            if (company != null && !out.contains(company)) {
+                out.add(company);
+            }
+        }
+        return out;
+    }
+
+    /** The entries of {@code extends:}: a list, or one string. */
+    private static List<String> entries(JsonNode extendsNode) {
+        List<String> out = new ArrayList<>();
+        if (extendsNode.isTextual()) {
+            if (!extendsNode.asText().isBlank()) {
+                out.add(extendsNode.asText().strip());
+            }
+        } else {
+            extendsNode.forEach(e -> out.add(e.asText()));
+        }
+        return out;
+    }
+
+    /**
+     * #124: the fleet {@code name}'s company.yaml, found by name on this machine ({@link dev.logast.fleet.FleetHome});
+     * null without a name or when the fleet has no company.yaml yet. A fleet this machine does not know is a warning:
+     * the service's own rules still apply.
+     */
+    private String fleetLayer(String name, String how) {
+        String company = fleetCompany(name);
         if (company == null || Files.isRegularFile(Path.of(company))) {
             return company;
         }
-        String name = node.path("fleet").asText().strip();
         Path dir = Path.of(company).getParent();
         if (!dev.logast.fleet.NamedFleet.exists(dir)) {
-            String w = "fleet: " + name + " is not known on this machine (no fleet folder at " + dir + "): its company.yaml "
-                    + "is not applied; `logast fleet join " + name + "` sets it up";
+            String w = how + name.strip() + " is not known on this machine (no fleet folder at " + dir + "): its company.yaml "
+                    + "is not applied; `logast fleet join " + name.strip() + "` sets it up";
             if (!unpinned.contains(w)) {
                 unpinned.add(w);
             }
@@ -348,14 +383,12 @@ public final class PolicyLoader {
         return null;
     }
 
-    /** The company.yaml path of the fleet {@code node} names, whether it exists or not; null without {@code fleet:}. */
-    private static String fleetCompany(JsonNode node) {
-        String name = node.path("fleet").asText("").strip();
-        if (name.isEmpty()) {
+    /** The company.yaml path of the fleet {@code name}, whether it exists or not; null without a name. */
+    private static String fleetCompany(String name) {
+        if (name == null || name.isBlank()) {
             return null;
         }
-        return dev.logast.fleet.FleetHome.fleetDir(dev.logast.fleet.FleetHome.Env.current(), name).dir()
-                .resolve(dev.logast.CentralVocabulary.COMPANY).toAbsolutePath().normalize().toString();
+        return dev.logast.fleet.FleetExtends.company(name.strip()).toString();
     }
 
     private static String resolve(String location, String from) {
