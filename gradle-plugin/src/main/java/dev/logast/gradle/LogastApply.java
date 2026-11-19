@@ -26,9 +26,7 @@ public abstract class LogastApply extends LogastTask {
     @Override
     protected List<String> command() {
         List<String> cmd = new ArrayList<>(List.of("apply", "--auto"));
-        if (!getDryRun().get()) {
-            cmd.add("--write");
-        }
+        cmd.add(getDryRun().get() ? "--dry-run" : "--write");   // apply writes by default (#122): a preview says so
         return cmd;
     }
 
