@@ -1,4 +1,7 @@
-plugins { `java-library` }
+plugins {
+    `java-library`
+    `maven-publish`   // the Gradle plugin depends on it (#115)
+}
 
 dependencies {
     api(platform(libs.rewrite.bom))

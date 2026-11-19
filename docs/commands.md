@@ -109,6 +109,8 @@ SWA-d5b58b  low  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/shop
 - Narrow the list: `--rule`, `--pack`, `--severity high`, `--entrypoint "POST /orders"`, `--limit`.
 - Change the output: `--format human` (default in a terminal) `| compact` (default otherwise) `| summary | json | sarif | fills-template`.
 - CI: `--baseline`, `--update-baseline`, `--since <git ref>`, `--fail-on <severity>` (see the README's CI section).
+  The Gradle plugin runs the same scan and gate as `./gradlew logastScan` / `logastCheck`, and writes SARIF for PR
+  annotations with `logastSarif` ([gradle-plugin.md](gradle-plugin.md)).
 - `scan` also creates and updates `.logast/decisions/messages.yaml` and `.logast/decisions/metrics.yaml`: it keeps every entry you already
   have exactly as it is, adds entries for new findings and removes the ones that are done. Nothing is rewritten when
   nothing changed.
