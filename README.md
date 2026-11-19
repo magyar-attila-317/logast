@@ -68,8 +68,8 @@ logast --version
 
 **From a release zip:** `./install.sh --zip logast-<version>.zip`, or unzip it anywhere and put its `bin/` on `PATH`.
 
-**In a service's build (scan and CI gate only):** `plugins { id("dev.logast") version "<version>" }`, then
-`./gradlew logastScan` or `logastCheck`; setup and publishing in [docs/gradle-plugin.md](docs/gradle-plugin.md).
+**In a service's build:** `plugins { id("dev.logast") version "<version>" }`, then `./gradlew logastApply`,
+`logastScan` or `logastCheck`; setup and publishing in [docs/gradle-plugin.md](docs/gradle-plugin.md).
 
 | `install.sh` option | what it does |
 |---|---|
@@ -77,6 +77,7 @@ logast --version
 | `--skill` | installs the Claude Code skill to `~/.claude/skills/logast/SKILL.md`, so Claude Code knows the workflow |
 | `--starter` | publishes `dev.logast:logging-support` and `dev.logast:test-capture` to Maven Local (`~/.m2`) |
 | `--zip <file>` | installs a release zip instead of building |
+| `-y` / `--no-gradle` | sets up Gradle without asking / skips it: the plugin in Maven Local and an init script, so `./gradlew logastApply` works in any Java build ([docs/gradle-plugin.md](docs/gradle-plugin.md)); asked otherwise |
 
 - `LOGAST_HOME` / `LOGAST_BIN` override the install locations.
 - **Update:** pull and run `./install.sh` again. It replaces the installed copy and refreshes an installed skill; add

@@ -46,6 +46,16 @@ dependencies {
     testRuntimeOnly(libs.junit.launcher)
 }
 
+// The init script install.sh puts in ~/.gradle/init.d/ (#122), with this version: the functional tests run it (the cli
+// distribution ships the same file in gradle/).
+val initScript = tasks.register<Copy>("initScript") {
+    val v = project.version.toString()
+    inputs.property("logastVersion", v)
+    from("src/init/logast.gradle")
+    into(layout.buildDirectory.dir("init-script"))
+    filter { line: String -> line.replace("@LOGAST_VERSION@", v) }
+}
+
 // The sample build the tests write compiles against the fixture's Spring classpath (no download in TestKit's own
 // Gradle home): the same jars the e2e tests use.
 val functionalTestTask = tasks.register<Test>("functionalTest") {
@@ -54,7 +64,13 @@ val functionalTestTask = tasks.register<Test>("functionalTest") {
     testClassesDirs = functionalTest.output.classesDirs
     classpath = functionalTest.runtimeClasspath
     useJUnitPlatform()
-    dependsOn(":fixtures:sample-app:writeClasspath")
+    dependsOn(":fixtures:sample-app:writeClasspath", initScript)
+    // the init-script tests resolve the plugin from a repository, as a machine with install.sh does from Maven Local
+    dependsOn(":core:publishAllPublicationsToLogastTestRepository", ":cli:publishAllPublicationsToLogastTestRepository",
+        "publishAllPublicationsToLogastTestRepository")
+    systemProperty("logast.initScript", layout.buildDirectory.file("init-script/logast.gradle").get().asFile.absolutePath)
+    systemProperty("logast.testRepo", rootProject.layout.buildDirectory.dir("logast-test-repo").get().asFile.absolutePath)
+    systemProperty("logast.version", project.version.toString())
     systemProperty("logast.fixture.classpath",
         project(":fixtures:sample-app").layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
     testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }

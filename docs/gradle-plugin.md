@@ -5,7 +5,32 @@ step, because the plugin hands logast the classpath the build has already resolv
 everyone on the team who does not run the CLI. It can also migrate the code (`logastApply`); reviewing message texts
 (`review`) and the log-capture check (`verify`) stay with the CLI.
 
-## Applying it
+## On your machine: nothing to add
+
+`./install.sh` (from a checkout) offers to set Gradle up; answer `y`, or run `./install.sh -y`. It then:
+
+- publishes `dev.logast:core`, `dev.logast:cli` and `dev.logast:gradle-plugin` to Maven Local (`~/.m2`);
+- writes `${GRADLE_USER_HOME:-~/.gradle}/init.d/logast.gradle`, an init script Gradle runs for every build.
+
+After that, `./gradlew logastApply` (and every other task below) works in any Java service, with no change to its
+build:
+
+- The plugin, and logast with it, is resolved only when you run a logast task; every other build on the machine
+  resolves and runs nothing of logast. So `./gradlew tasks` does not list the logast tasks; `./gradlew help --task
+  logastApply` does.
+- It is applied to every project that has the `java` plugin. A build that applies `dev.logast` itself (below) keeps
+  its own, with its own version and settings.
+- Opt out for one build with `-Plogast.disabled`, or with the environment variable `LOGAST_DISABLED=1`; remove the
+  init script to switch it off for good.
+- install.sh asks before it changes anything (Enter = no). Without a terminal it skips the setup and says to rerun
+  with `-y`; `--no-gradle` skips it without asking. It replaces `init.d/logast.gradle` only when that file is its own
+  (the first line names logast); otherwise it warns and leaves it.
+- A release zip (`install.sh --zip`) has no sources to publish from: no Gradle setup. Its `gradle/logast.gradle` is
+  the same init script, for when the plugin is in your repository.
+
+## For CI and the team: apply it in the build
+
+CI machines have no init script in their Gradle home: apply the plugin in the build.
 
 ```kotlin
 // settings.gradle.kts: where the plugin comes from (see "Publishing it" below)

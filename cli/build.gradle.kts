@@ -31,6 +31,12 @@ distributions {
             from(rootProject.file("docs")) { into("docs") }
             from(rootProject.file("examples")) { into("examples") }
             from(rootProject.file("docs/llm-workflow.md")) { into("claude-skill/logast"); rename { "SKILL.md" } }
+            // the init script install.sh copies to ~/.gradle/init.d/: dev.logast in every Java build, this version (#122)
+            from(rootProject.file("gradle-plugin/src/init/logast.gradle")) {
+                into("gradle")
+                val v = project.version.toString()
+                filter { line: String -> line.replace("@LOGAST_VERSION@", v) }
+            }
         }
     }
 }

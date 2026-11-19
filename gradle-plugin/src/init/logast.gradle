@@ -1,0 +1,37 @@
+// logast init script: applies the dev.logast plugin to every Java project (install.sh replaces this file only while this line is first)
+//
+// Lets `./gradlew logastApply` (logastScan, logastCheck, ...) run in any service without a plugins { id("dev.logast") }
+// line in its build. Installed by logast's install.sh into ~/.gradle/init.d/ (#122).
+// - The plugin, and logast with it, is resolved only when a requested task is a logast task (its name starts with
+//   "logast"): every other build on this machine resolves and runs nothing of logast.
+// - A build that applies dev.logast itself keeps its own; the plugin is applied only where the java plugin is.
+// - Opt out: -Plogast.disabled, or the environment variable LOGAST_DISABLED=1.
+initscript {
+    def off = (gradle.startParameter.projectProperties.containsKey('logast.disabled')
+            && gradle.startParameter.projectProperties['logast.disabled'] != 'false') || System.getenv('LOGAST_DISABLED')
+    def logastTask = gradle.startParameter.taskNames.any {
+        !it.startsWith('-') && it.substring(it.lastIndexOf(':') + 1).toLowerCase(Locale.ROOT).startsWith('logast')
+    }
+    if (!off && logastTask) {
+        repositories {
+            mavenLocal()
+            mavenCentral()
+        }
+        dependencies {
+            classpath 'dev.logast:gradle-plugin:@LOGAST_VERSION@'
+        }
+    }
+}
+
+Class logastPlugin
+try {
+    logastPlugin = getClass().classLoader.loadClass('dev.logast.gradle.LogastPlugin')
+} catch (ClassNotFoundException ignored) {
+    return   // no logast task requested, or opted out
+}
+
+gradle.afterProject { project ->
+    if (project.pluginManager.hasPlugin('java') && !project.pluginManager.hasPlugin('dev.logast')) {
+        project.pluginManager.apply(logastPlugin)
+    }
+}
