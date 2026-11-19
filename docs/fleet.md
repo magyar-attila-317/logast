@@ -20,7 +20,10 @@ logast fleet payments-fleet --vocabulary        # the fleet's vocabulary workshe
 2. **Join** in each service: `logast fleet join <name> [service root]` writes one line into the service's
    `logast.yaml`, `fleet: <name>` (creating the file if there is none; the rest of the file and its comments stay), and
    registers the service in the fleet folder. The name is the only thing in the repository: it is committed, and each
-   machine finds the fleet's folder itself (below).
+   machine finds the fleet's folder itself (below). A logast.yaml with nothing but `fleet:` (and `extends:`) counts
+   as not set up: the first `apply` writes its starter choices (packs, key style, log format, the vocabulary found in
+   the code) below the fleet line. A setting the fleet's company.yaml (or an extended layer) already decides stays its
+   decision: its line is written commented out, `# keyStyle: camel   # decided by fleet payments-fleet's company.yaml`.
 3. **Scan or apply** as usual. Each run of `scan`, `apply` (not `--dry-run`), and the Gradle plugin's `logastApply`,
    `logastScan`, `logastCheck`, `logastBaseline` and `logastSarif` (they run the same commands) writes
    `<fleet>/services/<service>.json`: score, findings by severity and rule, the vocabulary keys with their evidence,

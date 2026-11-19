@@ -153,6 +153,40 @@ public final class PolicyLoader {
         return out;
     }
 
+    /**
+     * The YAML paths ({@code packs}, {@code logging.keyStyle}, …) that the file's parents set: its fleet's company.yaml
+     * and its {@code extends:} layers, not the built-in defaults. The setup leaves these to the parents (#124).
+     */
+    public static Set<String> parentSettings(Path file) {
+        PolicyLoader loader = new PolicyLoader();
+        ObjectNode merged = JsonNodeFactory.instance.objectNode();
+        loader.layer(merged, DEFAULTS, null);
+        String resolved = file.toAbsolutePath().normalize().toString();
+        JsonNode node = loader.read(resolved);
+        if (node != null && node.isObject()) {
+            String company = loader.fleetLayer(node);
+            if (company != null) {
+                loader.layer(merged, company, null);
+            }
+            for (JsonNode parent : node.path("extends")) {
+                loader.layer(merged, parent.asText(), resolved);
+            }
+        }
+        Set<String> out = new TreeSet<>();
+        loader.origin.forEach((path, layer) -> {
+            if (!layer.equals(label(DEFAULTS))) {
+                out.add(path);
+            }
+        });
+        return out;
+    }
+
+    /** True when {@code settings} (from {@link #parentSettings}) sets {@code path}, a part of it, or an object around it. */
+    public static boolean sets(Set<String> settings, String path) {
+        return settings.stream().anyMatch(s -> s.equals(path) || s.startsWith(path + ".") || s.startsWith(path + "[")
+                || path.startsWith(s + "."));
+    }
+
     public static VocabularyLayers vocabularyLayers(Path file) {
         PolicyLoader loader = new PolicyLoader();
         ObjectNode merged = JsonNodeFactory.instance.objectNode();

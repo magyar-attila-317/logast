@@ -67,12 +67,24 @@ public final class ServiceSetup {
      */
     public static Bootstrap bootstrap(Path root, Choices c, boolean force) throws IOException {
         Path policyFile = dev.logast.policy.PolicyLoader.defaultFile(root);
-        boolean write = force || !Files.exists(policyFile);
+        boolean write = force || needsSetup(root);
         String style = null;
         boolean detected = false;
         String logFormat = null;
         int terms = 0;
         if (write) {
+            // #124: a file with only `fleet:` / `extends:` (what `logast fleet join` writes) keeps those lines
+            com.fasterxml.jackson.databind.JsonNode kept = Files.exists(policyFile) ? readYaml(policyFile) : null;
+            String fleet = kept == null ? "" : kept.path("fleet").asText("").strip();
+            List<String> extendsList = new ArrayList<>(c.extendsList());
+            if (extendsList.isEmpty() && kept != null) {
+                kept.path("extends").forEach(e -> extendsList.add(e.asText()));
+            }
+            // the parents decide first: a setting the fleet's company.yaml or an extended layer sets stays theirs
+            Files.writeString(policyFile, (fleet.isEmpty() ? "" : "fleet: " + fleet + "\n")
+                    + (extendsList.isEmpty() ? "" : "extends: [" + String.join(", ", extendsList) + "]\n"));
+            Set<String> parents = dev.logast.policy.PolicyLoader.parentSettings(policyFile);
+            dev.logast.policy.Policy inherited = Logast.policy(root, null);
             dev.logast.policy.KeyStyle found = c.keyStyle() == null ? VocabularyHarvest.detectStyle(root) : null;
             detected = found != null;
             style = c.keyStyle() != null ? dev.logast.policy.KeyStyle.parse(c.keyStyle()).toString()
@@ -81,17 +93,107 @@ public final class ServiceSetup {
                     : new dev.logast.policy.Policy.Support(null, null, c.supportMode(), null, null).mode();
             logFormat = detectLogFormat(root);
             // first without vocabulary, so the harvest can leave out what the extended company layers already define
-            Files.writeString(policyFile, policyTemplate(c.extendsList(), c.packs(), c.keepWording(), style, mode, logFormat, null));
+            Files.writeString(policyFile, ownLayer(policyTemplate(extendsList, c.packs(), c.keepWording(), style, mode, logFormat, null),
+                    fleet, parents));
             VocabularyHarvest.Result h = VocabularyHarvest.run(root, Logast.policy(root, null), 3);
-            Files.writeString(policyFile, policyTemplate(c.extendsList(), c.packs(), c.keepWording(), style, mode, logFormat,
-                    VocabularyHarvest.yaml(h)));
+            Files.writeString(policyFile, ownLayer(policyTemplate(extendsList, c.packs(), c.keepWording(), style, mode, logFormat,
+                    VocabularyHarvest.yaml(h)), fleet, parents));
             terms = h.terms().size();
+            if (dev.logast.policy.PolicyLoader.sets(parents, "logging.keyStyle") && c.keyStyle() == null) {
+                style = inherited.logging().keyStyle() + " (from " + (fleet.isEmpty() ? "an extended layer" : "fleet " + fleet) + ")";
+                detected = false;
+            }
         }
         List<String> added = updateGitignore(root);
         Path readme = root.resolve(".logast/README.md");
         Files.createDirectories(readme.getParent());
         Files.writeString(readme, logastReadme());
-        return new Bootstrap(policyFile, write, c.packs().isEmpty() ? ALL_PACKS : c.packs(), style, detected, logFormat, terms, added);
+        List<String> packs = c.packs().isEmpty() ? ALL_PACKS : c.packs();
+        if (write) {   // a fleet or extended layer may choose them (#124)
+            packs = Logast.policy(root, null).packs();
+        }
+        return new Bootstrap(policyFile, write, packs, style, detected, logFormat, terms, added);
+    }
+
+    /**
+     * True when the service has no policy of its own yet: no logast.yaml, or one that holds only {@code fleet:} and
+     * {@code extends:} (and comments), as {@code logast fleet join} leaves it (#124).
+     */
+    public static boolean needsSetup(Path root) {
+        Path file = dev.logast.policy.PolicyLoader.defaultFile(root);
+        if (!Files.exists(file)) {
+            return true;
+        }
+        com.fasterxml.jackson.databind.JsonNode n = readYaml(file);
+        if (n == null || n.isMissingNode() || n.isNull()) {
+            return true;
+        }
+        if (!n.isObject()) {
+            return false;
+        }
+        Iterator<String> names = n.fieldNames();
+        while (names.hasNext()) {
+            if (!Set.of("fleet", "extends").contains(names.next())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static com.fasterxml.jackson.databind.JsonNode readYaml(Path file) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
+                    .readTree(Files.readString(file));
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot read " + file, e);
+        }
+    }
+
+    /** The template's lines a parent layer sets ({@link dev.logast.policy.PolicyLoader#parentSettings}), by YAML path. */
+    private static final Map<String, String> OWN_LINES = Map.of("packs: ", "packs", "  keyStyle: ", "logging.keyStyle",
+            "  rewriteExistingMessages: ", "logging.rewriteExistingMessages", "  structuredFormat: ", "logging.structuredFormat",
+            "  mode: ", "support.mode");
+
+    /**
+     * #124: the starter as the service's own layer under its parents. The fleet line goes on top; a setting the fleet's
+     * company.yaml or an extended layer sets is left to it: its line stays in the file, commented out, so the service
+     * neither repeats nor silently overrides the shared decision (an object left empty is commented out with it).
+     */
+    static String ownLayer(String template, String fleet, Set<String> parents) {
+        String by = fleet.isEmpty() ? "an extended layer" : "fleet " + fleet + "'s company.yaml";
+        List<String> out = new ArrayList<>();
+        int objectAt = -1;
+        boolean anyKept = false;
+        for (String line : template.split("\n", -1)) {
+            if (!fleet.isEmpty() && line.startsWith("# Shared settings for all your services")) {
+                out.add("# The fleet this service belongs to (`logast fleet join`): its company.yaml comes first, this file wins.");
+                out.add("fleet: " + fleet);
+                out.add("");
+            }
+            if (line.equals("logging:") || line.equals("support:")) {
+                objectAt = out.size();
+                anyKept = false;
+                out.add(line);
+                continue;
+            }
+            String path = OWN_LINES.entrySet().stream().filter(e -> line.startsWith(e.getKey())).map(Map.Entry::getValue)
+                    .findFirst().orElse(null);
+            if (path != null && dev.logast.policy.PolicyLoader.sets(parents, path)) {
+                out.add(line.replaceFirst("^( *)", "$1# ") + "   # decided by " + by);
+                continue;
+            }
+            if (objectAt >= 0 && line.startsWith("  ") && !line.stripLeading().startsWith("#")) {
+                anyKept = true;
+            }
+            if (objectAt >= 0 && !line.startsWith(" ")) {
+                if (!anyKept) {
+                    out.set(objectAt, "# " + out.get(objectAt));
+                }
+                objectAt = -1;
+            }
+            out.add(line);
+        }
+        return String.join("\n", out);
     }
 
     public static boolean isGradleProject(Path root) {
