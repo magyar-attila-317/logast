@@ -52,9 +52,26 @@ service's keys in one place outside the repos, so merging them is a decision on 
 | `~/.logast/company.yaml` | between its `# >>> logast` and `# <<< logast` lines: **generated** from the decided terms (canonical key, aliases, sources, grouped by area where decided); outside them: company settings of your own, kept on every run | logast (generated part), you (the rest) |
 | `<service>/logast.yaml` | `extends: [~/.logast/company.yaml]` and the terms only that service has | rarely |
 
-In a [named fleet](fleet.md) the same files live in the fleet folder: `logast fleet <name> --vocabulary` builds the
-worksheet from the members' snapshots, and members extend its company.yaml through `fleet: <name>`. The flow with a
-folder of your own:
+In a [named fleet](fleet.md), the way to go, the files live in the fleet folder:
+
+1. `logast fleet <name> --vocabulary` writes the worksheet from the members' snapshots (once).
+2. Under each undecided key the worksheet has `# decide:` lines, logast's suggestion first. Uncomment one per key
+   you decide:
+
+   ```yaml
+     order_id:
+       same_as: orderId     # decide: suggested, looks like orderId: apply renames order_id to orderId
+       # term: order        # decide: a company-wide term; order_id is its key in logs
+       # local: true        # decide: only shipping uses it: not published
+       services: [shipping]
+   ```
+3. Run `logast fleet <name>`: every run keeps the worksheet and company.yaml's vocabulary current. Members extend
+   company.yaml through `fleet: <name>`, and their next `logast apply` renames the aliases.
+
+A `vocabulary-worksheet.schema.json` next to the worksheet lets the IDE complete and check the decisions (the
+worksheet's first line, `# $schema: …`, points to it; otherwise map it in the IDE's JSON schema settings).
+
+The flow with a folder of your own, without a fleet:
 
 1. `logast vocabulary --central ~/.logast services/billing services/shipping …` harvests every service (MDC keys,
    `[k=v]` keys and `addKeyValue` keys that name an identifier) into the worksheet.
@@ -91,8 +108,8 @@ keys:
   a number (`orderId`, `orderNo`) are never pointed out as the same.
 - **warning**: one name with different types (`customerId` a Long in one service, a String in another) is possibly
   not the same value; give one of them another key if so.
-- **suggest**: `local: true?` for a key only one service uses; `same_as: <key>?` when a decided look-alike has the same
-  type.
+- **`# decide:` lines** (undecided keys only): the choices, ready to uncomment. The first is the suggestion when there
+  is one: `local: true` for a key only one service uses, `same_as: <key>` when a decided look-alike has the same type.
 - **The summary at the top** lists, per run: the keys to decide (and which are new), decided terms no service uses
   any more, keys still used against a decision (an alias still in the code, a `local` key in two services), and
   decisions that cannot be published (a `same_as` to a key without a term, a cycle, one term decided twice).

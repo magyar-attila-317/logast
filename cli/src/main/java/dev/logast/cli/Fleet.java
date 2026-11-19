@@ -248,8 +248,11 @@ final class Fleet implements Callable<Integer> {
         List<FleetReport.Service> services = snaps.values().stream().map(NamedFleet.Snapshot::report).toList();
         FleetLinks.Result links = FleetLinks.of(services);
         CentralVocabulary.Result vocab = NamedFleet.vocabulary(dir, snaps.values());
-        if (vocabulary) {
+        // #139: every overview keeps the worksheet and company.yaml's vocabulary current once a worksheet exists (decisions
+        // are kept), so deciding is: edit the worksheet, run `logast fleet <name>`; --vocabulary writes the first one
+        if (vocabulary || Files.exists(dir.resolve(CentralVocabulary.WORKSHEET))) {
             Files.writeString(dir.resolve(CentralVocabulary.WORKSHEET), vocab.worksheet());
+            CentralVocabulary.writeSchema(dir);
             CentralVocabulary.writeCompany(dir.resolve(CentralVocabulary.COMPANY), vocab.company());
         }
         // #129: what the members agree on, as commented suggestions in company.yaml
@@ -335,13 +338,13 @@ final class Fleet implements Callable<Integer> {
         vocab.conflicts().forEach(c -> System.out.println("  " + c));
         vocab.summary().stream().filter(l -> l.startsWith("to decide:") || l.startsWith("decisions to fix") || l.startsWith("  "))
                 .forEach(l -> System.out.println("  " + l.strip()));
-        if (vocabulary) {
-            System.out.println("worksheet: " + worksheet + " (decide there, then run this again)");
+        if (vocabulary || Files.exists(worksheet)) {
+            System.out.println("worksheet: " + worksheet + " (uncomment a `# decide:` line per key, then run `logast fleet " + name + "`)");
             System.out.println("company:   " + dir.resolve(CentralVocabulary.COMPANY) + " (" + vocab.terms()
                     + (vocab.terms() == 1 ? " term" : " terms") + ", generated; every member extends it)");
         } else {
-            System.out.println("  `logast fleet " + name + " --vocabulary` " + (Files.exists(worksheet) ? "updates" : "writes")
-                    + " the worksheet " + worksheet + " and company.yaml");
+            System.out.println("  `logast fleet " + name + " --vocabulary` writes the worksheet " + worksheet
+                    + " to decide them in; from then on every `logast fleet " + name + "` keeps it and company.yaml current");
         }
         if (agreed != null) {
             System.out.println(agreed);

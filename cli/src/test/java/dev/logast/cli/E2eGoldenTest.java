@@ -7150,9 +7150,16 @@ abstract class E2eGoldenTest {
             // the fleet's worksheet: decided once, company.yaml follows, every member takes it by the fleet's name
             run(tmp, "fleet", "payments-fleet", "--vocabulary");
             Path worksheet = fleet.resolve("vocabulary-worksheet.yaml");
-            Files.writeString(worksheet, Files.readString(worksheet).replace("  paymentId:\n", "  paymentId:\n    term: payment\n")
+            // #139: the worksheet names the fleet's own command and has its schema; deciding = uncommenting a line, and
+            // the plain overview publishes it (no --vocabulary, no --central)
+            String sheet = Files.readString(worksheet);
+            assertThat(sheet).startsWith("# $schema: ./vocabulary-worksheet.schema.json\n").contains("#     `logast fleet payments-fleet`\n")
+                    .doesNotContain("--central");
+            assertThat(fleet.resolve("vocabulary-worksheet.schema.json")).isRegularFile();
+            String termLine = sheet.lines().filter(l -> l.startsWith("    # term: payment ")).findFirst().orElseThrow();
+            Files.writeString(worksheet, sheet.replaceFirst(java.util.regex.Pattern.quote(termLine), "    term: payment")
                     .replace("  payment_id:\n", "  payment_id:\n    same_as: paymentId\n"));
-            String decided = run(tmp, "fleet", "payments-fleet", "--vocabulary");
+            String decided = run(tmp, "fleet", "payments-fleet");
             assertThat(decided).contains("Vocabulary: 0 conflicts", "(1 term, generated; every member extends it)");
             assertThat(Files.readString(fleet.resolve("company.yaml"))).contains("key: paymentId", "aliases: [payment_id]");
             // (the scan's own finding cannot tell: keyStyle camel renames payment_id to paymentId anyway)

@@ -22,6 +22,14 @@ import java.util.stream.Collectors;
  */
 public final class CentralVocabulary {
     public static final String WORKSHEET = "vocabulary-worksheet.yaml";
+    /** #139: the worksheet's JSON schema, written next to it: an IDE completes and checks the decisions. */
+    public static final String SCHEMA = "vocabulary-worksheet.schema.json";
+
+    public static void writeSchema(Path dir) throws IOException {
+        try (java.io.InputStream in = CentralVocabulary.class.getResourceAsStream("/" + SCHEMA)) {
+            Files.write(dir.resolve(SCHEMA), java.util.Objects.requireNonNull(in, SCHEMA).readAllBytes());
+        }
+    }
     public static final String COMPANY = "company.yaml";
 
     private static final Pattern MDC_PUT = Pattern.compile("\\b(?:MDC\\s*\\.\\s*(?:put|putCloseable)|MdcScope\\s*\\.\\s*of)\\s*\\(");
@@ -97,7 +105,14 @@ public final class CentralVocabulary {
      * @param conflicts the undecided keys' warnings and similar pairs, one line each (the fleet overview, #124)
      */
     public record Result(String worksheet, String company, List<String> summary, int terms, List<String> conflicts) {
+        /** #139: the worksheet naming {@code command} as the one to run after deciding. */
+        public Result rerunBy(String command) {
+            return new Result(worksheet.replace(CENTRAL_RERUN, command), company, summary, terms, conflicts);
+        }
     }
+
+    /** The command a worksheet names to run again: the folder form, unless a named fleet wrote it ({@link Result#rerunBy}). */
+    static final String CENTRAL_RERUN = "`logast vocabulary --central <this folder> <service>…`";
 
     // ---- harvest ------------------------------------------------------------------------------------------------
 
@@ -438,6 +453,7 @@ public final class CentralVocabulary {
         try {
             Files.createDirectories(dir);
             Files.writeString(worksheet, r.worksheet());
+            writeSchema(dir);
             writeCompany(dir.resolve(COMPANY), r.company());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -612,20 +628,23 @@ public final class CentralVocabulary {
 
         StringBuilder ws = new StringBuilder();
         ws.append("""
-                # logast vocabulary worksheet (#113): every key the services use, with its evidence. Decide here, then run
-                # `logast vocabulary --central <this folder> <service>…` again: it keeps your decisions, refreshes the evidence
-                # and publishes the decided terms to company.yaml next to this file (never edit that one).
-                # Decisions, per key (logast never decides them):
-                #   term: <name>      publish the key as the term <name>; the key is its canonical MDC / [k=v] key
-                #   same_as: <key>    the same value as <key>: published as an alias of <key>'s term (apply renames it)
-                #   local: true       stays in its service, not published
-                #   owner: <team>     optional: who to ask about the term (a comment in company.yaml)
-                #   area: <name>      optional, with term: published under areas.<name>.vocabulary in company.yaml
-                # Per area (section `areas`): packages: [..] is your decision, published with the area's terms.
-                # Everything else (services, types, evidence, similar, suggest, terms, known_in) is rewritten on each run.
+                # $schema: ./%s
+                # logast vocabulary worksheet: every MDC / [k=v] key the services use, and where.
+                #
+                # What to do: under each key that has "# decide:" lines, uncomment ONE of them (the first one is
+                # logast's suggestion), then run:
+                #     %s
+                # It keeps your decisions, refreshes the rest and publishes the decided terms to company.yaml next to this
+                # file. Services that extend company.yaml get the renames on their next `logast apply`.
+                #
+                #   term: order        this key is a company-wide term (here: "order"), and the key is its name in logs
+                #   same_as: orderId   the same value as the key orderId: apply renames this key to orderId's
+                #   local: true        only for its own service: not published
+                # Optional next to term: owner: <team> (who to ask), area: <name> (published under areas.<name>).
+                # Per area (section `areas`), packages: [..] is yours to set too. Everything else is rewritten on each run.
                 #
                 # Summary of this run:
-                """);
+                """.formatted(SCHEMA, CENTRAL_RERUN));
         summary.forEach(s -> ws.append("#   ").append(s).append('\n'));
         if (!areaNames.isEmpty()) {
             ws.append("areas:\n");
@@ -677,6 +696,10 @@ public final class CentralVocabulary {
             if (d.area() != null) {
                 ws.append("    area: ").append(VocabularyHarvest.yamlKey(d.area())).append('\n');
             }
+            List<String[]> similar = similar(k, keys, byKey, root);
+            if (!d.any() && !u.isEmpty()) {
+                decide(ws, k, u, similar, decisions, root);   // #139: the choices as lines to uncomment
+            }
             ws.append("    services: [").append(String.join(", ", services(u))).append("]\n");
             Map<String, Set<String>> typeServices = typeServices(u);
             if (!typeServices.isEmpty()) {
@@ -687,7 +710,6 @@ public final class CentralVocabulary {
                         .map(e -> e.getKey() + " (" + String.join(", ", e.getValue()) + ")").collect(Collectors.joining(", "))
                         + ": possibly NOT the same value; if so, give one of them another key")).append('\n');
             }
-            List<String[]> similar = similar(k, keys, byKey, root);
             if (!d.any() && !u.isEmpty()) {
                 if (typeServices.size() > 1) {
                     conflicts.add(k + ": one name, different types: " + typeServices.entrySet().stream()
@@ -699,10 +721,6 @@ public final class CentralVocabulary {
             if (!similar.isEmpty()) {
                 ws.append("    similar:\n");
                 similar.forEach(s -> ws.append("      - ").append(q(s[0] + ": " + s[1])).append('\n'));
-            }
-            String suggest = d.any() || u.isEmpty() ? null : suggestion(k, u, similar, decisions, root);
-            if (suggest != null) {
-                ws.append("    suggest: ").append(q(suggest)).append('\n');
             }
             if (!u.isEmpty()) {
                 ws.append("    evidence:\n");
@@ -806,20 +824,50 @@ public final class CentralVocabulary {
         return out;
     }
 
-    /** A hint for an undecided key: merge into a decided look-alike of the same type, or keep a one-service key local. */
-    private static String suggestion(String k, List<Use> u, List<String[]> similar, Map<String, Decision> decisions, Map<String, String> root) {
+    /**
+     * #139: an undecided key's choices as commented lines right under it, logast's suggestion first: uncommenting one
+     * is the decision. A look-alike of a decided term suggests same_as, a key one service uses suggests local.
+     */
+    private static void decide(StringBuilder ws, String k, List<Use> u, List<String[]> similar, Map<String, Decision> decisions,
+                               Map<String, String> root) {
+        List<String[]> lines = new ArrayList<>();   // decision, why
         for (String[] s : similar) {
             String r = root.get(s[0]);
             boolean decided = r != null && decisions.getOrDefault(r, Decision.NONE).term() != null;
             if (decided && !s[1].contains("NOT the same")) {
-                return "same_as: " + r + "? (" + s[0] + (r.equals(s[0]) ? "" : ", an alias of " + r) + " looks alike)";
+                lines.add(new String[]{"same_as: " + VocabularyHarvest.yamlKey(r), "looks like " + s[0]
+                        + (r.equals(s[0]) ? "" : " (an alias of " + r + ")") + ": apply renames " + k + " to " + r});
+                break;
             }
         }
         List<String> svc = services(u);
-        if (svc.size() == 1 && similar.isEmpty()) {
-            return "local: true? (only " + svc.getFirst() + " uses it)";
+        String local = "local: true";
+        String localWhy = svc.size() == 1 ? "only " + svc.getFirst() + " uses it: not published" : "not published";
+        boolean suggestLocal = lines.isEmpty() && svc.size() == 1 && similar.isEmpty();
+        if (suggestLocal) {
+            lines.add(new String[]{local, localWhy});
         }
-        return null;
+        lines.add(new String[]{"term: " + VocabularyHarvest.yamlKey(termName(k)), "a company-wide term; " + k + " is its key in logs"});
+        if (lines.stream().noneMatch(l -> l[0].startsWith("same_as"))) {
+            similar.stream().findFirst().ifPresent(s -> lines.add(new String[]{"same_as: " + VocabularyHarvest.yamlKey(s[0]),
+                    "the same value as " + s[0] + ": apply renames " + k}));
+        }
+        if (!suggestLocal) {
+            lines.add(new String[]{local, localWhy});
+        }
+        boolean suggested = suggestLocal || lines.getFirst()[0].startsWith("same_as");
+        int width = lines.stream().mapToInt(l -> l[0].length()).max().orElse(0);
+        for (int i = 0; i < lines.size(); i++) {
+            String[] l = lines.get(i);
+            ws.append("    # ").append(l[0]).append(" ".repeat(width - l[0].length())).append("   # decide: ")
+                    .append(i == 0 && suggested ? "suggested, " : "").append(l[1]).append('\n');
+        }
+    }
+
+    /** The term a key suggests: {@code orderId} → order, {@code order_id} → order; the key itself otherwise. */
+    static String termName(String key) {
+        String t = key.replaceFirst("(?:_id|_ID|Id|ID)$", "");
+        return t.isEmpty() ? key : t;
     }
 
     /** company.yaml: only the decided terms, with their aliases (same_as) and the sources the evidence shows. */
