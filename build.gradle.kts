@@ -28,6 +28,11 @@ subprojects {
                 }
             }
             repositories {
+                // the Gradle plugin's functional tests resolve it from here, as the init script does from Maven Local (#122)
+                maven {
+                    name = "logastTest"
+                    setUrl(rootProject.layout.buildDirectory.dir("logast-test-repo"))
+                }
                 val url = (findProperty("repoUrl") as String?) ?: System.getenv("REPO_URL")
                 if (url != null) {
                     maven {
