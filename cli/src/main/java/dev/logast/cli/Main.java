@@ -362,7 +362,8 @@ public final class Main {
                     return 2;
                 }
             }
-            if (policyFile == null && !Files.exists(dev.logast.policy.PolicyLoader.defaultFile(root()))) {
+            // #124: a logast.yaml with only `fleet:` / `extends:` (after `logast fleet join`) is not set up yet either
+            if (policyFile == null && dev.logast.ServiceSetup.needsSetup(root())) {
                 if (write) {
                     dev.logast.ServiceSetup.Bootstrap set = dev.logast.ServiceSetup.bootstrap(root(), dev.logast.ServiceSetup.Choices.defaults(), false);
                     Out.progress("no logast.yaml yet: wrote one with what it chose (" + set.summary() + "); edit it and apply again to change them");

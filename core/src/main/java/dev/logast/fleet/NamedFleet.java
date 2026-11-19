@@ -176,6 +176,9 @@ public final class NamedFleet {
             if (name == null) {
                 if (at >= 0) {
                     lines.remove(at);
+                    if (at > 0 && lines.get(at - 1).startsWith("# The fleet this service belongs to")) {
+                        lines.remove(at - 1);   // the line setup writes above it
+                    }
                     Files.write(file, lines);
                 }
                 return;

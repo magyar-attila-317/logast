@@ -6790,14 +6790,26 @@ abstract class E2eGoldenTest {
             var mapper = dev.logast.orders.OrderJson.MAPPER;
             Path checkoutSnapshot = fleet.resolve("services/checkout.json");
             double scoreBefore = mapper.readTree(checkoutSnapshot.toFile()).path("report").path("score").asDouble();
+            // a fleet's company.yaml can carry policy besides the vocabulary: the key style here
+            Files.writeString(fleet.resolve("company.yaml"), Files.readString(fleet.resolve("company.yaml")) + "logging:\n  keyStyle: camel\n");
+            STDERR.setLength(0);
             run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
             assertThat(mapper.readTree(checkoutSnapshot.toFile()).path("report").path("score").asDouble())
                     .as("apply's snapshot\n" + STDERR).isGreaterThan(scoreBefore);
-            assertThat(Files.readString(checkout.resolve("logast.yaml"))).as("apply keeps the member's logast.yaml as it is")
-                    .isEqualTo("fleet: payments-fleet\n");
+            // only `fleet:` is not set up yet: apply writes the starter choices as the service's own layer, under the fleet
+            String ownPolicy = Files.readString(checkout.resolve("logast.yaml"));
+            assertThat(STDERR.toString()).contains("wrote one with what it chose");
+            assertThat(ownPolicy).as("the fleet line kept").containsOnlyOnce("\nfleet: payments-fleet\n")
+                    .as("the starter choices").contains("packs: [logging, tracing, metrics, resilience, errors, audit]",
+                            "\n  rewriteExistingMessages: true\n", "\n  structuredFormat: logstash\n")
+                    .as("what company.yaml decides stays its decision")
+                    .contains("\n  # keyStyle: camel   # decided by fleet payments-fleet's company.yaml\n")
+                    .doesNotContainPattern("(?m)^  keyStyle:");
+            run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).as("set up once").isEqualTo(ownPolicy);
 
             assertThat(run(checkout, "fleet", "leave", checkout.toString())).contains("checkout left fleet payments-fleet");
-            assertThat(Files.readString(checkout.resolve("logast.yaml"))).isEmpty();
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).doesNotContain("fleet: payments-fleet", "belongs to");
             assertThat(fleet.resolve("services/checkout.json")).doesNotExist();
         } finally {
             System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
