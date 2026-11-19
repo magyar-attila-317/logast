@@ -9,9 +9,11 @@ subprojects {
     plugins.withId("maven-publish") {
         extensions.configure<PublishingExtension> {
             publications {
-                // java-gradle-plugin creates its own publications (the jar and the plugin marker)
+                // java-gradle-plugin creates its own publications (the jar and the plugin marker). Our own name, not
+                // "maven": a company init script that sets up a "maven" publication for every project would otherwise
+                // add the same jar to ours a second time
                 if (!plugins.hasPlugin("java-gradle-plugin")) {
-                    create<MavenPublication>("maven") { from(components["java"]) }
+                    create<MavenPublication>("logast") { from(components["java"]) }
                 }
                 withType<MavenPublication>().configureEach {
                     pom {
