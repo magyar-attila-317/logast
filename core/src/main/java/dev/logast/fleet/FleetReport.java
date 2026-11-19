@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import dev.logast.orders.OrderJson;
 import dev.logast.orders.ScanResult;
 import dev.logast.orders.WorkOrder;
+import dev.logast.rules.RuleHelp;
 import dev.logast.rules.Rules;
 
 import java.io.IOException;
@@ -116,12 +117,38 @@ public final class FleetReport {
         }
     }
 
+    /**
+     * #141: as {@link #write(Path, List, FleetLinks.Result, List)} for a page rewritten by every overview and member scan:
+     * one history file per day ({@code fleet-<date>.json}, rewritten during the day), the trend against the last
+     * earlier day.
+     */
+    public static Path writeDaily(Path out, List<Service> services, FleetLinks.Result links, List<String> company) {
+        try {
+            Files.createDirectories(out);
+            Snapshot now = new Snapshot(Instant.now().toString(), services, links);
+            String today = "fleet-" + now.created().substring(0, 10);
+            Snapshot previous = latest(out, today);
+            OrderJson.MAPPER.writeValue(out.resolve(today + ".json").toFile(), now);
+            Path html = out.resolve("fleet.html");
+            Files.writeString(html, html(now, previous, company));
+            return html;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     static Snapshot latest(Path out) throws IOException {
+        return latest(out, null);
+    }
+
+    /** The newest history file, or the newest one named before {@code before} (an earlier day). */
+    static Snapshot latest(Path out, String before) throws IOException {
         if (!Files.isDirectory(out)) {
             return null;
         }
         try (Stream<Path> s = Files.list(out)) {
-            Optional<Path> last = s.filter(p -> p.getFileName().toString().matches("fleet-.*\\.json")).max(Comparator.naturalOrder());
+            Optional<Path> last = s.filter(p -> p.getFileName().toString().matches("fleet-.*\\.json"))
+                    .filter(p -> before == null || p.getFileName().toString().compareTo(before) < 0).max(Comparator.naturalOrder());
             return last.isEmpty() ? null : OrderJson.MAPPER.readValue(last.get().toFile(), new TypeReference<Snapshot>() {
             });
         }
@@ -140,7 +167,8 @@ public final class FleetReport {
         for (Service s : services) {
             Service p = prev.get(s.name());
             String trend = p == null ? "<span class=muted>new</span>" : delta(s.score() - p.score());
-            rows.append("<tr><td><b>").append(esc(s.name())).append("</b><div class=muted>").append(s.files()).append(" files · ")
+            rows.append("<tr class=svc data-name='").append(esc(s.name())).append("' title='Click for this service&#39;s breakdown'><td><b>")
+                    .append(esc(s.name())).append("</b><div class=muted>").append(s.files()).append(" files · ")
                     .append(s.entrypoints()).append(" entrypoints</div></td>")
                     .append("<td>").append(bar(s.score())).append(" ").append(trend).append("</td>");
             rows.append("<td class=num>").append(s.logCoverage() == null ? "<span class=muted>–</span>" : s.logCoverage() + "%").append("</td>");
@@ -161,7 +189,7 @@ public final class FleetReport {
         StringBuilder ruleRows = new StringBuilder();
         fleetRules.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed()).forEach(e -> {
             long affected = services.stream().filter(s -> s.rules().containsKey(e.getKey())).count();
-            ruleRows.append("<tr><td><code>").append(e.getKey()).append("</code></td><td class=muted>")
+            ruleRows.append("<tr><td>").append(rule(e.getKey())).append("</td><td class=muted>")
                     .append(String.join(", ", new TreeSet<>(Rules.packsOf(e.getKey())))).append("</td><td class=num>")
                     .append(e.getValue()).append("</td><td class=num>").append(affected).append(" / ").append(services.size()).append("</td></tr>\n");
         });
@@ -182,15 +210,15 @@ public final class FleetReport {
                 %s</style></head><body><main>
                 <h1>Logging, MDC &amp; tracing compliance</h1>
                 <div class=muted>%s · %d services · score = 100 × files / (files + 3·high + 1·medium + 0.25·low)</div>
-                <h2>Services (lowest score first)</h2><div class=wrap><table>
+                <h2>Services (lowest score first)</h2><div class='wrap scroll'><table>
                 <tr><th>Service</th><th>Score · trend</th><th class=num>log coverage</th><th class=num>logging</th><th class=num>tracing</th><th class=num>metrics</th>
                 <th class=num>high · med · low</th><th>Top rules</th><th class=num>Overrides</th></tr>
                 %s</table></div>
-                <h2>Rules across the fleet</h2><div class=wrap><table><tr><th>Rule</th><th>Packs</th><th class=num>Findings</th><th class=num>Services</th></tr>
+                <h2>Rules across the fleet</h2><div class='wrap scroll'><table><tr><th>Rule</th><th>Packs</th><th class=num>Findings</th><th class=num>Services</th></tr>
                 %s</table></div>
                 %s<h2>Meters across services</h2>
                 <div class=muted>Same name with different types or tag keys cannot be compared on one dashboard; similar
-                names measure the same thing under different names.</div><div class=wrap><table>
+                names measure the same thing under different names.</div><div class='wrap scroll'><table>
                 <tr><th>Meter</th><th>Services</th><th>Finding</th></tr>
                 %s</table></div>
                 <h2>Links between services</h2>
@@ -198,19 +226,19 @@ public final class FleetReport {
                 <div class=muted>A call of one service that reaches an entrypoint of another (same path and method, same topic
                 or queue), and the side that drops the trace. The host of the call's base URL decides between services
                 with the same path: confirmed (the host names the service), path only (one service has the path, the
-                host is not known), ambiguous (several have it: one row with the candidates).</div><div class=wrap><table>
+                host is not known), ambiguous (several have it: one row with the candidates).</div><div class='wrap scroll'><table class=fixed>
                 <tr><th>Call</th><th>Entrypoint</th><th>Trace</th></tr>
                 %s</table></div>
                 %s
                 <h2>One outcome, several metric names</h2>
                 <div class=muted>The same logged outcome counted under different meters in different services: candidates to
-                agree on one name. Nothing is merged.</div><div class=wrap><table>
+                agree on one name. Nothing is merged.</div><div class='wrap scroll'><table>
                 <tr><th>Outcome</th><th>Meters</th><th>Where</th></tr>
                 %s</table></div>
-                <p class=muted>Generated by logast fleet. Fix locally: <code>logast scan &lt;service&gt;</code> then <code>logast apply &lt;service&gt;</code>.</p>
+                %s<p class=muted>Generated by logast fleet. Fix locally: <code>logast scan &lt;service&gt;</code> then <code>logast apply &lt;service&gt;</code>.</p>
                 </main></body></html>
-                """.formatted(FleetGraph.CSS, esc(now.created()), services.size(), rows, ruleRows, companyRows(company), meterRows,
-                FleetGraph.svg(services.stream().map(Service::name).toList(), now.links()), traceRows(now.links()), otherHostRows(now.links()), metricNameRows(now.links()));
+                """.formatted(FleetGraph.CSS + CSS, esc(now.created()), services.size(), rows, ruleRows, companyRows(company), meterRows,
+                FleetGraph.svg(services.stream().map(Service::name).toList(), now.links()), traceRows(now.links()), otherHostRows(now.links()), metricNameRows(now.links()), drawer(services, now.links()));
     }
 
     /** #129: the settings company.yaml could take from its members (commented suggestions there). */
@@ -285,7 +313,7 @@ public final class FleetReport {
         }
         StringBuilder out = new StringBuilder("<h2>Same path, other host</h2>\n<div class=muted>The path is another service's, "
                 + "the host of the base URL names a different one or none of the fleet: not counted as a link. A stale URL, or a "
-                + "service outside the fleet.</div><div class=wrap><table>\n<tr><th>Call</th><th>Has the path</th><th>Host</th></tr>\n");
+                + "service outside the fleet.</div><div class='wrap scroll'><table class=fixed>\n<tr><th>Call</th><th>Has the path</th><th>Host</th></tr>\n");
         for (FleetLinks.Trace t : links.otherHost()) {
             out.append("<tr><td>").append(call(t)).append("</td><td>").append(entries(t)).append("</td><td>")
                     .append(esc(t.note())).append("</td></tr>\n");
@@ -370,8 +398,181 @@ public final class FleetReport {
 
     private static String topRules(Map<String, Integer> rules) {
         return rules.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed()).limit(3)
-                .map(e -> "<code>" + e.getKey() + "</code> " + e.getValue()).collect(Collectors.joining("<br>"));
+                .map(e -> rule(e.getKey()) + " <b>" + e.getValue() + "</b>").collect(Collectors.joining("<br>"));
     }
+
+    /** #142: a rule id with its plain label; hovering it shows what it finds and how it is fixed. */
+    static String rule(String id) {
+        RuleHelp.Help h = RuleHelp.of(id);
+        return "<span class=rule data-rule='" + esc(id) + "'><code>" + esc(id) + "</code>"
+                + (h.label() == null ? "" : " <span class=lbl>" + esc(h.label()) + "</span>") + "</span>";
+    }
+
+    /** #142, #144: the services, their rules' help and the links as data, the drawer, and the script that uses them. */
+    static String drawer(List<Service> services, FleetLinks.Result links) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        Map<String, RuleHelp.Help> help = new TreeMap<>();
+        List<Map<String, Object>> svc = new ArrayList<>();
+        for (Service s : services) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("name", s.name());
+            m.put("root", s.root());
+            m.put("files", s.files());
+            m.put("entrypoints", s.entrypoints());
+            m.put("score", s.score());
+            m.put("packScore", s.packScore());
+            m.put("severity", s.severity());
+            m.put("rules", s.rules());
+            m.put("overrides", s.overrides());
+            m.put("logCoverage", s.logCoverage());
+            m.put("meters", s.meters().stream().filter(x -> !"framework".equals(x.source())).map(x -> x.name()).distinct().sorted().toList());
+            svc.add(m);
+            s.rules().keySet().forEach(r -> help.put(r, RuleHelp.of(r)));
+        }
+        List<Map<String, Object>> edges = new ArrayList<>();
+        if (links != null) {
+            for (FleetLinks.Trace t : links.trace()) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("caller", t.caller());
+                m.put("callees", t.callee() != null ? List.of(t.callee())
+                        : t.candidates().stream().map(FleetLinks.Candidate::service).distinct().toList());
+                m.put("target", FleetLinks.target(t.call()));
+                m.put("match", t.match());
+                m.put("breaks", t.breaks().isEmpty() ? null
+                        : (t.call().breaks() != null ? t.call().breaks().what() : t.entry() != null && t.entry().breaks() != null
+                        ? t.entry().breaks().what() : "at the callee"));
+                m.put("breaksAt", t.breaks());
+                edges.add(m);
+            }
+        }
+        data.put("services", svc);
+        data.put("help", help);
+        data.put("links", edges);
+        String json;
+        try {
+            json = OrderJson.MAPPER.writer().without(com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT).writeValueAsString(data).replace("</", "<\\/");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return "<aside id=drawer aria-hidden=true><button class=close aria-label=Close>×</button><div class=body></div></aside>\n"
+                + "<script type=application/json id=fleet-data>" + json + "</script>\n<script>" + SCRIPT + "</script>\n";
+    }
+
+    static final String CSS = """
+            main{max-width:1400px}
+            .scroll{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:8px;scrollbar-width:thin;
+              scrollbar-color:var(--muted) transparent}
+            .scroll table{border:0}.scroll th{position:sticky;top:0;background:var(--card);z-index:1;box-shadow:0 1px 0 var(--line)}
+            .scroll::-webkit-scrollbar{width:10px;height:10px}.scroll::-webkit-scrollbar-track{background:transparent}
+            .scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:10px;border:2px solid var(--card)}
+            .scroll::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+            td{overflow-wrap:anywhere}table.fixed{table-layout:fixed}table.fixed th:nth-child(1),table.fixed th:nth-child(2){width:32%}
+            .rule{cursor:help;white-space:normal}.rule .lbl{color:var(--muted);font-size:12px}
+            tr.svc{cursor:pointer}tr.svc:hover td{background:color-mix(in srgb,var(--fg) 5%,transparent)}
+            .tip{position:fixed;display:none;max-width:420px;z-index:30;background:var(--card);color:var(--fg);border:1px solid var(--line);
+              border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:12px;line-height:1.45;pointer-events:none}
+            .tip b{display:block;font-size:13px;margin-bottom:4px}.tip div{margin-top:4px}
+            #drawer{position:fixed;top:0;right:0;height:100vh;width:min(560px,100vw);background:var(--card);border-left:1px solid var(--line);
+              box-shadow:-12px 0 32px rgba(0,0,0,.25);transform:translateX(105%);transition:transform .2s ease;z-index:20;overflow:auto;
+              scrollbar-width:thin;scrollbar-color:var(--muted) transparent}
+            #drawer.open{transform:none}#drawer .body{padding:20px 22px 40px}#drawer h3{margin:0 0 2px;font-size:20px}
+            #drawer h4{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:22px 0 6px}
+            #drawer .close{position:sticky;top:8px;float:right;margin:8px 10px 0 0;border:0;background:none;color:var(--fg);font-size:26px;
+              cursor:pointer;line-height:1}
+            #drawer .chips span{display:inline-block;border:1px solid var(--line);border-radius:12px;padding:1px 9px;margin:0 6px 6px 0;font-size:12px}
+            #drawer .item{padding:7px 0;border-bottom:1px solid var(--line)}#drawer .item:last-child{border-bottom:0}
+            #drawer pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;white-space:pre-wrap;font-size:12px}
+            """;
+
+    static final String SCRIPT = """
+            (function () {
+              var data = JSON.parse(document.getElementById('fleet-data').textContent), help = data.help;
+              function el(parent, tag, text, cls) {
+                var e = document.createElement(tag);
+                if (text != null) e.textContent = text;
+                if (cls) e.className = cls;
+                parent.appendChild(e);
+                return e;
+              }
+              var tip = el(document.body, 'div', null, 'tip');
+              document.addEventListener('mouseover', function (ev) {
+                var r = ev.target.closest('[data-rule]');
+                if (!r) { tip.style.display = 'none'; return; }
+                var h = help[r.dataset.rule];
+                tip.textContent = '';
+                el(tip, 'b', (h && h.label) || r.dataset.rule);
+                el(tip, 'div', r.dataset.rule + (h && h.severity ? ' · ' + h.severity + ' severity' : ''), 'muted');
+                if (h && h.finds) el(tip, 'div', 'Finds: ' + h.finds);
+                if (h && h.fix) el(tip, 'div', 'Fix: ' + h.fix);
+                tip.style.display = 'block';
+                var b = r.getBoundingClientRect(), x = Math.min(b.left, innerWidth - tip.offsetWidth - 12), y = b.bottom + 6;
+                if (y + tip.offsetHeight > innerHeight) y = b.top - tip.offsetHeight - 6;
+                tip.style.left = Math.max(8, x) + 'px';
+                tip.style.top = Math.max(8, y) + 'px';
+              });
+              var drawer = document.getElementById('drawer'), body = drawer.querySelector('.body');
+              function close() { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); }
+              drawer.querySelector('.close').addEventListener('click', close);
+              document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+              window.openService = function (name) {
+                var s = data.services.filter(function (x) { return x.name === name; })[0];
+                if (!s) return;
+                body.textContent = '';
+                el(body, 'h3', s.name);
+                el(body, 'div', s.root || '', 'muted');
+                el(body, 'div', 'score ' + s.score + ' · ' + s.files + ' files · ' + s.entrypoints + ' entrypoints'
+                  + (s.logCoverage == null ? '' : ' · log coverage ' + s.logCoverage + '%'), 'muted');
+                var chips = el(body, 'div', null, 'chips');
+                chips.style.marginTop = '10px';
+                Object.keys(s.packScore || {}).forEach(function (p) { el(chips, 'span', p + ' ' + s.packScore[p]); });
+                ['high', 'medium', 'low'].forEach(function (k) { el(chips, 'span', (s.severity[k] || 0) + ' ' + k, k); });
+                var rules = Object.keys(s.rules).sort(function (a, b) { return s.rules[b] - s.rules[a]; });
+                el(body, 'h4', 'Findings (' + rules.length + ' rules)');
+                rules.forEach(function (r) {
+                  var h = help[r] || {}, it = el(body, 'div', null, 'item');
+                  var head = el(it, 'div');
+                  el(head, 'b', s.rules[r] + '× ');
+                  var span = el(head, 'span', null, 'rule');
+                  span.dataset.rule = r;
+                  el(span, 'span', h.label || r);
+                  el(span, 'span', '  ' + r + (h.severity ? ' · ' + h.severity : ''), 'muted');
+                  if (h.fix) el(it, 'div', h.fix, 'muted');
+                });
+                var out = data.links.filter(function (l) { return l.caller === s.name; });
+                var inc = data.links.filter(function (l) { return l.callees.indexOf(s.name) >= 0; });
+                function link(l, other) {
+                  var it = el(body, 'div', null, 'item');
+                  el(it, 'b', other + '  ');
+                  el(it, 'code', l.target);
+                  el(it, 'div', l.breaks ? 'trace breaks at ' + l.breaksAt.join(' and ') + ': ' + l.breaks : 'trace goes on',
+                    l.breaks ? 'down' : 'up');
+                }
+                el(body, 'h4', 'Calls (' + out.length + ')');
+                if (!out.length) el(body, 'div', 'No call reaches another service.', 'muted');
+                out.forEach(function (l) { link(l, '→ ' + l.callees.join(' or ')); });
+                el(body, 'h4', 'Called by (' + inc.length + ')');
+                if (!inc.length) el(body, 'div', 'No other service calls it.', 'muted');
+                inc.forEach(function (l) { link(l, '← ' + l.caller); });
+                if (s.overrides.length) {
+                  el(body, 'h4', 'Own settings (' + s.overrides.length + ')');
+                  s.overrides.forEach(function (o) { el(body, 'div', o, 'item'); });
+                }
+                if (s.meters.length) {
+                  el(body, 'h4', 'Meters (' + s.meters.length + ')');
+                  var m = el(body, 'div', null, 'chips');
+                  s.meters.forEach(function (x) { el(m, 'span', x); });
+                }
+                el(body, 'h4', 'Fix it');
+                el(body, 'pre', 'cd ' + (s.root || '<' + s.name + '>') + '\\nlogast apply .');
+                drawer.classList.add('open');
+                drawer.setAttribute('aria-hidden', 'false');
+                drawer.scrollTop = 0;
+              };
+              document.querySelectorAll('tr.svc').forEach(function (tr) {
+                tr.addEventListener('click', function () { openService(tr.dataset.name); });
+              });
+            })();
+            """;
 
     private static String esc(String s) {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;").replace("\"", "&quot;");

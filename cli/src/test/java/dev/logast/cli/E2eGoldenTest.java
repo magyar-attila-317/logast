@@ -7132,6 +7132,21 @@ abstract class E2eGoldenTest {
                 run(svc, "scan", svc.toString(), "--classpath-file", CLASSPATH);
                 assertThat(fleet.resolve("services/" + svc.getFileName() + ".json")).as("the scan's snapshot").exists();
             }
+            // #141: the members' scans wrote the fleet's page, both members on it, without any fleet command
+            Path page = fleet.resolve("report/fleet.html");
+            String byScans = Files.readString(page);
+            assertThat(byScans).contains("<tr class=svc data-name='checkout'", "<tr class=svc data-name='payments'",
+                            "data-from='checkout' data-to='payments'")
+                    .as("#142: a rule id in words, its finding and fix as data for the tooltip")
+                    .contains("<span class=rule data-rule='HTTP_CLIENT_UNTRACED'><code>HTTP_CLIENT_UNTRACED</code> <span class=lbl>",
+                            "\"HTTP_CLIENT_UNTRACED\":{\"rule\":\"HTTP_CLIENT_UNTRACED\",\"label\":")
+                    .as("#143: tables scroll, #144: the drawer and its data")
+                    .contains("<div class='wrap scroll'>", "<aside id=drawer", "<script type=application/json id=fleet-data>",
+                            "\"links\":[{\"caller\":\"checkout\",\"callees\":[\"payments\"]");
+            try (Stream<Path> history = Files.list(fleet.resolve("report"))) {
+                assertThat(history.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".json")))
+                        .as("one history file per day, however many scans").hasSize(1);
+            }
             assertThat(run(payments, "policy", payments.toString())).as("nothing decided yet: no company.yaml term")
                     .doesNotContain("payment_id");
             // #129: the snapshots record each member's settings; company.yaml suggests what they agree on, commented

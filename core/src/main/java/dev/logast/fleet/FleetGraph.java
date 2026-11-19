@@ -246,9 +246,7 @@ public final class FleetGraph {
                     .append("</text></g>\n");
         }
         List<String> alone = new TreeSet<>(services).stream().filter(n -> !linked.contains(n)).toList();
-        svg.append("</svg></div>\n<div class=muted>Arrow: caller → callee. Solid: confirmed by the host, or a message; "
-                + "dashed: path only; dotted: ambiguous (one arrow per candidate); red: the trace breaks. Hover an arrow for "
-                + "its calls, click a service to show only its links.</div>\n");
+        svg.append("</svg></div>\n").append(LEGEND);
         if (!alone.isEmpty()) {
             svg.append("<div class=muted>No link to or from another service: ").append(esc(String.join(", ", alone)))
                     .append("</div>\n");
@@ -269,12 +267,31 @@ public final class FleetGraph {
                       });
                       m.classList.toggle('on', on && near);
                     });
+                    if (on && window.openService) openService(name);
                   });
                 });
                 </script>
                 """);
         return svg.toString();
     }
+
+    /** What the lines mean, each next to a sample of itself (#140: "path only" alone said nothing). */
+    static final String LEGEND = """
+            <div class=legend>
+            <div><svg width=44 height=10><line x1=0 y1=5 x2=44 y2=5 class='edge confirmed'/></svg><span><b>sure</b>: the call's
+              URL names this service (its host is the service's name), or it is a message to a topic or queue the service listens to</span></div>
+            <div><svg width=44 height=10><line x1=0 y1=5 x2=44 y2=5 class='edge pathOnly'/></svg><span><b>likely</b>: the URL's
+              host is not in the code (it comes from config logast could not read), but only this service has an endpoint
+              with that URL path and method</span></div>
+            <div><svg width=44 height=10><line x1=0 y1=5 x2=44 y2=5 class='edge ambiguous'/></svg><span><b>unsure</b>: several
+              services have an endpoint with that URL path and the host doesn't decide: an arrow to each</span></div>
+            <div><svg width=44 height=10><line x1=0 y1=5 x2=44 y2=5 class='edge confirmed broken'/></svg><span><b>red</b>: on
+              at least one of these calls the trace id is lost, so the two services' logs of one request can't be joined
+              (hover the arrow: which calls, and the Trace table below: which side to fix)</span></div>
+            <div class=muted>Arrows point from the calling service to the called one. Hover an arrow for its calls; click a
+              service for its breakdown and only its links (click again to show all).</div>
+            </div>
+            """;
 
     /** The page's styles for the diagram. */
     public static final String CSS = """
@@ -285,6 +302,9 @@ public final class FleetGraph {
             svg.graph .edge.pathOnly{stroke-dasharray:6 4}svg.graph .edge.ambiguous{stroke-dasharray:2 4}
             svg.graph .edge.broken{stroke:var(--bad)}
             svg.graph.focus .edge:not(.on),svg.graph.focus .node:not(.on){opacity:.15}
+            .legend{font-size:12px;margin-top:8px}.legend>div{display:flex;gap:10px;align-items:baseline;margin:3px 0}
+            .legend svg{flex:none}.legend .edge{fill:none;stroke:var(--muted);stroke-width:2}
+            .legend .edge.pathOnly{stroke-dasharray:6 4}.legend .edge.ambiguous{stroke-dasharray:2 4}.legend .edge.broken{stroke:var(--bad)}
             """;
 
     /** "the trace breaks on 2 of 3 calls", "the trace goes on (2 calls)". */

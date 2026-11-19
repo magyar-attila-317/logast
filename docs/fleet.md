@@ -137,8 +137,15 @@ Vocabulary: 1 conflict between keys nobody decided yet
 
 Options: `--refresh` rescans every member first (from the roots in the member list; a member not at its root on this
 machine keeps its snapshot; an added member's scan writes only to the fleet folder); `--service <name>` prints one
-member's findings from its last scan; `--html` also writes the report page to `<fleet>/report/fleet.html` (or `--out <dir>`),
-with the trend against the previous page; `--json` prints the overview as JSON.
+member's findings from its last scan; `--json` prints the overview as JSON.
+
+**The report page** `<fleet>/report/fleet.html` is rewritten by every `logast fleet <name>` and by every member's scan or
+apply (#141), so it is never older than the newest snapshot (`--out <dir>` writes it elsewhere; `--html` is still
+accepted). Its history keeps one `fleet-<date>.json` per day; the trend compares with the last earlier day. On the page:
+rule ids come with their plain label, and hovering one shows what it finds and how it is fixed (from the rule tables of
+the pack pages, #142); long tables scroll inside their box with the header kept in view (#143); clicking a service (its row,
+or its box in the diagram) opens a drawer with its breakdown: pack scores, every rule with its fix, its calls and callers
+with where the trace breaks, its own settings, meters and the command to fix it (#144).
 
 The report page starts the trace section with a diagram of the links (#140): a box per service, callers left of their
 callees, one arrow per caller → callee pair. The line shows how sure the match is (solid: confirmed by the host, or a
