@@ -45,6 +45,8 @@ class CorpusRun {
             }
             tests.add(DynamicTest.dynamicTest(name, () -> check(name, s.path("repo").asText(), s.path("commit").asText(),
                     s.path("dir").asText("."))));
+            tests.add(DynamicTest.dynamicTest(name + " (logging pack: behaviour preserved)", () -> loggingOnly(name,
+                    s.path("repo").asText(), s.path("commit").asText(), s.path("dir").asText("."))));
         }
         return tests.stream();
     }
@@ -79,6 +81,38 @@ class CorpusRun {
         Path gradlew = app.resolve("gradlew");
         String compiled = exec(app, gradlew.toString(), "compileJava", "--quiet", "--console=plain");
         assertThat(compiled).as(name + ": the result compiles with the service's own build").doesNotContain("FAILED");
+    }
+
+    /**
+     * #7: with the logging pack alone, every Java file keeps its behaviour: the same non-observability statements as
+     * before ({@link E2eGoldenTest#behaviour}), on code nobody wrote for logast's tests.
+     */
+    private void loggingOnly(String name, String repo, String commit, String dir) throws Exception {
+        Path clone = work.resolve(name + "-logging");
+        exec(work, "git", "clone", "--quiet", "--filter=blob:none", repo, clone.toString());
+        exec(clone, "git", "checkout", "--quiet", commit);
+        Path app = clone.resolve(dir).normalize();
+        Files.writeString(app.resolve("logast.yaml"), "packs: [logging]\nsupport:\n  mode: vendor\n");
+        java.util.Map<String, String> before = new java.util.TreeMap<>();
+        try (Stream<Path> files = Files.walk(app.resolve("src"))) {
+            for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                before.put(app.relativize(p).toString(), Files.readString(p));
+            }
+        }
+        cli("classpath", app.toString());
+        cli("apply", app.toString(), "--auto", "--write");
+        List<String> changed = new ArrayList<>();
+        for (var e : before.entrySet()) {
+            String now = Files.readString(app.resolve(e.getKey()));
+            if (!E2eGoldenTest.behaviour(e.getValue()).equals(E2eGoldenTest.behaviour(now))) {
+                List<String> gone = new ArrayList<>(E2eGoldenTest.behaviour(e.getValue()));
+                gone.removeAll(E2eGoldenTest.behaviour(now));
+                List<String> added = new ArrayList<>(E2eGoldenTest.behaviour(now));
+                added.removeAll(E2eGoldenTest.behaviour(e.getValue()));
+                changed.add(e.getKey() + "\n  gone:  " + gone + "\n  added: " + added);
+            }
+        }
+        assertThat(changed).as(name + ": non-observability statements the logging pack changed").isEmpty();
     }
 
     /** logast in-process; its output. */
