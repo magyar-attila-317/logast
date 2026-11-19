@@ -36,4 +36,14 @@ public final class IntakeMetrics {
     public static void orderDeskCompleted() {
         Outcomes.count("order.desk", "completed");
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.register("code.normalizer", "completed");
+            Outcomes.register("order.desk", "completed");
+        }
+    }
 }

@@ -26,4 +26,15 @@ public final class ShelfMetrics {
     public static void shelfSlotInserted(Number rows) {
         Outcomes.count("shelf.slot", "inserted", "rows", rows);
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.register("shelf.access.watch", "completed");
+            Outcomes.registerTotal("shelf.slot", "updated", "rows");
+            Outcomes.registerTotal("shelf.slot", "inserted", "rows");
+        }
+    }
 }

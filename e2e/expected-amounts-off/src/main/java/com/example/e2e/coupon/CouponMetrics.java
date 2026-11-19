@@ -26,4 +26,15 @@ public final class CouponMetrics {
     public static void couponResendFailed() {
         Outcomes.count("coupon.resend", "failed");
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.register("coupon.lookup", "failed");
+            Outcomes.register("coupons", "updated");
+            Outcomes.register("coupon.resend", "failed");
+        }
+    }
 }

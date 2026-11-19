@@ -1158,10 +1158,10 @@ index 0000000..5a8f49f
 +}
 diff --git a/src/main/java/com/example/e2e/logging/Outcomes.java b/src/main/java/com/example/e2e/logging/Outcomes.java
 new file mode 100644
-index 0000000..7dd0fc4
+index 0000000..e6a2751
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/Outcomes.java
-@@ -0,0 +1,73 @@ 
+@@ -0,0 +1,101 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
 +// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
@@ -1225,6 +1225,34 @@ index 0000000..7dd0fc4
 +            SUMMARIES.computeIfAbsent(sizes + '\u0000' + outcome,
 +                    k -> DistributionSummary.builder(sizes).tag("outcome", outcome).register(Metrics.globalRegistry)).record(amount.doubleValue());
 +        }
++    }
++
++    /**
++     * Registers {@code name{outcome}} at 0 without counting (#118): the series exists from the first scrape, so a
++     * dashboard shows 0 instead of "no data", {@code increase()} has its first sample, and an alert on "0 for an hour"
++     * can fire. The metrics catalog calls it at startup for every outcome it knows.
++     */
++    public static void register(String name, String outcome) {
++        counter(name, outcome);
++    }
++
++    /** {@link #register} plus the running total {@code name.amountName{outcome}} of {@link #count(String, String, String, Number)}. */
++    public static void registerTotal(String name, String outcome, String amountName) {
++        counter(name, outcome);
++        counter(name + "." + amountName, outcome);
++    }
++
++    /** {@link #register} plus the per-run summary {@code name.amountName{outcome}} of {@link #record}. */
++    public static void registerPerRun(String name, String outcome, String amountName) {
++        counter(name, outcome);
++        String sizes = name + "." + amountName;
++        SUMMARIES.computeIfAbsent(sizes + '\u0000' + outcome,
++                k -> DistributionSummary.builder(sizes).tag("outcome", outcome).register(Metrics.globalRegistry));
++    }
++
++    private static Counter counter(String name, String outcome) {
++        return COUNTERS.computeIfAbsent(name + '\u0000' + outcome,
++                k -> Counter.builder(name).tag("outcome", outcome).register(Metrics.globalRegistry));
 +    }
 +
 +    /** Tags the observation running on this thread (an HTTP request, a job, an ObservedContext); no-op without one. */

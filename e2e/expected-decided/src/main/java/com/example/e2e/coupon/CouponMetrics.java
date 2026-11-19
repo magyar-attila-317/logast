@@ -46,4 +46,18 @@ public final class CouponMetrics {
     public static void couponRedemptionCompleted() {
         Outcomes.count("coupon.redemption", "completed");
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.registerPerRun("coupons", "updated", "rows");
+            Outcomes.registerTotal("coupon.usage", "saved", "uses");
+            Outcomes.register("coupon", "sent");
+            Outcomes.register("coupon.resend", "failed");
+            Outcomes.register("coupon", "published");
+            Outcomes.register("coupon.redemption", "completed");
+        }
+    }
 }
