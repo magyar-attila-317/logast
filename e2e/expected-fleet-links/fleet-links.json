@@ -5,7 +5,7 @@
       "kind" : "http",
       "verb" : "POST",
       "target" : "/invoices",
-      "base" : "http://invoice-api",
+      "base" : "lb://invoice-api",
       "client" : "OpenFeign",
       "method" : "InvoiceApi.create",
       "file" : "src/main/java/com/example/orders/InvoiceApi.java",
@@ -61,6 +61,38 @@
     },
     "breaks" : [ "caller" ],
     "note" : "confirmed: host billing (invoicing has this path too)",
+    "match" : "confirmed",
+    "candidates" : [ ]
+  }, {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/entries/{entryId}",
+      "base" : "http://ledger:8080",
+      "client" : "OpenFeign",
+      "method" : "LedgerApi.entry",
+      "file" : "src/main/java/com/example/orders/LedgerApi.java",
+      "line" : 9,
+      "breaks" : {
+        "what" : "OpenFeign clients without feign-micrometer: no traceparent header, the called service starts a new trace",
+        "rule" : "HTTP_CLIENT_UNTRACED",
+        "order" : "HTC-2ee5c2",
+        "fix" : "Add implementation(\"io.github.openfeign:feign-micrometer\") (version from the Spring Cloud BOM); Spring Cloud OpenFeign then instruments every client."
+      }
+    },
+    "callee" : "ledger",
+    "entry" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/entries/{entryId}",
+      "label" : "GET /entries/{entryId}",
+      "method" : "EntryController.entry",
+      "file" : "src/main/java/com/example/ledger/EntryController.java",
+      "line" : 10
+    },
+    "breaks" : [ "caller" ],
+    "note" : "confirmed: host ledger",
     "match" : "confirmed",
     "candidates" : [ ]
   }, {
@@ -176,6 +208,38 @@
       },
       "breaks" : false
     } ]
+  }, {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/shipments/{id}",
+      "base" : "lb://shipmentStatusClient",
+      "client" : "OpenFeign",
+      "method" : "ShipmentStatusApi.status",
+      "file" : "src/main/java/com/example/orders/ShipmentStatusApi.java",
+      "line" : 9,
+      "breaks" : {
+        "what" : "OpenFeign clients without feign-micrometer: no traceparent header, the called service starts a new trace",
+        "rule" : "HTTP_CLIENT_UNTRACED",
+        "order" : "HTC-2ee5c2",
+        "fix" : "Add implementation(\"io.github.openfeign:feign-micrometer\") (version from the Spring Cloud BOM); Spring Cloud OpenFeign then instruments every client."
+      }
+    },
+    "callee" : "shipping",
+    "entry" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/shipments/{id}",
+      "label" : "GET /shipments/{id}",
+      "method" : "ShipmentController.status",
+      "file" : "src/main/java/com/example/shipping/ShipmentController.java",
+      "line" : 23
+    },
+    "breaks" : [ "caller" ],
+    "note" : "path only: client name shipmentstatusclient names no service",
+    "match" : "pathOnly",
+    "candidates" : [ ]
   }, {
     "caller" : "orders",
     "call" : {

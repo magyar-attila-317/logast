@@ -129,6 +129,7 @@ public final class FleetLinks {
                              List<FleetReport.Service> services, List<Trace> out) {
         String host = host(call.base());
         String label = label(host);
+        boolean clientName = call.base() != null && call.base().startsWith(ServiceSurface.CLIENT_NAME);
         if (label != null) {
             if (named(label, a).isPresent()) {
                 return;   // the caller's own name: a call inside the service
@@ -149,6 +150,8 @@ public final class FleetLinks {
             } else if (withPath.size() > 1) {
                 out.add(ambiguous(a, call, hits, "ambiguous: host " + host + " names "
                         + or(withPath.stream().map(FleetReport.Service::name).toList(), " and ") + ", which all have this path"));
+            } else if (named.isEmpty() && clientName) {
+                // #137: an OpenFeign client's name that names no service is no host: the path decides, below
             } else {
                 List<Candidate> candidates = candidates(hits);
                 String having = or(hits.keySet().stream().map(FleetReport.Service::name).toList(), " and ")
@@ -159,9 +162,13 @@ public final class FleetLinks {
                         + ", which has no such path; " + having + " it (a stale URL?)";
                 out.add(new Trace(a.name(), call, null, null, List.of(), note, DIFFERENT_HOST, candidates));
             }
-            return;
+            if (!(withPath.isEmpty() && named.isEmpty() && clientName)) {
+                return;
+            }
         }
-        String why = call.base() == null ? "base URL not in the code" : "host " + host(call.base(), true) + " names no service";
+        String why = call.base() == null ? "base URL not in the code"
+                : clientName ? "client name " + host(call.base(), true) + " names no service"
+                : "host " + host(call.base(), true) + " names no service";
         if (hits.size() == 1) {
             var only = hits.entrySet().iterator().next();
             only.getValue().forEach(e -> out.add(link(a, call, only.getKey(), e, "path only: " + why, PATH_ONLY)));

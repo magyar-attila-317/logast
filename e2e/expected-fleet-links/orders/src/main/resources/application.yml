@@ -4,6 +4,12 @@ spring:
   kafka:
     template:
       observation-enabled: true
+  cloud:
+    openfeign:
+      client:
+        config:
+          ledgerClient:
+            url: ${ledger.feign-url:http://ledger:8080}
 app:
   topics:
     placed: orders.placed

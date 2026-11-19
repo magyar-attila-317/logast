@@ -6702,6 +6702,34 @@ abstract class E2eGoldenTest {
                     void create(@RequestBody String orderId);
                 }
                 """);
+        // #137: clients named after the client, not a service: one without a url (the path decides), one whose url
+        // the configuration sets (the host decides)
+        writeSource(orders, "com/example/orders/ShipmentStatusApi.java", """
+                package com.example.orders;
+
+                import org.springframework.cloud.openfeign.FeignClient;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+
+                @FeignClient(name = "shipmentStatusClient")
+                interface ShipmentStatusApi {
+                    @GetMapping("/shipments/{id}")
+                    String status(@PathVariable String id);
+                }
+                """);
+        writeSource(orders, "com/example/orders/LedgerApi.java", """
+                package com.example.orders;
+
+                import org.springframework.cloud.openfeign.FeignClient;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+
+                @FeignClient(name = "ledgerClient")
+                interface LedgerApi {
+                    @GetMapping("/entries/{entryId}")
+                    String entry(@PathVariable long entryId);
+                }
+                """);
         writeSource(orders, "com/example/orders/OrderDispatch.java", """
                 package com.example.orders;
 
@@ -6749,6 +6777,12 @@ abstract class E2eGoldenTest {
                   kafka:
                     template:
                       observation-enabled: true
+                  cloud:
+                    openfeign:
+                      client:
+                        config:
+                          ledgerClient:
+                            url: ${ledger.feign-url:http://ledger:8080}
                 app:
                   topics:
                     placed: orders.placed
@@ -6945,6 +6979,13 @@ abstract class E2eGoldenTest {
                 .containsPattern("orders -> ledger  GET /entries/\\{\\?}  \\(.*\\)  confirmed: host ledger.finance.svc.cluster.local\\n")
                 .as("OpenFeign's name: invoicing's spring.application.name")
                 .contains("confirmed: host invoice-api (spring.application.name of invoicing) (billing has this path too)")
+                .as("#137: an OpenFeign client named after the client, without a url: the path decides")
+                .containsPattern("call   src/main/java/com/example/orders/ShipmentStatusApi.java:\\d+  OpenFeign, ShipmentStatusApi.status\\n"
+                        + "(?:.*\\n){1,4}?    path only: client name shipmentstatusclient names no service\\n")
+                .doesNotContain("orders -> lb://", "different host: shipmentstatusclient")
+                .as("#137: the client's url from spring.cloud.openfeign.client.config.<name>.url: the host decides")
+                .containsPattern("call   src/main/java/com/example/orders/LedgerApi.java:\\d+  OpenFeign, LedgerApi.entry\\n"
+                        + "(?:.*\\n){1,4}?    confirmed: host ledger\\n")
                 .as("no base URL, two services with the path: one row with both candidates")
                 .containsPattern("orders -> billing or invoicing  GET /receipts/\\{id}  \\(.*\\)  ambiguous: billing or invoicing have this path")
                 .doesNotContain("orders -> billing  GET /receipts", "orders -> invoicing  GET /receipts")

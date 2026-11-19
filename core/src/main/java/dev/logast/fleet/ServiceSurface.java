@@ -89,9 +89,14 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
     private static final Map<String, String> EXCHANGES = Map.of("GetExchange", "GET", "PostExchange", "POST", "PutExchange", "PUT",
             "PatchExchange", "PATCH", "DeleteExchange", "DELETE", "HttpExchange", "");
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}:]+)(?::([^}]*))?}");
-    private static final Pattern URL = Pattern.compile("^(https?://[^/]*)(.*)$");
+    private static final Pattern URL = Pattern.compile("^((?:https?|lb)://[^/]*)(.*)$");   // lb://: an OpenFeign client name (#137)
     /** Marks a part of a URI the code does not know (a variable, a property without a value). */
     private static final String UNKNOWN = "\u0000";
+    /**
+     * #137: the base of an OpenFeign client without a url: its name, which the load balancer resolves. It names a service
+     * only when the team names clients after services; a name that names none (`reportingClient`) is no host.
+     */
+    public static final String CLIENT_NAME = "lb://";
 
     public static ServiceSurface of(Analysis a, ScanResult r) {
         Props props = new Props(a.springProperties, SpringProperties.profileValues(a.project.root()));
@@ -434,6 +439,28 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
                     "spring.rabbitmq.template.observation-enabled: true");
         }
 
+        private static boolean known(String s) {
+            return s != null && !s.isBlank() && !s.contains(UNKNOWN);
+        }
+
+        /**
+         * #137: {@code spring.cloud.openfeign.client.config.<client>.url} (or the older {@code feign.client.config…}),
+         * resolved; null when unset or not known.
+         */
+        private String feignUrl(String client) {
+            if (client == null) {
+                return null;
+            }
+            for (String key : List.of("spring.cloud.openfeign.client.config." + client + ".url", "feign.client.config." + client + ".url")) {
+                String v = props.get(key);
+                if (v != null) {
+                    v = placeholders(props, v).strip();
+                    return known(v) ? v : null;
+                }
+            }
+            return null;
+        }
+
         /** {@code @FeignClient} and HTTP interface ({@code @HttpExchange}) methods: each one a call. */
         private void declarative(ClassInfo c) {
             J.Annotation feign = annotation(c.decl().getLeadingAnnotations(), "FeignClient");
@@ -449,9 +476,17 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
             if (feign != null) {
                 prefix = Annotations.attribute(feign, "path").map(e -> literal(c, e)).orElse("");
                 base = Annotations.attribute(feign, "url").map(e -> literal(c, e)).orElse(null);
-                if (base == null) {   // no url: the load balancer resolves the client's name, a service id (#128)
+                if (base == null) {
+                    // no url: the client's configured url (#137), else the load balancer resolves its name, which is a
+                    // service id only when the team names clients after services (#128)
                     String id = Annotations.attribute(feign, "name", "value").map(e -> literal(c, e)).orElse(null);
-                    base = id == null || id.contains(UNKNOWN) || id.isBlank() ? null : "http://" + id.strip();
+                    String context = Annotations.attribute(feign, "contextId").map(e -> literal(c, e)).orElse(null);
+                    String configured = feignUrl(known(context) ? context.strip() : known(id) ? id.strip() : null);
+                    if (configured != null) {
+                        base = configured.contains("://") ? configured : "http://" + configured;
+                    } else {
+                        base = known(id) ? CLIENT_NAME + id.strip() : null;
+                    }
                 } else if (!base.contains(UNKNOWN) && !base.contains("://")) {
                     base = "http://" + base;   // url = "billing:8080"
                 }
