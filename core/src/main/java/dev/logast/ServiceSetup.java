@@ -78,11 +78,16 @@ public final class ServiceSetup {
             String fleet = kept == null ? "" : kept.path("fleet").asText("").strip();
             List<String> extendsList = new ArrayList<>(c.extendsList());
             if (extendsList.isEmpty() && kept != null) {
-                kept.path("extends").forEach(e -> extendsList.add(e.asText()));
+                com.fasterxml.jackson.databind.JsonNode ext = kept.path("extends");
+                if (ext.isTextual()) {
+                    extendsList.add(ext.asText());
+                } else {
+                    ext.forEach(e -> extendsList.add(e.asText()));
+                }
             }
             // the parents decide first: a setting the fleet's company.yaml or an extended layer sets stays theirs
             Files.writeString(policyFile, (fleet.isEmpty() ? "" : "fleet: " + fleet + "\n")
-                    + (extendsList.isEmpty() ? "" : "extends: [" + String.join(", ", extendsList) + "]\n"));
+                    + extendsYaml(extendsList));
             Set<String> parents = dev.logast.policy.PolicyLoader.parentSettings(policyFile);
             dev.logast.policy.Policy inherited = Logast.policy(root, null);
             dev.logast.policy.KeyStyle found = c.keyStyle() == null ? VocabularyHarvest.detectStyle(root) : null;
@@ -113,6 +118,26 @@ public final class ServiceSetup {
             packs = Logast.policy(root, null).packs();
         }
         return new Bootstrap(policyFile, write, packs, style, detected, logFormat, terms, added);
+    }
+
+    /**
+     * The {@code extends:} lines: a flow list, or with a fleet reference (#133) a block list whose fleet entries say
+     * where they resolve on this machine.
+     */
+    static String extendsYaml(List<String> extendsList) {
+        if (extendsList.isEmpty()) {
+            return "";
+        }
+        if (extendsList.stream().noneMatch(e -> dev.logast.fleet.FleetExtends.name(e) != null)) {
+            return "extends: [" + String.join(", ", extendsList) + "]\n";
+        }
+        StringBuilder sb = new StringBuilder("extends:\n");
+        for (String e : extendsList) {
+            String fleet = dev.logast.fleet.FleetExtends.name(e);
+            sb.append(fleet == null ? "  - " + e : dev.logast.fleet.FleetExtends.item("  ", fleet,
+                    dev.logast.fleet.FleetExtends.company(fleet))).append('\n');
+        }
+        return sb.toString();
     }
 
     /**
@@ -285,7 +310,7 @@ public final class ServiceSetup {
         if (extendsList.isEmpty()) {
             sb.append("# extends: [https://git.example.com/platform/observability/raw/main/company.yaml]\n\n");
         } else {
-            sb.append("extends: [").append(String.join(", ", extendsList)).append("]\n\n");
+            sb.append(extendsYaml(extendsList)).append('\n');
         }
         sb.append("# Which checks run. Default: all of them. Leave one out to switch it off.\n");
         sb.append("packs: [").append(String.join(", ", packs.isEmpty() ? ALL_PACKS : packs)).append("]\n\n");

@@ -28,12 +28,16 @@ extends:
   - https://git.example.com/platform/observability/raw/main/company.yaml#sha256=3f2a…   # a URL, pinned, or
   - ../shared/kitchen.yaml                                                              # a file relative to this one
   - ~/.logast/company.yaml                                                              # ~ is the home folder
+  - fleet:payments-fleet                                                                # a named fleet's company.yaml
 ```
 
 The central `company.yaml` that `logast vocabulary --central` generates is such a layer
-([one vocabulary across services](vocabulary.md#one-vocabulary-across-services)). `fleet: <name>` (written by
-`logast fleet join`) extends a named fleet's `company.yaml`, found by the fleet's name on each machine, before the
-file's own `extends:` ([fleets](fleet.md)).
+([one vocabulary across services](vocabulary.md#one-vocabulary-across-services)). `fleet:<name>` is a named fleet's
+`company.yaml`, found by the fleet's name on each machine ([fleets](fleet.md#where-fleets-live)); a fleet the machine
+does not know is a policy warning and the layer is left out. `logast fleet join` writes it as the first entry, next to
+`fleet: <name>` (the membership), with the path it resolves to as a comment. A file with only `fleet: <name>` extends
+the same company.yaml first; with both, it is one layer. A single entry may also be written without a list
+(`extends: ../shared/kitchen.yaml`).
 
 - **Pin a URL** with `#sha256=<hash of the file>`: when the shared file changes, the load fails and says the new hash, so
   a change of the company rules is reviewed before it applies. An unpinned URL works, with a warning that names the

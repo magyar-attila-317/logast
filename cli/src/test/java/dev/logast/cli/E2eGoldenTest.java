@@ -6983,11 +6983,14 @@ abstract class E2eGoldenTest {
 
     /**
      * #124: a named fleet in a temp home (never the real one). checkout and payments join payments-fleet: their
-     * logast.yaml gets only {@code fleet: payments-fleet}. Each scan leaves a snapshot in the fleet folder, and
+     * logast.yaml gets {@code fleet: payments-fleet} and (#133) {@code extends: [fleet:payments-fleet]} with the
+     * resolved path as a comment. Each scan leaves a snapshot in the fleet folder, and
      * {@code logast fleet payments-fleet} compares them without rescanning: checkout's RestClient.create() drops the
      * trace to payments' POST /payments, and paymentId (checkout) / payment_id (payments) is a vocabulary conflict.
      * Deciding it in the fleet's worksheet regenerates company.yaml, and payments' next scan uses it through the
-     * fleet's name (MDC_KEY_ALIAS on payment_id), with nothing added to its logast.yaml.
+     * fleet's name (MDC_KEY_ALIAS on payment_id), with nothing added to its logast.yaml. #133: company.yaml is layered
+     * once with both lines; the overview lists what `fleet tidy` would remove, tidy removes it per member (refusing
+     * an uncommitted logast.yaml), and join tidies too (an own override stays unless --follow-company).
      */
     @Test
     void servicesJoinANamedFleetAndItsOverviewComparesTheirSnapshots() throws IOException {
@@ -7063,12 +7066,16 @@ abstract class E2eGoldenTest {
                             "# logging:\n#   structuredFormat: logstash   # the JSON", "#   keyStyle: camel   # how MDC keys",
                             "# support:\n#   mode: vendor   #", "#   repository: ", "# >>> logast suggestions", "# >>> logast: generated")
                     .as("nothing decided yet").doesNotContainPattern("(?m)^(packs|logging|support):");
+            String joinedYaml = "fleet: payments-fleet\nextends:\n  - fleet:payments-fleet    # = " + company + " on this machine\n";
             for (Path svc : List.of(checkout, payments)) {
                 assertThat(run(svc, "fleet", "join", "payments-fleet", svc.toString())).contains(" joined fleet payments-fleet",
                         "(extends the fleet's company.yaml)");
-                assertThat(Files.readString(svc.resolve("logast.yaml"))).as("only the fleet's name, no machine path")
-                        .isEqualTo("fleet: payments-fleet\n");
+                // #133: the inheritance shows under extends:, by the fleet's name; the machine path only as a comment
+                assertThat(Files.readString(svc.resolve("logast.yaml"))).as("the fleet's name, in extends: too")
+                        .isEqualTo(joinedYaml);
             }
+            assertThat(run(checkout, "fleet", "join", "payments-fleet", checkout.toString())).contains(" joined fleet payments-fleet");
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).as("a second join adds nothing").isEqualTo(joinedYaml);
             assertThat(run(tmp, "fleet", "list")).contains("payments-fleet  " + shown + "  2 members: checkout, payments");
             String before = run(tmp, "fleet", "payments-fleet");
             assertThat(before).contains("no snapshot yet: run `logast scan` in");
@@ -7114,7 +7121,11 @@ abstract class E2eGoldenTest {
             run(payments, "scan", payments.toString(), "--classpath-file", CLASSPATH);
             assertThat(STDERR.toString()).doesNotContain("is not known on this machine", "no snapshot written");
             assertThat(run(tmp, "fleet", "payments-fleet")).as("the new snapshot: nothing left to decide").contains("Vocabulary: 0 conflicts");
-            assertThat(Files.readString(payments.resolve("logast.yaml"))).isEqualTo("fleet: payments-fleet\n");
+            assertThat(Files.readString(payments.resolve("logast.yaml"))).as("the scan left the file as join wrote it").isEqualTo(joinedYaml);
+            // #133: the comment follows where the fleet resolves on this machine; scan refreshes only that comment
+            Files.writeString(payments.resolve("logast.yaml"), joinedYaml.replace(company.toString(), "/elsewhere/company.yaml"));
+            run(payments, "scan", payments.toString(), "--classpath-file", CLASSPATH);
+            assertThat(Files.readString(payments.resolve("logast.yaml"))).as("the comment refreshed").isEqualTo(joinedYaml);
             assertThat(run(tmp, "fleet", "payments-fleet", "--html")).contains("report: " + shown + "/report/fleet.html");
 
             // apply reports too: the snapshot is the code after the changes
@@ -7129,6 +7140,15 @@ abstract class E2eGoldenTest {
             Files.writeString(payments.resolve("logast.yaml"), "fleet: payments-fleet\nlogging:\n  keyStyle: snake\n");
             assertThat(run(payments, "explain", "policy", payments.toString()))
                     .as("the company's value under the member's own").contains("logast.yaml overrides logging.keyStyle (was \\\"camel\\\" from company.yaml)");
+            // #133: with `fleet:` and `extends: [fleet:…]` both, company.yaml is one layer: its override shows once
+            String companyNow = Files.readString(company);
+            Files.writeString(company, "reporting:\n  override: true\n  sourceComments: false\n" + companyNow);
+            Files.writeString(payments.resolve("logast.yaml"), joinedYaml + "logging:\n  keyStyle: snake\n");
+            assertThat(run(payments, "explain", "policy", payments.toString())).as("company.yaml layered once")
+                    .containsOnlyOnce("company.yaml overrides reporting")
+                    .containsOnlyOnce("logast.yaml overrides logging.keyStyle (was \\\"camel\\\" from company.yaml)");
+            Files.writeString(company, companyNow);
+            // a logast.yaml from before #133 (only `fleet:`) still extends company.yaml
             Files.writeString(payments.resolve("logast.yaml"), "fleet: payments-fleet\n");
             STDERR.setLength(0);
             String applied = run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
@@ -7158,10 +7178,60 @@ abstract class E2eGoldenTest {
                     .contains(handLines, "\n  keyStyle: camel   # how MDC keys", "\n#   structuredFormat: logstash   # 2 of 2 members use it")
                     .contains("key: paymentId", "# <<< logast: end of the generated part");
 
+            // #133: what a tidy would remove shows in the overview; `fleet tidy` removes it, member by member
+            assertThat(ownPolicy).as("apply's setup keeps the fleet entry in extends:")
+                    .contains("\nextends:\n  - fleet:payments-fleet    # = " + company + " on this machine\n");
+            Files.writeString(checkout.resolve("logast.yaml"), ownPolicy.replace(
+                    "  # keyStyle: camel   # decided by fleet payments-fleet's company.yaml\n", "  keyStyle: camel   # as the company\n"));
+            String paymentsOwn = joinedYaml + "# payments' own choices\nlogging:\n  keyStyle: snake   # ours\n";
+            Files.writeString(payments.resolve("logast.yaml"), paymentsOwn);
+            for (Path repo : List.of(checkout, payments)) {
+                git(repo, "init", "--quiet");
+                git(repo, "add", "logast.yaml");
+                git(repo, "commit", "--quiet", "-m", "before");
+            }
+            String checkoutOwn = Files.readString(checkout.resolve("logast.yaml"));
+            String withTidy = run(tmp, "fleet", "payments-fleet", "--refresh", "--classpath-file", CLASSPATH);
+            assertThat(withTidy).contains("Own settings next to company.yaml:\n",
+                    "  checkout: 1 setting company.yaml already sets (logging.keyStyle) → `logast fleet tidy payments-fleet`\n",
+                    "  payments: 1 own override (logging.keyStyle: snake) → `logast fleet tidy payments-fleet`\n");
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).as("--refresh is read-only on the repos").isEqualTo(checkoutOwn);
+            assertThat(Files.readString(payments.resolve("logast.yaml"))).isEqualTo(paymentsOwn);
+            Files.writeString(payments.resolve("logast.yaml"), paymentsOwn + "# not committed yet\n");
+            STDERR.setLength(0);
+            assertThat(run(tmp, "fleet", "tidy", "payments-fleet", "--service", "checkout")).as("--service: only that member")
+                    .contains("checkout:\n  checkout: removed logging.keyStyle: camel (company.yaml sets the same)\n")
+                    .doesNotContain("payments");
+            assertThat(STDERR.toString()).as("payments is not looked at").doesNotContain("payments");
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).as("that line only")
+                    .isEqualTo(checkoutOwn.replace("  keyStyle: camel   # as the company\n", ""));
+            git(checkout, "commit", "--quiet", "-am", "tidied");
+            STDERR.setLength(0);
+            String tidyAll = run(tmp, "fleet", "tidy", "payments-fleet");
+            assertThat(tidyAll).contains("checkout: nothing to tidy");
+            assertThat(STDERR.toString()).contains("fleet tidy: payments: logast.yaml has uncommitted changes; commit them first");
+            assertThat(LAST_EXIT).isEqualTo(1);
+            assertThat(Files.readString(payments.resolve("logast.yaml"))).as("refused: untouched").isEqualTo(paymentsOwn + "# not committed yet\n");
+            assertThat(run(tmp, "fleet", "tidy", "payments-fleet", "--follow-company", "--force"))
+                    .contains("payments:\n  payments: removed logging.keyStyle: snake (company: camel)\n");
+            assertThat(Files.readString(payments.resolve("logast.yaml"))).as("the emptied logging: goes, the comments stay")
+                    .isEqualTo(joinedYaml + "# payments' own choices\n# not committed yet\n");
+            Files.writeString(checkout.resolve("logast.yaml"), ownPolicy);
+
             assertThat(run(checkout, "fleet", "leave", checkout.toString())).contains("checkout left fleet payments-fleet");
-            assertThat(Files.readString(checkout.resolve("logast.yaml"))).doesNotContain("fleet: payments-fleet", "belongs to", "decided by fleet")
-                    .contains("\n  # keyStyle: camel\n");
+            String left = Files.readString(checkout.resolve("logast.yaml"));
+            assertThat(left).doesNotContain("fleet: payments-fleet", "belongs to", "decided by fleet", "fleet:payments-fleet")
+                    .doesNotContainPattern("(?m)^extends:").contains("\n  # keyStyle: camel\n");
             assertThat(fleet.resolve("services/checkout.json")).doesNotExist();
+            // #133: join tidies against company.yaml: an own override stays and is listed, --follow-company drops it
+            Files.writeString(checkout.resolve("logast.yaml"), left.replace("\n  # keyStyle: camel\n", "\n  keyStyle: snake\n"));
+            assertThat(run(checkout, "fleet", "join", "payments-fleet", checkout.toString())).contains("  checkout keeps its own "
+                    + "logging.keyStyle: snake (company: camel); `logast fleet join payments-fleet --follow-company` drops it");
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).contains("\n  keyStyle: snake\n");
+            assertThat(run(checkout, "fleet", "join", "payments-fleet", checkout.toString(), "--follow-company"))
+                    .contains("  checkout: removed logging.keyStyle: snake (company: camel)");
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).doesNotContain("keyStyle: snake")
+                    .containsOnlyOnce("  - fleet:payments-fleet    # = ");
         } finally {
             System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
         }

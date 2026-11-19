@@ -49,11 +49,16 @@ public final class VocabularyPrune {
 
     /** The service's policy file compared with what its parents define; {@link Report#NONE} without a file or parents. */
     public static Report check(Path root) {
+        return check(root, null);
+    }
+
+    /** #133: as {@link #check(Path)}, against {@code parent} only (the fleet's company.yaml at {@code fleet join}); null: every parent. */
+    public static Report check(Path root, Path parent) {
         Path file = PolicyLoader.defaultFile(root);
         if (!Files.exists(file)) {
             return Report.NONE;
         }
-        PolicyLoader.VocabularyLayers layers = PolicyLoader.vocabularyLayers(file);
+        PolicyLoader.VocabularyLayers layers = PolicyLoader.vocabularyLayers(file, parent == null ? null : parent.toAbsolutePath().normalize().toString());
         if (layers.parents().isEmpty() || !layers.own().isObject() || !layers.inherited().isObject() && !layers.inheritedAreas().isObject()) {
             return Report.NONE;
         }
@@ -168,7 +173,12 @@ public final class VocabularyPrune {
 
     /** Removes the covered entries from the service's policy file, comments and the rest untouched; returns them. */
     public static List<Covered> prune(Path root) {
-        Report r = check(root);
+        return prune(root, null);
+    }
+
+    /** #133: as {@link #prune(Path)}, removing only what {@code parent} defines (null: any parent). */
+    public static List<Covered> prune(Path root, Path parent) {
+        Report r = check(root, parent);
         if (r.covered().isEmpty()) {
             return List.of();
         }

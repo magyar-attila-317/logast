@@ -238,7 +238,8 @@ public final class NamedFleet {
 
     /**
      * Makes {@code root} a member: registers it in the fleet folder and writes {@code fleet: <name>} into its
-     * logast.yaml (that line only: the rest of the file and its comments stay). Returns the root registered before
+     * logast.yaml, and {@code fleet:<name>} first in its {@code extends:} with the path it resolves to here as a comment
+     * (#133; those lines only: the rest of the file and its comments stay). Returns the root registered before
      * under the same service name, if another.
      */
     public static Path join(Path fleet, String name, Path root) {
@@ -250,12 +251,21 @@ public final class NamedFleet {
         before = before != null ? before : wasAdded;
         writeMembers(fleet, members, added);
         setFleetLine(r, name);
+        Path company = fleet.resolve(CentralVocabulary.COMPANY).toAbsolutePath().normalize();
+        FleetExtends.edit(PolicyLoader.defaultFile(r), lines -> FleetExtends.add(lines, name, company));
         return before == null || before.equals(r) ? null : before;
     }
 
-    /** Takes {@code root} out of its fleet: the {@code fleet:} line goes, the member entry and snapshot too. */
+    /**
+     * Takes {@code root} out of its fleet: the {@code fleet:} line and the fleet's {@code extends:} entry go (#133; an
+     * {@code extends:} left empty too), the member entry and snapshot too.
+     */
     public static void leave(Path fleet, Path root) {
         Path r = root.toAbsolutePath().normalize();
+        String name = of(r);
+        if (name != null) {
+            FleetExtends.edit(PolicyLoader.defaultFile(r), lines -> FleetExtends.remove(lines, name));
+        }
         String service = serviceName(r);
         if (fleet != null && exists(fleet)) {
             Map<String, Path> members = new TreeMap<>(joined(fleet));
