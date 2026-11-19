@@ -50,7 +50,22 @@ class FleetGraphTest {
                         "<path class='edge ambiguous broken' data-from='gateway' data-to='billing'",
                         "marker-end='url(#arrow-bad)'", "gateway → orders: the trace goes on (2 calls)\ngoes on: GET /orders (confirmed: orders)\ngoes on: GET /orders (pathOnly: orders)",
                         "orders → shipping: the trace breaks on 1 of 1 call\nbreaks: GET /shipping")
-                .as("a service without links is drawn, greyed").contains("<g class='node alone' data-name='audit'");
+                .as("a service without links is listed under the diagram, not drawn")
+                .contains("No link to or from another service: audit").doesNotContain("data-name='audit'");
+    }
+
+    @Test
+    void columnsAreOrderedSoArrowsCrossLess() {
+        // by name: a, b, c on the left and x, y, z on the right; every arrow would cross
+        var links = new FleetLinks.Result(List.of(link("a", "z", FleetLinks.CONFIRMED, List.of()),
+                link("b", "y", FleetLinks.CONFIRMED, List.of()), link("c", "x", FleetLinks.CONFIRMED, List.of())), List.of());
+        var edges = FleetGraph.edges(links);
+        var cols = FleetGraph.order(FleetGraph.columns(List.of(), edges), edges);
+        assertThat(cols).hasSize(2);
+        List<String> left = cols.get(0);
+        List<String> right = cols.get(1);
+        assertThat(edges).as("each caller at the height of its callee").allSatisfy(e ->
+                assertThat(left.indexOf(e.from())).isEqualTo(right.indexOf(e.to())));
     }
 
     @Test
