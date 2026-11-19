@@ -1,0 +1,303 @@
+package dev.logast.fleet;
+
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import dev.logast.Analysis;
+import dev.logast.CentralVocabulary;
+import dev.logast.orders.OrderJson;
+import dev.logast.orders.ScanResult;
+import dev.logast.policy.Policy;
+import dev.logast.policy.PolicyLoader;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+/**
+ * A named fleet (#124): a folder ({@link FleetHome}) with its members ({@value #MEMBERS}: service → root on this
+ * machine), one snapshot per service ({@value #SERVICES}/&lt;service&gt;.json, written by every scan and apply of a
+ * member) and the fleet's shared {@code company.yaml} with the vocabulary worksheet it is generated from. A service's
+ * logast.yaml names the fleet ({@code fleet: <name>}); {@link PolicyLoader} layers the fleet's company.yaml under it.
+ */
+public final class NamedFleet {
+    public static final String MEMBERS = "members.yaml";
+    public static final String SERVICES = "services";
+    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    private static final ObjectMapper READ = OrderJson.MAPPER.copy().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    private static final Pattern FLEET_LINE = Pattern.compile("fleet\\s*:.*");
+
+    private NamedFleet() {
+    }
+
+    /**
+     * What a member's scan or apply left in the fleet folder: what {@code logast fleet <paths…>} computes per service,
+     * plus the vocabulary evidence the worksheet is built from, so the overview needs no rescan.
+     */
+    public record Snapshot(String service, String root, String created, String commit, FleetReport.Service report,
+                           List<CentralVocabulary.Use> vocabulary, List<CentralVocabulary.KnownArea> areas) {
+        public Snapshot {
+            vocabulary = vocabulary == null ? List.of() : vocabulary;
+            areas = areas == null ? List.of() : areas;
+        }
+    }
+
+    /** The fleet {@code root}'s logast.yaml names ({@code fleet: <name>}); null when it names none. */
+    public static String of(Path root) {
+        Path file = PolicyLoader.defaultFile(root);
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+        try {
+            JsonNode n = YAML.readTree(Files.readString(file));
+            String name = n == null ? "" : n.path("fleet").asText("").strip();
+            return name.isEmpty() ? null : name;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** The service name a root has in fleets: its folder name. */
+    public static String serviceName(Path root) {
+        Path n = root.toAbsolutePath().normalize().getFileName();
+        return n == null ? "root" : n.toString();
+    }
+
+    /** Creates the fleet folder (with an empty member list); with {@code dir}, the user config remembers it. */
+    public static Path create(FleetHome.Env env, String name, Path dir) {
+        if (!FleetHome.validName(name)) {
+            throw new IllegalArgumentException("fleet name " + name + ": use letters, digits, '.', '-' and '_'");
+        }
+        Path fleet = dir != null ? env.expand(dir.toString()) : FleetHome.fleetDir(env, name).dir();
+        try {
+            Files.createDirectories(fleet.resolve(SERVICES));
+            if (!Files.exists(fleet.resolve(MEMBERS))) {
+                Files.writeString(fleet.resolve(MEMBERS), membersYaml(Map.of()));
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot create " + fleet, e);
+        }
+        if (dir != null || !fleet.equals(FleetHome.fleetDir(new FleetHome.Env(null, env.env(), env.home()), name).dir())) {
+            // a folder the next run would not find by itself (--dir, or --fleets-dir for this run only): remember it
+            FleetHome.remember(env, name, fleet);
+        }
+        return fleet;
+    }
+
+    /** True when {@code dir} is a fleet folder. */
+    public static boolean exists(Path dir) {
+        return Files.isRegularFile(dir.resolve(MEMBERS));
+    }
+
+    /** The fleets this machine knows: folders under the fleets folder and the ones the user config remembers. */
+    public static Map<String, Path> list(FleetHome.Env env) {
+        Map<String, Path> out = new TreeMap<>();
+        Path home = FleetHome.fleetsDir(env).dir();
+        if (Files.isDirectory(home)) {
+            try (Stream<Path> s = Files.list(home)) {
+                s.filter(NamedFleet::exists).forEach(p -> out.put(p.getFileName().toString(), p));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        out.putAll(FleetHome.remembered(env));
+        return out;
+    }
+
+    /** The members: service → root. */
+    public static Map<String, Path> members(Path fleet) {
+        Map<String, Path> out = new TreeMap<>();
+        Path f = fleet.resolve(MEMBERS);
+        if (!Files.isRegularFile(f)) {
+            return out;
+        }
+        try {
+            JsonNode n = YAML.readTree(Files.readString(f));
+            if (n != null) {
+                n.path("members").fields().forEachRemaining(e -> out.put(e.getKey(), Path.of(e.getValue().asText())));
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot read " + f, e);
+        }
+        return out;
+    }
+
+    /**
+     * Makes {@code root} a member: registers it in the fleet folder and writes {@code fleet: <name>} into its
+     * logast.yaml (that line only: the rest of the file and its comments stay). Returns the root registered before
+     * under the same service name, if another.
+     */
+    public static Path join(Path fleet, String name, Path root) {
+        Path r = root.toAbsolutePath().normalize();
+        Map<String, Path> members = new TreeMap<>(members(fleet));
+        Path before = members.put(serviceName(r), r);
+        writeMembers(fleet, members);
+        setFleetLine(r, name);
+        return before == null || before.equals(r) ? null : before;
+    }
+
+    /** Takes {@code root} out of its fleet: the {@code fleet:} line goes, the member entry and snapshot too. */
+    public static void leave(Path fleet, Path root) {
+        Path r = root.toAbsolutePath().normalize();
+        String service = serviceName(r);
+        if (fleet != null && exists(fleet)) {
+            Map<String, Path> members = new TreeMap<>(members(fleet));
+            members.remove(service);
+            writeMembers(fleet, members);
+            try {
+                Files.deleteIfExists(fleet.resolve(SERVICES).resolve(service + ".json"));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        setFleetLine(r, null);
+    }
+
+    /** Sets (or with null removes) the top-level {@code fleet:} line of the service's logast.yaml; creates the file if needed. */
+    static void setFleetLine(Path root, String name) {
+        Path file = PolicyLoader.defaultFile(root);
+        try {
+            List<String> lines = Files.exists(file) ? new ArrayList<>(Files.readAllLines(file)) : new ArrayList<>();
+            int at = -1;
+            for (int i = 0; i < lines.size() && at < 0; i++) {
+                if (FLEET_LINE.matcher(lines.get(i)).matches()) {
+                    at = i;
+                }
+            }
+            if (name == null) {
+                if (at >= 0) {
+                    lines.remove(at);
+                    Files.write(file, lines);
+                }
+                return;
+            }
+            String line = "fleet: " + name;
+            if (at >= 0) {
+                Matcher comment = Pattern.compile("\\s+#.*$").matcher(lines.get(at));
+                lines.set(at, line + (comment.find() ? comment.group() : ""));
+            } else {
+                int first = 0;   // after the leading comment block, so a file's header stays on top
+                while (first < lines.size() && lines.get(first).startsWith("#")) {
+                    first++;
+                }
+                lines.add(first, line);
+            }
+            Files.write(file, lines);
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot edit " + file, e);
+        }
+    }
+
+    private static void writeMembers(Path fleet, Map<String, Path> members) {
+        try {
+            Files.createDirectories(fleet);
+            Files.writeString(fleet.resolve(MEMBERS), membersYaml(members));
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot write " + fleet.resolve(MEMBERS), e);
+        }
+    }
+
+    private static String membersYaml(Map<String, Path> members) {
+        StringBuilder sb = new StringBuilder("# logast fleet members (#124): service -> its root on this machine; "
+                + "`logast fleet join` / `leave` keep it\nmembers:");
+        if (members.isEmpty()) {
+            sb.append(" {}");
+        }
+        sb.append('\n');
+        new TreeMap<>(members).forEach((k, v) -> sb.append("  ").append(k).append(": \"")
+                .append(v.toString().replace("\\", "\\\\").replace("\"", "\\\"")).append("\"\n"));
+        return sb.toString();
+    }
+
+    // ---- snapshots ----------------------------------------------------------------------------------------------------
+
+    /** The snapshot of one scan: the fleet report's service entry, the vocabulary evidence, commit and time. */
+    public static Snapshot snapshot(Path root, ScanResult r, Analysis a, Policy policy) {
+        Path rr = root.toAbsolutePath().normalize();
+        String name = serviceName(rr);
+        FleetReport.Service s = FleetReport.service(name, r, policy.overrides(), policy.packs(),
+                dev.logast.metrics.MeterCatalog.of(a), ServiceSurface.of(a, r));
+        // apply scans a scratch copy: the snapshot names the service's own root
+        FleetReport.Service service = new FleetReport.Service(s.name(), rr.toString(), s.files(), s.entrypoints(), s.severity(),
+                s.rules(), s.packScore(), s.score(), s.overrides(), s.meters(), s.logCoverage(), s.surface());
+        return new Snapshot(name, rr.toString(), Instant.now().toString(), commit(rr), service,
+                CentralVocabulary.uses(rr, name), CentralVocabulary.knownAreas(rr, name));
+    }
+
+    /** Writes the snapshot to {@code <fleet>/services/<service>.json} (whole or not at all). */
+    public static Path write(Path fleet, Snapshot s) {
+        try {
+            Path dir = Files.createDirectories(fleet.resolve(SERVICES));
+            Path target = dir.resolve(s.service() + ".json");
+            Path tmp = Files.createTempFile(dir, s.service(), ".tmp");
+            OrderJson.MAPPER.writeValue(tmp.toFile(), s);
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            return target;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Every snapshot in the fleet folder, by service; one that cannot be read is left out. */
+    public static Map<String, Snapshot> snapshots(Path fleet) {
+        Map<String, Snapshot> out = new TreeMap<>();
+        Path dir = fleet.resolve(SERVICES);
+        if (!Files.isDirectory(dir)) {
+            return out;
+        }
+        try (Stream<Path> s = Files.list(dir)) {
+            for (Path p : s.filter(f -> f.getFileName().toString().endsWith(".json")).sorted().toList()) {
+                try {
+                    Snapshot snap = READ.readValue(p.toFile(), Snapshot.class);
+                    out.put(snap.service(), snap);
+                } catch (IOException e) {
+                    // a snapshot of another logast version or a half-synced file: the overview says "no snapshot"
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return out;
+    }
+
+    /** The vocabulary worksheet and company.yaml from the snapshots, with the decisions already in the worksheet. */
+    public static CentralVocabulary.Result vocabulary(Path fleet, Collection<Snapshot> snapshots) {
+        List<CentralVocabulary.Use> uses = new ArrayList<>();
+        List<CentralVocabulary.KnownArea> known = new ArrayList<>();
+        Set<String> names = new TreeSet<>();
+        for (Snapshot s : snapshots) {
+            uses.addAll(s.vocabulary());
+            known.addAll(s.areas());
+            names.add(s.service());
+        }
+        return CentralVocabulary.build(uses, names, CentralVocabulary.read(fleet.resolve(CentralVocabulary.WORKSHEET)), known);
+    }
+
+    /** The short commit of {@code root}'s git checkout; null outside git. */
+    static String commit(Path root) {
+        try {
+            Process p = new ProcessBuilder("git", "rev-parse", "--short", "HEAD").directory(root.toFile())
+                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            String sha = new String(p.getInputStream().readAllBytes()).strip();
+            if (!p.waitFor(5, TimeUnit.SECONDS) || p.exitValue() != 0 || sha.isEmpty()) {
+                p.destroy();
+                return null;
+            }
+            return sha;
+        } catch (IOException e) {
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+}

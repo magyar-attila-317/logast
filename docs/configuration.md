@@ -31,7 +31,9 @@ extends:
 ```
 
 The central `company.yaml` that `logast vocabulary --central` generates is such a layer
-([one vocabulary across services](vocabulary.md#one-vocabulary-across-services)).
+([one vocabulary across services](vocabulary.md#one-vocabulary-across-services)). `fleet: <name>` (written by
+`logast fleet join`) extends a named fleet's `company.yaml`, found by the fleet's name on each machine, before the
+file's own `extends:` ([fleets](fleet.md)).
 
 - **Pin a URL** with `#sha256=<hash of the file>`: when the shared file changes, the load fails and says the new hash, so
   a change of the company rules is reviewed before it applies. An unpinned URL works, with a warning that names the

@@ -91,8 +91,12 @@ public final class CentralVocabulary {
     public record KnownArea(String service, String area, List<String> packages, List<String> vocabulary, List<String> requiredMdc) {
     }
 
-    /** The result of one run: the two files' text and the summary lines (also at the top of the worksheet). */
-    public record Result(String worksheet, String company, List<String> summary, int terms) {
+    /**
+     * The result of one run: the two files' text and the summary lines (also at the top of the worksheet).
+     *
+     * @param conflicts the undecided keys' warnings and similar pairs, one line each (the fleet overview, #124)
+     */
+    public record Result(String worksheet, String company, List<String> summary, int terms, List<String> conflicts) {
     }
 
     // ---- harvest ------------------------------------------------------------------------------------------------
@@ -622,6 +626,8 @@ public final class CentralVocabulary {
             }
         }
         ws.append("keys:\n");
+        List<String> conflicts = new ArrayList<>();
+        Set<String> pairs = new HashSet<>();
         for (String k : keys) {
             Decision d = decisions.getOrDefault(k, Decision.NONE);
             List<Use> u = byKey.getOrDefault(k, List.of());
@@ -652,6 +658,14 @@ public final class CentralVocabulary {
                         + ": possibly NOT the same value; if so, give one of them another key")).append('\n');
             }
             List<String[]> similar = similar(k, keys, byKey, root);
+            if (!d.any() && !u.isEmpty()) {
+                if (typeServices.size() > 1) {
+                    conflicts.add(k + ": one name, different types: " + typeServices.entrySet().stream()
+                            .map(e -> e.getKey() + " (" + String.join(", ", e.getValue()) + ")").collect(Collectors.joining(", ")));
+                }
+                similar.stream().filter(s -> pairs.add(k.compareTo(s[0]) < 0 ? k + "\0" + s[0] : s[0] + "\0" + k))
+                        .forEach(s -> conflicts.add(k + " ~ " + s[0] + ": " + s[1]));
+            }
             if (!similar.isEmpty()) {
                 ws.append("    similar:\n");
                 similar.forEach(s -> ws.append("      - ").append(q(s[0] + ": " + s[1])).append('\n'));
@@ -678,7 +692,8 @@ public final class CentralVocabulary {
         if (keys.isEmpty()) {
             ws.append("  {}\n");
         }
-        return new Result(ws.toString(), company(published, decisions, root, byKey, previous.areaPackages()), summary, published.size());
+        return new Result(ws.toString(), company(published, decisions, root, byKey, previous.areaPackages()), summary, published.size(),
+                conflicts);
     }
 
     /** The key {@code k} is an alias of, following same_as; {@code k} itself when it is no alias; null on a cycle or unknown key. */

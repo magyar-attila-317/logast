@@ -160,6 +160,7 @@ public final class Main {
             try (Out.Progress p = new Out.Progress("analysing the code (parsing dominates: about 30 s for 2,000 files)")) {
                 r = Logast.scan(root(), classpath(), policy, traffic);
             }
+            Fleet.snapshot(root(), r, Logast.lastAnalysis, policy);   // #124: a fleet member reports to its fleet
             String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
             if (olderJdk != null) {
                 Out.warn(olderJdk);
@@ -414,6 +415,9 @@ public final class Main {
             try (Out.Progress p = new Out.Progress("~starting")) {
                 applier.onProgress(p::update);
                 r = applier.apply(root(), new Applier.Selection(auto, only, fillMap, fills == null), write);
+            }
+            if (write) {   // #124: a fleet member reports what the code is now (a dry run changed nothing)
+                Fleet.snapshot(root(), r.after(), scanner.lastAnalysis, policy);
             }
             dev.logast.apply.FillsFile.Update fu = null;
             dev.logast.apply.FillsFile.Update mu = null;
@@ -701,10 +705,11 @@ public final class Main {
         boolean all;
         @Option(names = "--central", description = "Folder of the central vocabulary (e.g. ~/.logast): harvest every given "
                 + "service into <dir>/" + dev.logast.CentralVocabulary.WORKSHEET + " (evidence + your decisions, kept across runs) "
-                + "and publish the decided terms to <dir>/" + dev.logast.CentralVocabulary.COMPANY)
+                + "and publish the decided terms to <dir>/" + dev.logast.CentralVocabulary.COMPANY
+                + ". For a named fleet: `logast fleet <name> --vocabulary` (no paths, from the members' snapshots)")
         Path central;
         @Option(names = "--prune", description = "Remove from each service's logast.yaml the vocabulary entries an extended "
-                + "policy (company.yaml) now defines in full")
+                + "policy (company.yaml, also a fleet's: `fleet: <name>`) now defines in full")
         boolean prune;
         @Parameters(index = "1..*", description = "More service roots (with --central or --prune)")
         List<Path> more = new ArrayList<>();

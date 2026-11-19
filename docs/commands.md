@@ -22,7 +22,9 @@ examples. Output samples are illustrations; counts and ids differ per service an
 | `logast traffic <svc>` | writes `.logast/decisions/traffic.yaml` with every entrypoint, ready to fill in |
 | `logast policy <svc> [--check]` | the effective policy after all layers, with overrides; `--check` (CI) checks it against the code instead: exit 0 fine, 1 warnings, 2 errors |
 | `logast rules` | every rule and its packs |
-| `logast fleet <svc>…` | compliance report across services; calls whose trace stops between two services; one outcome counted under several metric names |
+| `logast fleet create\|join\|leave\|list` | named fleets: a service joins once (`fleet: <name>` in its logast.yaml), then its scans and applies leave snapshots in the fleet folder ([fleet.md](fleet.md)) |
+| `logast fleet <name> [--refresh] [--html] [--json] [--vocabulary]` | the fleet's overview from the snapshots: scores, open findings, trace breaks, one outcome under several metric names, vocabulary conflicts; `--vocabulary` writes the fleet's worksheet and company.yaml |
+| `logast fleet <svc>…` | the earlier form: scans the given services and writes the report; calls whose trace stops between two services; one outcome counted under several metric names |
 | `logast fleet --vocabulary [--central <dir>] <svc>…` | per service, the keys in the code the vocabulary makes aliases (what apply would rename); with `--central`, as if every service extended `<dir>/company.yaml` |
 | `logast shape <svc>` | exports the code with its own names and words replaced, to send a reproduction ([below](#shape)) |
 
@@ -333,7 +335,8 @@ a hint.
 - `logast vocabulary --central ~/.logast <svc>…` keeps one vocabulary across services: a worksheet with every key's
   evidence where you decide (`term`, `same_as`, `local`), and a generated `company.yaml` with the decided terms that
   services extend. `--prune <svc>` removes the service's own entries company.yaml now defines; `scan` names them.
-  The workflow: [vocabulary.md](vocabulary.md#one-vocabulary-across-services).
+  The workflow: [vocabulary.md](vocabulary.md#one-vocabulary-across-services). In a named fleet,
+  `logast fleet <name> --vocabulary` does the same without paths ([fleet.md](fleet.md#the-fleets-vocabulary)).
 - `logast policy .` prints the merged result of all layers and every override. `logast policy . --check` checks the
   policy against the code for CI ([configuration](configuration.md#how-the-configuration-is-put-together)).
 - `logast traffic .` lists every entrypoint in `.logast/decisions/traffic.yaml`; fill in calls/day (or pass a Prometheus query
@@ -342,8 +345,19 @@ a hint.
 ## fleet
 
 ```bash
-logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, with trend against the last run
+logast fleet create payments-fleet                # once; --dir <folder> keeps it in a folder of your choice
+logast fleet join payments-fleet                  # in each service: writes `fleet: payments-fleet` into logast.yaml
+logast fleet payments-fleet                       # the overview from the members' last scans
+logast fleet payments-fleet --vocabulary          # the fleet's vocabulary worksheet and company.yaml
+logast fleet list                                 # the fleets this machine knows
+logast fleet services/*/ --out fleet-report       # the earlier form: scan these roots, fleet-report/fleet.html
 ```
+
+A named fleet is a folder with its members, one snapshot per service and its shared `company.yaml`; every `scan` and
+`apply` of a member (and the Gradle plugin's tasks) updates the member's snapshot, and `logast fleet <name>` compares
+them without rescanning (`--refresh` rescans, `--html` writes the page below, `--json`). Where fleets live
+(`--fleets-dir`, `LOGAST_FLEETS`, `fleets.dir` in `~/.config/logast/config.yaml`, default
+`~/.local/share/logast/fleets/`) and the whole workflow: [fleet.md](fleet.md). The comparison is the same in both forms:
 
 A compliance report across services (HTML and a JSON snapshot; earlier snapshots in `--out` give the trend). It also
 compares meters across services: the same name with different types or tags, and similar names
@@ -391,7 +405,9 @@ One outcome, several metric names: 1 candidate (pick one name; nothing is merged
 
 `logast fleet --vocabulary --central ~/.logast services/*/` scans nothing: it lists per service the keys in its code
 that the vocabulary makes aliases, with their places, i.e. what apply would rename once company.yaml (as generated
-now) is extended. Without `--central`, each service's own policy counts.
+now) is extended. Without `--central`, each service's own policy counts. For a named fleet, `logast fleet <name>
+--vocabulary` writes the worksheet in the fleet folder from the snapshots, and its members extend the fleet's
+company.yaml by name.
 
 ## shape
 
