@@ -100,6 +100,45 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #7 (metamorphic relation): a class unrelated to the rest (its own package, nothing calls it, it calls nothing of
+     * the service) changes nothing in the other files: every source file of e2e/before migrates exactly as in the main
+     * snapshot. Catches leaks between files (a rule that sees a callee it should not, a shared counter, a key that
+     * collides).
+     */
+    @Test
+    void anUnrelatedClassChangesNothingElse() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/unrelated"));
+            Files.writeString(dir.resolve("WeatherCache.java"), """
+                    package com.example.e2e.unrelated;
+
+                    import java.util.HashMap;
+                    import java.util.Map;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+
+                    public class WeatherCache {
+                        private static final Logger log = LoggerFactory.getLogger(WeatherCache.class);
+                        private final Map<String, Integer> temperatures = new HashMap<>();
+
+                        public void put(String city, int celsius) {
+                            temperatures.put(city, celsius);
+                            log.debug("Cached temperature for " + city);
+                        }
+                    }
+                    """);
+        });
+        Map<String, String> expected = files(EXPECTED);
+        List<String> differ = new ArrayList<>();
+        for (var e : expected.entrySet()) {
+            if (e.getKey().startsWith("src/") && !e.getValue().equals(actual.get(e.getKey()))) {
+                differ.add(e.getKey());
+            }
+        }
+        assertThat(differ).as("source files that migrate differently next to an unrelated class").isEmpty();
+    }
+
+    /**
      * #7 ("behaviour preserved"): with the logging pack alone, a migration changes only observability code. Every Java
      * file of e2e/before, compared with its migrated version after both are reduced to the statements that are not
      * logging, MDC, metrics or observation code (comments, imports, blank lines and braces dropped: MDC and observation
