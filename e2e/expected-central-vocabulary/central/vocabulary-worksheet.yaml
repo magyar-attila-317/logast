@@ -1,14 +1,17 @@
-# logast vocabulary worksheet (#113): every key the services use, with its evidence. Decide here, then run
-# `logast vocabulary --central <this folder> <service>…` again: it keeps your decisions, refreshes the evidence
-# and publishes the decided terms to company.yaml next to this file (never edit that one).
-# Decisions, per key (logast never decides them):
-#   term: <name>      publish the key as the term <name>; the key is its canonical MDC / [k=v] key
-#   same_as: <key>    the same value as <key>: published as an alias of <key>'s term (apply renames it)
-#   local: true       stays in its service, not published
-#   owner: <team>     optional: who to ask about the term (a comment in company.yaml)
-#   area: <name>      optional, with term: published under areas.<name>.vocabulary in company.yaml
-# Per area (section `areas`): packages: [..] is your decision, published with the area's terms.
-# Everything else (services, types, evidence, similar, suggest, terms, known_in) is rewritten on each run.
+# $schema: ./vocabulary-worksheet.schema.json
+# logast vocabulary worksheet: every MDC / [k=v] key the services use, and where.
+#
+# What to do: under each key that has "# decide:" lines, uncomment ONE of them (the first one is
+# logast's suggestion), then run:
+#     `logast vocabulary --central <this folder> <service>…`
+# It keeps your decisions, refreshes the rest and publishes the decided terms to company.yaml next to this
+# file. Services that extend company.yaml get the renames on their next `logast apply`.
+#
+#   term: order        this key is a company-wide term (here: "order"), and the key is its name in logs
+#   same_as: orderId   the same value as the key orderId: apply renames this key to orderId's
+#   local: true        only for its own service: not published
+# Optional next to term: owner: <team> (who to ask), area: <name> (published under areas.<name>).
+# Per area (section `areas`), packages: [..] is yours to set too. Everything else is rewritten on each run.
 #
 # Summary of this run:
 #   services: 3 (billing, ledger, shipping), keys: 4, decided: 3
@@ -26,6 +29,8 @@ areas:
     terms: [order]
 keys:
   customerId:
+    # term: customer   # decide: a company-wide term; customerId is its key in logs
+    # local: true      # decide: not published
     services: [ledger, shipping]
     types: ["Long", "String"]
     warning: "one name, different types: Long (ledger), String (shipping): possibly NOT the same value; if so, give one of them another key"

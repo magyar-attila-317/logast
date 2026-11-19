@@ -55,11 +55,18 @@ class CentralVocabularyTest {
         CentralVocabulary.Result first = CentralVocabulary.run(central, services);
         assertThat(first.summary()).contains("to decide: 3 (3 new): batchId (new), invoiceId (new), invoice_id (new)");
         assertThat(first.worksheet()).contains("invoice_id: same type Long; differs: services billing vs payments")
-                .contains("suggest: \"local: true? (only billing uses it)\"");
+                .as("#139: the choices as lines to uncomment, the suggestion first")
+                .contains("  batchId:\n    # local: true   # decide: suggested, only billing uses it: not published\n"
+                        + "    # term: batch   # decide: a company-wide term; batchId is its key in logs\n")
+                .startsWith("# $schema: ./vocabulary-worksheet.schema.json\n");
+        assertThat(central.resolve(CentralVocabulary.SCHEMA)).as("the schema next to the worksheet").isRegularFile();
         assertThat(first.terms()).isZero();
 
         Path ws = central.resolve(CentralVocabulary.WORKSHEET);
-        Files.writeString(ws, Files.readString(ws).replace("  invoiceId:\n", "  invoiceId:\n    term: invoice\n")
+        // deciding = uncommenting one of the lines logast wrote (#139), or writing one
+        String text = Files.readString(ws);
+        String termLine = text.lines().filter(l -> l.startsWith("    # term: invoice ")).findFirst().orElseThrow();
+        Files.writeString(ws, text.replace(termLine, "    term: invoice")
                 .replace("  invoice_id:\n", "  invoice_id:\n    same_as: invoiceId\n"));
         CentralVocabulary.Result second = CentralVocabulary.run(central, services);
         assertThat(second.worksheet()).as("decisions kept").contains("    term: invoice\n", "    same_as: invoiceId\n");

@@ -410,7 +410,8 @@ public final class NamedFleet {
             known.addAll(s.areas());
             names.add(s.service());
         }
-        return CentralVocabulary.build(uses, names, CentralVocabulary.read(fleet.resolve(CentralVocabulary.WORKSHEET)), known);
+        return CentralVocabulary.build(uses, names, CentralVocabulary.read(fleet.resolve(CentralVocabulary.WORKSHEET)), known)
+                .rerunBy("`logast fleet " + fleet.getFileName() + "`");
     }
 
     /** The short commit of {@code root}'s git checkout; null outside git. */

@@ -142,8 +142,9 @@ with the trend against the previous page; `--json` prints the overview as JSON.
 
 ## The fleet's vocabulary
 
-`logast fleet <name> --vocabulary` builds the [vocabulary worksheet](vocabulary.md#one-vocabulary-across-services)
-from the members' snapshots, keeping the decisions already in it, and regenerates the fleet's `company.yaml`:
+`logast fleet <name> --vocabulary` writes the [vocabulary worksheet](vocabulary.md#one-vocabulary-across-services)
+from the members' snapshots. Decide by uncommenting a `# decide:` line under a key, then run `logast fleet <name>`:
+every run keeps the decisions, refreshes the evidence and regenerates the fleet's `company.yaml`:
 
 | file in the fleet folder | holds | edited by |
 |---|---|---|
