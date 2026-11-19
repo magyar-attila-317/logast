@@ -8,7 +8,7 @@ examples. Output samples are illustrations; counts and ids differ per service an
 
 | command | what it does |
 |---|---|
-| `logast apply <svc> [--only ids] [--dry-run] [--force]` | applies every order that needs no text (`--only`: just these) on a scratch copy, rescanning between rounds, and writes the result (`--dry-run`: preview only). Refuses a git working tree with uncommitted changes unless `--force`. On a service without `logast.yaml` (or with one that holds only `fleet:` / `extends:`) it writes one first (what `init` writes, leaving to the fleet or extended layer what they set), on a Gradle build without a classpath file it reads one. Message texts come from `.logast/decisions/messages.yaml` (or `--fills <file>`); `--auto` and `--write` are accepted and are the default |
+| `logast apply <svc> [--only ids] [--dry-run] [--force]` | applies every order that needs no text (`--only`: just these) on a scratch copy, rescanning between rounds, and writes the result (`--dry-run`: preview only). Refuses a git working tree with uncommitted changes unless `--force`: changes to tracked files count, except `.logast/`, `.gitignore`, `logast.yaml` and what an earlier apply wrote while it is unchanged (`.logast/applied-state.txt` holds each file's content hash), so apply → review → apply again needs no commit; a file edited after the apply, or one logast did not write, counts. On a service without `logast.yaml` (or with one that holds only `fleet:` / `extends:`) it writes one first (what `init` writes, leaving to the fleet or extended layer what they set), on a Gradle build without a classpath file it reads one. Message texts come from `.logast/decisions/messages.yaml` (or `--fills <file>`); `--auto` and `--write` are accepted and are the default |
 | `logast scan <svc>` | finds gaps, writes `.logast/reports/orders.json` and the [reports](#reports-written-automatically), prints the work orders |
 | `logast review <svc> [--open]` | local page for the optional decisions (message texts, metrics, retries), dry run and apply |
 | `logast verify <svc>` | runs the existing tests with log capture and checks what was really logged |
@@ -28,7 +28,7 @@ Options most analysing commands share: `--policy <file>`, `--classpath-file <fil
 |---|---|---|
 | `.logast/decisions/` | what a person decides, all YAML: `messages.yaml` (message texts), `metrics.yaml` (count, tag or skip a logged outcome), `traffic.yaml` (calls/day per entrypoint), `retry.yaml` (every retry decision: settings per usage, and yes / no for the calls logast recommends retrying). logast keeps the entries in step with the code and keeps what you wrote | yes |
 | `.logast/reports/` | what logast writes for you to read: `orders.json`, `coverage.txt`, `metrics.md`, `queries.md`, `lifecycle.txt` ([written automatically](#reports-written-automatically)), `steps/`, `apply-trace.txt`, `last-apply.txt`, `verify.json` | no |
-| `.logast/` | `classpath-*.txt` (machine input), `baseline.json` (CI), `README.md`, `shape/` | baseline and README |
+| `.logast/` | `classpath-*.txt` and `applied-state.txt` (machine input), `baseline.json` (CI), `README.md`, `shape/` | baseline and README |
 
 A `.logast` from an earlier logast version (`fills.json`, `metrics.json`, `traffic.yaml`, `retry.yaml` and the reports
 at its top) is moved into this layout by the next command that reads it: `fills.json` and `metrics.json` become

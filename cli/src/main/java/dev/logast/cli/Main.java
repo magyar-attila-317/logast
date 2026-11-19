@@ -492,6 +492,9 @@ public final class Main {
                         + "applied (" + applied.size() + "): " + String.join(" ", applied) + "\n"
                         + "files (" + changed.size() + "): " + String.join(", ", changed) + "\n");
             }
+            if (write && !changed.isEmpty()) {   // #131: both runs of a refresh; this one hashes what they wrote last
+                recordApplied(root(), changed);
+            }
             // every log call of the result, with the ones this run fixed (#72); the logging pack's report, as in scan
             List<dev.logast.LogLedger.Entry> ledger = null;
             if (write && scanner.lastAnalysis != null && policy.packSelected("logging")) {
@@ -623,7 +626,7 @@ public final class Main {
 
     /**
      * #122: the files under {@code root} with uncommitted changes git tracks (staged or not; untracked files, logast's
-     * own .logast/ and the files its setup writes, .gitignore and logast.yaml, are left out: init then apply works), or null when {@code root} is not in a git work tree or git is missing.
+     * own .logast/ and the files its setup writes, .gitignore and logast.yaml, are left out: init then apply works; #131: so is a file whose content is still what an apply wrote, see {@link #recordApplied}), or null when {@code root} is not in a git work tree or git is missing.
      */
     static List<String> uncommitted(Path root) {
         try {
@@ -639,12 +642,79 @@ public final class Main {
                     .directory(root.toFile()).redirectError(ProcessBuilder.Redirect.DISCARD).start();
             List<String> out = new String(status.getInputStream().readAllBytes()).lines()
                     .filter(l -> l.length() > 3).map(l -> l.substring(3)).toList();
-            return status.waitFor() == 0 ? out : null;
+            if (status.waitFor() != 0) {
+                return null;
+            }
+            // #131: a file whose content is still what an apply wrote is logast's own change (apply, review, apply again)
+            Map<String, String> wrote = appliedState(root);
+            if (wrote.isEmpty() || out.isEmpty()) {
+                return out;
+            }
+            Process prefixOf = new ProcessBuilder("git", "rev-parse", "--show-prefix").directory(root.toFile())
+                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            String prefix = new String(prefixOf.getInputStream().readAllBytes()).strip();   // git's paths start at the top
+            if (prefixOf.waitFor() != 0) {
+                return out;
+            }
+            return out.stream().filter(f -> {
+                String rel = f.startsWith(prefix) ? f.substring(prefix.length()) : null;
+                return rel == null || !wrote.containsKey(rel) || !wrote.get(rel).equals(sha256(root.resolve(rel)));
+            }).toList();
         } catch (IOException e) {
             return null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return null;
+        }
+    }
+
+    /**
+     * #131: records the content each of {@code files} has now (SHA-256, "-" for a file apply deleted), merged into the
+     * earlier record: a later apply updates and extends it. {@link #uncommitted} leaves such a file out while it is unchanged.
+     */
+    static void recordApplied(Path root, java.util.Collection<String> files) throws IOException {
+        Map<String, String> state = new java.util.TreeMap<>(appliedState(root));
+        for (String f : files) {
+            state.put(f, sha256(root.resolve(f)));
+        }
+        Path file = root.resolve(dev.logast.LogastDir.APPLIED_STATE);
+        Files.createDirectories(file.getParent());
+        StringBuilder sb = new StringBuilder("# what logast apply wrote (sha-256 of the content after the write); "
+                + "while a file still has it, its change is logast's and does not block the next apply\n");
+        state.forEach((f, h) -> sb.append(h).append("  ").append(f).append('\n'));
+        Files.writeString(file, sb.toString());
+    }
+
+    /** #131: file → SHA-256 of the content apply wrote; empty without a record (an earlier logast). */
+    static Map<String, String> appliedState(Path root) {
+        Path file = root.resolve(dev.logast.LogastDir.APPLIED_STATE);
+        Map<String, String> state = new LinkedHashMap<>();
+        try {
+            if (Files.isRegularFile(file)) {
+                for (String line : Files.readAllLines(file)) {
+                    int sep = line.indexOf("  ");
+                    if (!line.startsWith("#") && sep > 0) {
+                        state.put(line.substring(sep + 2), line.substring(0, sep));
+                    }
+                }
+            }
+        } catch (IOException e) {
+            return Map.of();
+        }
+        return state;
+    }
+
+    /** The SHA-256 of a file's bytes in hex, "-" when it does not exist, "?" when it can't be read. */
+    static String sha256(Path p) {
+        try {
+            if (!Files.isRegularFile(p)) {
+                return "-";
+            }
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(p)));
+        } catch (IOException e) {
+            return "?";
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
         }
     }
 
