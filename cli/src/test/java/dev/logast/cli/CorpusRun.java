@@ -85,7 +85,7 @@ class CorpusRun {
 
     /**
      * #7: with the logging pack alone, every Java file keeps its behaviour: the same non-observability statements as
-     * before ({@link E2eGoldenTest#behaviour}), on code nobody wrote for logast's tests.
+     * before ({@link BehaviourCheck#behaviour}), on code nobody wrote for logast's tests.
      */
     private void loggingOnly(String name, String repo, String commit, String dir) throws Exception {
         Path clone = work.resolve(name + "-logging");
@@ -104,11 +104,11 @@ class CorpusRun {
         List<String> changed = new ArrayList<>();
         for (var e : before.entrySet()) {
             String now = Files.readString(app.resolve(e.getKey()));
-            if (!E2eGoldenTest.behaviour(e.getValue()).equals(E2eGoldenTest.behaviour(now))) {
-                List<String> gone = new ArrayList<>(E2eGoldenTest.behaviour(e.getValue()));
-                gone.removeAll(E2eGoldenTest.behaviour(now));
-                List<String> added = new ArrayList<>(E2eGoldenTest.behaviour(now));
-                added.removeAll(E2eGoldenTest.behaviour(e.getValue()));
+            if (!BehaviourCheck.behaviour(e.getValue()).equals(BehaviourCheck.behaviour(now))) {
+                List<String> gone = new ArrayList<>(BehaviourCheck.behaviour(e.getValue()));
+                gone.removeAll(BehaviourCheck.behaviour(now));
+                List<String> added = new ArrayList<>(BehaviourCheck.behaviour(now));
+                added.removeAll(BehaviourCheck.behaviour(e.getValue()));
                 changed.add(e.getKey() + "\n  gone:  " + gone + "\n  added: " + added);
             }
         }
