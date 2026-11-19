@@ -94,6 +94,7 @@ public final class PolicyLoader {
             throw new IllegalArgumentException("policy file not found: " + explicit);
         }
         merged.remove("extends");
+        merged.remove("fleet");
         merged.set("overrides", JsonNodeFactory.instance.arrayNode().addAll(loader.overrides.stream().map(TextNode::new).toList()));
         merged.remove("warnings");
         Policy policy;
@@ -144,7 +145,7 @@ public final class PolicyLoader {
         } catch (IOException e) {
             return null;
         }
-        if (node == null || node.path("extends").isEmpty()) {
+        if (node == null || node.path("extends").isEmpty() && fleetCompany(node) == null) {
             return null;
         }
         Set<String> out = new HashSet<>();
@@ -160,6 +161,11 @@ public final class PolicyLoader {
         JsonNode node = loader.read(resolved);
         List<String> parents = new ArrayList<>();
         if (node != null) {
+            String company = loader.fleetLayer(node);
+            if (company != null) {   // #124: a fleet member extends the fleet's company.yaml
+                loader.layer(merged, company, null);
+                parents.add(label(company));
+            }
             for (JsonNode parent : node.path("extends")) {
                 loader.layer(merged, parent.asText(), resolved);
                 parents.add(label(resolve(parent.asText(), resolved)));
@@ -204,6 +210,10 @@ public final class PolicyLoader {
         loading.push(resolved);
         JsonNode node = read(resolved);
         if (node != null && node.isObject()) {
+            String company = fleetLayer(node);
+            if (company != null) {   // #124: the fleet's company.yaml, before the file's own extends
+                layer(target, company, null);
+            }
             for (JsonNode parent : node.path("extends")) {
                 layer(target, parent.asText(), relativeTo.getOrDefault(resolved, resolved));
             }
@@ -218,7 +228,7 @@ public final class PolicyLoader {
             Map.Entry<String, JsonNode> e = it.next();
             String key = e.getKey();
             String p = path.isEmpty() ? key : path + "." + key;
-            if (path.isEmpty() && key.equals("extends")) {
+            if (path.isEmpty() && (key.equals("extends") || key.equals("fleet"))) {
                 continue;
             }
             JsonNode value = e.getValue();
@@ -257,6 +267,38 @@ public final class PolicyLoader {
     private void setOrigin(String path, String layer) {
         origin.keySet().removeIf(k -> k.startsWith(path + ".") || k.startsWith(path + "["));
         origin.put(path, layer);
+    }
+
+    /**
+     * #124: {@code fleet: <name>} makes the file extend the fleet's company.yaml, found by name on this machine
+     * ({@link dev.logast.fleet.FleetHome}); null when the file names no fleet or the fleet has no company.yaml yet. A
+     * fleet this machine does not know is a warning: the service's own rules still apply.
+     */
+    private String fleetLayer(JsonNode node) {
+        String company = fleetCompany(node);
+        if (company == null || Files.isRegularFile(Path.of(company))) {
+            return company;
+        }
+        String name = node.path("fleet").asText().strip();
+        Path dir = Path.of(company).getParent();
+        if (!dev.logast.fleet.NamedFleet.exists(dir)) {
+            String w = "fleet: " + name + " is not known on this machine (no fleet folder at " + dir + "): its company.yaml "
+                    + "is not applied; `logast fleet join " + name + "` sets it up";
+            if (!unpinned.contains(w)) {
+                unpinned.add(w);
+            }
+        }
+        return null;
+    }
+
+    /** The company.yaml path of the fleet {@code node} names, whether it exists or not; null without {@code fleet:}. */
+    private static String fleetCompany(JsonNode node) {
+        String name = node.path("fleet").asText("").strip();
+        if (name.isEmpty()) {
+            return null;
+        }
+        return dev.logast.fleet.FleetHome.fleetDir(dev.logast.fleet.FleetHome.Env.current(), name).dir()
+                .resolve(dev.logast.CentralVocabulary.COMPANY).toAbsolutePath().normalize().toString();
     }
 
     private static String resolve(String location, String from) {

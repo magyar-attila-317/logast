@@ -6669,6 +6669,141 @@ abstract class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-fleet-links"), snapshot);
     }
 
+    /**
+     * #124: a named fleet in a temp home (never the real one). checkout and payments join payments-fleet: their
+     * logast.yaml gets only {@code fleet: payments-fleet}. Each scan leaves a snapshot in the fleet folder, and
+     * {@code logast fleet payments-fleet} compares them without rescanning: checkout's RestClient.create() drops the
+     * trace to payments' POST /payments, and paymentId (checkout) / payment_id (payments) is a vocabulary conflict.
+     * Deciding it in the fleet's worksheet regenerates company.yaml, and payments' next scan uses it through the
+     * fleet's name (MDC_KEY_ALIAS on payment_id), with nothing added to its logast.yaml.
+     */
+    @Test
+    void servicesJoinANamedFleetAndItsOverviewComparesTheirSnapshots() throws IOException {
+        Path home = tmp.resolve("home");
+        Path checkout = tmp.resolve("checkout");
+        Path payments = tmp.resolve("payments");
+        writeSource(checkout, "com/example/checkout/Payment.java", """
+                package com.example.checkout;
+
+                public record Payment(Long id, String currency) {
+                }
+                """);
+        writeSource(checkout, "com/example/checkout/PaymentClient.java", """
+                package com.example.checkout;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.slf4j.MDC;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+
+                @Component
+                class PaymentClient {
+                    private static final Logger log = LoggerFactory.getLogger(PaymentClient.class);
+                    private final RestClient restClient = RestClient.create();
+
+                    void pay(Payment payment) {
+                        MDC.put("paymentId", String.valueOf(payment.id()));
+                        restClient.post().uri("http://payments/payments").body(payment).retrieve().toBodilessEntity();
+                        log.info("Payment requested");
+                        MDC.remove("paymentId");
+                    }
+                }
+                """);
+        writeSource(payments, "com/example/payments/Payment.java", """
+                package com.example.payments;
+
+                public record Payment(Long id, String currency) {
+                }
+                """);
+        writeSource(payments, "com/example/payments/PaymentController.java", """
+                package com.example.payments;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.slf4j.MDC;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class PaymentController {
+                    private static final Logger log = LoggerFactory.getLogger(PaymentController.class);
+
+                    @PostMapping("/payments")
+                    void pay(@RequestBody Payment payment) {
+                        MDC.put("payment_id", String.valueOf(payment.id()));
+                        log.info("Payment booked");
+                        MDC.remove("payment_id");
+                    }
+                }
+                """);
+        System.setProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY, home.toString());
+        try {
+            String created = run(tmp, "fleet", "create", "payments-fleet");
+            Path fleet = home.resolve(".local/share/logast/fleets/payments-fleet");
+            String shown = "<app>/home/.local/share/logast/fleets/payments-fleet";   // run() shows tmp as <app>
+            assertThat(created).as("the default folder under the (temp) home").contains("fleet payments-fleet: " + shown);
+            for (Path svc : List.of(checkout, payments)) {
+                assertThat(run(svc, "fleet", "join", "payments-fleet", svc.toString())).contains(" joined fleet payments-fleet");
+                assertThat(Files.readString(svc.resolve("logast.yaml"))).as("only the fleet's name, no machine path")
+                        .isEqualTo("fleet: payments-fleet\n");
+            }
+            assertThat(run(tmp, "fleet", "list")).contains("payments-fleet  " + shown + "  2 members: checkout, payments");
+            String before = run(tmp, "fleet", "payments-fleet");
+            assertThat(before).contains("no snapshot yet: run `logast scan` in");
+
+            for (Path svc : List.of(checkout, payments)) {
+                run(svc, "scan", svc.toString(), "--classpath-file", CLASSPATH);
+                assertThat(fleet.resolve("services/" + svc.getFileName() + ".json")).as("the scan's snapshot").exists();
+            }
+            assertThat(run(payments, "policy", payments.toString())).as("nothing decided yet: no company.yaml term")
+                    .doesNotContain("payment_id");
+            String overview = run(tmp, "fleet", "payments-fleet");
+            assertThat(overview).as("both members from their snapshots").containsPattern("checkout\\s+score ")
+                    .containsPattern("payments\\s+score ").contains("snapshot just now").doesNotContain("no snapshot")
+                    .as("the trace break between them")
+                    .contains("checkout -> payments  POST /payments", "breaks at the caller (checkout)")
+                    .as("the vocabulary conflict").contains("Vocabulary: 1 conflict", "paymentId ~ payment_id: same type Long");
+            String json = run(tmp, "fleet", "payments-fleet", "--json");
+            assertThat(dev.logast.orders.OrderJson.MAPPER.readTree(json).path("services")).hasSize(2);
+
+            // the fleet's worksheet: decided once, company.yaml follows, every member takes it by the fleet's name
+            run(tmp, "fleet", "payments-fleet", "--vocabulary");
+            Path worksheet = fleet.resolve("vocabulary-worksheet.yaml");
+            Files.writeString(worksheet, Files.readString(worksheet).replace("  paymentId:\n", "  paymentId:\n    term: payment\n")
+                    .replace("  payment_id:\n", "  payment_id:\n    same_as: paymentId\n"));
+            String decided = run(tmp, "fleet", "payments-fleet", "--vocabulary");
+            assertThat(decided).contains("Vocabulary: 0 conflicts", "(1 term, generated; every member extends it)");
+            assertThat(Files.readString(fleet.resolve("company.yaml"))).contains("key: paymentId", "aliases: [payment_id]");
+            // (the scan's own finding cannot tell: keyStyle camel renames payment_id to paymentId anyway)
+            assertThat(run(payments, "policy", payments.toString())).as("company.yaml reached by the fleet's name")
+                    .containsPattern("payment:\\s+mdc:\\s+key: \"paymentId\"\\s+aliases:\\s+- \"payment_id\"");
+            STDERR.setLength(0);
+            run(payments, "scan", payments.toString(), "--classpath-file", CLASSPATH);
+            assertThat(STDERR.toString()).doesNotContain("is not known on this machine", "no snapshot written");
+            assertThat(run(tmp, "fleet", "payments-fleet")).as("the new snapshot: nothing left to decide").contains("Vocabulary: 0 conflicts");
+            assertThat(Files.readString(payments.resolve("logast.yaml"))).isEqualTo("fleet: payments-fleet\n");
+            assertThat(run(tmp, "fleet", "payments-fleet", "--html")).contains("report: " + shown + "/report/fleet.html");
+
+            // apply reports too: the snapshot is the code after the changes
+            var mapper = dev.logast.orders.OrderJson.MAPPER;
+            Path checkoutSnapshot = fleet.resolve("services/checkout.json");
+            double scoreBefore = mapper.readTree(checkoutSnapshot.toFile()).path("report").path("score").asDouble();
+            run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
+            assertThat(mapper.readTree(checkoutSnapshot.toFile()).path("report").path("score").asDouble())
+                    .as("apply's snapshot\n" + STDERR).isGreaterThan(scoreBefore);
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).as("apply keeps the member's logast.yaml as it is")
+                    .isEqualTo("fleet: payments-fleet\n");
+
+            assertThat(run(checkout, "fleet", "leave", checkout.toString())).contains("checkout left fleet payments-fleet");
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).isEmpty();
+            assertThat(fleet.resolve("services/checkout.json")).doesNotExist();
+        } finally {
+            System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
+        }
+    }
+
     private static void writeSource(Path service, String path, String text) throws IOException {
         Path file = service.resolve("src/main/java").resolve(path);
         Files.createDirectories(file.getParent());

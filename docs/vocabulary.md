@@ -52,7 +52,9 @@ service's keys in one place outside the repos, so merging them is a decision on 
 | `~/.logast/company.yaml` | **generated** from the decided terms: canonical key, aliases, sources, grouped by area where decided | logast only |
 | `<service>/logast.yaml` | `extends: [~/.logast/company.yaml]` and the terms only that service has | rarely |
 
-The flow:
+In a [named fleet](fleet.md) the same files live in the fleet folder: `logast fleet <name> --vocabulary` builds the
+worksheet from the members' snapshots, and members extend its company.yaml through `fleet: <name>`. The flow with a
+folder of your own:
 
 1. `logast vocabulary --central ~/.logast services/billing services/shipping …` harvests every service (MDC keys,
    `[k=v]` keys and `addKeyValue` keys that name an identifier) into the worksheet.
