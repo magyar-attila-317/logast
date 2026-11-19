@@ -182,7 +182,7 @@ class LogastPluginFunctionalTest {
     }
 
     /**
-     * Apply adds a dependency (dependency mode, the default): the CLI refreshes the classpath by running the service's
+     * Apply adds a dependency (dependency mode; vendor is the default since #122): the CLI refreshes the classpath by running the service's
      * Gradle, which must not happen inside the build (the build's classpath came with --classpath-file). The stand-in
      * gradlew would leave a marker; apply says to run logastApply again instead.
      */
@@ -191,6 +191,7 @@ class LogastPluginFunctionalTest {
         Path gradlew = project.resolve("gradlew");
         Files.writeString(gradlew, "#!/bin/sh\ntouch nested-gradle-ran\n");
         assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+        write("logast.yaml", "support:\n  mode: dependency\n");
 
         BuildResult r = gradle("logastApply").build();
         assertThat(Files.readString(project.resolve("deps.gradle"))).contains("dev.logast:logging-support");

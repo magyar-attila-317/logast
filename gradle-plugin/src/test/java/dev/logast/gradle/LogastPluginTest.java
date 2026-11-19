@@ -53,7 +53,7 @@ class LogastPluginTest {
         assertThat(apply.getScanClasspath().getFrom()).isNotEmpty();   // compileClasspath, as for the scan tasks
 
         apply.getDryRun().set(true);
-        assertThat(apply.command()).containsExactly("apply", "--auto");
+        assertThat(apply.command()).containsExactly("apply", "--auto", "--dry-run");
     }
 
     @Test
