@@ -7308,6 +7308,127 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #147: a fleet kept in its own git repo. {@code fleet init} scaffolds it (repos.yaml, README, workflow, .gitignore);
+     * repos.yaml lists two service repos by URL (file:// here, https or ssh in real life); {@code fleet <path> --refresh}
+     * clones them shallow into .cache/repos, scans them read-only and writes the page with their link; a new commit in a
+     * member is picked up by the next refresh. What logast generates stays out of the fleet repo's git status.
+     */
+    @Test
+    void aFleetRepoListsItsMembersByUrlAndRefreshesFromTheirNewestCommits() throws IOException {
+        Path home = tmp.resolve("home");
+        Path orders = tmp.resolve("remote/orders");
+        Path stock = tmp.resolve("remote/stock");
+        writeSource(stock, "com/example/stock/StockController.java", """
+                package com.example.stock;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class StockController {
+                    private static final Logger log = LoggerFactory.getLogger(StockController.class);
+
+                    @PostMapping("/reservations/{id}")
+                    void reserve(@PathVariable Long id) {
+                        log.info("Stock reserved");
+                    }
+                }
+                """);
+        writeSource(orders, "com/example/orders/StockClient.java", """
+                package com.example.orders;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+
+                @Component
+                class StockClient {
+                    private final RestClient restClient;
+
+                    StockClient(RestClient.Builder builder) {
+                        this.restClient = builder.baseUrl("http://stock").build();
+                    }
+
+                    void reserve(Long id) {
+                        restClient.post().uri("/reservations/{id}", id).retrieve().toBodilessEntity();
+                    }
+                }
+                """);
+        for (Path repo : List.of(orders, stock)) {
+            Path gradlew = repo.resolve("gradlew");
+            Files.writeString(gradlew, "#!/bin/sh\nout=.logast\nfor a in \"$@\"; do case \"$a\" in -Plogast.outputDir=*) "
+                    + "out=\"${a#-Plogast.outputDir=}\";; esac; done\nmkdir -p \"$out\"\ncp '" + CLASSPATH + "' \"$out/classpath-root.txt\"\n");
+            assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+            git(repo, "init", "--quiet");
+            git(repo, "add", "-A");
+            git(repo, "commit", "--quiet", "-m", "first");
+        }
+        Path fleetRepo = tmp.resolve("my-company-logast");
+        Files.createDirectories(fleetRepo);
+        git(fleetRepo, "init", "--quiet");
+        System.setProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY, home.toString());
+        try {
+            String init = run(fleetRepo, "fleet", "init", "acme", "--dir", fleetRepo.toString());
+            assertThat(init).as(init + STDERR).contains("fleet acme: ", "repos.yaml     the members by repo URL",
+                    "workflow       .github/workflows/logast-fleet.yml: refreshes the report on push; Pages stays off");
+            assertThat(Files.readString(fleetRepo.resolve("README.md"))).contains("# acme: the logast fleet",
+                    "logast fleet create acme --dir ~/logast-fleets/acme", "logast fleet join acme",
+                    "Check who can see it first", "LOGAST_REPOS_TOKEN");
+            assertThat(Files.readString(fleetRepo.resolve(".github/workflows/logast-fleet.yml")))
+                    .containsPattern("LOGAST_REF: \\S+").contains("logast fleet . --refresh --no-builds --classpath-file .cache/classpath.txt", "$GITHUB_STEP_SUMMARY",
+                            "gradle --quiet -p classpath writeClasspath", "secrets.LOGAST_REPOS_TOKEN",
+                            "  pages:\n    # only when the repository variable LOGAST_PAGES is 'true'", "if: vars.LOGAST_PAGES == 'true'");
+            assertThat(run(fleetRepo, "fleet", "init", "acme", "--dir", fleetRepo.toString())).as("a second init keeps the files")
+                    .contains("README.md      (kept: it existed)");
+
+            Path repos = fleetRepo.resolve("repos.yaml");
+            Files.writeString(repos, Files.readString(repos).replace("repos:\n", "repos:\n  - " + orders.toUri()
+                    + "\n  - url: " + stock.toUri() + "\n    name: stock\n"));
+            STDERR.setLength(0);
+            String survey = run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--no-builds");
+            assertThat(survey).as(survey + STDERR).containsPattern("orders\\s+added\\s+score ").containsPattern("stock\\s+added\\s+score ");
+            assertThat(STDERR.toString()).as("--no-builds: the members' Gradle never ran").contains("survey quality")
+                    .doesNotContain("running Gradle in");
+            // as the workflow: the fleet repo's own classpath/build.gradle.kts gives the libraries (here: the test's)
+            Files.copy(Path.of(CLASSPATH), fleetRepo.resolve(".cache/classpath.txt"));
+            STDERR.setLength(0);
+            String first = run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--no-builds", "--classpath-file",
+                    fleetRepo.resolve(".cache/classpath.txt").toString());
+            assertThat(STDERR.toString()).doesNotContain("running Gradle in");
+            assertThat(first).as(first + STDERR).containsPattern("orders\\s+added\\s+score ").containsPattern("stock\\s+added\\s+score ")
+                    .contains("orders -> stock  POST /reservations/{id}", "confirmed: host stock");
+            assertThat(fleetRepo.resolve(".cache/repos/orders/src/main/java/com/example/orders/StockClient.java")).isRegularFile();
+            assertThat(git(fleetRepo.resolve(".cache/repos/stock"), "rev-list", "--count", "HEAD").strip()).as("shallow").isEqualTo("1");
+            assertThat(Files.readString(fleetRepo.resolve("report/fleet.html"))).contains("data-from='orders' data-to='stock'");
+            for (Path repo : List.of(orders, stock)) {
+                assertThat(git(repo, "status", "--porcelain", "--untracked-files=all")).as("nothing written into the repo").isEmpty();
+            }
+
+            // a new commit in a member: the next refresh scans it
+            writeSource(stock, "com/example/stock/StockController.java", Files.readString(
+                    stock.resolve("src/main/java/com/example/stock/StockController.java")).replace("/reservations/{id}", "/holds/{id}"));
+            git(stock, "commit", "--quiet", "-am", "renamed");
+            // as a fresh checkout in CI: members.yaml (this machine's paths) is not committed, repos.yaml makes the fleet
+            Files.delete(fleetRepo.resolve("members.yaml"));
+            String second = run(tmp, "fleet", fleetRepo.toString(), "--refresh");
+            assertThat(second).as(second + STDERR).doesNotContain("orders -> stock  POST /reservations")
+;
+            assertThat(Files.readString(fleetRepo.resolve("report/fleet.html"))).as("the call no longer reaches stock")
+                    .doesNotContain("data-from='orders' data-to='stock'");
+            assertThat(git(fleetRepo.resolve(".cache/repos/stock"), "rev-parse", "HEAD")).isEqualTo(git(stock, "rev-parse", "HEAD"));
+
+            assertThat(git(fleetRepo, "status", "--porcelain", "--untracked-files=all").lines().map(l -> l.substring(3)).toList())
+                    .as("only what the owner edits and commits; clones, snapshots, report and members.yaml are ignored")
+                    .containsExactlyInAnyOrder(".github/workflows/logast-fleet.yml", ".gitignore", "README.md", "company.yaml", "repos.yaml",
+                            "classpath/build.gradle.kts", "classpath/settings.gradle.kts");
+        } finally {
+            System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
+        }
+    }
+
+    /**
      * #132: a fleet made from repos that know nothing of it. orders and stock are clean git repos without logast.yaml
      * (stock has its own, setting keyStyle camel); {@code fleet add --scan} registers and scans them with the fleet's
      * company.yaml (keyStyle snake). Their stand-in gradlew writes the classpath where logast asks
