@@ -6807,9 +6807,13 @@ abstract class E2eGoldenTest {
                     .doesNotContainPattern("(?m)^  keyStyle:");
             run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
             assertThat(Files.readString(checkout.resolve("logast.yaml"))).as("set up once").isEqualTo(ownPolicy);
+            run(tmp, "fleet", "payments-fleet", "--vocabulary");
+            assertThat(Files.readString(fleet.resolve("company.yaml"))).as("regenerating the vocabulary keeps the fleet's own policy")
+                    .endsWith("\nlogging:\n  keyStyle: camel\n").contains("key: paymentId", "# <<< logast: end of the generated part");
 
             assertThat(run(checkout, "fleet", "leave", checkout.toString())).contains("checkout left fleet payments-fleet");
-            assertThat(Files.readString(checkout.resolve("logast.yaml"))).doesNotContain("fleet: payments-fleet", "belongs to");
+            assertThat(Files.readString(checkout.resolve("logast.yaml"))).doesNotContain("fleet: payments-fleet", "belongs to", "decided by fleet")
+                    .contains("\n  # keyStyle: camel\n");
             assertThat(fleet.resolve("services/checkout.json")).doesNotExist();
         } finally {
             System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);

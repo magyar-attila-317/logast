@@ -139,7 +139,7 @@ final class Fleet implements Callable<Integer> {
         CentralVocabulary.Result vocab = NamedFleet.vocabulary(dir, snaps.values());
         if (vocabulary) {
             Files.writeString(dir.resolve(CentralVocabulary.WORKSHEET), vocab.worksheet());
-            Files.writeString(dir.resolve(CentralVocabulary.COMPANY), vocab.company());
+            CentralVocabulary.writeCompany(dir.resolve(CentralVocabulary.COMPANY), vocab.company());
         }
         Path page = html ? FleetReport.write(out != null ? out : dir.resolve("report"), services, links) : null;
         Instant now = Instant.now();

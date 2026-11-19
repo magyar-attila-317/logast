@@ -49,7 +49,7 @@ service's keys in one place outside the repos, so merging them is a decision on 
 | file | holds | edited by |
 |---|---|---|
 | `~/.logast/vocabulary-worksheet.yaml` | every key of every service with its evidence, and your decisions | you decide; logast fills in the evidence |
-| `~/.logast/company.yaml` | **generated** from the decided terms: canonical key, aliases, sources, grouped by area where decided | logast only |
+| `~/.logast/company.yaml` | between its `# >>> logast` and `# <<< logast` lines: **generated** from the decided terms (canonical key, aliases, sources, grouped by area where decided); outside them: company settings of your own, kept on every run | logast (generated part), you (the rest) |
 | `<service>/logast.yaml` | `extends: [~/.logast/company.yaml]` and the terms only that service has | rarely |
 
 In a [named fleet](fleet.md) the same files live in the fleet folder: `logast fleet <name> --vocabulary` builds the
