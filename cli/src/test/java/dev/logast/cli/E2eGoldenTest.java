@@ -704,7 +704,7 @@ abstract class E2eGoldenTest {
         decided("per-package", E2eGoldenTest::toEarlierLayout);
         assertThat(STDERR.toString()).as("one line says what moved").contains("moved to the new .logast layout: "
                 + "fills.json → decisions/messages.yaml, metrics.json → decisions/metrics.yaml, traffic.yaml → decisions/traffic.yaml, "
-                + "orders.json, coverage.txt, apply-trace.txt, last-apply.txt, steps → reports/\n");
+                + "orders.json, coverage.txt, apply-trace.txt, last-apply.txt, steps, queries.md → reports/\n");
         for (String old : List.of("fills.json", "metrics.json", "traffic.yaml", "orders.json", "coverage.txt", "steps")) {
             assertThat(tmp.resolve("app/.logast").resolve(old)).as("moved: " + old).doesNotExist();
         }
@@ -721,10 +721,16 @@ abstract class E2eGoldenTest {
             dev.logast.orders.OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(dir.resolve(e.getValue()).toFile(), old);
             Files.delete(dir.resolve(e.getKey()));
         }
+        // metrics.md and lifecycle.txt came with the reports/ folder (#125): an earlier logast never wrote them
+        Set<String> newer = Set.of("metrics.md", "lifecycle.txt");
         for (String sub : List.of("decisions", "reports")) {
             try (Stream<Path> s = Files.list(dir.resolve(sub))) {
                 for (Path p : s.toList()) {
-                    Files.move(p, dir.resolve(p.getFileName()));
+                    if (newer.contains(p.getFileName().toString())) {
+                        Files.delete(p);
+                    } else {
+                        Files.move(p, dir.resolve(p.getFileName()));
+                    }
                 }
             }
             Files.delete(dir.resolve(sub));
