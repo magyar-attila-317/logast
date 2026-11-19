@@ -423,7 +423,7 @@ abstract class E2eGoldenTest {
         // in later rounds and got scopes of their own although the calculator's scope already covers them
         assertThat(actual.get("src/main/java/com/example/e2e/stipend/PledgeChecks.java"))
                 .as("checks called through the interface are covered by the calculator's scope").doesNotContain("MdcScope");
-        assertSameFiles(files(EXPECTED), actual);
+        assertSameAsMain(actual);
     }
 
     /**
@@ -1014,7 +1014,7 @@ abstract class E2eGoldenTest {
         Map<String, String> withoutWarning = new TreeMap<>(actual);
         withoutWarning.put("OUTPUT.txt", actual.get("OUTPUT.txt").lines().filter(l -> !l.contains("recognised by name only"))
                 .collect(java.util.stream.Collectors.joining("\n", "", "\n")));
-        assertSameFiles(files(EXPECTED), withoutWarning);
+        assertSameAsMain(withoutWarning);
     }
 
     /** Writes a text ("Pledge sweep <event>") into every messages.yaml entry that asks for one in a lifecycle form. */
@@ -1864,7 +1864,7 @@ abstract class E2eGoldenTest {
         }
         Map<String, String> lf = new TreeMap<>();
         actual.forEach((k, v) -> lf.put(k, v.replace("\r\n", "\n")));
-        assertSameFiles(files(EXPECTED), lf);
+        assertSameAsMain(lf);
     }
 
     /**
@@ -6047,6 +6047,17 @@ abstract class E2eGoldenTest {
 
     interface IoAction {
         void run(Path app) throws IOException;
+    }
+
+    /**
+     * The result equals the main snapshot (e2e/expected). Not while -Pe2e.update re-records: another shard may be
+     * rewriting that snapshot at the same moment (#110 runs shards in parallel), so the comparison would read a half-old
+     * snapshot; the run after the update compares as usual.
+     */
+    private static void assertSameAsMain(Map<String, String> actual) throws IOException {
+        if (!UPDATE) {
+            assertSameFiles(files(EXPECTED), actual);
+        }
     }
 
     private static void assertSameFiles(Map<String, String> expected, Map<String, String> actual) {
