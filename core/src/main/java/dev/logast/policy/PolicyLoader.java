@@ -123,9 +123,10 @@ public final class PolicyLoader {
      * A policy file's own {@code vocabulary} and the one its {@code extends:} parents (and the defaults) give it, as
      * written: which of the file's terms a parent now defines (#113).
      *
-     * @param parents the parents' file names (or URLs)
+     * @param inheritedAreas the parents' {@code areas} (each with its {@code vocabulary}, #121)
+     * @param parents        the parents' file names (or URLs)
      */
-    public record VocabularyLayers(JsonNode own, JsonNode inherited, List<String> parents) {
+    public record VocabularyLayers(JsonNode own, JsonNode inherited, JsonNode inheritedAreas, List<String> parents) {
     }
 
     /**
@@ -165,7 +166,7 @@ public final class PolicyLoader {
             }
         }
         return new VocabularyLayers(node == null ? JsonNodeFactory.instance.objectNode() : node.path("vocabulary"),
-                merged.path("vocabulary"), parents);
+                merged.path("vocabulary"), merged.path("areas"), parents);
     }
 
     /**

@@ -3,6 +3,7 @@ services: 3 (billing, ledger, shipping), keys: 4, decided: 0
 to decide: 4 (4 new): customerId (new), entryId (new), orderId (new), order_id (new)
 decided, no service uses it any more: -
 still used against a decision: -
+areas: bookkeeping (0 terms; in the logast.yaml of ledger)
 worksheet: <tmp>/central/vocabulary-worksheet.yaml (decide there)
 company:   <tmp>/central/company.yaml (0 terms, generated)
 
@@ -12,6 +13,7 @@ to decide: 1 (0 new): customerId
 decided, no service uses it any more: -
 still used against a decision:
   order_id (same_as orderId) still in shipping: apply renames it in services that extend company.yaml
+areas: bookkeeping (0 terms; in the logast.yaml of ledger), orders (1 term)
 worksheet: <tmp>/central/vocabulary-worksheet.yaml (decide there)
 company:   <tmp>/central/company.yaml (1 term, generated)
 
@@ -22,7 +24,7 @@ shipping: 1 key to rename
     src/main/java/com/example/shipping/ParcelDispatch.java:11 mdc
 
 === logast vocabulary --prune <tmp>/shipping
-shipping: removed orderId (order)
+shipping: removed orderId (order in area orders)
 
 === logast fleet --vocabulary <tmp>/shipping
 shipping: nothing to rename

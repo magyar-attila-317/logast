@@ -502,7 +502,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
     public Map<String, KeySource> mdcRegistry() {
         Map<String, KeySource> out = new TreeMap<>();
         mdc.keys().forEach((k, v) -> out.merge(styledKey(k), v, (a, b) -> new KeySource(concat(a.params(), b.params()), merge(a.types(), b.types()))));
-        vocabulary.values().forEach(t -> {
+        mdcTerms().forEach(t -> {
             if (t.mdc() != null && t.mdc().key() != null) {
                 out.merge(styledKey(t.mdc().key()), t.mdc().sources(), (a, b) -> new KeySource(
                         concat(a.params(), b.params()), merge(a.types(), b.types())));
@@ -519,19 +519,35 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
                 out.put(k, styledKey(k));
             }
         });
-        vocabulary.values().forEach(t -> {
-            if (t.mdc() != null && t.mdc().key() != null) {
-                String canonical = styledKey(t.mdc().key());
-                t.mdc().aliases().forEach(a -> {
-                    if (!a.equals(canonical)) {
-                        out.put(a, canonical);
-                    }
-                });
-                if (!t.mdc().key().equals(canonical)) {
-                    out.put(t.mdc().key(), canonical);
+        vocabulary.values().forEach(t -> mdcAliases(t, out::put));
+        // #121: an area term's MDC key is a key of the whole service (the MDC travels with the thread across areas);
+        // the global vocabulary wins when both name a spelling
+        areas.values().forEach(ar -> ar.vocabulary().values().forEach(t -> mdcAliases(t, out::putIfAbsent)));
+        return out;
+    }
+
+    private void mdcAliases(Term t, java.util.function.BiConsumer<String, String> put) {
+        if (t.mdc() != null && t.mdc().key() != null) {
+            String canonical = styledKey(t.mdc().key());
+            t.mdc().aliases().forEach(a -> {
+                if (!a.equals(canonical)) {
+                    put.accept(a, canonical);
                 }
+            });
+            if (!t.mdc().key().equals(canonical)) {
+                put.accept(t.mdc().key(), canonical);
             }
-        });
+        }
+    }
+
+    /**
+     * The terms that define MDC keys: the global vocabulary first, then every area's (#121). MDC keys are not scoped
+     * to an area: a key put in one package is read in every other, so an area term's MDC key, aliases and sources
+     * count in the whole service; the area scopes only the term's words in messages ({@link #synonyms(String)}).
+     */
+    public List<Term> mdcTerms() {
+        List<Term> out = new ArrayList<>(vocabulary.values());
+        areas.values().forEach(ar -> out.addAll(ar.vocabulary().values()));
         return out;
     }
 
@@ -556,7 +572,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
     /** Name for an MDC key inside a {@code [k=v]} suffix. */
     public String logKey(String mdcKey) {
-        for (Term t : vocabulary.values()) {
+        for (Term t : mdcTerms()) {
             if (t.mdc() != null && mdcKey.equals(styledKey(t.mdc().key())) && t.logKey() != null) {
                 return styledKey(t.logKey());
             }
@@ -566,7 +582,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
     /** Registry keys carry ids, so they are high-cardinality unless the vocabulary says {@code cardinality: low}. */
     public boolean highCardinality(String mdcKey) {
-        for (Term t : vocabulary.values()) {
+        for (Term t : mdcTerms()) {
             if (t.mdc() != null && mdcKey.equals(styledKey(t.mdc().key()))) {
                 return "high".equals(t.mdc().cardinality());
             }

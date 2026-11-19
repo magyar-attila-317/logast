@@ -2,12 +2,15 @@
 # decide in the worksheet and run the command again. Services take these terms with
 #   extends: [<path or pinned URL of this file>]
 # in their logast.yaml; apply then renames the aliases in their code (MDC_KEY_ALIAS).
-vocabulary:
-  order:   # owner: order team
-    mdc:
-      key: orderId
-      aliases: [order_id]
-      sources:
-        types:
-          com.example.billing.Order: "id()"
-          com.example.shipping.Order: "id()"
+areas:
+  orders:
+    packages: [com.example.billing, com.example.shipping]
+    vocabulary:
+      order:   # owner: order team
+        mdc:
+          key: orderId
+          aliases: [order_id]
+          sources:
+            types:
+              com.example.billing.Order: "id()"
+              com.example.shipping.Order: "id()"

@@ -84,6 +84,100 @@ class CentralVocabularyTest {
         assertThat(Files.readString(company)).as("still published").contains("aliases: [invoice_id]");
     }
 
+    /** #121: a term decided with an area goes under areas.<area>.vocabulary; the result is a policy a service extends. */
+    @Test
+    void aTermDecidedWithAnAreaIsPublishedUnderThatArea() throws IOException {
+        Path a = service(tmp.resolve("billing"), "com/example/billing/Desk.java", """
+                package com.example.billing;
+                class Desk {
+                    void issue(Long invoiceId, Long batchId) {
+                        org.slf4j.MDC.put("invoiceId", String.valueOf(invoiceId));
+                        log.info("Issued [batchId={}]", batchId);
+                    }
+                }
+                """);
+        Files.writeString(a.resolve("logast.yaml"), """
+                areas:
+                  counter:
+                    packages: [com.example.billing.counter]
+                    vocabulary:
+                      till: { aliases: [register] }
+                    requiredMdc: [tillId]
+                """);
+        Path b = service(tmp.resolve("payments"), "com/example/payments/Pay.java", """
+                package com.example.payments;
+                class Pay {
+                    void pay(Long invoiceId, Long batchId) {
+                        org.slf4j.MDC.put("invoice_id", String.valueOf(invoiceId));
+                        log.info("Paid [batchId={}]", batchId);
+                    }
+                }
+                """);
+        Path central = tmp.resolve("central");
+        Map<String, Path> services = Map.of("billing", a, "payments", b);
+        CentralVocabulary.Result first = CentralVocabulary.run(central, services);
+        assertThat(first.worksheet()).as("the areas the services' policies know")
+                .contains("areas:\n  counter:\n    known_in:\n      - {service: \"billing\", packages: [com.example.billing.counter], "
+                        + "vocabulary: [till], requiredMdc: [tillId]}\n");
+        assertThat(first.summary()).contains("areas: counter (0 terms; in the logast.yaml of billing)");
+
+        Path ws = central.resolve(CentralVocabulary.WORKSHEET);
+        Files.writeString(ws, Files.readString(ws)
+                .replace("areas:\n", "areas:\n  invoicing:\n    packages: [com.example.billing, com.example.payments]\n")
+                .replace("  invoiceId:\n", "  invoiceId:\n    term: invoice\n    area: invoicing\n    owner: \"billing team\"\n")
+                .replace("  invoice_id:\n", "  invoice_id:\n    same_as: invoiceId\n")
+                .replace("  batchId:\n", "  batchId:\n    term: batch\n"));
+        CentralVocabulary.Result second = CentralVocabulary.run(central, services);
+        assertThat(second.worksheet()).as("decisions kept").contains("    area: invoicing\n")
+                .contains("  invoicing:\n    packages: [com.example.billing, com.example.payments]\n    terms: [invoice]\n");
+        assertThat(second.summary()).contains("areas: counter (0 terms; in the logast.yaml of billing), invoicing (1 term)");
+        assertThat(Files.readString(central.resolve(CentralVocabulary.COMPANY))).endsWith("""
+                vocabulary:
+                  batch:
+                    mdc:
+                      key: batchId
+                      sources:
+                        params: [batchId]
+                areas:
+                  invoicing:
+                    packages: [com.example.billing, com.example.payments]
+                    vocabulary:
+                      invoice:   # owner: billing team
+                        mdc:
+                          key: invoiceId
+                          aliases: [invoice_id]
+                """);
+
+        // a valid policy layer a service extends, adding its own term to the area; the alias is still renamed
+        Path svc = tmp.resolve("svc");
+        Files.createDirectories(svc);
+        Files.writeString(svc.resolve("logast.yaml"), """
+                extends: [../central/company.yaml]
+                vocabulary:
+                  invoiceId:                     # harvested before company.yaml had it
+                    mdc: { key: invoiceId }
+                areas:
+                  invoicing:
+                    vocabulary:
+                      receipt: { mdc: { key: receiptId } }
+                """);
+        Policy p = PolicyLoader.load(svc, null);
+        assertThat(p.vocabulary()).containsOnlyKeys("batch", "invoiceId");
+        assertThat(p.areas().get("invoicing").packages()).containsExactly("com.example.billing", "com.example.payments");
+        assertThat(p.areas().get("invoicing").vocabulary()).containsOnlyKeys("invoice", "receipt");
+        assertThat(p.areaOf("com.example.payments.Pay")).isEqualTo("invoicing");
+        assertThat(p.mdcAliases()).as("MDC_KEY_ALIAS renames an area term's aliases").containsEntry("invoice_id", "invoiceId");
+        assertThat(p.canonicalMdcKey("invoice_id")).isEqualTo("invoiceId");
+        assertThat(p.mdcRegistry()).containsKeys("invoiceId", "receiptId", "batchId");
+        assertThat(VocabularyPrune.check(svc).covered()).as("an area term covers the service's own MDC entry")
+                .extracting(c -> c.term() + "->" + c.by()).containsExactly("invoiceId->invoice in area invoicing");
+
+        // an area belongs next to a term
+        Files.writeString(ws, Files.readString(ws).replace("    term: batch\n", "    area: invoicing\n"));
+        assertThat(CentralVocabulary.run(central, services).summary())
+                .contains("  batchId: area invoicing without term: an area goes next to term: (its same_as keys follow it)");
+    }
+
     @Test
     void theSummaryNamesDecisionsThatCannotBePublished() {
         Map<String, CentralVocabulary.Decision> d = Map.of(

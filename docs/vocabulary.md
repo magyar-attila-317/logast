@@ -49,7 +49,7 @@ service's keys in one place outside the repos, so merging them is a decision on 
 | file | holds | edited by |
 |---|---|---|
 | `~/.logast/vocabulary-worksheet.yaml` | every key of every service with its evidence, and your decisions | you decide; logast fills in the evidence |
-| `~/.logast/company.yaml` | **generated** from the decided terms: canonical key, aliases, sources | logast only |
+| `~/.logast/company.yaml` | **generated** from the decided terms: canonical key, aliases, sources, grouped by area where decided | logast only |
 | `<service>/logast.yaml` | `extends: [~/.logast/company.yaml]` and the terms only that service has | rarely |
 
 The flow:
@@ -57,7 +57,8 @@ The flow:
 1. `logast vocabulary --central ~/.logast services/billing services/shipping …` harvests every service (MDC keys,
    `[k=v]` keys and `addKeyValue` keys that name an identifier) into the worksheet.
 2. Decide in the worksheet, per key: `term: <name>` publishes the key as a term; `same_as: <key>` makes it an alias of
-   that key's term; `local: true` keeps it in its service. `owner: <team>` is optional.
+   that key's term; `local: true` keeps it in its service. `owner: <team>` is optional (company.yaml has no field
+   for it, so it is written there as a comment). `area: <name>` next to `term:` groups the term under an area.
 3. Run the same command again: it keeps your decisions, refreshes the evidence and writes `company.yaml` with the
    decided terms only. Undecided keys never go there.
 4. Services `extends:` company.yaml. `logast fleet --vocabulary --central ~/.logast <svc>…` shows per service what
@@ -93,6 +94,49 @@ keys:
 - **The summary at the top** lists, per run: the keys to decide (and which are new), decided terms no service uses
   any more, keys still used against a decision (an alias still in the code, a `local` key in two services), and
   decisions that cannot be published (a `same_as` to a key without a term, a cycle, one term decided twice).
+
+### Grouping terms by area
+
+A large vocabulary stays readable when its terms are grouped by [area](#areas-when-a-word-means-something-else).
+Write `area: <name>` next to `term:`, and optionally give the area its packages in the worksheet's `areas` section:
+
+```yaml
+areas:
+  orders:
+    packages: [com.example.billing, com.example.shipping]   # your decision: published with the area
+    terms: [order]                                          # from here on: rewritten on each run
+  bookkeeping:
+    known_in:                                               # what the services' own logast.yaml say
+      - {service: "ledger", packages: [com.example.ledger], requiredMdc: [entryId]}
+keys:
+  orderId:
+    term: order
+    area: orders
+```
+
+company.yaml then has the term under `areas.orders.vocabulary` (with the packages), and terms without an area stay in
+the top-level `vocabulary`:
+
+```yaml
+areas:
+  orders:
+    packages: [com.example.billing, com.example.shipping]
+    vocabulary:
+      order:   # owner: order team
+        mdc:
+          key: orderId
+          aliases: [order_id]
+```
+
+- The worksheet's `areas` section lists every area the services' own logast.yaml define (`known_in`: packages,
+  vocabulary, requiredMdc), the areas you decided, and the terms published under each. The summary names an area
+  with terms but no packages anywhere: its words in messages then apply nowhere.
+- An area's packages can also come from the service: a service's `areas.orders.packages` merges with company.yaml's
+  (the usual layering), and so do terms the service adds to the area.
+- An area term's MDC key holds in the whole service, not only in the area's packages (the MDC travels with the
+  thread): MDC_KEY_ALIAS renames its aliases everywhere, and `--prune` counts an area term as covering a service's
+  entry that has only an MDC part. The area scopes the term's words in messages (`aliases`).
+- `area:` without `term:` is listed under "decisions to fix"; a `same_as` key follows its term's area.
 
 For a team, keep company.yaml in a small repository, change it by pull request, and let services pin it:
 `extends: [https://…/company.yaml#sha256=…]`. A `mdc.sources.types` entry of company.yaml that a service does not have
@@ -173,6 +217,8 @@ areas:
 ```
 
 - Area vocabulary wins inside its packages, so "order" can be an alias there without touching the global term.
+- An area term's `mdc` (key, aliases, sources) counts in the whole service, because MDC keys are not bound to a
+  package; the global vocabulary wins when both name the same MDC spelling.
 - `requiredMdc` drives AREA_MDC_MISSING. It reports logging methods in the area that some path reaches without
   the key.
 
