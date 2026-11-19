@@ -579,8 +579,8 @@ public final class Main {
     }
 
     /**
-     * #122: the files under {@code root} with uncommitted changes git tracks (staged or not; untracked files and
-     * logast's own .logast/ are left out), or null when {@code root} is not in a git work tree or git is missing.
+     * #122: the files under {@code root} with uncommitted changes git tracks (staged or not; untracked files, logast's
+     * own .logast/ and the files its setup writes, .gitignore and logast.yaml, are left out: init then apply works), or null when {@code root} is not in a git work tree or git is missing.
      */
     static List<String> uncommitted(Path root) {
         try {
@@ -590,7 +590,9 @@ public final class Main {
             if (inside.waitFor() != 0 || !answer.equals("true")) {
                 return null;
             }
-            Process status = new ProcessBuilder("git", "status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude).logast")
+            // what logast's own setup writes (init and apply's first run: .gitignore, logast.yaml) does not count
+            Process status = new ProcessBuilder("git", "status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude).logast",
+                            ":(exclude).gitignore", ":(exclude)logast.yaml", ":(exclude)logast.yml")
                     .directory(root.toFile()).redirectError(ProcessBuilder.Redirect.DISCARD).start();
             List<String> out = new String(status.getInputStream().readAllBytes()).lines()
                     .filter(l -> l.length() > 3).map(l -> l.substring(3)).toList();

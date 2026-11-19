@@ -227,6 +227,13 @@ class PolicyCheckCliTest {
         Files.createDirectories(app.resolve(".logast"));
         Files.writeString(app.resolve(".logast/classpath-main.txt"), "");
         assertThat(run("apply", app.toString()).exit()).as("untracked files and .logast/ do not count").isZero();
+        // what init writes into tracked files (.gitignore, logast.yaml) does not block the apply after it
+        Files.writeString(app.resolve(".gitignore"), "build/\n");
+        git(app, "add", ".gitignore");
+        git(app, "commit", "--quiet", "-m", "gitignore");
+        Files.writeString(app.resolve(".gitignore"), "build/\n.logast/*\n");
+        Files.writeString(app.resolve("logast.yaml"), "packs: [logging, tracing]\n");
+        assertThat(run("apply", app.toString()).exit()).as("logast's own setup files do not count").isZero();
         Path ok = app.resolve("src/main/java/demo/Ok.java");
         Files.writeString(ok, Files.readString(ok) + "// edited\n");
         Run refused = run("apply", app.toString());
