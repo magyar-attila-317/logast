@@ -66,7 +66,7 @@ class CentralVocabularyTest {
         assertThat(second.summary()).contains("to decide: 1 (0 new): batchId")
                 .contains("  invoice_id (same_as invoiceId) still in payments: apply renames it in services that extend company.yaml");
         Path company = central.resolve(CentralVocabulary.COMPANY);
-        assertThat(Files.readString(company)).startsWith("# GENERATED").contains("invoice:\n", "key: invoiceId", "aliases: [invoice_id]",
+        assertThat(Files.readString(company)).startsWith("# >>> logast").contains("# GENERATED").contains("invoice:\n", "key: invoiceId", "aliases: [invoice_id]",
                 "params: [invoiceId]").doesNotContain("batchId");
 
         // a valid policy layer: a service that extends it gets the alias
@@ -131,7 +131,7 @@ class CentralVocabularyTest {
         assertThat(second.worksheet()).as("decisions kept").contains("    area: invoicing\n")
                 .contains("  invoicing:\n    packages: [com.example.billing, com.example.payments]\n    terms: [invoice]\n");
         assertThat(second.summary()).contains("areas: counter (0 terms; in the logast.yaml of billing), invoicing (1 term)");
-        assertThat(Files.readString(central.resolve(CentralVocabulary.COMPANY))).endsWith("""
+        assertThat(Files.readString(central.resolve(CentralVocabulary.COMPANY))).contains("""
                 vocabulary:
                   batch:
                     mdc:

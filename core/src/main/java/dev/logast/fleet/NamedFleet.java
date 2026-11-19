@@ -179,6 +179,8 @@ public final class NamedFleet {
                     if (at > 0 && lines.get(at - 1).startsWith("# The fleet this service belongs to")) {
                         lines.remove(at - 1);   // the line setup writes above it
                     }
+                    // the setup's notes on settings the fleet decided: no longer true (the lines stay commented out)
+                    lines.replaceAll(l -> l.replaceFirst("\\s+# decided by fleet \\S+'s company\\.yaml$", ""));
                     Files.write(file, lines);
                 }
                 return;

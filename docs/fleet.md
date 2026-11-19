@@ -75,7 +75,7 @@ from the members' snapshots, keeping the decisions already in it, and regenerate
 | file in the fleet folder | holds | edited by |
 |---|---|---|
 | `vocabulary-worksheet.yaml` | every key of every member with its evidence, and your decisions (`term`, `same_as`, `local`, `owner`, `area`) | you decide; logast fills in the evidence |
-| `company.yaml` | **generated** from the decided terms | logast only |
+| `company.yaml` | the fleet's policy: the part between the `# >>> logast` and `# <<< logast` lines is **generated** from the decided terms (`vocabulary`, `areas`); everything outside it (packs, logging, rules, …) is yours and kept on every regeneration | you, outside the generated part |
 | `members.yaml` | service → its root on this machine | `join` / `leave` |
 | `services/<service>.json` | the members' snapshots | every scan and apply of a member |
 
