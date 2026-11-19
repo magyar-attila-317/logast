@@ -1,0 +1,44 @@
+# logast vocabulary worksheet (#113): every key the services use, with its evidence. Decide here, then run
+# `logast vocabulary --central <this folder> <service>…` again: it keeps your decisions, refreshes the evidence
+# and publishes the decided terms to company.yaml next to this file (never edit that one).
+# Decisions, per key (logast never decides them):
+#   term: <name>      publish the key as the term <name>; the key is its canonical MDC / [k=v] key
+#   same_as: <key>    the same value as <key>: published as an alias of <key>'s term (apply renames it)
+#   local: true       stays in its service, not published
+#   owner: <team>     optional: who to ask about the term
+# Everything else (services, types, evidence, similar, suggest) is rewritten on each run.
+#
+# Summary of this run:
+#   services: 3 (billing, ledger, shipping), keys: 4, decided: 0
+#   to decide: 4 (4 new): customerId (new), entryId (new), orderId (new), order_id (new)
+#   decided, no service uses it any more: -
+#   still used against a decision: -
+keys:
+  customerId:
+    services: [ledger, shipping]
+    types: ["Long", "String"]
+    warning: "one name, different types: Long (ledger), String (shipping): possibly NOT the same value; if so, give one of them another key"
+    evidence:
+      - {service: "ledger", at: "src/main/java/com/example/ledger/EntryBook.java:10", use: kv, value: "customerId", type: "Long"}
+      - {service: "shipping", at: "src/main/java/com/example/shipping/ParcelDispatch.java:12", use: kv, value: "customerId", type: "String"}
+  entryId:
+    services: [ledger]
+    types: ["Long"]
+    suggest: "local: true? (only ledger uses it)"
+    evidence:
+      - {service: "ledger", at: "src/main/java/com/example/ledger/EntryBook.java:10", use: kv, value: "entryId", type: "Long"}
+  orderId:
+    services: [billing]
+    types: ["Long"]
+    similar:
+      - "order_id: same type Long, source Order.id(); differs: services billing vs shipping"
+    evidence:
+      - {service: "billing", at: "src/main/java/com/example/billing/InvoiceDesk.java:11", use: mdc, value: "String.valueOf(order.id())", from: "Order.id()", type: "Long"}
+      - {service: "billing", at: "src/main/java/com/example/billing/InvoiceDesk.java:12", use: kv, value: "order.id()", from: "Order.id()", type: "Long"}
+  order_id:
+    services: [shipping]
+    types: ["Long"]
+    similar:
+      - "orderId: same type Long, source Order.id(); differs: services shipping vs billing"
+    evidence:
+      - {service: "shipping", at: "src/main/java/com/example/shipping/ParcelDispatch.java:11", use: mdc, value: "String.valueOf(order.id())", from: "Order.id()", type: "Long"}

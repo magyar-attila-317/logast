@@ -6074,6 +6074,154 @@ abstract class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-compact-suffix"), actual);
     }
 
+    /**
+     * #113: the central vocabulary across services. Three small services: billing logs orderId, shipping order_id, both
+     * from Order.id() (a Long): pointed out as a pair, not merged. customerId is a Long in ledger and a String in
+     * shipping: flagged as possibly not the same value. The owner decides in the worksheet (orderId is the term order,
+     * order_id the same as orderId, entryId local); the next run keeps the decisions and publishes only the decided
+     * term to company.yaml. shipping extends company.yaml: fleet --vocabulary shows the rename before it lands, scan
+     * says which of shipping's own entries company.yaml now defines, --prune removes it, and apply renames order_id
+     * (MDC_KEY_ALIAS). Snapshot: the worksheet, company.yaml, the services and the commands' output (every file kept:
+     * none sits in .logast/, so scoped() keeps them all) in e2e/expected-central-vocabulary.
+     */
+    @Test
+    void theCentralVocabularyPointsOutPairsAndPublishesOnlyDecidedTerms() throws IOException {
+        Path billing = tmp.resolve("billing");
+        Path shipping = tmp.resolve("shipping");
+        Path ledger = tmp.resolve("ledger");
+        Path central = tmp.resolve("central");
+        writeSource(billing, "com/example/billing/Order.java", """
+                package com.example.billing;
+
+                public record Order(Long id, String customerName) {
+                }
+                """);
+        writeSource(billing, "com/example/billing/InvoiceDesk.java", """
+                package com.example.billing;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.slf4j.MDC;
+
+                class InvoiceDesk {
+                    private static final Logger log = LoggerFactory.getLogger(InvoiceDesk.class);
+
+                    void issue(Order order) {
+                        MDC.put("orderId", String.valueOf(order.id()));
+                        log.info("Invoice issued [orderId={}]", order.id());
+                    }
+                }
+                """);
+        writeSource(shipping, "com/example/shipping/Order.java", """
+                package com.example.shipping;
+
+                public record Order(Long id, String address) {
+                }
+                """);
+        writeSource(shipping, "com/example/shipping/ParcelDispatch.java", """
+                package com.example.shipping;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.slf4j.MDC;
+
+                class ParcelDispatch {
+                    private static final Logger log = LoggerFactory.getLogger(ParcelDispatch.class);
+
+                    void dispatch(Order order, String customerId) {
+                        MDC.put("order_id", String.valueOf(order.id()));
+                        log.info("Parcel dispatched [customerId={}]", customerId);
+                        MDC.remove("order_id");
+                    }
+                }
+                """);
+        writeSource(ledger, "com/example/ledger/EntryBook.java", """
+                package com.example.ledger;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                class EntryBook {
+                    private static final Logger log = LoggerFactory.getLogger(EntryBook.class);
+
+                    void book(Long customerId, long entryId) {
+                        log.info("Entry booked [customerId={}, entryId={}]", customerId, entryId);
+                    }
+                }
+                """);
+        String[] all = {billing.toString(), shipping.toString(), ledger.toString()};
+        StringBuilder commands = new StringBuilder();
+        java.util.function.Function<String[], String> cmd = args -> {
+            String out = run(tmp, args);
+            commands.append("=== logast ").append(String.join(" ", args).replace(tmp.toString(), "<tmp>")).append('\n')
+                    .append(out.replace("<app>", "<tmp>")).append('\n');
+            return out;
+        };
+        List<String> harvest = new ArrayList<>(List.of("vocabulary", "--central", central.toString()));
+        harvest.addAll(List.of(all));
+        cmd.apply(harvest.toArray(String[]::new));
+        Path worksheet = central.resolve("vocabulary-worksheet.yaml");
+        String first = Files.readString(worksheet);
+        assertThat(first).as("one key under two names, same source: pointed out, not merged")
+                .contains("order_id: same type Long, source Order.id()").doesNotContain("same_as: orderId\n")
+                .as("one name, two types: possibly not the same").contains("one name, different types: Long (ledger), String (shipping)");
+        assertThat(Files.readString(central.resolve("company.yaml"))).as("nothing decided: nothing published").contains("vocabulary: {}");
+
+        // the owner decides; the next run keeps it and publishes the decided term only
+        Files.writeString(worksheet, first.replace("  orderId:\n", "  orderId:\n    term: order\n    owner: \"order team\"\n")
+                .replace("  order_id:\n", "  order_id:\n    same_as: orderId\n").replace("  entryId:\n", "  entryId:\n    local: true\n"));
+        cmd.apply(harvest.toArray(String[]::new));
+        String company = Files.readString(central.resolve("company.yaml"));
+        assertThat(company).contains("key: orderId", "aliases: [order_id]").doesNotContain("customerId", "entryId");
+        assertThat(Files.readString(worksheet)).contains("term: order", "same_as: orderId", "local: true")
+                .contains("order_id (same_as orderId) still in shipping");
+
+        // shipping takes company.yaml; its own harvested orderId entry is now defined there
+        Files.writeString(shipping.resolve("logast.yaml"), """
+                extends: [../central/company.yaml]
+                packs: [logging]
+                vocabulary:
+                  orderId:                 # harvested before company.yaml had it
+                    mdc: { key: orderId }
+                  customerId:
+                    mdc: { key: customerId, sources: { params: [customerId] } }
+                """);
+        String preview = cmd.apply(new String[]{"fleet", "--vocabulary", "--central", central.toString(), billing.toString(), shipping.toString()});
+        assertThat(preview).as("what company.yaml renames, before apply").contains("shipping: 1 key to rename", "order_id -> orderId (1 place)")
+                .contains("billing: nothing to rename");
+        STDERR.setLength(0);
+        run(shipping, "scan", shipping.toString(), "--classpath-file", CLASSPATH);
+        assertThat(STDERR.toString()).contains("company.yaml now defines 1 of this service's entries: orderId (as order)")
+                .as("billing's Order in company.yaml is not shipping's concern").doesNotContain("com.example.billing.Order is not in the code");
+        cmd.apply(new String[]{"vocabulary", "--prune", shipping.toString()});
+        assertThat(Files.readString(shipping.resolve("logast.yaml"))).doesNotContain("orderId").contains("customerId");
+
+        String applied = run(shipping, "apply", shipping.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        String again = run(shipping, "apply", shipping.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(again).as("a second apply changes nothing\n" + applied + "\n" + STDERR).contains("applied (0):").contains("files (0):");
+        assertThat(applied + again).doesNotContain("CHECK FAILED");
+        assertThat(Files.readString(shipping.resolve("src/main/java/com/example/shipping/ParcelDispatch.java")))
+                .as("the alias renamed on apply").contains("\"orderId\"").doesNotContain("\"order_id\"");
+        compile(shipping, "UTF-8", PLATFORM, Path.of(System.getProperty("logast.e2e.support")));   // dependency mode: the starter brings MdcScope
+        cmd.apply(new String[]{"fleet", "--vocabulary", shipping.toString()});
+
+        Map<String, String> snapshot = new TreeMap<>();
+        files(tmp).forEach((k, v) -> {
+            if (!k.contains("/.logast/") && !k.contains("/out/")) {
+                snapshot.put(k, v);
+            }
+        });
+        snapshot.put("COMMANDS.txt", commands.toString());
+        snapshot.put("central/vocabulary-worksheet.first-run.yaml", first);   // before any decision: the pair and the suggestions
+        golden(EXPECTED.resolveSibling("expected-central-vocabulary"), snapshot);
+    }
+
+    private static void writeSource(Path service, String path, String text) throws IOException {
+        Path file = service.resolve("src/main/java").resolve(path);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, text);
+    }
+
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);

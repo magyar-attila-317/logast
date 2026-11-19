@@ -1,0 +1,5 @@
+extends: [../central/company.yaml]
+packs: [logging]
+vocabulary:
+  customerId:
+    mdc: { key: customerId, sources: { params: [customerId] } }

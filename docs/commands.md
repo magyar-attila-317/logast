@@ -17,10 +17,13 @@ examples. Output samples are illustrations; counts and ids differ per service an
 | `logast metrics <svc>` | the metrics map: exporters, identity, metric per entrypoint, meters in code, outcomes not counted (`--format json`, `--format table` = meters only) |
 | `logast queries <svc>` | ready-made PromQL, NRQL and Splunk SPL for the service's metrics and logs, written to `.logast/reports/queries.md` (`--stdout` prints them) |
 | `logast vocabulary <svc>` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
+| `logast vocabulary --central <dir> <svc>…` | one vocabulary across services: every key with its evidence in `<dir>/vocabulary-worksheet.yaml`, your decisions kept, decided terms published to `<dir>/company.yaml` |
+| `logast vocabulary --prune <svc>…` | removes from logast.yaml the vocabulary entries an extended company.yaml now defines in full |
 | `logast traffic <svc>` | writes `.logast/decisions/traffic.yaml` with every entrypoint, ready to fill in |
 | `logast policy <svc> [--check]` | the effective policy after all layers, with overrides; `--check` (CI) checks it against the code instead: exit 0 fine, 1 warnings, 2 errors |
 | `logast rules` | every rule and its packs |
 | `logast fleet <svc>…` | compliance report across services |
+| `logast fleet --vocabulary [--central <dir>] <svc>…` | per service, the keys in the code the vocabulary makes aliases (what apply would rename); with `--central`, as if every service extended `<dir>/company.yaml` |
 | `logast shape <svc>` | exports the code with its own names and words replaced, to send a reproduction ([below](#shape)) |
 
 Options most analysing commands share: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`,
@@ -312,6 +315,10 @@ a hint.
 - `logast vocabulary .` collects the identifier keys the service uses (MDC keys, `[k=v]` keys, id-like variables)
   that the policy doesn't cover yet; `init` writes the same harvest into `logast.yaml`. How to organise it:
   [vocabulary.md](vocabulary.md#start-from-the-code).
+- `logast vocabulary --central ~/.logast <svc>…` keeps one vocabulary across services: a worksheet with every key's
+  evidence where you decide (`term`, `same_as`, `local`), and a generated `company.yaml` with the decided terms that
+  services extend. `--prune <svc>` removes the service's own entries company.yaml now defines; `scan` names them.
+  The workflow: [vocabulary.md](vocabulary.md#one-vocabulary-across-services).
 - `logast policy .` prints the merged result of all layers and every override. `logast policy . --check` checks the
   policy against the code for CI ([configuration](configuration.md#how-the-configuration-is-put-together)).
 - `logast traffic .` lists every entrypoint in `.logast/decisions/traffic.yaml`; fill in calls/day (or pass a Prometheus query
@@ -326,6 +333,10 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 A compliance report across services (HTML and a JSON snapshot; earlier snapshots in `--out` give the trend). It also
 compares meters across services: the same name with different types or tags, and similar names
 (`orders.placed` vs `order_placed`). `@file` reads the service roots from a file.
+
+`logast fleet --vocabulary --central ~/.logast services/*/` scans nothing: it lists per service the keys in its code
+that the vocabulary makes aliases, with their places, i.e. what apply would rename once company.yaml (as generated
+now) is extended. Without `--central`, each service's own policy counts.
 
 ## shape
 

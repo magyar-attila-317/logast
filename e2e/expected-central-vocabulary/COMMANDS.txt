@@ -1,0 +1,29 @@
+=== logast vocabulary --central <tmp>/central <tmp>/billing <tmp>/shipping <tmp>/ledger
+services: 3 (billing, ledger, shipping), keys: 4, decided: 0
+to decide: 4 (4 new): customerId (new), entryId (new), orderId (new), order_id (new)
+decided, no service uses it any more: -
+still used against a decision: -
+worksheet: <tmp>/central/vocabulary-worksheet.yaml (decide there)
+company:   <tmp>/central/company.yaml (0 terms, generated)
+
+=== logast vocabulary --central <tmp>/central <tmp>/billing <tmp>/shipping <tmp>/ledger
+services: 3 (billing, ledger, shipping), keys: 4, decided: 3
+to decide: 1 (0 new): customerId
+decided, no service uses it any more: -
+still used against a decision:
+  order_id (same_as orderId) still in shipping: apply renames it in services that extend company.yaml
+worksheet: <tmp>/central/vocabulary-worksheet.yaml (decide there)
+company:   <tmp>/central/company.yaml (1 term, generated)
+
+=== logast fleet --vocabulary --central <tmp>/central <tmp>/billing <tmp>/shipping
+billing: nothing to rename
+shipping: 1 key to rename
+  order_id -> orderId (1 place)
+    src/main/java/com/example/shipping/ParcelDispatch.java:11 mdc
+
+=== logast vocabulary --prune <tmp>/shipping
+shipping: removed orderId (order)
+
+=== logast fleet --vocabulary <tmp>/shipping
+shipping: nothing to rename
+

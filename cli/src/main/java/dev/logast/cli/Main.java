@@ -166,6 +166,9 @@ public final class Main {
             }
             // #56: names in the policy and ignore comments that match nothing (also: logast policy . --check)
             dev.logast.rules.PolicyUsage.warnings(Logast.lastAnalysis).forEach(w -> Out.warn("policy: " + w));
+            if (policyFile == null) {   // #113: entries an extended company.yaml now defines
+                dev.logast.VocabularyPrune.check(root()).lines(root.toString()).forEach(Out::warn);
+            }
             dev.logast.Traffic t = Logast.lastAnalysis.traffic;
             if (t.known()) {
                 java.util.Set<String> labels = new java.util.TreeSet<>();
@@ -374,8 +377,11 @@ public final class Main {
             long t0 = System.nanoTime();
             Policy policy = policy();
             List<Path> cp = classpath();
-            dev.logast.RoundScanner scanner = new dev.logast.RoundScanner(cp, root -> packs.isEmpty() ? Logast.policy(root, null)
-                    : Logast.policy(root, null).withPacks(packs));
+            Path project = root();   // relative extends: resolve from the project, not from apply's scratch copy (#113)
+            dev.logast.RoundScanner scanner = new dev.logast.RoundScanner(cp, root -> {
+                Policy p = dev.logast.policy.PolicyLoader.load(root, null, List.of(), project);
+                return packs.isEmpty() ? p : p.withPacks(packs);
+            });
             Rules.Step untilStep = until == null ? null : Rules.Step.valueOf(until.toUpperCase(java.util.Locale.ROOT));
             Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).compileWith(cp)
                     .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files));
@@ -631,12 +637,62 @@ public final class Main {
         int minDeclared;
         @Option(names = "--all", description = "Ignore the current policy: show everything, including terms it already defines")
         boolean all;
+        @Option(names = "--central", description = "Folder of the central vocabulary (e.g. ~/.logast): harvest every given "
+                + "service into <dir>/" + dev.logast.CentralVocabulary.WORKSHEET + " (evidence + your decisions, kept across runs) "
+                + "and publish the decided terms to <dir>/" + dev.logast.CentralVocabulary.COMPANY)
+        Path central;
+        @Option(names = "--prune", description = "Remove from each service's logast.yaml the vocabulary entries an extended "
+                + "policy (company.yaml) now defines in full")
+        boolean prune;
+        @Parameters(index = "1..*", description = "More service roots (with --central or --prune)")
+        List<Path> more = new ArrayList<>();
 
         @Override
         public Integer call() {
+            if (central != null || prune) {
+                List<Path> roots = new ArrayList<>();
+                roots.add(root());
+                more.forEach(m -> roots.add(m.toAbsolutePath().normalize()));
+                return central != null ? central(roots) : prune(roots);
+            }
+            if (!more.isEmpty()) {
+                Out.warn("vocabulary: more than one root needs --central or --prune");
+                return 2;
+            }
             Policy p = policy();
             dev.logast.VocabularyHarvest.Result h = dev.logast.VocabularyHarvest.run(root(), all ? null : p, p.logging().style(), minDeclared);
             System.out.print(dev.logast.VocabularyHarvest.yaml(h));
+            return 0;
+        }
+
+        private int central(List<Path> roots) {
+            Path dir = Path.of(central.toString().replaceFirst("^~(?=/|$)", System.getProperty("user.home"))).toAbsolutePath().normalize();
+            Map<String, Path> services = new java.util.TreeMap<>();
+            for (Path r : roots) {
+                String name = r.getFileName().toString();
+                for (int i = 2; services.containsKey(name); i++) {
+                    name = r.getFileName() + "-" + i;
+                }
+                services.put(name, r);
+            }
+            dev.logast.CentralVocabulary.Result r = dev.logast.CentralVocabulary.run(dir, services);
+            r.summary().forEach(System.out::println);
+            System.out.println("worksheet: " + dir.resolve(dev.logast.CentralVocabulary.WORKSHEET) + " (decide there)");
+            System.out.println("company:   " + dir.resolve(dev.logast.CentralVocabulary.COMPANY) + " (" + r.terms()
+                    + (r.terms() == 1 ? " term" : " terms") + ", generated)");
+            return 0;
+        }
+
+        private int prune(List<Path> roots) {
+            for (Path r : roots) {
+                migrate(r);
+                List<dev.logast.VocabularyPrune.Covered> removed = dev.logast.VocabularyPrune.prune(r);
+                System.out.println(r.getFileName() + ": " + (removed.isEmpty() ? "nothing to prune"
+                        : "removed " + String.join(", ", removed.stream().map(c -> c.term().equals(c.by()) ? c.term()
+                        : c.term() + " (" + c.by() + ")").toList())));
+                dev.logast.VocabularyPrune.check(r).differs().forEach(d -> System.out.println("  kept " + d.term()
+                        + ": differs from " + d.by() + " (" + d.what() + ")"));
+            }
             return 0;
         }
     }

@@ -20,18 +20,18 @@ final class Fleet implements Callable<Integer> {
     List<String> services = new ArrayList<>();
     @Option(names = "--out", defaultValue = "logast-fleet", description = "Output directory (keeps previous snapshots for trends)")
     Path out;
+    @Option(names = "--vocabulary", description = "No scan: per service, the keys in its code that the vocabulary makes "
+            + "aliases, which apply would rename (MDC_KEY_ALIAS)")
+    boolean vocabulary;
+    @Option(names = "--central", description = "With --vocabulary: the central vocabulary folder; its company.yaml counts "
+            + "as extended by every service, so a change shows before the services take it")
+    Path central;
 
     @Override
     public Integer call() throws Exception {
-        List<Path> roots = new ArrayList<>();
-        for (String s : services) {
-            boolean listFile = s.startsWith("@") || Files.isRegularFile(Path.of(s));   // a file of service roots, one per line
-            if (listFile) {
-                Files.readAllLines(Path.of(s.startsWith("@") ? s.substring(1) : s)).stream().map(String::trim).filter(l -> !l.isEmpty() && !l.startsWith("#"))
-                        .map(Path::of).forEach(roots::add);
-            } else {
-                roots.add(Path.of(s));
-            }
+        List<Path> roots = roots();
+        if (vocabulary) {
+            return vocabulary(roots);
         }
         List<FleetReport.Service> result = new ArrayList<>();
         for (Path root : roots) {
@@ -49,5 +49,50 @@ final class Fleet implements Callable<Integer> {
                 s.severity().getOrDefault("high", 0), s.severity().getOrDefault("medium", 0), s.severity().getOrDefault("low", 0)));
         System.out.println("report: " + html.toAbsolutePath());
         return 0;
+    }
+
+    /** #113: what each service's code would get renamed by the vocabulary (with --central: as if it extended company.yaml). */
+    private int vocabulary(List<Path> roots) {
+        List<String> extra = new ArrayList<>();
+        if (central != null) {
+            Path company = Path.of(central.toString().replaceFirst("^~(?=/|$)", System.getProperty("user.home")))
+                    .resolve(dev.logast.CentralVocabulary.COMPANY).toAbsolutePath().normalize();
+            if (!Files.exists(company)) {
+                Out.warn("fleet: " + company + " does not exist; run `logast vocabulary --central " + central + " <service>…` first");
+                return 2;
+            }
+            extra.add(company.toString());
+        }
+        for (Path root : roots) {
+            Path r = root.toAbsolutePath().normalize();
+            Main.migrate(r);
+            Policy policy = dev.logast.policy.PolicyLoader.load(r, null, extra);
+            Main.warnOnce(policy);
+            String name = r.getFileName().toString();
+            List<dev.logast.CentralVocabulary.Rename> renames = dev.logast.CentralVocabulary.renames(
+                    dev.logast.CentralVocabulary.uses(r, name), policy);
+            System.out.println(name + ": " + (renames.isEmpty() ? "nothing to rename"
+                    : renames.size() + (renames.size() == 1 ? " key" : " keys") + " to rename"));
+            for (dev.logast.CentralVocabulary.Rename rn : renames) {
+                System.out.println("  " + rn.from() + " -> " + rn.to() + " (" + rn.places().size()
+                        + (rn.places().size() == 1 ? " place" : " places") + ")");
+                rn.places().forEach(u -> System.out.println("    " + u.file() + ":" + u.line() + " " + u.kind()));
+            }
+        }
+        return 0;
+    }
+
+    private List<Path> roots() throws java.io.IOException {
+        List<Path> roots = new ArrayList<>();
+        for (String s : services) {
+            boolean listFile = s.startsWith("@") || Files.isRegularFile(Path.of(s));   // a file of service roots, one per line
+            if (listFile) {
+                Files.readAllLines(Path.of(s.startsWith("@") ? s.substring(1) : s)).stream().map(String::trim).filter(l -> !l.isEmpty() && !l.startsWith("#"))
+                        .map(Path::of).forEach(roots::add);
+            } else {
+                roots.add(Path.of(s));
+            }
+        }
+        return roots;
     }
 }
