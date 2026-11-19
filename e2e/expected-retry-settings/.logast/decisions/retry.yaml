@@ -1,4 +1,5 @@
-# Every retry decision of the service. Then run: logast apply . --auto --write
+# Optional. Every retry decision of the service. Then run: logast apply .
+# Left blank: a candidate gets no retry; a usage keeps logast's choice (below).
 #
 # usages: the existing retries (@Retryable). By default a usage reads the shared block of its kind in
 # application.yml: resilience.retry.defaults (Spring Framework) or resilience.retry.spring-retry-defaults

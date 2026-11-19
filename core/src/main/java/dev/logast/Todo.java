@@ -33,7 +33,9 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
     public record Item(String action, String why) {
     }
 
-    public static final String APPLY = "logast apply . --auto --write";
+    public static final String APPLY = "logast apply .";
+    /** #122: the one pointer for everything optional: decide in one place, then the same command again. */
+    public static final String REVIEW = "logast review (or edit .logast/decisions/*.yaml), then " + APPLY + " again";
 
     public static String plural(long n, String word) {
         return n + " " + (n == 1 ? word : word.endsWith("x") ? word + "es" : word + "s");
@@ -88,9 +90,8 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
             also.add(new Item("mark retry usages that need settings of their own in " + dev.logast.rules.RetrySettingsRules.WORK_FILE
                     + " (optional)", "every @Retryable reads the shared resilience.retry.* settings unless marked specific there"));
         }
-        if (policy.terms().isEmpty() && policy.vocabulary().isEmpty()) {
-            also.add(new Item("logast vocabulary .", "no business terms in logast.yaml yet: MDC keys and wording checks need them"));
-        }
+        // #122: no "logast vocabulary ." hint here: apply's setup harvests the vocabulary; extending it is a platform
+        // task (docs/platform.md), not a step of the service path
         boolean starterAdded = applied.stream().anyMatch(id -> id.startsWith("SUP-"));
         if (starterAdded && !policy.support().vendor()) {
             also.add(new Item("check " + policy.support().coordinates() + " resolves", "the build now depends on it; or set support.mode: vendor in logast.yaml"));
@@ -127,7 +128,7 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
             out.add(Ansi.bold("First: ") + Ansi.cyan(first.action()) + Ansi.dim("   " + first.why()));
         }
         Item next = v.next() != null ? v.next() : auto > 0
-                ? new Item(APPLY, plural(auto, "fix") + " logast makes itself (without --write: a preview)") : null;
+                ? new Item(APPLY, plural(auto, "fix") + " logast makes itself (--dry-run: a preview)") : null;
         if (next != null) {
             out.add(Ansi.bold("Next: ") + Ansi.cyan(next.action()) + Ansi.dim("   " + next.why()));
         }
@@ -141,23 +142,24 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
         if (!out.isEmpty()) {
             out.add("");
         }
-        out.add(Ansi.bold(next != null ? "Then waiting on you (the counts change with the apply):"
-                : "Waiting on you — logast can't continue without these:"));
+        long optional = text + outcomes + retries + decided;
+        out.add(Ansi.bold("Optional (" + optional + ")") + Ansi.dim((next != null ? " — the counts change with the apply" : "")
+                + " — left as is, each keeps its default:"));
         List<String[]> rows = new ArrayList<>();
         if (text > 0) {
             String written = v.fills() != null && v.fills().filled() > 0 ? "   (" + v.fills().filled() + " written)" : "";
-            rows.add(new String[]{String.valueOf(text), (text == 1 ? "log line needs" : "log lines need") + " wording",
-                    "write \"MSG\" in " + FillsFile.PATH + written});
+            rows.add(new String[]{String.valueOf(text), (text == 1 ? "log line" : "log lines") + ": a text of your own",
+                    FillsFile.PATH + "   (blank: the current text stays)" + written});
         }
         if (outcomes > 0) {
             String state = v.metrics() == null ? "" : (v.metrics().filled() > 0 ? "   (" + v.metrics().filled() + " decided)" : "")
                     + (v.metrics().problems() > 0 ? "   (" + v.metrics().problems() + " cannot be written: see \"_problem\")" : "");
             rows.add(new String[]{String.valueOf(outcomes), (outcomes == 1 ? "outcome" : "outcomes") + ": count, tag or skip",
-                    MetricsFile.PATH + state});
+                    MetricsFile.PATH + "   (blank: no metric)" + state});
         }
         if (retries > 0) {
             rows.add(new String[]{String.valueOf(retries), (retries == 1 ? "call" : "calls") + " to retry: yes or no",
-                    dev.logast.rules.RetrySettingsRules.WORK_FILE});
+                    dev.logast.rules.RetrySettingsRules.WORK_FILE + "   (blank: no retry)"});
         }
         if (decided > 0) {
             rows.add(new String[]{String.valueOf(decided), decided == 1 ? "decision" : "decisions",
@@ -178,7 +180,7 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
             }
         }
         if (text > 0 || outcomes > 0 || retries > 0) {
-            out.add("  then run: " + Ansi.cyan(APPLY) + Ansi.dim("   (on this code: don't revert it)"));
+            out.add("  to decide: " + Ansi.cyan(REVIEW) + Ansi.dim("   (on this code: don't revert it)"));
         } else {
             out.add(Ansi.dim("  logast applies nothing for these: change the code, and the next scan drops what is done"));
         }

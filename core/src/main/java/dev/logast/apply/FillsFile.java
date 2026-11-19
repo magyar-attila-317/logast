@@ -19,8 +19,9 @@ import java.util.*;
  */
 public final class FillsFile {
     public static final String PATH = dev.logast.LogastDir.MESSAGES;
-    private static final String README = "Write the message text for each order (MSG), then run: logast apply . --auto\n"
-            + "Plain text, no {} and no [k=v]: logast adds the values. Leave an entry empty to skip it.\n"
+    private static final String README = "Optional. Write a message text for an order (MSG), then run: logast apply .\n"
+            + "Left blank: nothing changes, the current or generated text stays.\n"
+            + "Plain text, no {} and no [k=v]: logast adds the values.\n"
             + "Keys starting with _ are hints (_where and \"was:\" find the line again when its id changes: keep them). "
             + "`logast scan` keeps this file up to date and keeps what you wrote.";
 

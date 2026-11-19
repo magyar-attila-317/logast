@@ -2,17 +2,19 @@
 applied (92): SLG-d7dbb8 SUP-065aa3 DBT-51720a ERT-0d5559 HTO-c3e718 KFK-b4ade9 RBT-9559c7 SID-ce5940 SMP-73051d OBS-771fea OBS-cf7b8f MDC-1d7e7d ALM-424398 BEU-f11deb AEL-63267a AEL-bb56e0 DBO-18c70d DBO-935c16 DBO-f9de16 LCU-15ff44 LCU-eab6ed OUT-111ba8 OUT-3e59f8 OUT-7e3b86 OUT-ad0267 OUT-b146dc OUT-fdcf25 BEU-ad62bd DOM-6007ea DOM-6c6d63 DOM-74cc3c DOM-98b6ee DOM-b2d3fe DOM-d23dcd DOM-d88e06 DOM-db4c64 RLV-4f783c RLV-567539 RLV-7231c2 RLV-77dee0 RLV-d4e07b RLV-de0e59 RLV-fc4256 LIM-36d4a0 RLV-2644dc FMT-0447e4 FMT-07e051 FMT-0b77e4 FMT-1300a9 FMT-13a9ed FMT-19b82a FMT-19f1ce FMT-41864d FMT-4210f7 FMT-473593 FMT-4801c5 FMT-486887 FMT-4e451e FMT-5fa8bf FMT-60c40d FMT-6acce2 FMT-6c56a0 FMT-6f7059 FMT-768e46 FMT-80e677 FMT-95d099 FMT-964347 FMT-9ae21c FMT-9c563d FMT-9cb82a FMT-aba02a FMT-adb87b FMT-b2b961 FMT-b2dbbc FMT-b3bfa2 FMT-b5541e FMT-bbca78 FMT-bca9fe FMT-c52929 FMT-cbdc4a FMT-d7597d FMT-dca357 FMT-e10ae3 FMT-e39d5e FMT-e5b4f2 FMT-ec5a6d FMT-f12230 FMT-f17eb0 PHR-e94033 LAR-b2e846 CDR-2fa891 LVL-ee4fcf
 files (47): src/main/java/com/example/e2e/coupon/CouponCleanupJob.java, src/main/java/com/example/e2e/coupon/CouponLookup.java, src/main/java/com/example/e2e/coupon/CouponReloadJob.java, src/main/java/com/example/e2e/coupon/CouponRepository.java, src/main/java/com/example/e2e/coupon/CouponSender.java, src/main/java/com/example/e2e/coupon/CouponService.java, src/main/java/com/example/e2e/edge/Audited.java, src/main/java/com/example/e2e/edge/CouponRules.java, src/main/java/com/example/e2e/edge/CouponTask.java, src/main/java/com/example/e2e/edge/EdgeFlow.java, src/main/java/com/example/e2e/edge/EdgeJob.java, src/main/java/com/example/e2e/edge/Exclusion.java, src/main/java/com/example/e2e/edge/OriginCheck.java, src/main/java/com/example/e2e/income/CalculationService.java, src/main/java/com/example/e2e/income/CouponChecks.java, src/main/java/com/example/e2e/income/IncomeCalculator.java, src/main/java/com/example/e2e/job/BaseRunJob.java, src/main/java/com/example/e2e/job/CalculationJob.java, src/main/java/com/example/e2e/job/ExportJob.java, src/main/java/com/example/e2e/job/PublishRunJob.java, src/main/java/com/example/e2e/job/SettlementJobExecutor.java, src/main/java/com/example/e2e/logging/AfterCommit.java, src/main/java/com/example/e2e/logging/BatchTraceListener.java, src/main/java/com/example/e2e/logging/ContextExecutors.java, src/main/java/com/example/e2e/logging/ContextPropagation.java, src/main/java/com/example/e2e/logging/LoggingDefaultsEnvironmentPostProcessor.java, src/main/java/com/example/e2e/logging/LoggingSupportAutoConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygiene.java, src/main/java/com/example/e2e/logging/MdcHygieneConfiguration.java, src/main/java/com/example/e2e/logging/MdcHygieneFilter.java, src/main/java/com/example/e2e/logging/MdcScope.java, src/main/java/com/example/e2e/logging/ObservationRegistryHolder.java, src/main/java/com/example/e2e/logging/ObservedContext.java, src/main/java/com/example/e2e/logging/Outcomes.java, src/main/java/com/example/e2e/logging/ProblemTraceId.java, src/main/java/com/example/e2e/logging/TraceContextEnv.java, src/main/java/com/example/e2e/logging/TraceContextEnvConfiguration.java, src/main/java/com/example/e2e/messaging/CouponMessages.java, src/main/java/com/example/e2e/order/OrderEvents.java, src/main/java/com/example/e2e/order/OrderNotifications.java, src/main/java/com/example/e2e/order/OrderService.java, src/main/java/com/example/e2e/order/PaymentClient.java, src/main/java/com/example/e2e/web/CouponController.java, src/main/java/com/example/e2e/web/CouponDetailsController.java, src/main/java/com/example/e2e/web/QuoteController.java, src/main/resources/META-INF/spring.factories, src/main/resources/application.yml  ·  9 rounds, <t>
 
-Waiting on you — logast can't continue without these:
-  21 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
-  22 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
-  34 decisions                     → logast scan .   (each says what to decide)
+Done: 92 changes in 47 files, each compiled before it was kept
+  review: git diff   (one diff per kind of change in .logast/reports/steps/)
+
+Optional (77) — left as is, each keeps its default:
+  21 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
+  22 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
+  34 decisions                      → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
-  then run: logast apply . --auto --write   (on this code: don't revert it)
+  to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
 Log lines: 85 — 45 fixed, 22 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
-  git diff                                                      review the changes (one diff per kind of change in .logast/reports/steps/)
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
   logast verify .                                               build and run the tests with log capture: does the result really log what it should?
 
@@ -20,12 +22,12 @@ Also:
 applied (0):
 files (0):   ·  0 rounds, <t>
 
-Waiting on you — logast can't continue without these:
-  21 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
-  22 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
-  34 decisions                     → logast scan .   (each says what to decide)
+Optional (77) — left as is, each keeps its default:
+  21 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
+  22 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
+  34 decisions                      → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
-  then run: logast apply . --auto --write   (on this code: don't revert it)
+  to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
 Log lines: 85 — 45 fixed, 22 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
@@ -37,16 +39,18 @@ Also:
 applied (35): DOM-1a500b DOM-a2969a SUG-08dd18 SUG-15854c SUG-1fede7 SUG-2f8476 SUG-44443e SUG-4dc17a SUG-6b173f SUG-7055a3 SUG-85eb33 SUG-a2a43c SUG-a4b461 SUG-bc8896 SUG-bd5779 SUG-dd88b2 OUM-00f4c0 OUM-027987 OUM-02f9e9 OUM-03f513 OUM-0d4ba2 OUM-0f37ab OUM-164f3d OUM-21d0c8 OUM-392e74 OUM-4809f0 OUM-49d3bd OUM-553423 OUM-620a15 OUM-773d35 OUM-8a8603 OUM-9f157d OUM-be530b OUM-d691d7 OUM-e22a2d
 files (18): src/main/java/com/example/e2e/coupon/CouponCleanupJob.java, src/main/java/com/example/e2e/coupon/CouponLookup.java, src/main/java/com/example/e2e/coupon/CouponReloadJob.java, src/main/java/com/example/e2e/coupon/CouponRepository.java, src/main/java/com/example/e2e/coupon/CouponSender.java, src/main/java/com/example/e2e/coupon/CouponService.java, src/main/java/com/example/e2e/edge/Audited.java, src/main/java/com/example/e2e/edge/EdgeFlow.java, src/main/java/com/example/e2e/edge/EdgeJob.java, src/main/java/com/example/e2e/job/CalculationJob.java, src/main/java/com/example/e2e/job/ExportJob.java, src/main/java/com/example/e2e/job/PreloadJob.java, src/main/java/com/example/e2e/messaging/CouponMessages.java, src/main/java/com/example/e2e/order/OrderNotifications.java, src/main/java/com/example/e2e/order/OrderService.java, src/main/java/com/example/e2e/web/CouponController.java, src/main/java/com/example/e2e/web/CouponDetailsController.java, src/main/java/com/example/e2e/web/QuoteController.java  ·  3 rounds, <t>
 
-Waiting on you — logast can't continue without these:
-   5 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
-   3 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml   (3 decided)   (3 cannot be written: see "_problem")
-  34 decisions                     → logast scan .   (each says what to decide)
+Done: 35 changes in 18 files, each compiled before it was kept
+  review: git diff   (one diff per kind of change in .logast/reports/steps/)
+
+Optional (42) — left as is, each keeps its default:
+   5 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
+   3 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)   (3 decided)   (3 cannot be written: see "_problem")
+  34 decisions                      → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
-  then run: logast apply . --auto --write   (on this code: don't revert it)
+  to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
 Log lines: 87 — 51 fixed, 5 with a finding, 23 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
-  git diff                                                      review the changes (one diff per kind of change in .logast/reports/steps/)
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
   logast verify .                                               build and run the tests with log capture: does the result really log what it should?

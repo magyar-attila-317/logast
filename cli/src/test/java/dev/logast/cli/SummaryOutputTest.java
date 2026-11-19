@@ -109,23 +109,27 @@ class SummaryOutputTest {
         // before any apply: logast's own fixes come first, nothing claims an earlier apply
         String before = summary(app, cp);
         assertThat(before).as(before).doesNotContain("Applied earlier")
-                .contains("Next: logast apply . --auto --write   3 fixes logast makes itself")
+                .contains("Next: logast apply .   3 fixes logast makes itself")
                 .contains("Log lines: 1 — 1 with a finding (.logast/reports/coverage.txt)")
                 .contains("Places that should log: 0 of 1 do (jobs 0/1)")
                 .doesNotContain("high=").doesNotContain("log calls ").doesNotContain("Next steps");
 
         // after the apply only the person's work is left: what to fill, then apply; no "apply" first
         String applied = run("apply", app.toString(), "--pack", "logging", "--auto", "--write", "--classpath-file", cp);
-        assertThat(applied).as(applied).containsSubsequence("applied (3):", "Waiting on you", "then run: logast apply . --auto --write",
-                        "Log lines: 2 — 1 fixed, 1 with a finding", "Also:", "git diff")
-                .doesNotContain("Next:").doesNotContain("Next steps").doesNotContain("Applied earlier");
+        // #122: what the run did, then what is optional, with one pointer; nothing reads as a required step
+        assertThat(applied).as(applied).containsSubsequence("applied (3):", "Done: 3 changes in 2 files", "review: git diff",
+                        "Optional (1)", "to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again",
+                        "Log lines: 2 — 1 fixed, 1 with a finding", "Also:", "logast verify .")
+                .doesNotContain("Next:").doesNotContain("Next steps").doesNotContain("Applied earlier")
+                .doesNotContain("--auto --write").doesNotContain("logast vocabulary .").doesNotContain("Waiting on you")
+                .doesNotContain("can't continue");
         assertThat(applied.split("Log lines: ", -1)).as("the coverage line once per run").hasSize(2);
         String after = summary(app, cp);
         assertThat(after).as(after).doesNotContain("Next:").containsSubsequence(
                 "Applied earlier: 3 changes in 2 files (git diff to review)\n",
-                "Waiting on you — logast can't continue without these:\n",
-                "  1 log line needs wording  → write \"MSG\" in .logast/decisions/messages.yaml\n",
-                "  then run: logast apply . --auto --write",
+                "Optional (1) — left as is, each keeps its default:\n",
+                "  1 log line: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)\n",
+                "  to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again",
                 "Fix first (low):\n",
                 "  generated wording   src/…/CleanupJob.java:13   MESSAGE_SUGGESTED\n",
                 "Log lines: 2 — 1 fixed, 1 with a finding (.logast/reports/coverage.txt)\n");
@@ -136,6 +140,6 @@ class SummaryOutputTest {
         String done = summary(app, cp);
         assertThat(done).as(done).containsSubsequence("Applied earlier: 1 change in 1 file (git diff to review)\n",
                         "Nothing left: no fixes pending and nothing waits on you.\n", "Log lines: 2 — 1 fixed, 1 fine (.logast/reports/coverage.txt)")
-                .doesNotContain("Waiting on you").doesNotContain("Fix first").doesNotContain("then run");
+                .doesNotContain("Optional (").doesNotContain("Fix first").doesNotContain("to decide");
     }
 }

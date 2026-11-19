@@ -26,7 +26,8 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * {@code logast review}: a local page where a human fills NEEDS TEXT orders, dry-runs and applies them. Bound to
+ * {@code logast review}: a local page where a human fills NEEDS TEXT orders, dry-runs and applies them, and (#122)
+ * decides the metrics.yaml and retry.yaml entries; the yaml files stay the stored form. Bound to
  * 127.0.0.1; every API call needs the random token from the printed URL, so other sites in the browser cannot
  * drive it.
  */
@@ -72,6 +73,26 @@ public final class ReviewServer {
             switch (path) {
                 case "/" -> send(ex, 200, "text/html; charset=utf-8", page());
                 case "/api/orders" -> send(ex, 200, "application/json", OrderJson.MAPPER.writeValueAsString(orders()));
+                case "/api/decisions" -> send(ex, 200, "application/json", OrderJson.MAPPER.writeValueAsString(decisions()));
+                case "/api/decide" -> {
+                    if (!"POST".equals(ex.getRequestMethod())) {
+                        send(ex, 405, "text/plain", "POST only");
+                        return;
+                    }
+                    JsonNode body = OrderJson.MAPPER.readTree(ex.getRequestBody());
+                    int saved = 0;
+                    for (var it = body.path("metrics").fields(); it.hasNext(); ) {
+                        var e = it.next();
+                        JsonNode v = e.getValue();
+                        saved += dev.logast.apply.MetricsFile.set(root, e.getKey(), v.path("count").asText(""),
+                                v.path("name").asText(""), v.path("outcome").asText("")) ? 1 : 0;
+                    }
+                    for (var it = body.path("retry").fields(); it.hasNext(); ) {
+                        var e = it.next();
+                        saved += dev.logast.rules.RetrySettingsRules.setCandidate(root, e.getKey(), e.getValue().asText("")) ? 1 : 0;
+                    }
+                    send(ex, 200, "application/json", OrderJson.MAPPER.writeValueAsString(Map.of("saved", saved)));
+                }
                 case "/api/apply" -> {
                     if (!"POST".equals(ex.getRequestMethod())) {
                         send(ex, 405, "text/plain", "POST only");
@@ -91,6 +112,8 @@ public final class ReviewServer {
                 }
                 default -> send(ex, 404, "text/plain", "not found");
             }
+        } catch (IllegalArgumentException e) {
+            send(ex, 400, "text/plain", String.valueOf(e.getMessage()));
         } catch (RuntimeException e) {
             send(ex, 500, "text/plain", String.valueOf(e.getMessage()));
         }
@@ -119,6 +142,47 @@ public final class ReviewServer {
             out.add(m);
         }
         return Map.of("root", current.root(), "terms", policy.terms(), "orders", out);
+    }
+
+    /**
+     * #122: the other decisions, each with what happens when it is left blank: the outcomes of metrics.yaml and the
+     * retry candidates of retry.yaml, as the files hold them now.
+     */
+    private Map<String, Object> decisions() throws IOException {
+        List<Map<String, Object>> metrics = new ArrayList<>();
+        dev.logast.apply.MetricsFile.entries(root).forEach((id, n) -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", id);
+            m.put("count", n.path("count").asText(""));
+            m.put("name", n.path("name").asText(""));
+            m.put("outcome", n.path("outcome").asText(""));
+            m.put("tag", n.path("_tag").asText(""));
+            m.put("message", n.path("_message").asText(""));
+            m.put("where", n.path("_where").asText(""));
+            m.put("default", "blank: no metric is added");
+            metrics.add(m);
+        });
+        Map<String, String> where = new HashMap<>();
+        Path retryFile = root.resolve(dev.logast.rules.RetrySettingsRules.WORK_FILE);
+        if (java.nio.file.Files.exists(retryFile)) {
+            java.util.regex.Pattern header = java.util.regex.Pattern.compile("^  ([^\\s#:][^:]*):\\s*#\\s*(.*)$");
+            for (String l : java.nio.file.Files.readAllLines(retryFile)) {
+                java.util.regex.Matcher m = header.matcher(l);
+                if (m.matches()) {
+                    where.put(m.group(1), m.group(2));
+                }
+            }
+        }
+        List<Map<String, Object>> retry = new ArrayList<>();
+        dev.logast.rules.RetrySettingsRules.candidateMarks(root).forEach((method, answer) -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", method);
+            m.put("retry", answer);
+            m.put("where", where.getOrDefault(method, ""));
+            m.put("default", "blank: no retry");
+            retry.add(m);
+        });
+        return Map.of("metrics", metrics, "retry", retry);
     }
 
     private static String page() throws IOException {

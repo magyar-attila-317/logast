@@ -65,7 +65,7 @@ logast {                                        // all optional; these are the d
 | `logastBaseline` | records today's findings in the baseline (commit the file) | `logast scan . --update-baseline` |
 | `logastCheck` | the CI gate: fails on findings that are not in the baseline at or above `failOn`, naming each | `logast scan . --baseline --fail-on medium` |
 | `logastSarif` | writes the findings as SARIF to `build/reports/logast/logast.sarif`, for code scanning | `logast scan . --format sarif > logast.sarif` |
-| `logastApply` | applies every fix that needs no message text to the sources; `--preview` (or `-PlogastDryRun`) only prints the diff | `logast apply . --auto --write` |
+| `logastApply` | applies every fix that needs no message text to the sources; `--preview` (or `-PlogastDryRun`) only prints the diff | `logast apply .` |
 
 - One-off overrides: `./gradlew logastCheck --fail-on high`, `./gradlew logastScan --format human`.
 - `logastCheck` also fails when there is no baseline yet (it says to run `logastBaseline`) and when the analysis is

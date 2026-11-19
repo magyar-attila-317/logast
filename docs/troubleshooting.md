@@ -8,9 +8,9 @@
 | `logast classpath` fails | it only resolves dependencies; run the printed Gradle command without `-q` to see why |
 | `REJECTED … must read as '{subject} failed'` | the text has to follow the lifecycle form for that log, e.g. "Payment charge failed, will retry" |
 | `REJECTED … glossary 'purchase' → use 'order'` | use the vocabulary term; `logast policy .` shows aliases |
-| `depends on [SUP-…]` | apply that order in the same run (`--auto` does) |
+| `depends on [SUP-…]` | apply that order in the same run (`logast apply .` does) |
 | scans are slow on large services | every scan parses the whole project from source, and so does each apply round (`LOGAST_TIMING=1` prints the times): slower, but the result never depends on compiled classes |
-| did logast look at this log line? | `.logast/reports/coverage.txt` (written by `scan` and `apply --write` with the logging pack) has one line per log call: fixed, reported, ignored, skipped with the reason, or checked |
+| did logast look at this log line? | `.logast/reports/coverage.txt` (written by `scan` and `apply` with the logging pack) has one line per log call: fixed, reported, ignored, skipped with the reason, or checked |
 | why did apply take several rounds? | `.logast/reports/apply-trace.txt`: what each round applied and which orders its rescan brought up. Steps run in order (setup, structure, lines, mdc, messages, exceptions, levels, reports), usually one round each; a second pass applies nothing in a healthy run |
 | `CHECK FAILED: … did not see its own fix` | a rule's order came back unchanged after its edit: apply applied it once and stopped there (instead of adding the same lines on every pass). A logast bug: please report the shape of the code (`logast shape .` exports it without your names) |
 | `CHECK FAILED: … undo each other` | two fixes reverted each other; apply stopped. A logast bug: please report it with `.logast/reports/apply-trace.txt` |

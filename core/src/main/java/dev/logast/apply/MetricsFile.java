@@ -14,19 +14,19 @@ import java.util.*;
 /**
  * {@code .logast/decisions/metrics.yaml} (was {@code .logast/metrics.json}, #108): one decision per outcome the logs
  * report and no metric counts (METRIC_OUTCOME_UNMEASURED). {@code count: counter | tag | skip}; the next scan turns
- * decided entries into AUTO orders, {@code logast apply . --auto} writes them. Kept up to date like messages.yaml: what
+ * decided entries into AUTO orders, {@code logast apply .} writes them. Kept up to date like messages.yaml: what
  * you wrote stays, new outcomes are added, finished ones removed, nothing written when nothing changed.
  */
 public final class MetricsFile {
     public static final String PATH = dev.logast.LogastDir.METRICS;
     public static final String RULE = "METRIC_OUTCOME_UNMEASURED";
-    private static final String README = "One entry per outcome the logs report and no metric counts. Set count to "
+    private static final String README = "Optional. One entry per outcome the logs report and no metric counts. Left blank: no metric is added. Set count to "
             + "counter (Outcomes.count(name, outcome): a counter name{outcome=...}), tag (Outcomes.tag(outcome) on the "
             + "timer already running; only where _tag says available) or skip (a // logast:ignore comment). Edit name "
             + "and outcome freely (lower case, dots). Where the line logs a number (_amounts), amount names one to count too: "
             + "as: total (a counter name.<amount> grows by it) or per-run (each value one sample of a distribution "
             + "summary name.<amount>); an empty as takes metrics.amounts from logast.yaml. Leave amount empty to count "
-            + "how often only. Then: logast apply . --auto. `logast metrics . --format json` has the context. Keys starting "
+            + "how often only. Then: logast apply . `logast metrics . --format json` has the context. Keys starting "
             + "with _ are hints (_where and _event find the line again when its id changes: keep them).";
 
     /**
@@ -78,6 +78,45 @@ public final class MetricsFile {
     }
 
     private MetricsFile() {
+    }
+
+    /**
+     * #122, {@code logast review}: sets count (and name / outcome when given) of the entry {@code id}; the file stays the
+     * stored form, its header and the other entries are kept. Returns false when there is no such entry.
+     */
+    public static boolean set(Path root, String id, String count, String name, String outcome) {
+        Path file = root.resolve(PATH);
+        try {
+            if (!Files.isRegularFile(file)) {
+                return false;
+            }
+            ObjectNode tree = DecisionYaml.read(file);
+            if (!(tree.get(id) instanceof ObjectNode entry)) {
+                return false;
+            }
+            entry.put("count", count == null ? "" : count.strip().toLowerCase(Locale.ROOT));
+            if (name != null && !name.isBlank()) {
+                entry.put("name", name.strip());
+            }
+            if (outcome != null && !outcome.isBlank()) {
+                entry.put("outcome", outcome.strip());
+            }
+            DecisionYaml.write(file, DecisionYaml.header(file), tree);
+            return true;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Every entry as written (id → its fields, hints included), for {@code logast review}. */
+    public static Map<String, JsonNode> entries(Path root) {
+        Map<String, JsonNode> out = new LinkedHashMap<>();
+        raw(root.resolve(PATH)).forEach((id, n) -> {
+            if (!id.startsWith("_") && n.isObject()) {
+                out.put(id, n);
+            }
+        });
+        return out;
     }
 
     public static Map<String, Decision> read(Path root) {

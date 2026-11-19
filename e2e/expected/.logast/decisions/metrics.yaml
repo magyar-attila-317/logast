@@ -1,11 +1,11 @@
-# One entry per outcome the logs report and no metric counts. Set count to counter (Outcomes.count(name, outcome): a
-# counter name{outcome=...}), tag (Outcomes.tag(outcome) on the timer already running; only where _tag says
-# available) or skip (a // logast:ignore comment). Edit name and outcome freely (lower case, dots). Where the line
-# logs a number (_amounts), amount names one to count too: as: total (a counter name.<amount> grows by it) or
-# per-run (each value one sample of a distribution summary name.<amount>); an empty as takes metrics.amounts from
-# logast.yaml. Leave amount empty to count how often only. Then: logast apply . --auto. `logast metrics . --format
-# json` has the context. Keys starting with _ are hints (_where and _event find the line again when its id changes:
-# keep them).
+# Optional. One entry per outcome the logs report and no metric counts. Left blank: no metric is added. Set count to
+# counter (Outcomes.count(name, outcome): a counter name{outcome=...}), tag (Outcomes.tag(outcome) on the timer
+# already running; only where _tag says available) or skip (a // logast:ignore comment). Edit name and outcome
+# freely (lower case, dots). Where the line logs a number (_amounts), amount names one to count too: as: total (a
+# counter name.<amount> grows by it) or per-run (each value one sample of a distribution summary name.<amount>); an
+# empty as takes metrics.amounts from logast.yaml. Leave amount empty to count how often only. Then: logast apply .
+# `logast metrics . --format json` has the context. Keys starting with _ are hints (_where and _event find the line
+# again when its id changes: keep them).
 OUM-03f513:
   count: ""
   name: coupon.usage

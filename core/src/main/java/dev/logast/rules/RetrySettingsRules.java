@@ -160,6 +160,44 @@ public final class RetrySettingsRules {
         return out;
     }
 
+    /**
+     * #122, {@code logast review}: sets the answer of candidate {@code method} ("yes", "no" or "" for undecided) in
+     * place, so the file's comments stay; the next scan rewrites the file from the answers as usual. False when the
+     * candidate is not listed.
+     */
+    public static boolean setCandidate(Path root, String method, String answer) {
+        String v = answer == null ? "" : answer.strip().toLowerCase(Locale.ROOT);
+        if (!v.isEmpty() && !v.equals("yes") && !v.equals("no")) {
+            throw new IllegalArgumentException("retry: yes, no or empty, not " + answer);
+        }
+        Path p = root.resolve(WORK_FILE);
+        if (!Files.exists(p)) {
+            return false;
+        }
+        try {
+            List<String> lines = new ArrayList<>(Files.readAllLines(p));
+            boolean inCandidates = false;
+            for (int i = 0; i < lines.size(); i++) {
+                String l = lines.get(i);
+                if (!l.startsWith(" ") && !l.startsWith("#")) {
+                    inCandidates = l.startsWith("candidates:");
+                } else if (inCandidates && (l.startsWith("  " + method + ":") && !l.startsWith("   "))) {
+                    for (int j = i + 1; j < lines.size() && lines.get(j).startsWith("    "); j++) {
+                        Matcher m = Pattern.compile("^(    retry: )(\"[^\"]*\"|[^#\\s]*)(.*)$").matcher(lines.get(j));
+                        if (m.matches()) {
+                            lines.set(j, m.group(1) + "\"" + v + "\"" + m.group(3));
+                            Files.writeString(p, String.join("\n", lines) + "\n");
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     private final RuleContext ctx;
 
     RetrySettingsRules(RuleContext ctx) {
@@ -395,7 +433,8 @@ public final class RetrySettingsRules {
         }
         Map<String, Mark> marks = marks(root);
         StringBuilder sb = new StringBuilder()
-                .append("# Every retry decision of the service. Then run: logast apply . --auto --write\n")
+                .append("# Optional. Every retry decision of the service. Then run: logast apply .\n")
+                .append("# Left blank: a candidate gets no retry; a usage keeps logast's choice (below).\n")
                 .append("#\n")
                 .append("# usages: the existing retries (@Retryable). By default a usage reads the shared block of its kind in\n")
                 .append("# application.yml: resilience.retry.defaults (Spring Framework) or resilience.retry.spring-retry-defaults\n")

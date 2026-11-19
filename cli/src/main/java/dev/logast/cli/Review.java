@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
 
-@Command(name = "review", description = "Open a local page to write the NEEDS TEXT messages, dry-run and apply them (for humans)")
+@Command(name = "review", description = "Open a local page for the optional decisions (message texts, metrics, retries), dry-run and apply them (for humans)")
 final class Review extends Main.Common implements Callable<Integer> {
     @Option(names = "--port", defaultValue = "0", description = "Port (0 = any free port)")
     int port;

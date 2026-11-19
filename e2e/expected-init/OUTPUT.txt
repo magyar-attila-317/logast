@@ -9,9 +9,7 @@ Sets up this service once. Re-running keeps what you already edited.
   · .logast/baseline.json   not recorded (add --baseline, or later `logast scan . --update-baseline`)
 
 Next steps
-  1. logast classpath .                                                           lets logast understand types (needs a working Gradle build)
-  2. open logast.yaml                                                             organise the found terms as its example shows; the comments explain every setting
-  3. logast apply .                                                               changes the code and creates .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml (--dry-run: a preview)
-  4. fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml   the texts and metric decisions only a person knows
-  5. logast apply .                                                               again, on the migrated code (don't revert it): writes what you filled in
-  6. git diff                                                                     review the result
+  1. logast apply .               changes the code; every change is compiled before it is kept (--dry-run: a preview); reads the classpath first (a working Gradle build)
+  2. git diff                     review the result
+  3. optional: logast review      message texts, metrics, retries in .logast/decisions/; each has a default. Then logast apply . again, on the migrated code (don't revert it)
+  4. optional: open logast.yaml   organise the found terms as its example shows; the comments explain every setting
