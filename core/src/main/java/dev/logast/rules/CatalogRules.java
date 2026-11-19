@@ -229,7 +229,7 @@ final class CatalogRules {
     }
 
     /** Outcomes.count(n, o), Outcomes.count(n, o, a, x), Outcomes.record(n, o, a, x) with literal names. */
-    private static Key countKey(J.MethodInvocation mi) {
+    static Key countKey(J.MethodInvocation mi) {
         if (!receiverIs(mi, "Outcomes")) {
             return null;
         }

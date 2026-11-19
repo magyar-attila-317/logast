@@ -239,11 +239,7 @@ public final class MetricsMap {
                     continue;
                 }
                 String text = MessageTemplate.compliantBase(raw).strip();
-                String event = phrasing.eventOf(text);
-                if (event == null) {
-                    Matcher o = OUTCOME.matcher(text);
-                    event = o.find() ? o.group(1).toLowerCase(Locale.ROOT) : null;
-                }
+                String event = eventOf(phrasing, text);
                 if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(a, m, lc, catalogs)) {
                     continue;
                 }
@@ -256,8 +252,7 @@ public final class MetricsMap {
                 // a Reactor operator's callback runs on whichever thread emits: the running timer is not the current one there (#14)
                 boolean inObservation = !inReactiveOperator(m, lc.call())
                         && eps.stream().anyMatch(e -> e.observedByFramework() || observedMethods.contains(e.method().key()));
-                String fromPhrasing = phrasing.subjectOf(text);
-                String subject = clean(fromPhrasing != null ? fromPhrasing : subjectOf(text, event));
+                String subject = subject(phrasing, text, event);
                 String metric = metricName(subject);
                 String tag = inObservation
                         ? "observationRegistry.getCurrentObservation().lowCardinalityKeyValue(\"outcome\", \"" + event + "\")  "
@@ -273,6 +268,153 @@ public final class MetricsMap {
         outcomes.sort(Comparator.comparing(Unmeasured::file).thenComparingInt(Unmeasured::line));
         gaps.sort(Comparator.comparing((Gap g) -> g.outcome().file()).thenComparingInt(g -> g.outcome().line()));
         return new Map(exporters, note, identity, measured, unmeasuredEps, repositories, meters, outcomes, gaps);
+    }
+
+    /** What a log line says happened (completed, failed, shipped, …): the phrasing's event, else a past-tense last word. */
+    private static String eventOf(Phrasing phrasing, String text) {
+        String event = phrasing.eventOf(text);
+        if (event == null) {
+            Matcher o = OUTCOME.matcher(text);
+            event = o.find() ? o.group(1).toLowerCase(Locale.ROOT) : null;
+        }
+        return event;
+    }
+
+    /** The subject of an outcome line: "Order items" for "Order items closed". */
+    private static String subject(Phrasing phrasing, String text, String event) {
+        String fromPhrasing = phrasing.subjectOf(text);
+        return clean(fromPhrasing != null ? fromPhrasing : subjectOf(text, event));
+    }
+
+    /**
+     * #113: an outcome the logs report that a meter counts, for comparing services (logast fleet).
+     *
+     * @param meter the meter as it is counted: {@code orders.shipped}, {@code orders{outcome=shipped}}
+     * @param how   what counts it: a counter in the method, a field counter, Outcomes.count, a catalog method, @Counted
+     */
+    public record Counted(String subject, String event, String message, String meter, String how, String method,
+                          String file, int line) {
+    }
+
+    /** A counting statement in a method: its line (0: the whole method, {@code @Counted}), the meter, what counts. */
+    private record Point(int line, String meter, String how) {
+    }
+
+    private static final Set<String> COUNTING = Set.of("counter", "function-counter");
+
+    /**
+     * Log lines that report an outcome (as {@link #of} recognises them) and the meter that counts them: the next counting
+     * statement after the line in the same method (a counter, a field counter's {@code increment()}, Outcomes.count /
+     * record, a metrics catalog method), else {@code @Counted} on the method, else the method's only counting statement
+     * when the line is the method's only outcome.
+     */
+    public static List<Counted> counted(Analysis a) {
+        Phrasing phrasing = new Phrasing(a.policy);
+        List<MeterCatalog.Meter> meters = MeterCatalog.of(a).stream()
+                .filter(mt -> !mt.source().equals("framework") && COUNTING.contains(mt.type())).toList();
+        java.util.Map<String, String> catalogs = new HashMap<>();   // simple name -> fqn
+        for (var c : a.index.classes()) {
+            if (c.file().text().contains(CatalogRules.MARKER)) {
+                catalogs.put(c.simpleName(), c.fqn());
+            }
+        }
+        List<Counted> out = new ArrayList<>();
+        for (MethodInfo m : a.index.methods()) {
+            if (m.owner().fqn().startsWith(a.supportPackage + ".") || m.facts().logs.isEmpty() || m.decl().getBody() == null) {
+                continue;
+            }
+            List<Point> points = countingPoints(a, m, meters, catalogs);
+            if (points.isEmpty()) {
+                continue;
+            }
+            List<LogCall> lines = new ArrayList<>();
+            List<String[]> said = new ArrayList<>();   // {text, event}
+            for (LogCall lc : m.facts().logs) {
+                String raw = MessageTemplate.text(lc.template());
+                if (raw == null || lc.level().compareTo(dev.logast.model.Level.INFO) < 0) {
+                    continue;
+                }
+                String text = MessageTemplate.compliantBase(raw).strip();
+                String event = eventOf(phrasing, text);
+                if (event != null && !NOT_OUTCOMES.contains(event) && !text.isBlank()) {
+                    lines.add(lc);
+                    said.add(new String[]{text, event});
+                }
+            }
+            for (int i = 0; i < lines.size(); i++) {
+                int line = Pos.line(lines.get(i).call());
+                Point point = points.stream().filter(p -> p.line() > line).min(Comparator.comparingInt(Point::line))
+                        .or(() -> points.stream().filter(p -> p.line() == 0).findFirst())
+                        .or(() -> lines.size() == 1 && points.size() == 1 ? Optional.of(points.getFirst()) : Optional.empty())
+                        .orElse(null);
+                if (point != null) {
+                    String text = said.get(i)[0];
+                    String event = said.get(i)[1];
+                    out.add(new Counted(subject(phrasing, text, event), event, text, point.meter(), point.how(), m.label(),
+                            m.file().relPath(), line));
+                }
+            }
+        }
+        out.sort(Comparator.comparing(Counted::file).thenComparingInt(Counted::line));
+        return out;
+    }
+
+    private static List<Point> countingPoints(Analysis a, MethodInfo m, List<MeterCatalog.Meter> meters,
+                                              java.util.Map<String, String> catalogs) {
+        List<Point> points = new ArrayList<>();
+        String rel = m.file().relPath();
+        int from = Pos.line(m.decl());
+        int to = Pos.endLine(m.decl().getBody());
+        for (MeterCatalog.Meter mt : meters) {
+            if (mt.file().equals(rel) && mt.line() >= from && mt.line() <= to) {
+                boolean annotation = mt.source().equals("annotation");
+                points.add(new Point(annotation ? 0 : mt.line(), mt.name(), annotation ? "@Counted" : "counter"));
+            }
+        }
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration c, Integer p) {
+                return c;
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                int line = Pos.line(mi.getName());
+                CatalogRules.Key k = CatalogRules.countKey(mi);
+                if (k != null && !k.kind().equals("tag")) {
+                    points.add(new Point(line, k.name() + "{outcome=" + k.outcome() + "}", "Outcomes." + mi.getSimpleName()));
+                } else if (mi.getSelect() instanceof J.Identifier id && catalogs.containsKey(id.getSimpleName())) {
+                    for (MethodInfo member : a.index.methodsOf(catalogs.get(id.getSimpleName()))) {
+                        if (member.name().equals(mi.getSimpleName()) && member.decl().getBody() != null
+                                && member.decl().getBody().getStatements().size() == 1
+                                && member.decl().getBody().getStatements().getFirst() instanceof J.MethodInvocation inner) {
+                            CatalogRules.Key ck = CatalogRules.countKey(inner);
+                            if (ck != null && !ck.kind().equals("tag")) {
+                                points.add(new Point(line, ck.name() + "{outcome=" + ck.outcome() + "}",
+                                        id.getSimpleName() + "." + mi.getSimpleName() + "()"));
+                            }
+                        }
+                    }
+                } else if (mi.getSimpleName().equals("increment")) {
+                    // a counter kept in a field: the meter registered where the field is assigned
+                    String field = mi.getSelect() instanceof J.Identifier id ? id.getSimpleName()
+                            : mi.getSelect() instanceof J.FieldAccess fa && fa.getTarget() instanceof J.Identifier t
+                            && t.getSimpleName().equals("this") ? fa.getSimpleName() : null;
+                    if (field != null) {
+                        Pattern assigned = Pattern.compile("\\b" + Pattern.quote(field) + "\\s*=[^=]");
+                        for (MeterCatalog.Meter mt : meters) {
+                            String t = mt.file().equals(rel) && (mt.line() < from || mt.line() > to) ? m.file().lineText(mt.line()) : null;
+                            if (t != null && assigned.matcher(t).find()) {
+                                points.add(new Point(line, mt.name(), "field " + field));
+                                break;
+                            }
+                        }
+                    }
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return points;
     }
 
     /** An Outcomes.count/tag right after the log line, or an ignore comment for this rule on it, above it or for the file. */

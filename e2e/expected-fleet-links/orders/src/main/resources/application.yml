@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: orders
+  kafka:
+    template:
+      observation-enabled: true
+app:
+  topics:
+    placed: orders.placed

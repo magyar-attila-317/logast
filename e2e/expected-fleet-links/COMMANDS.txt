@@ -1,0 +1,24 @@
+=== logast fleet --out <tmp>/report orders shipping billing ledger
+
+Trace across services: 5 calls reach another service, 2 drop the trace
+  orders -> billing  POST /invoices
+    call   src/main/java/com/example/orders/InvoiceClient.java:11  RestClient, InvoiceClient.request
+    entry  src/main/java/com/example/billing/InvoiceController.java:20  POST /invoices, InvoiceController.create
+    breaks at the caller (orders): RestClient in a field initializer: no traceparent header on outgoing calls
+      fix: order HTC-c8498e (HTTP_CLIENT_UNTRACED) in orders: Build it in the constructor from an injected, instrumented builder (RestClient.Builder).
+    base http://billing: matched on the path
+  orders -> billing  topic orders.placed
+    call   src/main/java/com/example/orders/OrderDispatch.java:25  KafkaTemplate, OrderDispatch.place
+    entry  src/main/java/com/example/billing/OrderPlacedAudit.java:13  @KafkaListener orders.placed, OrderPlacedAudit.onPlaced
+    breaks at the callee (billing): the listener is not observed: it does not continue the record's trace
+      fix: order KFK-b4ade9 (KAFKA_OBSERVATION_DISABLED) in billing: Kafka listener without observation: the trace stops at the topic
+  the trace goes on:
+    orders -> ledger  GET /entries/{?}  (src/main/java/com/example/orders/LedgerClient.java:19 -> src/main/java/com/example/ledger/EntryController.java:10)  path only: base URL not in the code
+    orders -> shipping  topic orders.placed  (src/main/java/com/example/orders/OrderDispatch.java:25 -> src/main/java/com/example/shipping/OrderPlacedListener.java:13)
+    orders -> shipping  GET /shipments/{id}  (src/main/java/com/example/orders/ShippingClient.java:15 -> src/main/java/com/example/shipping/ShipmentController.java:23)  path only: base URL not in the code
+One outcome, several metric names: 1 candidate (pick one name; nothing is merged)
+  "Order shipped" counted as orders.shipped (orders), shipment.completed (shipping)
+    orders  src/main/java/com/example/orders/OrderDispatch.java:29  "Order shipped" -> orders.shipped (counter)
+    shipping  src/main/java/com/example/shipping/ShipmentController.java:29  "Order shipped" -> shipment.completed (field completed)
+
+report: <tmp>/report/fleet.html
