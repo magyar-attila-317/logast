@@ -3,7 +3,8 @@
 Meter names and tags that don't explode the metrics backend, business events that are measured, and every meter
 tagged with the service and version that wrote it.
 
-- **Opt-in:** `packs: [logging, tracing, metrics]` in `logast.yaml`, or `logast scan . --pack metrics`.
+- **On by default** (every pack is: leave `metrics` out of `packs:` in `logast.yaml` to switch it off).
+  `logast scan . --pack metrics` runs it alone.
 - **Settings:** `metrics.*` in [configuration.md](../configuration.md#metrics-pack-metrics) (`events`, `defaults`,
   `amounts`, `catalog`, `tags`).
 - Decisions a person or an LLM makes go into `.logast/decisions/metrics.yaml` ([below](#deciding-what-to-count-metricsyaml)).
@@ -161,7 +162,7 @@ from `spring.application.*`), and `service.version` on the OTel resource.
 
 ## Business events
 
-Turn the pack on with `packs: [logging, tracing, metrics]`. A business event that is logged but not measured gets an
+With the pack on (the default), a business event that is logged but not measured gets an
 Observation, which gives a timer (count, duration, errors) and a span in one:
 ```java
 public void refund(String orderId, long amountCents) {

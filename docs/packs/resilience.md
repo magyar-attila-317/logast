@@ -3,7 +3,8 @@
 What turns a slow or failing dependency into an outage: missing timeouts, unbounded pools and waits, retries that
 never run, rollouts that cut work off.
 
-- **Opt-in:** `packs: [logging, tracing, resilience]` in `logast.yaml`, or `logast scan . --pack resilience`.
+- **On by default** (every pack is: leave `resilience` out of `packs:` in `logast.yaml` to switch it off).
+  `logast scan . --pack resilience` runs it alone.
 - **Settings:** `resilience.*` in [configuration.md](../configuration.md#resilience-pack-resilience)
   (timeouts written by the AUTO fixes, `singleInstance`).
 - It uses the same entrypoint and call-path analysis as the other packs, so a finding says *which request* is affected.

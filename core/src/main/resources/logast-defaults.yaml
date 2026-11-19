@@ -1,7 +1,7 @@
 # Built-in, opinionated defaults. Every policy starts from these; company / area / service layers
 # extend them (lists append, objects merge) or replace parts with `override: true`.
 
-packs: [logging, tracing]          # metrics is opt-in: packs: [logging, tracing, metrics]
+packs: [logging, tracing, metrics, resilience, errors, audit]   # all of them; leave one out to switch it off
 
 reporting:
   sourceComments: false             # debugging: add // logast: RULE ID beside findings in messages.yaml and metrics.yaml
@@ -19,7 +19,7 @@ logging:
     - "^something went wrong"
     - "^(publishing|completed publishing|finished publishing)\\b"
     - "^(in|inside|entering|leaving|exiting) (method )?\\w+\\(?\\)?\\.*$"
-  structuredFormat: ecs            # JSON console format written to application.yml: ecs, logstash, gelf; none = leave it
+  structuredFormat: logstash       # JSON console format written to application.yml: logstash, ecs, gelf; none = leave it
   keyStyle: camel                 # MDC and [k=v] keys (vocabulary keys too): camel (orderId, default), dotted (order.id),
                                    # pascal (OrderId), snake (order_id), keep. Also the spelling `logast vocabulary` proposes.
 

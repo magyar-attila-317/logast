@@ -12,11 +12,11 @@ writes it to `application.yml` for the pack that uses it.
 
 ## How a service gets it
 
-| | `support.mode: dependency` (default) | `support.mode: vendor` |
+| | `support.mode: vendor` (default) | `support.mode: dependency` |
 |---|---|---|
-| what logast does | adds `dev.logast:logging-support` to `build.gradle(.kts)` | copies its classes into `<app package>.logging` |
-| upgrades | bump the version | re-copy, or switch to the dependency later |
-| when | you publish the starter to your repository | no shared artifact yet, or the service must not take new dependencies |
+| what logast does | copies its classes into `<app package>.logging` | adds `dev.logast:logging-support` to `build.gradle(.kts)` |
+| upgrades | re-copy, or switch to the dependency later | bump the version |
+| when | no shared artifact yet, or the service must not take new dependencies | you publish the starter to your repository (the default once the policy, or a company policy it extends, sets `support.repository` or `support.coordinates`) |
 
 Both give the same generated code. In vendor mode, copied classes from an older logast are updated by an AUTO order
 (the dry run shows the diff). `logast init --support vendor` writes the mode into `logast.yaml`; the other settings
@@ -36,7 +36,7 @@ A pack may add the starter for one class without changing what another pack owns
 | `logging-support.problem-trace-id.enabled` | `"traceId"` in error responses: `ProblemTraceId` (Spring MVC: ProblemDetail and Boot's error map), `ReactiveProblemTraceId` (WebFlux: ProblemDetail, through an `ErrorResponse.Interceptor`; needs `spring.reactor.context-propagation: auto`) | errors |
 
 Upgrading a service that took an earlier starter, where the first four were on by default: run `logast apply` with
-its packs (logging and tracing by default) and it writes the properties, or set them yourself. A value the service
+its packs (all of them by default) and it writes the properties, or set them yourself. A value the service
 already sets, `true` or `false`, is left as it is.
 
 ## Publishing it

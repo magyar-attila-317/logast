@@ -8,7 +8,7 @@ examples. Output samples are illustrations; counts and ids differ per service an
 | `logast init [svc]` | one-time setup: `logast.yaml`, `.gitignore`, classpath, traffic template (`--baseline` for CI) |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
 | `logast scan <svc>` | finds gaps, writes `.logast/reports/orders.json`, prints the work orders |
-| `logast apply <svc> [--auto] [--only ids] [--write]` | applies orders on a scratch copy, rescanning between rounds; dry run unless `--write`. Message texts come from `.logast/decisions/messages.yaml` (or `--fills <file>`) |
+| `logast apply <svc> [--only ids] [--dry-run] [--force]` | applies every order that needs no text (`--only`: just these) on a scratch copy, rescanning between rounds, and writes the result (`--dry-run`: preview only). Refuses a git working tree with uncommitted changes unless `--force`. On a service without `logast.yaml` it writes one first (what `init` writes), on a Gradle build without a classpath file it reads one. Message texts come from `.logast/decisions/messages.yaml` (or `--fills <file>`); `--auto` and `--write` are accepted and are the default |
 | `logast review <svc> [--open]` | local page for people to write the messages and apply |
 | `logast verify <svc>` | runs the existing tests with log capture and checks what was really logged |
 | `logast explain <svc> [--entrypoint "POST /x"]` | lists entrypoints, or the call tree below one with log/MDC/async markers |

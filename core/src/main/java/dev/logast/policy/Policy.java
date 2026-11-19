@@ -257,16 +257,20 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
     /** The company logging-support starter that generated code depends on. */
     /**
      * @param mode           {@code dependency} (add the starter from Nexus) or {@code vendor} (copy its classes into
-     *                       the service, no library dependency)
+     *                       the service, no library dependency); default vendor, dependency when {@code repository} or
+     *                       {@code coordinates} is set (#122)
      * @param vendorPackage  target package in vendor mode; default {@code <@SpringBootApplication package>.logging}
      */
     public record Support(String coordinates, String packageName, String mode, String vendorPackage, String repository) {
         public Support {
+            // #122: vendor unless the (merged) policy points at a published starter: a repository or pinned coordinates
+            // (a company layer reached through extends counts), or mode: dependency itself
+            boolean published = repository != null && !repository.isBlank() || coordinates != null;
             // #24: the starter of the same release as this logast (its version is the one the generated calls exist in)
             coordinates = coordinates == null ? "dev.logast:logging-support:" + releaseVersion() : coordinates;
             packageName = packageName == null ? "dev.logast.support" : packageName;
             repository = repository == null ? "" : repository.strip();   // #24: where the starter comes from
-            mode = mode == null ? "dependency" : mode.toLowerCase(Locale.ROOT);
+            mode = mode == null ? (published ? "dependency" : "vendor") : mode.toLowerCase(Locale.ROOT);
             if (!mode.equals("dependency") && !mode.equals("vendor")) {
                 throw new IllegalArgumentException("support.mode must be 'dependency' or 'vendor', was " + mode);
             }
@@ -368,7 +372,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param protectedMessages regexes of messages that alerts or dashboards depend on: never reworded or reformatted,
      *                          only reported (expand-contract: add a stable event field first, change the text later)
      * @param vagueMessages     regexes of avoid-listed wording (MESSAGE_VAGUE), matched case-insensitively on the text
-     * @param structuredFormat  JSON console format written to application.yml: ecs (default), logstash, gelf; none = leave it
+     * @param structuredFormat  JSON console format written to application.yml: logstash (default), ecs, gelf; none = leave it
      */
     public record Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
                           Boolean rewriteExistingMessages, String keyStyle, List<String> protectedMessages,
@@ -385,7 +389,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         public Logging {
             protectedMessages = protectedMessages == null ? List.of() : List.copyOf(protectedMessages);
             vagueMessages = vagueMessages == null ? List.of() : List.copyOf(vagueMessages);
-            structuredFormat = structuredFormat == null ? "ecs" : structuredFormat.toLowerCase(Locale.ROOT);
+            structuredFormat = structuredFormat == null ? "logstash" : structuredFormat.toLowerCase(Locale.ROOT);
             // written to spring.application.name / .version when a service sets neither (null name: the project's name);
             // SPRING_APPLICATION_NAME / SPRING_APPLICATION_VERSION env vars still win over the file at runtime
             serviceVersion = serviceVersion == null ? "${APPLICATION_VERSION:unknown}" : serviceVersion;
@@ -411,7 +415,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         areas = areas == null ? Map.of() : new LinkedHashMap<>(areas);
         phrasing = phrasing == null ? new Phrasing(null) : phrasing;
         levels = levels == null ? new Levels(null, null, null, null, null) : levels;
-        packs = packs == null ? List.of("logging", "tracing") : List.copyOf(packs);
+        packs = packs == null ? dev.logast.ServiceSetup.ALL_PACKS : List.copyOf(packs);
         overrides = overrides == null ? List.of() : List.copyOf(overrides);
         glossary = glossary == null ? new Glossary(null, null) : glossary;
         mdc = mdc == null ? new Mdc(null, null) : mdc;

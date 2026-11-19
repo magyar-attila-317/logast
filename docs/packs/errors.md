@@ -3,7 +3,8 @@
 What an HTTP client sees when something goes wrong: leaked internals, exceptions that become 500s, error responses
 without a trace id, failures that leave no stack trace.
 
-- **Opt-in:** `packs: [logging, tracing, errors]` in `logast.yaml`, or `logast scan . --pack errors`.
+- **On by default** (every pack is: leave `errors` out of `packs:` in `logast.yaml` to switch it off).
+  `logast scan . --pack errors` runs it alone.
 - ERROR_RESPONSE_UNTRACED uses one class of the [runtime starter](../starter.md) (`ProblemTraceId`, on a WebFlux-only
   service `ReactiveProblemTraceId`) and switches on only its property, `logging-support.problem-trace-id.enabled`.
 

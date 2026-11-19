@@ -4,7 +4,6 @@ import dev.logast.Analysis;
 import dev.logast.Logast;
 import dev.logast.ServiceSetup;
 import dev.logast.Traffic;
-import dev.logast.VocabularyHarvest;
 import dev.logast.orders.Baseline;
 import dev.logast.orders.Ansi;
 import dev.logast.orders.ScanResult;
@@ -27,14 +26,14 @@ final class Init implements Callable<Integer> {
     @Option(names = "--extends", split = ",", description = "Company/area policy layers to extend (files or URLs)")
     List<String> extendsList = new ArrayList<>();
     @Option(names = "--pack", split = ",", completionCandidates = Main.PackNames.class,
-            description = "Rule packs for the policy: ${COMPLETION-CANDIDATES} (default: logging,tracing)")
+            description = "Rule packs for the policy: ${COMPLETION-CANDIDATES} (default: all)")
     List<String> packs = new ArrayList<>();
     @Option(names = "--keep-wording", description = "Legacy service: don't rewrite existing message wording")
     boolean keepWording;
     @Option(names = "--key-style", description = "Spelling of MDC and [k=v] keys: dotted (order.id), camel (orderId), pascal (OrderId), snake (order_id)")
     String keyStyle;
-    @Option(names = "--support", description = "How generated code gets MdcScope/ObservedContext: dependency (the starter "
-            + "library, must be resolvable from your repositories) or vendor (classes copied into the service)")
+    @Option(names = "--support", description = "How generated code gets MdcScope/ObservedContext: vendor (classes copied into "
+            + "the service, the default) or dependency (the starter library, must be resolvable from your repositories)")
     String support;
     @Option(names = "--baseline", description = "Scan once and record today's findings as the CI baseline")
     boolean baseline;
@@ -58,35 +57,21 @@ final class Init implements Callable<Integer> {
         System.out.println();
 
         Main.migrate(r);
-        Path policyFile = dev.logast.policy.PolicyLoader.defaultFile(r);
-        if (Files.exists(policyFile) && !force) {
+        ServiceSetup.Bootstrap set = ServiceSetup.bootstrap(r,
+                new ServiceSetup.Choices(extendsList, packs, keepWording, keyStyle, support), force);
+        if (!set.policyWritten()) {
             Out.kept("logast.yaml", "already there, kept (--force writes a fresh one)");
         } else {
-            // first without vocabulary, so the harvest can leave out what the extended company layers already define
-            // the key style: given, else the one the code already uses most, else the default (camel); always written out
-            dev.logast.policy.KeyStyle detected = keyStyle == null ? VocabularyHarvest.detectStyle(r) : null;
-            String style = keyStyle != null ? dev.logast.policy.KeyStyle.parse(keyStyle).toString()
-                    : (detected != null ? detected : dev.logast.policy.KeyStyle.CAMEL).toString();
-            String mode = support == null ? null : new dev.logast.policy.Policy.Support(null, null, support, null, null).mode();
-            String logFormat = ServiceSetup.detectLogFormat(r);
-            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, logFormat, null));
-            VocabularyHarvest.Result h = VocabularyHarvest.run(r, Logast.policy(r, null), 3);
-            Files.writeString(policyFile, ServiceSetup.policyTemplate(extendsList, packs, keepWording, style, mode, logFormat, VocabularyHarvest.yaml(h)));
-            Out.step("logast.yaml", "your settings: which checks run, key style " + style
-                    + (keyStyle != null ? "" : detected != null ? " (what the code uses most)" : " (default)")
-                    + ", log format " + (logFormat != null ? logFormat + " (what the service already uses)" : "ecs (default)") + ", and "
-                    + h.terms().size() + " keys found in the code, one term each (organise them)");
+            Out.step("logast.yaml", "your settings: which checks run, key style " + set.keyStyle()
+                    + (keyStyle != null ? "" : set.styleDetected() ? " (what the code uses most)" : " (default)")
+                    + ", log format " + (set.logFormat() != null ? set.logFormat() + " (what the service already uses)" : "logstash (default)")
+                    + ", and " + set.terms() + " keys found in the code, one term each (organise them)");
         }
-
-        List<String> added = ServiceSetup.updateGitignore(r);
-        if (added.isEmpty()) {
+        if (set.gitignoreAdded().isEmpty()) {
             Out.kept(".gitignore", "already ignores .logast/ (except the shared files)");
         } else {
             Out.step(".gitignore", "ignores .logast/, but keeps baseline.json, decisions/ and README.md shared");
         }
-        Path readme = r.resolve(".logast/README.md");
-        Files.createDirectories(readme.getParent());
-        Files.writeString(readme, ServiceSetup.logastReadme());
         Out.step(".logast/README.md", "explains every file in .logast/ and which ones go into git");
 
         boolean haveClasspath = !Logast.classpath(r, null).isEmpty();
@@ -142,10 +127,10 @@ final class Init implements Callable<Integer> {
         // the whole flow, in order: the files to fill in only exist after the first apply (their entries belong to the
         // code apply writes), and the second apply runs on top of the migrated code
         next.add(new String[]{"open logast.yaml", "organise the found terms as its example shows; the comments explain every setting"});
-        next.add(new String[]{"logast apply . --auto --write", "changes the code and creates .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml "
-                + "(without --write: a preview)"});
+        next.add(new String[]{"logast apply .", "changes the code and creates .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml "
+                + "(--dry-run: a preview)"});
         next.add(new String[]{"fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml", "the texts and metric decisions only a person knows"});
-        next.add(new String[]{"logast apply . --auto --write", "again, on the migrated code (don't revert it): writes what you filled in"});
+        next.add(new String[]{"logast apply .", "again, on the migrated code (don't revert it): writes what you filled in"});
         next.add(new String[]{"git diff", "review the result"});
         Out.next(next);
         return 0;

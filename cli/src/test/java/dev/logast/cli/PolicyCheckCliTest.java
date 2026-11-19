@@ -163,19 +163,90 @@ class PolicyCheckCliTest {
                 .toString(), "--check").out()).as("vendor mode copies the classes: no pin to match").doesNotContain("pins logging-support");
     }
 
-    /** #119: a Gradle build without a classpath file: apply stops and says how to get one, unless told to go on. */
+    /**
+     * #119, #122: a Gradle build without a classpath file: apply runs Gradle to read it (a stand-in gradlew here) and
+     * goes on; it stops only when Gradle fails, unless told to go on without one.
+     */
     @Test
-    void applyStopsWithoutAClasspathOnAGradleBuild() throws IOException {
+    void applyReadsTheClasspathOfAGradleBuildItself() throws IOException {
         Path app = project("packs: [logging]\n");
         Files.writeString(app.resolve("build.gradle.kts"), "plugins { java }\n");
-        Run r = run("apply", app.toString(), "--auto");
-        assertThat(r.exit()).isEqualTo(2);
-        assertThat(r.err()).contains("no classpath yet (.logast/classpath*.txt): run `logast classpath .` first")
-                .contains("often a JDK the build's toolchain asks for is not installed");
-        assertThat(run("apply", app.toString(), "--auto", "--without-classpath").err()).doesNotContain("no classpath yet");
+        Path gradlew = app.resolve("gradlew");
+        Files.writeString(gradlew, "#!/bin/sh\nexit 3\n");
+        assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+        Run failed = run("apply", app.toString());
+        assertThat(failed.exit()).isEqualTo(2);
+        assertThat(failed.err()).contains("Gradle failed (exit 3)").contains("often a JDK the build's toolchain asks for is not installed")
+                .contains("--without-classpath");
+        assertThat(run("apply", app.toString(), "--without-classpath").err()).doesNotContain("Gradle failed");
+
+        Files.writeString(gradlew, "#!/bin/sh\nmkdir -p .logast out\npwd > .logast/classpath-main.txt\n");
+        Run ok = run("apply", app.toString());
+        assertThat(ok.exit()).as("went on (a fix may still be rejected: no Spring on this classpath)\n" + ok.out() + ok.err())
+                .isNotEqualTo(2);
+        assertThat(ok.err()).contains("classpath read");
+        assertThat(app.resolve(".logast/classpath-main.txt")).exists();
+
         Path plain = tmp.resolve("plain");   // its own folder: project() writes into the one above
         Files.createDirectories(plain.resolve("src/main/java/demo"));
         Files.writeString(plain.resolve("src/main/java/demo/Ok.java"), "package demo;\n\nclass Ok {\n}\n");
-        assertThat(run("apply", plain.toString(), "--auto").err()).as("no Gradle build: as before").doesNotContain("no classpath yet");
+        assertThat(run("apply", plain.toString(), "--dry-run").err()).as("no Gradle build: no classpath to read")
+                .doesNotContain("classpath");
+    }
+
+    /** #122: no logast.yaml: apply writes one first (init's setup), a preview does not; --policy names its own. */
+    @Test
+    void applyWritesThePolicyItRunsWith() throws IOException {
+        Path plain = tmp.resolve("plain");
+        Files.createDirectories(plain.resolve("src/main/java/demo"));
+        Files.writeString(plain.resolve("src/main/java/demo/Ok.java"), "package demo;\n\nclass Ok {\n}\n");
+        run("apply", plain.toString(), "--dry-run");
+        assertThat(plain.resolve("logast.yaml")).as("a preview writes nothing").doesNotExist();
+        Path own = tmp.resolve("own.yaml");
+        Files.writeString(own, "packs: [logging]\n");
+        Path named = project("packs: [logging]\n");
+        Files.delete(named.resolve("logast.yaml"));
+        run("apply", named.toString(), "--policy", own.toString());
+        assertThat(named.resolve("logast.yaml")).as("--policy names the policy").doesNotExist();
+        Run r = run("apply", plain.toString());
+        assertThat(r.exit()).as(r.out() + r.err()).isZero();
+        assertThat(r.err()).contains("no logast.yaml yet: wrote one").contains("packs logging, tracing, metrics, resilience, errors, audit");
+        assertThat(Files.readString(plain.resolve("logast.yaml"))).contains("structuredFormat: logstash\n");
+        assertThat(plain.resolve(".gitignore")).exists();
+        assertThat(plain.resolve(".logast/README.md")).exists();
+    }
+
+    /** #122: apply writes by default, so it refuses a git working tree with uncommitted changes (--force, --dry-run go on). */
+    @Test
+    void applyRefusesUncommittedChanges() throws IOException {
+        Path app = project("packs: [logging]\n");
+        git(app, "init", "--quiet");
+        git(app, "add", "-A");
+        git(app, "commit", "--quiet", "-m", "start");
+        Files.writeString(app.resolve("untracked.txt"), "not git's\n");
+        Files.createDirectories(app.resolve(".logast"));
+        Files.writeString(app.resolve(".logast/classpath-main.txt"), "");
+        assertThat(run("apply", app.toString()).exit()).as("untracked files and .logast/ do not count").isZero();
+        Path ok = app.resolve("src/main/java/demo/Ok.java");
+        Files.writeString(ok, Files.readString(ok) + "// edited\n");
+        Run refused = run("apply", app.toString());
+        assertThat(refused.exit()).isEqualTo(2);
+        assertThat(refused.err()).contains("uncommitted changes (src/main/java/demo/Ok.java)").contains("Nothing applied");
+        assertThat(run("apply", app.toString(), "--dry-run").exit()).isZero();
+        assertThat(run("apply", app.toString(), "--force").exit()).isZero();
+    }
+
+    private static void git(Path dir, String... args) throws IOException {
+        java.util.List<String> cmd = new java.util.ArrayList<>(java.util.List.of("git", "-c", "user.name=t", "-c", "user.email=t@localhost",
+                "-c", "commit.gpgsign=false"));
+        cmd.addAll(java.util.List.of(args));
+        Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true).start();
+        String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        try {
+            assertThat(p.waitFor()).as(out).isZero();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+        }
     }
 }

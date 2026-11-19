@@ -3,6 +3,8 @@ packs: [errors]
 logging:
   keyStyle: camel
   structuredFormat: logstash
+support:
+  mode: dependency
 vocabulary:
   pledge:
     mdc:

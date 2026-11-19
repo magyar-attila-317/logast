@@ -3,7 +3,8 @@
 Actions that must leave an audit record, not just a log line: who did what, to which record, with which outcome,
 written where the log pipeline can keep it apart.
 
-- **Opt-in:** `packs: [logging, tracing, audit]` in `logast.yaml`, or `logast scan . --pack audit`.
+- **On by default** (every pack is: leave `audit` out of `packs:` in `logast.yaml` to switch it off).
+  `logast scan . --pack audit` runs it alone.
 - **Settings:** `audit.emitters`, `audit.actions`, `audit.logger` in
   [configuration.md](../configuration.md#audit-pack-audit).
 

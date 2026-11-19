@@ -15,8 +15,8 @@
 # Shared settings for all your services (a URL or a file). Lists add up; this file wins on conflicts.
 # extends: [https://git.example.com/platform/observability/raw/main/company.yaml]
 
-# Which checks run. Default: logging, tracing. Add any of: metrics, resilience, errors, audit.
-packs: [logging, tracing]
+# Which checks run. Default: all of them. Leave one out to switch it off.
+packs: [logging, tracing, metrics, resilience, errors, audit]
 
 logging:
   # How MDC keys and [key=value] keys are spelled: camel (orderId), dotted (order.id), pascal (OrderId),
@@ -31,10 +31,11 @@ logging:
   # protectedMessages: ["^ALERT:"]
 
 # Where generated code gets MdcScope / ObservedContext from:
-#   dependency  adds the logging-support library (it must be in a repository your build uses)
-#   vendor      copies the classes into this service, no library needed
+#   vendor      copies the classes into this service, no library needed (the default)
+#   dependency  adds the logging-support library (it must be in a repository your build uses; the
+#               default when an extended policy sets support.repository)
 # support:
-#   mode: vendor
+#   mode: dependency
 
 # ---------------------------------------------------------------------------------------------
 # Business vocabulary: one entry per business concept

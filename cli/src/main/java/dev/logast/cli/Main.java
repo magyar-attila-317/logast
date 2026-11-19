@@ -318,18 +318,24 @@ public final class Main {
         }
     }
 
-    @Command(name = "apply", description = "Apply orders (dry run unless --write). Rescans between rounds; ids are stable.")
+    @Command(name = "apply", description = "Change the code (--dry-run previews). Sets itself up on a service without logast.yaml "
+            + "or classpath. Rescans between rounds; ids are stable.")
     static class Apply extends Common implements Callable<Integer> {
         @Option(names = "--fills", description = "Message texts (default: .logast/decisions/messages.yaml, kept up to date by `logast scan`)")
         Path fills;
-        @Option(names = "--auto", description = "Also apply every order that needs no text (including ones that appear after earlier fixes)")
+        @Option(names = "--auto", description = "Apply every order that needs no text (including ones that appear after earlier "
+                + "fixes). The default; with --only, add it to apply the rest too")
         boolean auto;
         @Option(names = "--only", split = ",", description = "Restrict to these order ids")
         Set<String> only = new LinkedHashSet<>();
         @Option(names = "--until", description = "Stop after this pipeline step: setup, structure, lines, mdc, messages, exceptions, levels, reports (default: all)")
         String until;
-        @Option(names = "--write", description = "Write changes (default: print the diff only)")
+        @Option(names = "--write", description = "Write changes (the default; kept for scripts)")
         boolean write;
+        @Option(names = "--dry-run", description = "Print the diff only, change no file")
+        boolean dryRun;
+        @Option(names = "--force", description = "Write even though the git working tree has uncommitted changes")
+        boolean force;
         @Option(names = "--format", defaultValue = "text", description = "text | json")
         String format;
         @Option(names = "--without-classpath", description = "Apply even though the Gradle build has no classpath file "
@@ -343,36 +349,55 @@ public final class Main {
 
         @Override
         public Integer call() throws IOException {
-            // #119: a Gradle build without a classpath file (logast classpath failed, or never ran): applying would
-            // resolve no library type, and the compile gate would reject correct fixes with errors that look like a bug
+            // #122: one command on a service with nothing set up; writing is the default, git is the safety net
+            write = !dryRun;
+            auto = auto || only.isEmpty();   // --only alone is a selection; texts in messages.yaml come with --auto
+            if (write && !force && !refreshed) {   // the internal re-run (#117) follows this run's own changes
+                List<String> dirty = uncommitted(root());
+                if (dirty != null && !dirty.isEmpty()) {
+                    Out.warn("logast apply: the git working tree has uncommitted changes (" + String.join(", ", dirty.stream().limit(5).toList())
+                            + (dirty.size() > 5 ? ", …" : "") + "). Commit or stash them first, so `git diff` shows only what logast "
+                            + "changes. Nothing applied; --force writes anyway, --dry-run previews.");
+                    return 2;
+                }
+            }
+            if (policyFile == null && !Files.exists(dev.logast.policy.PolicyLoader.defaultFile(root()))) {
+                if (write) {
+                    dev.logast.ServiceSetup.Bootstrap set = dev.logast.ServiceSetup.bootstrap(root(), dev.logast.ServiceSetup.Choices.defaults(), false);
+                    Out.progress("no logast.yaml yet: wrote one with what it chose (" + set.summary() + "); edit it and apply again to change them");
+                } else {
+                    Out.progress("no logast.yaml yet: previewing with the built-in defaults (apply without --dry-run writes one)");
+                }
+            }
+            // #119: a Gradle build without a classpath file would resolve no library type, and the compile gate would
+            // reject correct fixes with errors that look like a bug: fetch it now (#122), stop only when Gradle fails
             boolean gradleBuild = Files.exists(root().resolve("build.gradle")) || Files.exists(root().resolve("build.gradle.kts"));
             if (gradleBuild && classpathFile == null && !withoutClasspath && Logast.classpath(root(), null).isEmpty()) {
-                Out.warn("no classpath yet (.logast/classpath*.txt): run `logast classpath .` first. If it fails, its Gradle error "
-                        + "says why (often a JDK the build's toolchain asks for is not installed). Nothing applied; "
-                        + "--without-classpath applies anyway, with library types unresolved.");
-                return 2;
+                Main.Classpath.Result cpr;
+                try (Out.Progress p = new Out.Progress("no classpath yet: running Gradle to read it (nothing is compiled)")) {
+                    cpr = Main.Classpath.write(root());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    cpr = new Main.Classpath.Result(130, 0, false);
+                }
+                if (cpr.exitCode() != 0) {
+                    Out.warn("no classpath (.logast/classpath*.txt): Gradle failed (exit " + cpr.exitCode() + "), its error is above "
+                            + "(often a JDK the build's toolchain asks for is not installed). Nothing applied; fix the build and run "
+                            + "again, or --without-classpath applies anyway, with library types unresolved.");
+                    return 2;
+                }
+                Out.progress("classpath read (" + cpr.entries() + " entries in .logast/classpath*.txt)");
             }
             Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
             String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
             if (olderJdk != null) {
                 Out.warn(olderJdk);
             }
-            if (!auto && fillMap.isEmpty() && only.isEmpty()) {   // #56: --only ids are a selection too
-                System.err.println("""
-                        logast apply: nothing selected. Choose what to apply:
-                          --auto     every fix that needs no message text
-                          texts      fixes that need a message: write them into .logast/decisions/messages.yaml (`logast scan`
-                                     creates it) and they are picked up automatically
-                        and add --write to change files; without it you get a preview.
-                        e.g.  logast apply . --auto            # preview
-                              logast apply . --auto --write    # change files""");
-                return 2;
-            }
             if (!fillMap.isEmpty() && !format.equals("json")) {
                 Out.progress("using " + fillMap.size() + " message text(s) from " + (fills != null ? fills : dev.logast.apply.FillsFile.PATH));
             }
             if (!write && !format.equals("json")) {
-                Out.progress("DRY RUN: previewing only, no files are changed (add --write to apply)");
+                Out.progress("DRY RUN: previewing only, no files are changed (run without --dry-run to apply)");
             }
             long t0 = System.nanoTime();
             Policy policy = policy();
@@ -462,7 +487,8 @@ public final class Main {
             List<dev.logast.Todo.Item> also = new ArrayList<>();
             dev.logast.Todo.Item next = null;
             if (!write && !r.applied().isEmpty()) {
-                next = new dev.logast.Todo.Item("logast apply . " + (auto ? "--auto " : "") + (fills != null ? "--fills " + fills + " " : "") + "--write",
+                next = new dev.logast.Todo.Item("logast apply ." + (fills != null ? " --fills " + fills : "")
+                        + (only.isEmpty() ? "" : " --only " + String.join(",", only)),
                         "make these " + r.applied().size() + " changes");
             }
             if (write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith(".gradle") || fn.endsWith(".gradle.kts"))) {
@@ -509,6 +535,31 @@ public final class Main {
             printBlocks(List.of(), todo.lines(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
                     ledgerLines(ledger, List.of()), dev.logast.Todo.alsoLines(also));
             return r.rejected().isEmpty() ? 0 : 1;
+        }
+    }
+
+    /**
+     * #122: the files under {@code root} with uncommitted changes git tracks (staged or not; untracked files and
+     * logast's own .logast/ are left out), or null when {@code root} is not in a git work tree or git is missing.
+     */
+    static List<String> uncommitted(Path root) {
+        try {
+            Process inside = new ProcessBuilder("git", "rev-parse", "--is-inside-work-tree").directory(root.toFile())
+                    .redirectErrorStream(true).start();
+            String answer = new String(inside.getInputStream().readAllBytes()).strip();
+            if (inside.waitFor() != 0 || !answer.equals("true")) {
+                return null;
+            }
+            Process status = new ProcessBuilder("git", "status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude).logast")
+                    .directory(root.toFile()).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            List<String> out = new String(status.getInputStream().readAllBytes()).lines()
+                    .filter(l -> l.length() > 3).map(l -> l.substring(3)).toList();
+            return status.waitFor() == 0 ? out : null;
+        } catch (IOException e) {
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
         }
     }
 
