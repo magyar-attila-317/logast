@@ -3,6 +3,7 @@ package dev.logast.cli;
 import dev.logast.Analysis;
 import dev.logast.CentralVocabulary;
 import dev.logast.Logast;
+import dev.logast.fleet.CompanyPolicy;
 import dev.logast.fleet.FleetHome;
 import dev.logast.fleet.FleetLinks;
 import dev.logast.fleet.FleetReport;
@@ -141,7 +142,12 @@ final class Fleet implements Callable<Integer> {
             Files.writeString(dir.resolve(CentralVocabulary.WORKSHEET), vocab.worksheet());
             CentralVocabulary.writeCompany(dir.resolve(CentralVocabulary.COMPANY), vocab.company());
         }
-        Path page = html ? FleetReport.write(out != null ? out : dir.resolve("report"), services, links) : null;
+        // #129: what the members agree on, as commented suggestions in company.yaml
+        Path company = dir.resolve(CentralVocabulary.COMPANY);
+        List<CompanyPolicy.Suggestion> suggestions = CompanyPolicy.refresh(dir, name, snaps.values());
+        String agreed = CompanyPolicy.overviewLine(suggestions, company);
+        Path page = html ? FleetReport.write(out != null ? out : dir.resolve("report"), services, links,
+                suggestions.stream().map(CompanyPolicy.Suggestion::text).toList()) : null;
         Instant now = Instant.now();
         if (json) {
             Map<String, Object> o = new LinkedHashMap<>();
@@ -167,6 +173,7 @@ final class Fleet implements Callable<Integer> {
             o.put("services", rows);
             o.put("links", links);
             o.put("vocabulary", Map.of("summary", vocab.summary(), "conflicts", vocab.conflicts()));
+            o.put("company", Map.of("file", company.toString(), "suggestions", suggestions));
             if (page != null) {
                 o.put("report", page.toAbsolutePath().toString());
             }
@@ -207,6 +214,9 @@ final class Fleet implements Callable<Integer> {
         } else {
             System.out.println("  `logast fleet " + name + " --vocabulary` " + (Files.exists(worksheet) ? "updates" : "writes")
                     + " the worksheet " + worksheet + " and company.yaml");
+        }
+        if (agreed != null) {
+            System.out.println(agreed);
         }
         if (page != null) {
             System.out.println("report: " + page.toAbsolutePath());
@@ -252,6 +262,7 @@ final class Fleet implements Callable<Integer> {
                 NamedFleet.join(dir, name, root);
             }
             NamedFleet.write(dir, NamedFleet.snapshot(root, r, a, policy));
+            CompanyPolicy.refresh(dir, name, NamedFleet.snapshots(dir).values());   // #129: the suggestions follow the snapshot
         } catch (RuntimeException e) {
             Out.warn("fleet " + name + ": no snapshot written (" + e.getMessage() + "); the fleet overview shows the previous one");
         }
@@ -322,6 +333,8 @@ final class Fleet implements Callable<Integer> {
             boolean existed = NamedFleet.exists(dir != null ? dir.toAbsolutePath().normalize() : FleetHome.fleetDir(env, name).dir());
             Path at = NamedFleet.create(env, name, dir);
             System.out.println("fleet " + name + (existed ? " (already there): " : ": ") + at);
+            System.out.println("  company.yaml: the policy every member extends; its settings are commented out until you "
+                    + "decide them: " + at.resolve(CentralVocabulary.COMPANY));
             System.out.println("next: in each service, `logast fleet join " + name + "`; then `logast fleet " + name + "` compares them");
             return 0;
         }

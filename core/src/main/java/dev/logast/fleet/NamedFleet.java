@@ -44,10 +44,29 @@ public final class NamedFleet {
      * plus the vocabulary evidence the worksheet is built from, so the overview needs no rescan.
      */
     public record Snapshot(String service, String root, String created, String commit, FleetReport.Service report,
-                           List<CentralVocabulary.Use> vocabulary, List<CentralVocabulary.KnownArea> areas) {
+                           List<CentralVocabulary.Use> vocabulary, List<CentralVocabulary.KnownArea> areas,
+                           Settings settings) {
         public Snapshot {
             vocabulary = vocabulary == null ? List.of() : vocabulary;
             areas = areas == null ? List.of() : areas;
+        }
+    }
+
+    /**
+     * #129: the member's effective settings a company usually decides (all layers merged, defaults included); null in
+     * snapshots written before #129.
+     */
+    public record Settings(List<String> packs, String structuredFormat, String keyStyle, String supportMode) {
+        public Settings {
+            packs = packs == null ? List.of() : List.copyOf(packs);
+        }
+
+        /** The policy's values; packs in the usual order, so two members with the same packs agree. */
+        public static Settings of(Policy p) {
+            List<String> order = dev.logast.ServiceSetup.ALL_PACKS;
+            List<String> packs = p.packs().stream().distinct().sorted(Comparator.comparingInt((String x) -> order.contains(x)
+                    ? order.indexOf(x) : order.size()).thenComparing(Comparator.naturalOrder())).toList();
+            return new Settings(packs, p.logging().structuredFormat(), p.logging().keyStyle(), p.support().mode());
         }
     }
 
@@ -72,7 +91,10 @@ public final class NamedFleet {
         return n == null ? "root" : n.toString();
     }
 
-    /** Creates the fleet folder (with an empty member list); with {@code dir}, the user config remembers it. */
+    /**
+     * Creates the fleet folder (with an empty member list) and its company.yaml (#129: the settings commented out, see
+     * {@link CompanyPolicy}); an existing company.yaml is kept. With {@code dir}, the user config remembers it.
+     */
     public static Path create(FleetHome.Env env, String name, Path dir) {
         if (!FleetHome.validName(name)) {
             throw new IllegalArgumentException("fleet name " + name + ": use letters, digits, '.', '-' and '_'");
@@ -82,6 +104,9 @@ public final class NamedFleet {
             Files.createDirectories(fleet.resolve(SERVICES));
             if (!Files.exists(fleet.resolve(MEMBERS))) {
                 Files.writeString(fleet.resolve(MEMBERS), membersYaml(Map.of()));
+            }
+            if (!Files.exists(fleet.resolve(CentralVocabulary.COMPANY))) {
+                Files.writeString(fleet.resolve(CentralVocabulary.COMPANY), CompanyPolicy.initial(name));
             }
         } catch (IOException e) {
             throw new UncheckedIOException("cannot create " + fleet, e);
@@ -235,7 +260,7 @@ public final class NamedFleet {
         FleetReport.Service service = new FleetReport.Service(s.name(), rr.toString(), s.files(), s.entrypoints(), s.severity(),
                 s.rules(), s.packScore(), s.score(), s.overrides(), s.meters(), s.logCoverage(), s.surface());
         return new Snapshot(name, rr.toString(), Instant.now().toString(), commit(rr), service,
-                CentralVocabulary.uses(rr, name), CentralVocabulary.knownAreas(rr, name));
+                CentralVocabulary.uses(rr, name), CentralVocabulary.knownAreas(rr, name), Settings.of(policy));
     }
 
     /** Writes the snapshot to {@code <fleet>/services/<service>.json} (whole or not at all). */
