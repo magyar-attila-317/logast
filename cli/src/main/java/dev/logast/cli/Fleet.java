@@ -60,7 +60,7 @@ final class Fleet implements Callable<Integer> {
     boolean refresh;
     @Option(names = "--service", description = "Named fleet: what `logast scan` printed for this member, from its stored results")
     String service;
-    @Option(names = "--html", description = "Named fleet: also write the report page (<fleet folder>/report/fleet.html, or --out)")
+    @Option(names = "--html", description = "Named fleet: the report page is written by every overview (<fleet folder>/report/fleet.html, or --out); kept for scripts")
     boolean html;
     @Option(names = "--json", description = "Named fleet: the overview as JSON")
     boolean json;
@@ -259,8 +259,9 @@ final class Fleet implements Callable<Integer> {
         Path company = dir.resolve(CentralVocabulary.COMPANY);
         List<CompanyPolicy.Suggestion> suggestions = CompanyPolicy.refresh(dir, name, snaps.values());
         String agreed = CompanyPolicy.overviewLine(suggestions, company);
-        Path page = html ? FleetReport.write(out != null ? out : dir.resolve("report"), services, links,
-                suggestions.stream().map(CompanyPolicy.Suggestion::text).toList()) : null;
+        // #141: every overview rewrites the page (--html only says so explicitly)
+        Path page = FleetReport.writeDaily(out != null ? out : dir.resolve("report"), services, links,
+                suggestions.stream().map(CompanyPolicy.Suggestion::text).toList());
         Instant now = Instant.now();
         if (json) {
             Map<String, Object> o = new LinkedHashMap<>();
@@ -398,7 +399,12 @@ final class Fleet implements Callable<Integer> {
                 NamedFleet.join(dir, name, root);
             }
             NamedFleet.write(dir, NamedFleet.snapshot(root, r, a, policy));
-            CompanyPolicy.refresh(dir, name, NamedFleet.snapshots(dir).values());   // #129: the suggestions follow the snapshot
+            Map<String, NamedFleet.Snapshot> snaps = NamedFleet.snapshots(dir);
+            List<CompanyPolicy.Suggestion> suggestions = CompanyPolicy.refresh(dir, name, snaps.values());   // #129
+            // #141: the fleet's page follows every member's snapshot
+            List<FleetReport.Service> services = snaps.values().stream().map(NamedFleet.Snapshot::report).toList();
+            FleetReport.writeDaily(dir.resolve("report"), services, FleetLinks.of(services),
+                    suggestions.stream().map(CompanyPolicy.Suggestion::text).toList());
         } catch (RuntimeException e) {
             Out.warn("fleet " + name + ": no snapshot written (" + e.getMessage() + "); the fleet overview shows the previous one");
         }

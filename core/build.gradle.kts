@@ -54,4 +54,9 @@ tasks.processResources {
         into("logast-vendor")
         include("*.java")
     }
+    // #142: the pack pages' rule tables are the rule help of the fleet report
+    from(rootProject.layout.projectDirectory.dir("docs/packs")) {
+        into("rule-docs")
+        include("*.md")
+    }
 }
