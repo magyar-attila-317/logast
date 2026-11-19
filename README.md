@@ -62,7 +62,7 @@ flowchart LR
 
 ```bash
 git clone https://github.com/magyar-attila-317/logast.git && cd logast
-./install.sh          # asks: set up Gradle? publish the support library to Maven Local? to a repository? (-y: yes to the first two)
+./install.sh          # asks what is not set up yet: Gradle? the support library to Maven Local? to a repository? (-y: yes to the first two)
 logast --version
 ```
 
@@ -79,10 +79,13 @@ the build ([docs/gradle-plugin.md](docs/gradle-plugin.md)).
 | `--publish-to <name\|url>` | publishes them to a repository your Gradle knows (by name, with its credentials) or a URL, without asking ([docs/starter.md](docs/starter.md#publishing-it)) |
 | `--zip <file>` | installs a release zip instead of building |
 | `-y` / `--no-gradle` | `-y`: yes to the Gradle setup and to Maven Local without asking; `--no-gradle`: skips the Gradle setup (the plugin in Maven Local and an init script, so `./gradlew logastApply` works in any Java build, [docs/gradle-plugin.md](docs/gradle-plugin.md)) |
+| `--ask` / `--force` | `--ask`: asks again what an earlier "no" skips; `--force`: rebuilds and reinstalls even when this commit is installed |
 
 - `LOGAST_HOME` / `LOGAST_BIN` override the install locations.
-- **Update:** pull and run `./install.sh` again. It replaces the installed copy and refreshes an installed skill; add
-  `--starter` when the starter changed.
+- **Update:** pull and run `./install.sh` again. It replaces the installed copy, refreshes an installed skill and what
+  it set up before (Gradle, the support library in Maven Local), and asks only about what is not set up. A "no" is
+  remembered (`~/.config/logast/config.yaml`; `--ask` asks again). When the installed `logast --version` names this
+  commit and the checkout has no changes, it builds nothing: `already installed — nothing to do`.
 - **macOS:** install a JDK first (`brew install openjdk@21`, SDKMAN or Temurin); the `/usr/bin/java` stub alone is not
   a JDK. `~/.local/bin` is not on the macOS `PATH` by default: add `export PATH="$HOME/.local/bin:$PATH"` to
   `~/.zshrc`, or install elsewhere with `LOGAST_BIN=/opt/homebrew/bin ./install.sh`.

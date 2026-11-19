@@ -6,6 +6,8 @@ import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -95,6 +98,38 @@ class LogastInitScriptFunctionalTest {
         BuildResult compile = gradle(emptyRepo, "compileJava").build();
         assertThat(compile.task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
         assertThat(compile.getOutput()).contains(missing);
+    }
+
+    /**
+     * #130: an interrupted install left an empty jar in Maven Local, and every build failed with "zip file is empty".
+     * An empty jar of the plugin or of what it needs (cli, core), or one that is no zip, is like a missing plugin: one
+     * warning line naming it, the build goes on.
+     */
+    @ParameterizedTest
+    @CsvSource({"gradle-plugin, empty", "gradle-plugin, text", "cli, empty", "core, text"})
+    void anEmptyOrBrokenJarIsLikeAMissingPlugin(String module, String broken) throws IOException {
+        String v = System.getProperty("logast.version");
+        try (Stream<Path> files = Files.walk(REPO)) {   // the published repository, poms and all
+            for (Path f : (Iterable<Path>) files::iterator) {
+                Path to = emptyRepo.resolve(REPO.relativize(f).toString());
+                if (Files.isDirectory(f)) {
+                    Files.createDirectories(to);
+                } else {
+                    Files.copy(f, to);
+                }
+            }
+        }
+        Path jar = emptyRepo.resolve("dev/logast/" + module + "/" + v + "/" + module + "-" + v + ".jar");
+        assertThat(jar).isRegularFile();
+        Files.write(jar, broken.equals("empty") ? new byte[0] : "not a zip".getBytes());
+        String warning = "logast: plugin jar " + jar
+                + " is empty or broken (an interrupted install?): run logast's install.sh again; building without it";
+
+        BuildResult compile = gradle(emptyRepo, "compileJava").build();
+        assertThat(compile.task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+        assertThat(compile.getOutput()).contains(warning);
+        BuildResult help = gradle(emptyRepo, "help").build();
+        assertThat(help.getOutput()).contains(warning).contains("BUILD SUCCESSFUL");
     }
 
     @Test

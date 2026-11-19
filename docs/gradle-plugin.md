@@ -21,7 +21,9 @@ build:
   nothing of logast, so `./gradlew tasks` lists the logast tasks only in a repository with `logast.yaml`.
 - It comes from Maven Local. When this logast version is not there (`~/.m2` cleaned, another `-Dmaven.repo.local`),
   the build goes on without it and prints one line: `logast: plugin <version> not in Maven Local …: run logast's
-  install.sh; building without it`. It never fails a build for that.
+  install.sh; building without it`. An empty or broken jar of the plugin, cli or core (an interrupted install)
+  counts as missing: `logast: plugin jar <path> is empty or broken (an interrupted install?): run logast's install.sh
+  again; building without it`. It never fails a build for that.
 - It is applied to every project that has the `java` plugin. A build that applies `dev.logast` itself (below) keeps
   its own, with its own version and settings.
 - Opt out for one build with `-Plogast.disabled`, or with the environment variable `LOGAST_DISABLED=1`; remove the
@@ -29,6 +31,12 @@ build:
 - install.sh asks before it changes anything (Enter = no). Without a terminal it skips the setup and says to rerun
   with `-y`; `--no-gradle` skips it without asking. It replaces `init.d/logast.gradle` only when that file is its own
   (the first line names logast); otherwise it warns and leaves it.
+- It asks only while the setup is not done. Done means logast's init script for this version and a readable
+  `dev/logast/gradle-plugin/<version>/gradle-plugin-<version>.jar` (and cli's, core's) in Maven Local
+  (`-Dmaven.repo.local` from `GRADLE_OPTS` or a `gradle.properties`, `<localRepository>` in `~/.m2/settings.xml`,
+  else `~/.m2/repository`): then it prints `Gradle: set up (…)`. Set up for another version, or with a broken jar, it is refreshed without asking.
+  A "no" is remembered in `${XDG_CONFIG_HOME:-~/.config}/logast/config.yaml` (`install.gradle: no`) and not asked
+  again; `--ask` asks again, `-y` sets it up and forgets the "no".
 - A release zip (`install.sh --zip`) has no sources to publish from: no Gradle setup. Its `gradle/logast.gradle` is
   the same init script, for when the plugin is in your repository.
 

@@ -41,7 +41,10 @@ already sets, `true` or `false`, is left as it is.
 
 ## Publishing it
 
-`./install.sh` asks (Enter = no):
+`./install.sh` asks (Enter = no), each only while it is not done for this version: the jar of this version in Maven
+Local, or this version published to a repository by an earlier run. A "no" is remembered in
+`${XDG_CONFIG_HOME:-~/.config}/logast/config.yaml` (`install.supportLocal`, `install.supportRemote`; the last
+successful publish is kept there as `<repository>@<version>`); `--ask` asks again.
 
 - **Maven Local** (`~/.m2`): builds on this machine that list `mavenLocal()` resolve it. `--starter` or `-y` say yes
   without asking.
