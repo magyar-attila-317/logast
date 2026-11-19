@@ -5,8 +5,8 @@
 // - The plugin is applied in a repository that uses logast (logast.yaml or logast.yml in the build's root folder or in
 //   the folder Gradle runs in), and for a requested logast task (a name starting with "logast": the first
 //   `./gradlew logastApply` on a fresh repository). Any other build declares and resolves nothing of logast.
-// - It comes from Maven Local (install.sh publishes it there). When this version is not there, the build goes on
-//   without it, with one line saying so.
+// - It comes from Maven Local (install.sh publishes it there). When this version is not there, or its jar (or cli's,
+//   core's) is empty or no zip (an interrupted install), the build goes on without it, with one line saying so.
 // - A build that applies dev.logast itself keeps its own; the plugin is applied only where the java plugin is.
 // - Opt out: -Plogast.disabled, or the environment variable LOGAST_DISABLED=1.
 initscript {
@@ -30,7 +30,13 @@ initscript {
         // Gradle's mavenLocal(): -Dmaven.repo.local, else ~/.m2/repository
         def m2 = System.getProperty('maven.repo.local') ?: new File(System.getProperty('user.home'), '.m2/repository').path
         def jar = new File(m2, "dev/logast/gradle-plugin/${version}/gradle-plugin-${version}.jar")
-        if (jar.isFile()) {
+        // an empty or broken jar of the plugin or of what it needs (an interrupted install) is like a missing plugin:
+        // Gradle would fail builds on it ("zip file is empty")
+        def readable = { File f -> f.isFile() && f.length() > 0 && f.withInputStream { it.read() == 0x50 && it.read() == 0x4B } }
+        def broken = !jar.isFile() ? null : ['gradle-plugin', 'cli', 'core']
+                .collect { new File(m2, "dev/logast/${it}/${version}/${it}-${version}.jar") }
+                .find { it.exists() && !readable(it) }
+        if (jar.isFile() && broken == null) {
             repositories {
                 mavenLocal()
                 mavenCentral()
@@ -38,6 +44,8 @@ initscript {
             dependencies {
                 classpath "dev.logast:gradle-plugin:${version}"
             }
+        } else if (broken != null) {
+            println "logast: plugin jar ${broken} is empty or broken (an interrupted install?): run logast's install.sh again; building without it"
         } else {
             println "logast: plugin ${version} not in Maven Local (${m2}): run logast's install.sh; building without it"
         }

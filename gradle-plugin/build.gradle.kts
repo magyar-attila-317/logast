@@ -69,6 +69,7 @@ val functionalTestTask = tasks.register<Test>("functionalTest") {
     dependsOn(":core:publishAllPublicationsToLogastTestRepository", ":cli:publishAllPublicationsToLogastTestRepository",
         "publishAllPublicationsToLogastTestRepository")
     systemProperty("logast.initScript", layout.buildDirectory.file("init-script/logast.gradle").get().asFile.absolutePath)
+    inputs.files(initScript)   // a changed init script reruns the tests (the path above is only a string)
     systemProperty("logast.testRepo", rootProject.layout.buildDirectory.dir("logast-test-repo").get().asFile.absolutePath)
     systemProperty("logast.publishingScript", rootProject.file("gradle/publishing.gradle").absolutePath)   // #127
     inputs.file(rootProject.file("gradle/publishing.gradle"))
@@ -79,6 +80,20 @@ val functionalTestTask = tasks.register<Test>("functionalTest") {
 }
 
 tasks.test { useJUnitPlatform() }
+
+// install.sh's decisions (#130): what counts as set up, what is asked, what the user config remembers; a few seconds,
+// temporary folders only (scripts/test-install.sh)
+val installScriptTest = tasks.register<Exec>("installScriptTest") {
+    description = "Checks install.sh's decisions with scripts/test-install.sh"
+    group = "verification"
+    val script = rootProject.file("scripts/test-install.sh")
+    val marker = layout.buildDirectory.file("install-script-test/passed")
+    inputs.files(script, rootProject.file("install.sh"))
+    outputs.file(marker)
+    commandLine("bash", script.absolutePath)
+    doLast { marker.get().asFile.apply { parentFile.mkdirs(); writeText("passed\n") } }
+}
+tasks.check { dependsOn(installScriptTest) }
 tasks.named<JavaCompile>(functionalTest.compileJavaTaskName) { options.release = 21 }
 
 if (providers.gradleProperty("e2e").isPresent || providers.environmentVariable("CI").isPresent) {
