@@ -81,8 +81,8 @@ src/main/java/com/example/e2e/order/OrderEvents.java:18               checked  n
 src/main/java/com/example/e2e/order/OrderEvents.java:21               checked  no finding
 src/main/java/com/example/e2e/order/OrderNotifications.java:17        fixed    LOG_FORMAT FMT-4210f7; reported METRIC_OUTCOME_UNMEASURED OUM-0f37ab
 src/main/java/com/example/e2e/order/OrderNotifications.java:18        fixed    LOG_FORMAT FMT-9ae21c
-src/main/java/com/example/e2e/order/OrderNotifications.java:27        checked  no finding
-src/main/java/com/example/e2e/order/OrderNotifications.java:28        fixed    BUSINESS_EVENT_UNMEASURED BEU-ad62bd; reported MESSAGE_SUGGESTED SUG-85eb33
+src/main/java/com/example/e2e/order/OrderNotifications.java:28        fixed    REPEATED_LOG_VALUE RLV-2644dc, LOG_FORMAT FMT-e5b4f2
+src/main/java/com/example/e2e/order/OrderNotifications.java:29        fixed    BUSINESS_EVENT_UNMEASURED BEU-ad62bd, LOG_ID_MISSING LIM-36d4a0, LOG_FORMAT FMT-bca9fe; reported MESSAGE_SUGGESTED SUG-85eb33
 src/main/java/com/example/e2e/order/OrderService.java:34              fixed    LOG_FORMAT FMT-60c40d
 src/main/java/com/example/e2e/order/OrderService.java:37              fixed    LOG_FORMAT FMT-0447e4; reported METRIC_OUTCOME_UNMEASURED OUM-d691d7
 src/main/java/com/example/e2e/order/OrderService.java:43              fixed    METRIC_OUTCOME_UNMEASURED OUM-164f3d
@@ -112,6 +112,6 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             reported M
 # src/main/java/com/example/e2e/job/PublishRunJob.java 1d943ba9db11
 # src/main/java/com/example/e2e/ledger/GatewayCalls.java 4e67d6337a73
 # src/main/java/com/example/e2e/messaging/CouponMessages.java f9f79ba06f96
-# src/main/java/com/example/e2e/order/OrderNotifications.java 64c604f572ef
+# src/main/java/com/example/e2e/order/OrderNotifications.java a6267d5cfdc6
 # src/main/java/com/example/e2e/order/OrderService.java 3e84740bdd33
 # src/main/java/com/example/e2e/order/PaymentClient.java 58e66cb90b86

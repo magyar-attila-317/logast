@@ -30,7 +30,7 @@ public final class OrderBuilder {
             Map.entry(Rules.ASYNC_CONTEXT_LOSS, "ASY"), Map.entry(Rules.SETUP_OTEL_STARTER, "OTL"),
             Map.entry(Rules.SETUP_SUPPORT_STARTER, "SUP"), Map.entry(Rules.SETUP_LOGBACK_XML, "LBK"),
             Map.entry(Rules.SETUP_STRUCTURED_LOGGING, "SLG"), Map.entry(Rules.MESSAGE_PHRASING, "PHR"),
-            Map.entry(Rules.MDC_KEY_ALIAS, "MKA"), Map.entry(Rules.LOG_KEY_NESTING_CONFLICT, "LKN"), Map.entry(Rules.LOG_KEY_STYLE, "LKS"), Map.entry(Rules.REPEATED_LOG_VALUE, "RLV"),
+            Map.entry(Rules.MDC_KEY_ALIAS, "MKA"), Map.entry(Rules.LOG_KEY_NESTING_CONFLICT, "LKN"), Map.entry(Rules.LOG_ID_MISSING, "LIM"), Map.entry(Rules.LOG_KEY_STYLE, "LKS"), Map.entry(Rules.REPEATED_LOG_VALUE, "RLV"),
             Map.entry(Rules.JOB_OUTCOME_MISSING, "OUT"), Map.entry(Rules.SKIP_UNLOGGED, "SKP"),
             Map.entry(Rules.STATE_CHANGE_UNLOGGED, "STC"), Map.entry(Rules.BATCH_SUMMARY_MISSING, "BSM"),
             Map.entry(Rules.DB_OUTCOME_UNLOGGED, "DBO"), Map.entry(Rules.SETUP_SERVICE_IDENTITY, "SID"), Map.entry(Rules.LIFECYCLE_UNEVEN, "LCU"), Map.entry(Rules.ROW_BY_ROW_WRITE, "RBR"),

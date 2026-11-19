@@ -126,7 +126,7 @@ index 9d7cd6b..0a0932b 100644
          }
      }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 1ac7248..b7c76b2 100644
+index 356f22c..7515e53 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -16,6 +16,7 @@ 

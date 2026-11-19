@@ -60,7 +60,7 @@ NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/CouponMessa
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/CouponMessages.java:40
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/messaging/ReactiveCouponLookup.java:17
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:17
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/order/OrderNotifications.java:28
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/order/OrderNotifications.java:29
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/order/OrderRecord.java:6
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:37
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:48

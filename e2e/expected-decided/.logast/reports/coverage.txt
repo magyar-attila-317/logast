@@ -74,8 +74,8 @@ src/main/java/com/example/e2e/order/OrderEvents.java:18               checked  n
 src/main/java/com/example/e2e/order/OrderEvents.java:21               checked  no finding
 src/main/java/com/example/e2e/order/OrderNotifications.java:17        fixed    METRIC_OUTCOME_UNMEASURED OUM-0f37ab
 src/main/java/com/example/e2e/order/OrderNotifications.java:19        checked  no finding
-src/main/java/com/example/e2e/order/OrderNotifications.java:28        checked  no finding
-src/main/java/com/example/e2e/order/OrderNotifications.java:29        fixed    MESSAGE_SUGGESTED SUG-85eb33
+src/main/java/com/example/e2e/order/OrderNotifications.java:29        checked  no finding
+src/main/java/com/example/e2e/order/OrderNotifications.java:30        fixed    MESSAGE_SUGGESTED SUG-85eb33
 src/main/java/com/example/e2e/order/OrderService.java:34              checked  no finding
 src/main/java/com/example/e2e/order/OrderService.java:37              fixed    METRIC_OUTCOME_UNMEASURED OUM-d691d7
 src/main/java/com/example/e2e/order/OrderService.java:44              fixed    METRIC_OUTCOME_UNMEASURED OUM-164f3d
@@ -108,7 +108,7 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    M
 # src/main/java/com/example/e2e/job/PreloadJob.java c850d944983b
 # src/main/java/com/example/e2e/job/PublishRunJob.java 1d943ba9db11
 # src/main/java/com/example/e2e/messaging/CouponMessages.java 7e4856bd53df
-# src/main/java/com/example/e2e/order/OrderNotifications.java c33c6ec70f6c
+# src/main/java/com/example/e2e/order/OrderNotifications.java 8f7c81517060
 # src/main/java/com/example/e2e/order/OrderService.java b140b5e06222
 # src/main/java/com/example/e2e/order/PaymentClient.java 58e66cb90b86
 # src/main/java/com/example/e2e/web/QuoteController.java 7c69c11dbebe

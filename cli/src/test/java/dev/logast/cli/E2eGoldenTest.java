@@ -100,6 +100,63 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #120: a WARN / ERROR or outcome line that leaves out the business id its method has at hand gets it: one
+     * candidate is added ([orderId={}] before the exception); two are a decision; an id MDC already carries is not
+     * repeated. Every file must equal e2e/expected-log-id-missing.
+     */
+    @Test
+    void aLogLineGetsTheIdItsMethodHasAtHand() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/settlement"));
+            Files.writeString(dir.resolve("SettlementDesk.java"), """
+                    package com.example.e2e.settlement;
+
+                    import com.example.e2e.logging.MdcScope;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class SettlementDesk {
+                        private static final Logger log = LoggerFactory.getLogger(SettlementDesk.class);
+
+                        public void settle(String orderId, long amountCents) {
+                            try {
+                                charge(amountCents);
+                            } catch (IllegalStateException e) {
+                                log.warn("Order settlement failed", e);
+                            }
+                        }
+
+                        public void reconcile(String orderId, String couponId) {
+                            log.error("Coupon reconciliation failed");
+                        }
+
+                        public void close(String orderId) {
+                            try (var mdc = MdcScope.of("orderId", orderId)) {
+                                log.warn("Order closing failed");
+                            }
+                        }
+
+                        private void charge(long amountCents) {
+                            if (amountCents < 0) {
+                                throw new IllegalStateException("negative amount");
+                            }
+                        }
+                    }
+                    """);
+        });
+        String desk = actual.get("src/main/java/com/example/e2e/settlement/SettlementDesk.java");
+        assertThat(desk).as("one candidate: added, the value before the exception")
+                .contains("log.warn(\"Order settlement failed [orderId={}]\", orderId, e);")
+                .as("two candidates: a decision, the line unchanged").contains("log.error(\"Coupon reconciliation failed\");")
+                .as("MDC carries it: not repeated").contains("log.warn(\"Order closing failed\");");
+        assertThat(actual.get("FINDINGS.txt")).as("the two-candidate line is reported")
+                .contains("LOG_ID_MISSING  src/main/java/com/example/e2e/settlement/SettlementDesk.java:");
+        golden(EXPECTED.resolveSibling("expected-log-id-missing"), actual);
+    }
+
+    /**
      * #117: the first apply adds dependencies (the OpenTelemetry starter, logging-support) whose types setup decisions
      * depend on (service identity's OTel attributes and meter tags, the support classes that need Micrometer). Before
      * the classpath logast reads has them, those decisions come out one apply late. When apply refreshed the classpath

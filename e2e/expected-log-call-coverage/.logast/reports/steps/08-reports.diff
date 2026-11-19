@@ -180,7 +180,7 @@ index 3655c4c..70d0891 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 765de3d..5c0b6d0 100644
+index 4ee3a0a..63b548d 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -21,7 +21,7 @@ 
@@ -189,9 +189,9 @@ index 765de3d..5c0b6d0 100644
      public void onCommitted(OrderPlaced event) {
 -        ObservedContext.entrypoint("order.notifications")
 +        ObservedContext.entrypoint(OrderMetrics.ORDER_NOTIFICATIONS)
+                 .mdc("orderId", event.orderId())
                  .quiet()
                  .run(() -> {
-                     log.info("Order audit recorded [orderId={}]", event.orderId());
 diff --git a/src/main/java/com/example/e2e/coupon/CouponLookup.java b/src/main/java/com/example/e2e/coupon/CouponLookup.java
 index e2c3a76..c36d6cd 100644
 --- a/src/main/java/com/example/e2e/coupon/CouponLookup.java

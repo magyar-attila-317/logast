@@ -99,13 +99,13 @@ index 6f18f77..9d7cd6b 100644
                          });
                  log.info("Coupon parsed"); // a transformed value
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 7e18280..1ac7248 100644
+index 771991d..356f22c 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -26,7 +26,7 @@ 
+@@ -27,7 +27,7 @@ 
                  .quiet()
                  .run(() -> {
-                     log.info("Order audit recorded [orderId={}]", event.orderId());
+                     log.info("Order audit recorded");
 -                    log.info("Order notifications completed"); // logast:wording
 +                    log.info("Coupon sweep completed");
                  });

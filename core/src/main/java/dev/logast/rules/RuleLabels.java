@@ -24,6 +24,7 @@ public final class RuleLabels {
             Map.entry(PII_IN_LOG, "personal data in a log line"),
             Map.entry(MDC_NOT_CLOSEABLE, "MDC.put never removed"),
             Map.entry(LOG_KEY_NESTING_CONFLICT, "field and its dotted sub-field"),
+            Map.entry(LOG_ID_MISSING, "log line without the id at hand"),
             Map.entry(MDC_KEY_ALIAS, "two MDC keys for one value"),
             Map.entry(MISSING_DOMAIN_MDC, "business id missing from MDC"),
             Map.entry(AREA_MDC_MISSING, "area id missing from MDC"),

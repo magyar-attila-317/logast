@@ -24,9 +24,10 @@ public class OrderNotifications {
     @TransactionalEventListener
     public void onCommitted(OrderPlaced event) {
         ObservedContext.entrypoint(BusinessMetrics.ORDER_NOTIFICATIONS)
+                .mdc("orderId", event.orderId())
                 .quiet()
                 .run(() -> {
-                    log.info("Order audit recorded [orderId={}]", event.orderId());
+                    log.info("Order audit recorded");
                     log.info("Coupon sweep completed");
                 });
     }
