@@ -161,7 +161,7 @@ index 6178d15..c2e743a 100644
              }
          }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 3422916..765de3d 100644
+index 06eccf0..4ee3a0a 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
 @@ -14,8 +14,8 @@ 
@@ -175,6 +175,17 @@ index 3422916..765de3d 100644
      }
  
      /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
+@@ -25,8 +25,8 @@
+                 .mdc("orderId", event.orderId())
+                 .quiet()
+                 .run(() -> {
+-                    log.info("Order audit recorded [orderId={}]", event.orderId());
+-                    log.info("Order notifications completed [orderId={}]", event.orderId()); // logast:wording
++                    log.info("Order audit recorded");
++                    log.info("Order notifications completed"); // logast:wording
+                 });
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/edge/PledgeTask.java b/src/main/java/com/example/e2e/edge/PledgeTask.java
 index b5b44e5..c942299 100644
 --- a/src/main/java/com/example/e2e/edge/PledgeTask.java

@@ -346,7 +346,7 @@ OUM-0f37ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
   "Order confirmation sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /orders" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("order.confirmation", "sent")), tag (Outcomes.tag("sent") on the running timer) or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply . --auto)
-SUG-85eb33  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/order/OrderNotifications.java:28  OrderNotifications.onCommitted
+SUG-85eb33  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/order/OrderNotifications.java:29  OrderNotifications.onCommitted
   Generated wording "Order notifications completed": say it in domain terms
   path: @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced) → OrderNotifications.onCommitted
   - "Order notifications completed"
@@ -387,7 +387,7 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 100 changes in 53 files (git diff to review)
+Applied earlier: 104 changes in 53 files (git diff to review)
 
 Waiting on you — logast can't continue without these:
   21 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
@@ -396,7 +396,7 @@ Waiting on you — logast can't continue without these:
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   then run: logast apply . --auto --write   (on this code: don't revert it)
 
-Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 85 — 52 fixed, 15 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there

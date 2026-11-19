@@ -22,9 +22,10 @@ public class OrderNotifications {
     @TransactionalEventListener
     public void onCommitted(OrderPlaced event) {
         ObservedContext.entrypoint(OrderMetrics.ORDER_NOTIFICATIONS)
+                .mdc("orderId", event.orderId())
                 .quiet()
                 .run(() -> {
-                    log.info("Order audit recorded [orderId={}]", event.orderId());
+                    log.info("Order audit recorded");
                     log.info("Order notifications completed"); // logast:wording
                 });
     }

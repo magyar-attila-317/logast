@@ -35,6 +35,7 @@ public final class Rules {
     public static final String MESSAGE_PHRASING = "MESSAGE_PHRASING";
     public static final String MDC_KEY_ALIAS = "MDC_KEY_ALIAS";
     public static final String LOG_KEY_NESTING_CONFLICT = "LOG_KEY_NESTING_CONFLICT";
+    public static final String LOG_ID_MISSING = "LOG_ID_MISSING";
     public static final String LOG_KEY_STYLE = "LOG_KEY_STYLE";
     public static final String REPEATED_LOG_VALUE = "REPEATED_LOG_VALUE";
     public static final String MDC_CLEAR = "MDC_CLEAR";
@@ -155,7 +156,7 @@ public final class Rules {
                 STRING_CONCAT_LOG, LOG_FORMAT, GLOSSARY_VIOLATION, PII_IN_LOG, MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS,
                 MISSING_DOMAIN_MDC, AREA_MDC_MISSING, ENTRYPOINT_SILENT, MESSAGE_PHRASING, LOG_KEY_STYLE, LOG_LEVEL, REPEATED_LOG_VALUE,
                 MDC_CLEAR, MDC_NESTED_KEY, MDC_NOT_OWNER, JOB_OUTCOME_MISSING, SKIP_UNLOGGED, STATE_CHANGE_UNLOGGED,
-                BATCH_SUMMARY_MISSING, DB_OUTCOME_UNLOGGED, MESSAGE_SUGGESTED, LIFECYCLE_UNEVEN, LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_HELPER, MESSAGE_VAGUE, BUSINESS_EVENT_TIMESTAMP, LOG_KEY_VALUE_IN_MDC, LOG_KEY_NESTING_CONFLICT,
+                BATCH_SUMMARY_MISSING, DB_OUTCOME_UNLOGGED, MESSAGE_SUGGESTED, LIFECYCLE_UNEVEN, LOG_OBJECT_ARGUMENT, LOG_COLLECTION_ARGUMENT, LOG_HELPER, MESSAGE_VAGUE, BUSINESS_EVENT_TIMESTAMP, LOG_KEY_VALUE_IN_MDC, LOG_KEY_NESTING_CONFLICT, LOG_ID_MISSING,
                 SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE, LOG_IN_LOOP, LOG_VOLUME)) {
             PACKS.put(r, Set.of("logging"));
         }
@@ -238,7 +239,9 @@ public final class Rules {
                 ASYNC_ERROR_LOST, UNEXPECTED_ERROR_UNLOGGED)) {
             STEPS.put(r, Step.LINES);
         }
-        for (String r : List.of(MISSING_DOMAIN_MDC, REPEATED_LOG_VALUE, MDC_KEY_ALIAS, MDC_NESTED_KEY, AREA_MDC_MISSING)) {
+        // LOG_ID_MISSING (#120) with them: an id it adds to several lines of a method is then REPEATED_LOG_VALUE's to move
+        // into MDC, in the same step's rounds (one pass)
+        for (String r : List.of(MISSING_DOMAIN_MDC, REPEATED_LOG_VALUE, MDC_KEY_ALIAS, MDC_NESTED_KEY, AREA_MDC_MISSING, LOG_ID_MISSING)) {
             STEPS.put(r, Step.MDC);
         }
         for (String r : List.of(LOG_FORMAT, STRING_CONCAT_LOG, LOG_KEY_STYLE, GLOSSARY_VIOLATION, MESSAGE_PHRASING, PII_IN_LOG,
@@ -303,7 +306,7 @@ public final class Rules {
             Map.entry(SETUP_LOGBACK_XML, "medium"), Map.entry(LOG_AND_RETHROW, "medium"),
             Map.entry(SETUP_STRUCTURED_LOGGING, "medium"), Map.entry(MDC_NOT_CLOSEABLE, "low"),
             Map.entry(STRING_CONCAT_LOG, "low"), Map.entry(LOG_FORMAT, "low"), Map.entry(GLOSSARY_VIOLATION, "low"),
-            Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_NESTING_CONFLICT, "medium"), Map.entry(LOG_KEY_STYLE, "low"), Map.entry(REPEATED_LOG_VALUE, "medium"),
+            Map.entry(MESSAGE_PHRASING, "low"), Map.entry(MDC_KEY_ALIAS, "medium"), Map.entry(LOG_KEY_NESTING_CONFLICT, "medium"), Map.entry(LOG_ID_MISSING, "low"), Map.entry(LOG_KEY_STYLE, "low"), Map.entry(REPEATED_LOG_VALUE, "medium"),
             Map.entry(MDC_CLEAR, "high"), Map.entry(MDC_NOT_OWNER, "high"),
             Map.entry(JOB_OUTCOME_MISSING, "medium"), Map.entry(SKIP_UNLOGGED, "low"), Map.entry(STATE_CHANGE_UNLOGGED, "medium"),
             Map.entry(BATCH_SUMMARY_MISSING, "low"), Map.entry(DB_OUTCOME_UNLOGGED, "medium"),
@@ -710,6 +713,7 @@ public final class Rules {
         new AuditRules(ctx).run();
         new VolumeRules(ctx).run();
         new KeyConflictRules(ctx).run();
+        new LogIdRules(ctx).run();
 
         numberOrdinals(ctx.orders);
         Set<String> ids = new HashSet<>();
