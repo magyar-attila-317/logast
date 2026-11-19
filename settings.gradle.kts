@@ -8,4 +8,4 @@ dependencyResolutionManagement {
     repositories { mavenCentral() }
 }
 
-include("core", "cli", "logging-support", "test-capture", "fixtures:sample-app")
+include("core", "cli", "gradle-plugin", "logging-support", "test-capture", "fixtures:sample-app")

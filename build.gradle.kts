@@ -3,13 +3,17 @@ subprojects {
     tasks.withType<Jar>().configureEach {
         into("META-INF") { from(rootProject.file("LICENSE"), rootProject.file("NOTICE")) }
     }
-    // Libraries other projects consume (the starter, the test capture) publish to Maven Local, or to a company
-    // repository when -PrepoUrl=... (or REPO_URL) is set, with repoUser/repoPassword (REPO_USER/REPO_PASSWORD).
+    // Libraries other projects consume (the starter, the test capture, the Gradle plugin with core and cli) publish to
+    // Maven Local, or to a company repository when -PrepoUrl=... (or REPO_URL) is set, with repoUser/repoPassword
+    // (REPO_USER/REPO_PASSWORD).
     plugins.withId("maven-publish") {
         extensions.configure<PublishingExtension> {
             publications {
-                create<MavenPublication>("maven") {
-                    from(components["java"])
+                // java-gradle-plugin creates its own publications (the jar and the plugin marker)
+                if (!plugins.hasPlugin("java-gradle-plugin")) {
+                    create<MavenPublication>("maven") { from(components["java"]) }
+                }
+                withType<MavenPublication>().configureEach {
                     pom {
                         name.set(project.name)
                         description.set(project.description ?: "logast " + project.name)

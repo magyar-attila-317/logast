@@ -1,4 +1,7 @@
-plugins { application }
+plugins {
+    application
+    `maven-publish`   // the Gradle plugin depends on it (#115)
+}
 
 dependencies {
     implementation(project(":core"))

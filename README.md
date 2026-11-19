@@ -68,6 +68,9 @@ logast --version
 
 **From a release zip:** `./install.sh --zip logast-<version>.zip`, or unzip it anywhere and put its `bin/` on `PATH`.
 
+**In a service's build (scan and CI gate only):** `plugins { id("dev.logast") version "<version>" }`, then
+`./gradlew logastScan` or `logastCheck`; setup and publishing in [docs/gradle-plugin.md](docs/gradle-plugin.md).
+
 | `install.sh` option | what it does |
 |---|---|
 | *(none)* | builds the CLI, installs it to `~/.local/share/logast` and links `~/.local/bin/logast` |
@@ -214,6 +217,8 @@ logast scan . --since origin/main --format sarif > logast.sarif  # changed lines
 - Against a baseline, a known finding that covers more places than when it was recorded (a second unlocked
   `@Scheduled` job) counts as new.
 - A complete GitHub Actions job: [examples/github-actions.yml](examples/github-actions.yml).
+- With the Gradle plugin the gate is `./gradlew logastCheck`, and `./gradlew logastSarif` writes the SARIF file for
+  PR annotations ([docs/gradle-plugin.md](docs/gradle-plugin.md)).
 
 ---
 
@@ -239,6 +244,7 @@ Properties, modes and publishing it to your repository: [docs/starter.md](docs/s
 | [docs/commands.md](docs/commands.md) | every command, its options and example output |
 | [docs/rules.md](docs/rules.md) | packs and rules: severity, what each finds, how it is fixed |
 | [docs/configuration.md](docs/configuration.md) | every `logast.yaml` setting |
+| [docs/gradle-plugin.md](docs/gradle-plugin.md) | the `dev.logast` Gradle plugin, the CI gate and PR annotations (SARIF) |
 | [docs/vocabulary.md](docs/vocabulary.md) | vocabulary, policy layers, phrasing, levels, log volume |
 | [docs/starter.md](docs/starter.md) | the runtime starter |
 | [docs/llm-workflow.md](docs/llm-workflow.md) | the loop an LLM follows (installed as the Claude Code skill) |
@@ -259,6 +265,7 @@ Properties, modes and publishing it to your repository: [docs/starter.md](docs/s
 |---|---|
 | `core` | parsing, call graph and path context, policy loader, rules, work orders, apply, verify, fleet, review |
 | `cli` | the `logast` command |
+| `gradle-plugin` | the `dev.logast` Gradle plugin; TestKit tests: `./gradlew :gradle-plugin:functionalTest` |
 | `logging-support` | the runtime starter used by generated code |
 | `test-capture` | log capture added to test runs by `logast verify` |
 | `fixtures/sample-app` | a shop app with planted gaps; `// expect: RULE` markers are checked exactly by the tests |
