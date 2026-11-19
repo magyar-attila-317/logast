@@ -140,6 +140,12 @@ machine keeps its snapshot; an added member's scan writes only to the fleet fold
 member's findings from its last scan; `--html` also writes the report page to `<fleet>/report/fleet.html` (or `--out <dir>`),
 with the trend against the previous page; `--json` prints the overview as JSON.
 
+The report page starts the trace section with a diagram of the links (#140): a box per service, callers left of their
+callees, one arrow per caller → callee pair. The line shows how sure the match is (solid: confirmed by the host, or a
+message; dashed: path only; dotted: ambiguous, one arrow per candidate), red when the trace breaks on at least one of
+the pair's calls. Hovering an arrow lists its calls and how many break; clicking a service shows only its links. Calls to
+another host are no links and are not drawn.
+
 ## The fleet's vocabulary
 
 `logast fleet <name> --vocabulary` writes the [vocabulary worksheet](vocabulary.md#one-vocabulary-across-services)
