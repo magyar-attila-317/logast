@@ -3,7 +3,7 @@
 Log lines in one format and one vocabulary, exceptions logged once where they are handled, business ids in MDC from
 the entrypoint down, and a log line wherever a flow would otherwise be silent.
 
-- **On by default** (`packs: [logging, tracing]`).
+- **On by default** (every pack is: `packs:` in `logast.yaml` lists the ones that run; leave one out to switch it off).
 - **Settings:** `vocabulary`, `areas`, `logging`, `phrasing`, `levels`, `mdc`, `pii` in
   [configuration.md](../configuration.md); how the vocabulary and phrasing work: [vocabulary.md](../vocabulary.md).
 - ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED (context lost on another thread), SSE_BROADCAST_CONTEXT and

@@ -237,6 +237,71 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #122: one command adopts logast. e2e/before without logast.yml and without a classpath file, a clean git repo:
+     * {@code logast apply .} with no flag reads the classpath (a stand-in gradlew writes it; no Gradle run in the test),
+     * writes logast.yaml (every pack, the support classes copied in) and changes the code; the result compiles, settles
+     * in one pass and leaves no "check the starter resolves" step. A second apply on the uncommitted result is refused
+     * (`git diff` would mix both runs); once committed it changes nothing.
+     */
+    @Test
+    void oneCommandOnAServiceWithNothingSetUp() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Files.delete(app.resolve("logast.yml"));
+        Path gradlew = app.resolve("gradlew");
+        Files.writeString(gradlew, "#!/bin/sh\nmkdir -p .logast\ncp '" + CLASSPATH + "' .logast/classpath-main.txt\n");
+        assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+        git(app, "init", "--quiet");
+        git(app, "add", "-A");
+        git(app, "commit", "--quiet", "-m", "before");
+
+        String first = run(app, "apply", app.toString());
+        assertThat(LAST_EXIT).as(first + STDERR).isZero();
+        assertThat(app.resolve(".logast/classpath-main.txt")).as("the classpath, read by apply itself").exists();
+        String policy = Files.readString(app.resolve("logast.yaml"));
+        assertThat(policy).as("the policy apply wrote: every pack, the defaults written out")
+                .contains("packs: [logging, tracing, metrics, resilience, errors, audit]", "keyStyle: camel",
+                        "rewriteExistingMessages: true", "structuredFormat: ecs   # what this service already uses", "vocabulary:")
+                .doesNotContain("\nsupport:");
+        assertThat(app.resolve("src/main/java/com/example/e2e/logging/MdcScope.java")).as("support classes copied in (vendor)").exists();
+        assertThat(Files.readString(app.resolve("build.gradle.kts"))).as("no starter to publish").doesNotContain("logging-support");
+        assertThat(first).as("no publishing step").doesNotContain("resolves");
+        String trace = Files.readString(app.resolve(".logast/reports/apply-trace.txt"));
+        String afterPass1 = trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "";
+        assertThat(afterPass1).as("pass 2 of the first apply applies nothing:\n" + trace).doesNotContain("applying");
+
+        STDERR.setLength(0);
+        String refused = run(app, "apply", app.toString());
+        assertThat(LAST_EXIT).as("uncommitted changes: refused\n" + refused + STDERR).isEqualTo(2);
+        assertThat(STDERR.toString()).contains("uncommitted changes").contains("--force");
+
+        git(app, "add", "-A");
+        git(app, "commit", "--quiet", "-m", "logast apply");
+        String second = run(app, "apply", app.toString());
+        assertThat(LAST_EXIT).isZero();
+        assertThat(second).as("a second apply changes nothing").contains("applied (0):").contains("files (0):");
+        assertThat(git(app, "status", "--porcelain")).as("nothing for git either").isEmpty();
+        assertThat(first + second).doesNotContain("CHECK FAILED");
+        compile(app);
+    }
+
+    /** Runs git in {@code dir} (as a throwaway committer); its output. */
+    private static String git(Path dir, String... args) throws IOException {
+        List<String> cmd = new ArrayList<>(List.of("git", "-c", "user.name=e2e", "-c", "user.email=e2e@localhost",
+                "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"));
+        cmd.addAll(List.of(args));
+        Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true).start();
+        String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        try {
+            assertThat(p.waitFor()).as(String.join(" ", cmd) + "\n" + out).isZero();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+        }
+        return out;
+    }
+
+    /**
      * #117: the first apply adds dependencies (the OpenTelemetry starter, logging-support) whose types setup decisions
      * depend on (service identity's OTel attributes and meter tags, the support classes that need Micrometer). Before
      * the classpath logast reads has them, those decisions come out one apply late. When apply refreshed the classpath
@@ -1262,8 +1327,8 @@ abstract class E2eGoldenTest {
         Map<String, String> before = files(app);
         String output = run(app, "init", app.toString(), "--no-classpath");
         Files.writeString(app.resolve("OUTPUT.txt"), output);
-        assertThat(output).as("the flow, in order").containsSubsequence("logast apply . --auto --write",
-                "fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml", "logast apply . --auto --write", "git diff");
+        assertThat(output).as("the flow, in order").containsSubsequence("logast apply .",
+                "fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml", "logast apply .", "git diff");
         Map<String, String> written = new TreeMap<>();
         files(app).forEach((k, v) -> {
             if (!v.equals(before.get(k))) {
@@ -1301,7 +1366,7 @@ abstract class E2eGoldenTest {
     }
 
     /**
-     * #87: the same in dependency mode (the default: no {@code support:} block). A pack whose fixes use the support
+     * #87: the same in dependency mode ({@code support.mode: dependency}; vendor is the default since #122). A pack whose fixes use the support
      * classes adds the logging-support starter itself, and its fixes are applied, not left as reports for want of a
      * starter only another pack would add. Packs whose fixes use none (resilience, audit) leave the build file alone.
      * The starter is not on the classpath logast reads (this run adds it); javac gets its classes, as the service's
@@ -1318,9 +1383,9 @@ abstract class E2eGoldenTest {
         Map<String, String> actual = migrate(app, CLASSPATH, a -> {
             Path yml = a.resolve("logast.yml");
             String text = Files.readString(yml);
-            String only = text.replaceFirst("(?m)^packs: .*$", "packs: [" + pack + "]").replace("support:\n  mode: vendor\n", "");
+            String only = text.replaceFirst("(?m)^packs: .*$", "packs: [" + pack + "]").replace("support:\n  mode: vendor\n", "support:\n  mode: dependency\n");
             assertThat(only).as("the scenario selects its packs, in dependency mode").contains("packs: [" + pack + "]")
-                    .doesNotContain("support:");
+                    .contains("mode: dependency");
             Files.writeString(yml, only);
             Path config = a.resolve("src/main/resources/application.yml");
             String unformatted = Files.readString(config).replace("logging:\n  structured:\n    format:\n      console: ecs\n", "");
@@ -6272,6 +6337,7 @@ abstract class E2eGoldenTest {
         Files.writeString(shipping.resolve("logast.yaml"), """
                 extends: [../central/company.yaml]
                 packs: [logging]
+                support: { mode: dependency }   # the starter brings MdcScope (no build file here to vendor it into)
                 vocabulary:
                   orderId:                 # harvested before company.yaml had it
                     mdc: { key: orderId }
@@ -7961,6 +8027,8 @@ abstract class E2eGoldenTest {
     /** Runs the CLI in-process; stdout with the temp path, timings and colours normalised. */
     /** What the commands run since it was last cleared printed to stderr (progress, warnings: not part of OUTPUT.txt). */
     private static final StringBuilder STDERR = new StringBuilder();
+    /** The exit code of the last {@link #run}. */
+    private static int LAST_EXIT;
 
     private static String run(Path app, String... args) {
         PrintStream out = System.out;
@@ -7970,7 +8038,7 @@ abstract class E2eGoldenTest {
         try {
             System.setOut(new PrintStream(buf, true, StandardCharsets.UTF_8));
             System.setErr(new PrintStream(errBuf, true, StandardCharsets.UTF_8));
-            new CommandLine(new Main()).execute(args);
+            LAST_EXIT = new CommandLine(new Main()).execute(args);
         } finally {
             System.setOut(out);
             System.setErr(err);

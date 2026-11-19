@@ -12,7 +12,7 @@ logast policy .        # prints the effective configuration (all layers merged) 
 logast reads up to four layers and merges them, top to bottom:
 
 ```
-built-in defaults           phrasing, levels, PII words, packs: logging + tracing
+built-in defaults           phrasing, levels, PII words, every pack
 └─ company layer            your business words, shared by every service    (extends:)
    └─ area layer            a group of services, e.g. "kitchen"             (extends:)
       └─ logast.yaml        this service
@@ -49,13 +49,13 @@ Defaults are shown in the examples. Anything you leave out keeps its default.
 ### `packs`: which checks run
 
 ```yaml
-packs: [logging, tracing]
+packs: [logging, tracing, metrics, resilience, errors, audit]   # the default: all of them
 ```
 
 | pack | checks |
 |---|---|
-| `logging` | message format and wording, exceptions, MDC context, what goes into a log line (default) |
-| `tracing` | traces across threads, HTTP calls, Kafka and job launches (default) |
+| `logging` | message format and wording, exceptions, MDC context, what goes into a log line |
+| `tracing` | traces across threads, HTTP calls, Kafka and job launches |
 | `metrics` | meter names and tags, business events without metrics |
 | `resilience` | timeouts, Kafka error handling, thread pools, unbounded waits |
 | `errors` | error responses: leaked details, unmapped exceptions, ProblemDetail |
@@ -113,8 +113,8 @@ logging:
                                 #   pascal (OrderId), snake (order_id), keep. Applies to vocabulary keys too.
   serviceName: "${SERVICE_NAME:shop}"          # written to spring.application.name when missing (default: the project name)
   serviceVersion: "${APPLICATION_VERSION:unknown}"   # written to spring.application.version when missing
-  structuredFormat: ecs         # JSON log format logast writes to application.yml (logging.structured.format.console)
-                                #   when the service sets none: ecs, logstash, gelf; none = leave the config alone.
+  structuredFormat: logstash    # JSON log format logast writes to application.yml (logging.structured.format.console)
+                                #   when the service sets none: logstash, ecs, gelf; none = leave the config alone.
                                 #   A service that already uses logstash-logback-encoder (or GELF) keeps that format.
   rewriteExistingMessages: true # false = keep the wording of existing messages; only fix structure
                                 #   (concatenation, lost exceptions, banned words). Good for legacy services.
@@ -213,14 +213,17 @@ class the sources also declare is ignored.
 
 ```yaml
 support:
-  mode: dependency                               # dependency = add the logging-support library
-                                                 # vendor     = copy its classes into the service (no library)
+  mode: vendor                                   # vendor     = copy its classes into the service (no library)
+                                                 # dependency = add the logging-support library
   coordinates: dev.logast:logging-support:0.1.0  # which library (dependency mode); default: this logast's version
   repository: https://nexus.example.com/repository/maven-releases/   # optional: where it comes from
   vendorPackage: com.example.shop.logging        # where to copy the classes (vendor mode; default <app>.logging)
 ```
 
-- Use `vendor` until the library is in your company repository.
+- `mode` defaults to `vendor`: nothing has to be published for the result to build. It defaults to `dependency`
+  when the policy names a published starter: `repository` or `coordinates` set, here or in a layer reached through
+  `extends:` (a company policy switches every service at once). An explicit `mode` always wins.
+- In dependency mode, after the first apply adds the starter, logast reminds you to check it resolves.
 - `repository`: when logast adds the starter, it also adds this Maven repository to the service's build, unless a
   build script already names it. Not needed when your Gradle setup already reaches it (a repository in the build, or
   an init script in `~/.gradle/init.d/`, which logast's Gradle runs respect). When `settings.gradle` manages the

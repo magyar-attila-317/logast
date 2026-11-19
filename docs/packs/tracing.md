@@ -3,7 +3,7 @@
 Every inbound and outbound hop carries the trace, spans end and carry their errors, the traces reach a backend, and
 the log lines can be matched to them.
 
-- **On by default** (`packs: [logging, tracing]`). `--pack tracing` works on its own: it brings the
+- **On by default** (every pack is: leave `tracing` out of `packs:` to switch it off). `--pack tracing` works on its own: it brings the
   [runtime starter](../starter.md) it needs.
 - ASYNC_CONTEXT_LOSS, SCHEDULED_TASK_UNTRACED, SSE_BROADCAST_CONTEXT and REACTIVE_CONTEXT_LOSS belong to both the logging and
   the tracing pack;

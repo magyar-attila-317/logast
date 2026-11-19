@@ -277,7 +277,7 @@ quietly mean "no data".
 
 ## Packs
 
-`packs: [logging, tracing]` is the default. `metrics`, `resilience`, `errors` and `audit` are opt-in. `scan --pack metrics`
+Every pack runs by default (`packs: [logging, tracing, metrics, resilience, errors, audit]`); leave one out to switch it off. `scan --pack metrics`
 runs only the metrics rules. [rules.md](rules.md) describes every pack and rule.
 `logast rules` lists every rule with its packs.
 

@@ -39,3 +39,5 @@ metrics:
 logging:
   keyStyle: dotted               # the fixture tests the dotted spelling; camel is the default
   protectedMessages: ["^ALERT:"]
+support:
+  mode: dependency               # the fixture tests the starter as a library; vendor is the default

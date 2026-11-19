@@ -28,6 +28,7 @@ class BuildScriptsTest {
 
     @Test
     void otelDependenciesInTheAppliedScriptAreNotAddedAgain(@TempDir Path dir) throws IOException {
+        write(dir, "logast.yaml", "support:\n  mode: dependency\n");   // the starter as a library (#122: vendor is the default)
         write(dir, "build.gradle", GROOVY_PLUGINS + "apply from: 'gradle/dependencies.gradle'\n");
         write(dir, "gradle/dependencies.gradle", """
                 dependencies {

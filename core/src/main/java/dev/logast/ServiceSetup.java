@@ -21,6 +21,79 @@ public final class ServiceSetup {
     private static final Set<String> GITIGNORE_OBSOLETE = Set.of("!.logast/traffic.yaml", "!.logast/retry.yaml",
             "# logast: machine-specific classpath and scan output; baseline and traffic are shared");
 
+    /** Every pack: the default since #122 (one command adopts logast; a pack is switched off by leaving it out). */
+    public static final List<String> ALL_PACKS = List.of("logging", "tracing", "metrics", "resilience", "errors", "audit");
+
+    /**
+     * What {@code init} chooses for a service, and {@code apply} on a service without a policy (#122).
+     *
+     * @param keyStyle    null → the style the code uses most, else camel
+     * @param supportMode null → not written (vendor, unless an extended layer says dependency)
+     */
+    public record Choices(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle, String supportMode) {
+        public Choices {
+            extendsList = extendsList == null ? List.of() : List.copyOf(extendsList);
+            packs = packs == null ? List.of() : List.copyOf(packs);
+        }
+
+        public static Choices defaults() {
+            return new Choices(List.of(), List.of(), false, null, null);
+        }
+    }
+
+    /**
+     * What {@link #bootstrap} did.
+     *
+     * @param policyWritten false: a policy file was there and kept
+     * @param styleDetected true: the key style is the one the code uses most (not given, not the default)
+     * @param logFormat     the format the service already uses; null → logstash, the default
+     * @param terms         vocabulary terms found in the code
+     * @param gitignoreAdded the .gitignore entries added
+     */
+    public record Bootstrap(Path policyFile, boolean policyWritten, List<String> packs, String keyStyle, boolean styleDetected,
+                            String logFormat, int terms, List<String> gitignoreAdded) {
+        /** One line: what the policy file says it chose. */
+        public String summary() {
+            return "packs " + String.join(", ", packs) + ", key style " + keyStyle + (styleDetected ? " (what the code uses most)" : "")
+                    + ", log format " + (logFormat != null ? logFormat + " (what the service already uses)" : "logstash (default)")
+                    + ", " + terms + " business terms found in the code";
+        }
+    }
+
+    /**
+     * {@code init}'s setup, shared with {@code apply} (#122): logast.yaml (unless one is there and not {@code force}),
+     * with the key style and log format the code already uses and the vocabulary harvested from it; the .gitignore
+     * entries; .logast/README.md.
+     */
+    public static Bootstrap bootstrap(Path root, Choices c, boolean force) throws IOException {
+        Path policyFile = dev.logast.policy.PolicyLoader.defaultFile(root);
+        boolean write = force || !Files.exists(policyFile);
+        String style = null;
+        boolean detected = false;
+        String logFormat = null;
+        int terms = 0;
+        if (write) {
+            dev.logast.policy.KeyStyle found = c.keyStyle() == null ? VocabularyHarvest.detectStyle(root) : null;
+            detected = found != null;
+            style = c.keyStyle() != null ? dev.logast.policy.KeyStyle.parse(c.keyStyle()).toString()
+                    : (found != null ? found : dev.logast.policy.KeyStyle.CAMEL).toString();
+            String mode = c.supportMode() == null ? null
+                    : new dev.logast.policy.Policy.Support(null, null, c.supportMode(), null, null).mode();
+            logFormat = detectLogFormat(root);
+            // first without vocabulary, so the harvest can leave out what the extended company layers already define
+            Files.writeString(policyFile, policyTemplate(c.extendsList(), c.packs(), c.keepWording(), style, mode, logFormat, null));
+            VocabularyHarvest.Result h = VocabularyHarvest.run(root, Logast.policy(root, null), 3);
+            Files.writeString(policyFile, policyTemplate(c.extendsList(), c.packs(), c.keepWording(), style, mode, logFormat,
+                    VocabularyHarvest.yaml(h)));
+            terms = h.terms().size();
+        }
+        List<String> added = updateGitignore(root);
+        Path readme = root.resolve(".logast/README.md");
+        Files.createDirectories(readme.getParent());
+        Files.writeString(readme, logastReadme());
+        return new Bootstrap(policyFile, write, c.packs().isEmpty() ? ALL_PACKS : c.packs(), style, detected, logFormat, terms, added);
+    }
+
     public static boolean isGradleProject(Path root) {
         return Stream.of("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle")
                 .anyMatch(f -> Files.exists(root.resolve(f)));
@@ -80,13 +153,13 @@ public final class ServiceSetup {
 
     static final String GUIDE = "https://github.com/magyar-attila-317/logast/blob/main/docs/configuration.md";
 
-    /** @param supportMode null → not written (dependency, or what the company layer says); "vendor" → copy the classes */
+    /** @param supportMode null → not written (vendor, or dependency where the company layer names a repository) */
     public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
                                         String supportMode, String vocabulary) {
         return policyTemplate(extendsList, packs, keepWording, keyStyle, supportMode, null, vocabulary);
     }
 
-    /** @param logFormat the JSON log format the service already uses (null → ecs, the default) */
+    /** @param logFormat the JSON log format the service already uses (null → logstash, the default) */
     public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
                                         String supportMode, String logFormat, String vocabulary) {
         StringBuilder sb = new StringBuilder();
@@ -112,8 +185,8 @@ public final class ServiceSetup {
         } else {
             sb.append("extends: [").append(String.join(", ", extendsList)).append("]\n\n");
         }
-        sb.append("# Which checks run. Default: logging, tracing. Add any of: metrics, resilience, errors, audit.\n");
-        sb.append("packs: [").append(String.join(", ", packs.isEmpty() ? List.of("logging", "tracing") : packs)).append("]\n\n");
+        sb.append("# Which checks run. Default: all of them. Leave one out to switch it off.\n");
+        sb.append("packs: [").append(String.join(", ", packs.isEmpty() ? ALL_PACKS : packs)).append("]\n\n");
         sb.append("logging:\n");
         sb.append("  # How MDC keys and [key=value] keys are spelled: camel (orderId), dotted (order.id), pascal (OrderId),\n");
         sb.append("  # snake (order_id). Applies to the vocabulary below too.\n");
@@ -122,15 +195,16 @@ public final class ServiceSetup {
         sb.append("  rewriteExistingMessages: ").append(!keepWording).append('\n');
         sb.append("  # JSON log format (logging.structured.format.console): ecs, logstash or gelf, whichever your log\n");
         sb.append("  # backend reads. none: logast leaves the log format alone.\n");
-        sb.append("  structuredFormat: ").append(logFormat != null ? logFormat + "   # what this service already uses" : "ecs").append('\n');
+        sb.append("  structuredFormat: ").append(logFormat != null ? logFormat + "   # what this service already uses" : "logstash").append('\n');
         sb.append("  # Messages that alerts or dashboards search for (regex): logast never changes them, it only reports.\n");
         sb.append("  # protectedMessages: [\"^ALERT:\"]\n\n");
         sb.append("""
                 # Where generated code gets MdcScope / ObservedContext from:
-                #   dependency  adds the logging-support library (it must be in a repository your build uses)
-                #   vendor      copies the classes into this service, no library needed
+                #   vendor      copies the classes into this service, no library needed (the default)
+                #   dependency  adds the logging-support library (it must be in a repository your build uses; the
+                #               default when an extended policy sets support.repository)
                 """);
-        sb.append(supportMode != null ? "support:\n  mode: " + supportMode + "\n\n" : "# support:\n#   mode: vendor\n\n");
+        sb.append(supportMode != null ? "support:\n  mode: " + supportMode + "\n\n" : "# support:\n#   mode: dependency\n\n");
         sb.append("""
                 # ---------------------------------------------------------------------------------------------
                 # Business vocabulary: one entry per business concept

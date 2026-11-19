@@ -11,7 +11,7 @@ vocabulary and phrasing rules before writing anything.
 
 What a service gets out of it:
 
-- structured JSON logs in the format you choose (`logging.structuredFormat`: ECS by default, Logstash, GELF or your own
+- structured JSON logs in the format you choose (`logging.structuredFormat`: Logstash by default, ECS, GELF or your own
   formatter) with the service name and version, and no hand-rolled `logback-spring.xml`;
 - the business ids (`order.id`, `tenant.id`, …) in MDC from the entrypoint down, scoped with try-with-resources, and
   never leaking into the next request on a pooled thread;
@@ -92,15 +92,14 @@ logast --version
 In the service's root folder:
 
 ```bash
-logast init .                    # 1. once: logast.yaml, .gitignore, classpath, traffic.yaml
-                                 # 2. review logast.yaml: organise the business terms it found
-logast apply . --auto --write    # 3. changes the code, creates the files to fill in
-                                 # 4. fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml
-logast apply . --auto --write    # 5. again, on the migrated code: writes what you filled in
-git diff                         # 6. review
+logast apply .                   # 1. sets itself up (logast.yaml, classpath) and changes the code
+git diff                         # 2. review
+                                 # 3. optional: fill in .logast/decisions/messages.yaml and metrics.yaml,
+logast apply .                   #    commit, and apply again on the migrated code
 ```
 
-- `apply` without `--write` only previews the diff.
+- `apply` writes on a clean git working tree (commit first; `--force` writes anyway); `--dry-run` previews the diff.
+- `logast init .` first if you want to choose before the first apply (packs, key style, log format, `extends:`).
 - One `apply` does everything automatic; the second is only for what you filled in. Don't revert the code before
   it: the entries in the files point at the migrated code.
 - `init` prints a numbered **Next steps** list; `apply` and `scan` end with what is left, grouped by what you do
@@ -157,8 +156,7 @@ Details of every command, with example output: [docs/commands.md](docs/commands.
 
 ## Packs
 
-Rules come in six packs. `logging` and `tracing` run by default; the others are opt-in (`packs:` in `logast.yaml`, or
-`--pack`).
+Rules come in six packs, all on by default (`packs:` in `logast.yaml` switches one off; `--pack` runs one alone).
 
 | pack | what it covers |
 |---|---|
@@ -229,8 +227,8 @@ logast scan . --since origin/main --format sarif > logast.sarif  # changed lines
 
 - **It switches nothing on by itself.** Each behaviour has a `logging-support.*.enabled` property, off unless
   `true`; logast writes the ones a pack uses into `application.yml`.
-- A service either depends on it (`support.mode: dependency`, the default) or gets its classes copied in
-  (`support.mode: vendor`, until the starter is in your repository).
+- A service gets its classes copied in (`support.mode: vendor`, the default: nothing to publish) or depends on it
+  (`support.mode: dependency`, once the starter is in your repository).
 
 Properties, modes and publishing it to your repository: [docs/starter.md](docs/starter.md).
 

@@ -1,6 +1,7 @@
 package dev.logast;
 
 import dev.logast.policy.Policy;
+import dev.logast.policy.PolicyLoader;
 import dev.logast.rules.Phrasing;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -18,10 +19,30 @@ class PolicyTest {
     @Test
     void defaultsAreOpinionated() {
         Policy p = Policy.defaults();
-        assertThat(p.packs()).containsExactly("logging", "tracing");
+        assertThat(p.packs()).as("#122: every pack").containsExactly("logging", "tracing", "metrics", "resilience", "errors", "audit");
+        assertThat(p.logging().structuredFormat()).as("#122").isEqualTo("logstash");
+        assertThat(p.logging().keyStyle()).isEqualTo("camel");
+        assertThat(p.logging().rewriteExistingMessages()).isTrue();
+        assertThat(p.support().mode()).as("#122: no starter to publish").isEqualTo("vendor");
         assertThat(p.mdc().ambientKeys()).containsExactly("traceId", "spanId");
         assertThat(p.phrasing().events()).containsKeys("started", "completed", "failed");
         assertThat(p.levels().clientErrors()).contains("org.springframework.security.access.AccessDeniedException");
+    }
+
+    /** #122: vendor by default; a published starter (a repository or pinned coordinates, also from a company layer) means dependency. */
+    @Test
+    void supportIsVendoredUnlessThePolicyPointsAtAPublishedStarter() throws IOException {
+        Files.writeString(dir.resolve("company.yaml"), "support:\n  repository: https://nexus.example.org/repository/maven-releases\n");
+        Files.writeString(dir.resolve("logast.yaml"), "extends: [company.yaml]\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).as("the company layer's repository").isEqualTo("dependency");
+        Files.writeString(dir.resolve("logast.yaml"), "support:\n  coordinates: com.example:logging-support:1.2.3\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).as("pinned coordinates").isEqualTo("dependency");
+        Files.writeString(dir.resolve("logast.yaml"), "support:\n  mode: dependency\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).isEqualTo("dependency");
+        Files.writeString(dir.resolve("logast.yaml"), "extends: [company.yaml]\nsupport:\n  mode: vendor\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).as("the service's own choice wins").isEqualTo("vendor");
+        Files.writeString(dir.resolve("logast.yaml"), "packs: [logging]\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).isEqualTo("vendor");
     }
 
     @Test
