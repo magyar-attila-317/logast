@@ -2,23 +2,44 @@
 //
 // Lets `./gradlew logastApply` (logastScan, logastCheck, ...) run in any service without a plugins { id("dev.logast") }
 // line in its build. Installed by logast's install.sh into ~/.gradle/init.d/ (#122).
-// - The plugin, and logast with it, is resolved only when a requested task is a logast task (its name starts with
-//   "logast"): every other build on this machine resolves and runs nothing of logast.
+// - The plugin is applied in a repository that uses logast (logast.yaml or logast.yml in the build's root folder or in
+//   the folder Gradle runs in), and for a requested logast task (a name starting with "logast": the first
+//   `./gradlew logastApply` on a fresh repository). Any other build declares and resolves nothing of logast.
+// - It comes from Maven Local (install.sh publishes it there). When this version is not there, the build goes on
+//   without it, with one line saying so.
 // - A build that applies dev.logast itself keeps its own; the plugin is applied only where the java plugin is.
 // - Opt out: -Plogast.disabled, or the environment variable LOGAST_DISABLED=1.
 initscript {
-    def off = (gradle.startParameter.projectProperties.containsKey('logast.disabled')
-            && gradle.startParameter.projectProperties['logast.disabled'] != 'false') || System.getenv('LOGAST_DISABLED')
-    def logastTask = gradle.startParameter.taskNames.any {
+    def version = '@LOGAST_VERSION@'
+    def start = gradle.startParameter
+    def off = (start.projectProperties.containsKey('logast.disabled') && start.projectProperties['logast.disabled'] != 'false') \
+            || System.getenv('LOGAST_DISABLED')
+    def logastTask = start.taskNames.any {
         !it.startsWith('-') && it.substring(it.lastIndexOf(':') + 1).toLowerCase(Locale.ROOT).startsWith('logast')
     }
-    if (!off && logastTask) {
-        repositories {
-            mavenLocal()
-            mavenCentral()
-        }
-        dependencies {
-            classpath 'dev.logast:gradle-plugin:@LOGAST_VERSION@'
+    // the folder Gradle runs in, and the build's root: the nearest folder upwards with a settings file
+    def here = (start.projectDir ?: start.currentDir).canonicalFile
+    def root = here
+    while (root != null && !['settings.gradle', 'settings.gradle.kts'].any { new File(root, it).isFile() }) {
+        root = root.parentFile
+    }
+    def optedIn = [here, root].findAll { it != null }.any { dir ->
+        ['logast.yaml', 'logast.yml'].any { new File(dir, it).isFile() }
+    }
+    if (!off && (logastTask || optedIn)) {
+        // Gradle's mavenLocal(): -Dmaven.repo.local, else ~/.m2/repository
+        def m2 = System.getProperty('maven.repo.local') ?: new File(System.getProperty('user.home'), '.m2/repository').path
+        def jar = new File(m2, "dev/logast/gradle-plugin/${version}/gradle-plugin-${version}.jar")
+        if (jar.isFile()) {
+            repositories {
+                mavenLocal()
+                mavenCentral()
+            }
+            dependencies {
+                classpath "dev.logast:gradle-plugin:${version}"
+            }
+        } else {
+            println "logast: plugin ${version} not in Maven Local (${m2}): run logast's install.sh; building without it"
         }
     }
 }
@@ -27,7 +48,7 @@ Class logastPlugin
 try {
     logastPlugin = getClass().classLoader.loadClass('dev.logast.gradle.LogastPlugin')
 } catch (ClassNotFoundException ignored) {
-    return   // no logast task requested, or opted out
+    return   // not wanted here, opted out, or not in Maven Local
 }
 
 gradle.afterProject { project ->

@@ -15,9 +15,13 @@ everyone on the team who does not run the CLI. It can also migrate the code (`lo
 After that, `./gradlew logastApply` (and every other task below) works in any Java service, with no change to its
 build:
 
-- The plugin, and logast with it, is resolved only when you run a logast task; every other build on the machine
-  resolves and runs nothing of logast. So `./gradlew tasks` does not list the logast tasks; `./gradlew help --task
-  logastApply` does.
+- Where it is applied: in a repository that uses logast (`logast.yaml` or `logast.yml` in the build's root folder, or
+  in the folder you run Gradle in), and whenever you run a logast task (a task name starting with `logast`, such as
+  the first `./gradlew logastApply` on a fresh repository). Every other build on the machine declares and resolves
+  nothing of logast, so `./gradlew tasks` lists the logast tasks only in a repository with `logast.yaml`.
+- It comes from Maven Local. When this logast version is not there (`~/.m2` cleaned, another `-Dmaven.repo.local`),
+  the build goes on without it and prints one line: `logast: plugin <version> not in Maven Local …: run logast's
+  install.sh; building without it`. It never fails a build for that.
 - It is applied to every project that has the `java` plugin. A build that applies `dev.logast` itself (below) keeps
   its own, with its own version and settings.
 - Opt out for one build with `-Plogast.disabled`, or with the environment variable `LOGAST_DISABLED=1`; remove the
