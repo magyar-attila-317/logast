@@ -117,9 +117,11 @@ class SummaryOutputTest {
         // after the apply only the person's work is left: what to fill, then apply; no "apply" first
         String applied = run("apply", app.toString(), "--pack", "logging", "--auto", "--write", "--classpath-file", cp);
         // #122: what the run did, then what is optional, with one pointer; nothing reads as a required step
-        assertThat(applied).as(applied).containsSubsequence("applied (3):", "Done: 3 changes in 2 files", "review: git diff",
-                        "Optional (1)", "to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again",
-                        "Log lines: 2 — 1 fixed, 1 with a finding", "Also:", "logast verify .")
+        // #126: one summary line, the changes by kind in words, the optional work in sentences; no id or file walls
+        assertThat(applied).as(applied).containsSubsequence("✓ 3 changes in 2 files", "review: git diff",
+                        "Worth a look (optional) — the service works without these:", "1 log line could say more → logast review",
+                        "Log lines: 2 — 1 fixed, 1 with a finding", "Also: logast verify .")
+                .doesNotContainPattern("(?m)^applied \\(").doesNotContainPattern("(?m)^files \\(")
                 .doesNotContain("Next:").doesNotContain("Next steps").doesNotContain("Applied earlier")
                 .doesNotContain("--auto --write").doesNotContain("logast vocabulary .").doesNotContain("Waiting on you")
                 .doesNotContain("can't continue");

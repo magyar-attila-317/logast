@@ -189,6 +189,58 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
         return out;
     }
 
+    /**
+     * #126: apply's view of what is left, for a person: what to run next (a dry run), then the optional work in plain
+     * sentences with one pointer each: what {@code logast review} decides, and what logast can't fix itself.
+     */
+    public List<String> worthALook(View v) {
+        List<String> out = new ArrayList<>();
+        if (first != null) {
+            out.add(Ansi.bold("First: ") + Ansi.cyan(first.action()) + Ansi.dim("   " + first.why()));
+        }
+        if (v.next() != null) {
+            out.add(Ansi.bold("Next: ") + Ansi.cyan(v.next().action()) + Ansi.dim("   " + v.next().why()));
+        }
+        long decided = decisions.values().stream().mapToLong(Long::longValue).sum();
+        if (text == 0 && outcomes == 0 && retries == 0 && decided == 0) {
+            return out;
+        }
+        if (!out.isEmpty()) {
+            out.add("");
+        }
+        out.add(Ansi.bold("Worth a look (optional)") + Ansi.dim(" — the service works without these:"));
+        List<String> review = new ArrayList<>();
+        if (text > 0) {
+            review.add(text + (text == 1 ? " log line could say more" : " log lines could say more"));
+        }
+        if (outcomes > 0) {
+            review.add(outcomes + (outcomes == 1 ? " outcome could be counted" : " outcomes could be counted"));
+        }
+        if (retries > 0) {
+            review.add(retries + (retries == 1 ? " call could retry" : " calls could retry"));
+        }
+        if (!review.isEmpty()) {
+            String problems = v.metrics() != null && v.metrics().problems() > 0
+                    ? Ansi.dim("   (" + v.metrics().problems() + " in metrics.yaml cannot be written: see \"_problem\")") : "";
+            out.add("  " + String.join(", ", review) + " → " + Ansi.cyan("logast review") + problems);
+        }
+        if (decided > 0) {
+            List<String> eg = decisions.entrySet().stream()
+                    .sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                    .limit(3).map(e -> RuleLabels.of(e.getKey()) + " (" + e.getValue() + ")").toList();
+            out.add("  " + decided + (decided == 1 ? " thing" : " things") + " logast can't fix itself, e.g. " + String.join(", ", eg)
+                    + " → " + Ansi.cyan(v.decisionsHint()));
+        }
+        return out;
+    }
+
+    /** #126: the follow-up checks, one short "Also" line each. */
+    public static List<String> alsoShort(List<Item> items) {
+        List<String> out = new ArrayList<>();
+        items.forEach(i -> out.add(Ansi.bold("Also: ") + Ansi.cyan(i.action()) + Ansi.dim("   " + i.why())));
+        return out;
+    }
+
     /** "Also": the follow-up and optional checks, with extra items of the caller's first (git diff, rejected fixes). */
     public static List<String> alsoLines(List<Item> items) {
         List<String> out = new ArrayList<>();

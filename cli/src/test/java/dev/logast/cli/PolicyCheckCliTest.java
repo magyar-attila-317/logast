@@ -184,7 +184,7 @@ class PolicyCheckCliTest {
         Run ok = run("apply", app.toString());
         assertThat(ok.exit()).as("went on (a fix may still be rejected: no Spring on this classpath)\n" + ok.out() + ok.err())
                 .isNotEqualTo(2);
-        assertThat(ok.err()).contains("classpath read");
+        assertThat(ok.out()).contains("Set up: classpath read with Gradle (1 entry)");
         assertThat(app.resolve(".logast/classpath-main.txt")).exists();
 
         Path plain = tmp.resolve("plain");   // its own folder: project() writes into the one above
@@ -210,7 +210,7 @@ class PolicyCheckCliTest {
         assertThat(named.resolve("logast.yaml")).as("--policy names the policy").doesNotExist();
         Run r = run("apply", plain.toString());
         assertThat(r.exit()).as(r.out() + r.err()).isZero();
-        assertThat(r.err()).contains("no logast.yaml yet: wrote one").contains("packs logging, tracing, metrics, resilience, errors, audit");
+        assertThat(r.out()).contains("Set up: logast.yaml written (").contains("packs logging, tracing, metrics, resilience, errors, audit");
         assertThat(Files.readString(plain.resolve("logast.yaml"))).contains("structuredFormat: logstash\n");
         assertThat(plain.resolve(".gitignore")).exists();
         assertThat(plain.resolve(".logast/README.md")).exists();

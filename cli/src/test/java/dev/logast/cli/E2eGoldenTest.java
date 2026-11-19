@@ -267,7 +267,8 @@ abstract class E2eGoldenTest {
         assertThat(Files.readString(app.resolve("build.gradle.kts"))).as("no starter to publish").doesNotContain("logging-support");
         assertThat(first).as("no publishing step").doesNotContain("resolves");
         assertThat(first).as("#122: what was done, then what is optional, with one pointer; no required step\n" + first)
-                .containsSubsequence("Done: ", "Optional (", "to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again")
+                .containsSubsequence("Set up: logast.yaml written (", "classpath read with Gradle (", "✓ ", "review: git diff",
+                        "Worth a look (optional) — the service works without these:", "→ logast review", "→ logast scan .")
                 .doesNotContain("logast vocabulary .").doesNotContain("--auto --write").doesNotContain("Waiting on you")
                 .doesNotContain("can't continue");
         String trace = Files.readString(app.resolve(".logast/reports/apply-trace.txt"));
@@ -283,7 +284,7 @@ abstract class E2eGoldenTest {
         git(app, "commit", "--quiet", "-m", "logast apply");
         String second = run(app, "apply", app.toString());
         assertThat(LAST_EXIT).isZero();
-        assertThat(second).as("a second apply changes nothing").contains("applied (0):").contains("files (0):");
+        assertThat(second).as("a second apply changes nothing").contains("nothing to change");
         assertThat(git(app, "status", "--porcelain")).as("nothing for git either").isEmpty();
         assertThat(first + second).doesNotContain("CHECK FAILED");
         compile(app);
@@ -313,7 +314,7 @@ abstract class E2eGoldenTest {
         git(app, "add", "-A");
         git(app, "commit", "--quiet", "-m", "logast apply");
         String second = run(app, "apply", app.toString());
-        assertThat(second).as("a second apply changes nothing").contains("applied (0):").contains("files (0):");
+        assertThat(second).as("a second apply changes nothing").contains("nothing to change");
         compile(app, "UTF-8", PLATFORM, Path.of(System.getProperty("logast.e2e.support")));
     }
 
@@ -326,7 +327,7 @@ abstract class E2eGoldenTest {
         assertThat(LAST_EXIT).as(first + STDERR).isZero();
         assertThat(app.resolve("src/main/java/com/example/e2e/logging/MdcScope.java")).as("copied in (vendor)").exists();
         assertThat(Files.readString(app.resolve("build.gradle.kts"))).doesNotContain("logging-support");
-        assertThat(STDERR.toString()).as("one line: publish it to wire it in")
+        assertThat(first).as("one line in the Set up header: publish it to wire it in")
                 .containsOnlyOnce("the support jar isn't in this build's repositories: publish it (install.sh) to wire it in instead");
         compile(app);
     }
@@ -386,16 +387,72 @@ abstract class E2eGoldenTest {
         Path fullCp = tmp.resolve("full-classpath.txt");
         Files.write(fullCp, full);
         Path gradlew = app.resolve("gradlew");
-        Files.writeString(gradlew, "#!/bin/sh\ncp '" + fullCp + "' .logast/classpath-main.txt\n");
+        // #126: a real Gradle prints JVM warnings on stderr: noise when it worked
+        Files.writeString(gradlew, "#!/bin/sh\necho 'WARNING: java.lang.System::load has been called' >&2\n"
+                + "cp '" + fullCp + "' .logast/classpath-main.txt\n");
         assertThat(gradlew.toFile().setExecutable(true)).isTrue();
 
-        String first = run(app, "apply", app.toString(), "--auto", "--write");
-        assertThat(first.split("\napplied \\(", -1).length - 1 + (first.startsWith("applied (") ? 1 : 0))
-                .as("the dependencies changed and the classpath refreshed: one more round, with what the new types allow\n" + first)
-                .isEqualTo(2);
-        assertThat(STDERR.toString()).contains("one more round with the refreshed classpath");
-        String second = run(app, "apply", app.toString(), "--auto", "--write");
-        assertThat(second).as("settled in that one apply").contains("applied (0):");
+        STDERR.setLength(0);
+        String first = runDefault(app, "apply", app.toString(), "--auto", "--write");
+        assertThat(first).as("the dependencies changed and the classpath refreshed: one more round, with what the new types allow\n" + first)
+                .contains("one more round with the refreshed classpath");
+        // #126: one summary, and it counts both runs: every file that differs from the service as it was
+        java.util.regex.Matcher done = java.util.regex.Pattern.compile("(?m)^✓ (\\d+) changes? in (\\d+) files?").matcher(first);
+        assertThat(done.find()).as(first).isTrue();
+        String changes = done.group(1);
+        int files = Integer.parseInt(done.group(2));
+        assertThat(done.find()).as("one summary for both runs\n" + first).isFalse();
+        long differ;
+        try (Stream<Path> s = Files.walk(app)) {   // every file, the copied support classes too (files() leaves them out)
+            differ = s.filter(Files::isRegularFile).map(p -> app.relativize(p).toString().replace('\\', '/'))
+                    .filter(rel -> !rel.startsWith(".logast/") && !rel.equals("gradlew"))
+                    .filter(rel -> {
+                        try {
+                            Path was = BEFORE.resolve(rel);
+                            return !Files.exists(was) || Files.mismatch(was, app.resolve(rel)) >= 0;
+                        } catch (IOException e) {
+                            throw new java.io.UncheckedIOException(e);
+                        }
+                    }).count();
+        }
+        assertThat(files).as("the files of both runs\n" + first).isEqualTo((int) differ);
+        assertThat(Files.readString(app.resolve(dev.logast.LogastDir.LAST_APPLY)))
+                .as("last-apply.txt: both runs too").startsWith(changes + " change");
+        System.out.println(first);   // the sample in the report
+        assertThat(first).as("ids and file lists only with --verbose").doesNotContainPattern("(?m)^applied \\(").doesNotContainPattern("(?m)^files \\(");
+        assertThat(first + STDERR).as("a Gradle run that worked stays quiet").doesNotContain("WARNING: java.lang");
+        String second = run(app, "apply", app.toString(), "--auto", "--write", "--verbose");
+        assertThat(second).as("settled in that one apply").contains("nothing to change").contains("applied (0):").contains("files (0):");
+    }
+
+    /** #126: a nested Gradle run that fails shows what Gradle printed (it is captured, and hidden only when it works). */
+    @Test
+    void aFailingClasspathRunShowsWhatGradlePrinted() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path gradlew = app.resolve("gradlew");
+        Files.writeString(gradlew, "#!/bin/sh\necho 'Cannot find a Java installation matching languageVersion=99' >&2\nexit 1\n");
+        assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+        STDERR.setLength(0);
+        run(app, "apply", app.toString(), "--auto", "--write");
+        assertThat(LAST_EXIT).isEqualTo(2);
+        assertThat(STDERR.toString()).contains("Cannot find a Java installation matching languageVersion=99").contains("Gradle failed (exit 1)")
+                .as("not a broken jar: no hint about one").doesNotContain("empty or broken");
+
+        // an empty jar in ~/.m2 or the Gradle cache (an interrupted download): Gradle's error, then what to do about it
+        Files.writeString(gradlew, "#!/bin/sh\necho 'Could not resolve all files for configuration: "
+                + "java.util.zip.ZipException: zip file is empty' >&2\nexit 1\n");
+        STDERR.setLength(0);
+        run(app, "apply", app.toString(), "--auto", "--write");
+        assertThat(LAST_EXIT).isEqualTo(2);
+        assertThat(STDERR.toString()).contains("zip file is empty").contains(Main.Classpath.BROKEN_JAR);
+    }
+
+    @Test
+    void aBrokenJarIsRecognisedInGradlesOutput() {
+        assertThat(Main.Classpath.brokenJar("> error in opening zip file")).isTrue();
+        assertThat(Main.Classpath.brokenJar("java.util.zip.ZipException: invalid LOC header")).isTrue();
+        assertThat(Main.Classpath.brokenJar("Could not find a Java toolchain")).isFalse();
     }
 
     /**
@@ -619,7 +676,7 @@ abstract class E2eGoldenTest {
      */
     static Map<String, String> scoped(String scenario, Map<String, String> files) {
         if (FULL_REPORTS.contains(scenario)) {
-            return files;
+            return withoutIds(files);   // #126: the output a person sees
         }
         Set<String> keep = KEEP.getOrDefault(scenario, Set.of());
         Map<String, String> out = new TreeMap<>();
@@ -1277,7 +1334,7 @@ abstract class E2eGoldenTest {
                 .as("pass 2 applies nothing:\n" + trace).doesNotContain("applying");
         String fourth = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         assertThat(third + fourth).doesNotContain("CHECK FAILED");
-        assertThat(fourth).as("a further apply changes nothing").contains("applied (0):").contains("files (0):");
+        assertThat(fourth).as("a further apply changes nothing").contains("nothing to change");
         Files.writeString(app.resolve("OUTPUT.txt"), Files.readString(app.resolve("OUTPUT.txt"))
                 + "\n=== after writing the controller's started lines\n" + third);
         compile(app);
@@ -6460,7 +6517,7 @@ abstract class E2eGoldenTest {
 
         String applied = run(shipping, "apply", shipping.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         String again = run(shipping, "apply", shipping.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
-        assertThat(again).as("a second apply changes nothing\n" + applied + "\n" + STDERR).contains("applied (0):").contains("files (0):");
+        assertThat(again).as("a second apply changes nothing\n" + applied + "\n" + STDERR).contains("nothing to change");
         assertThat(applied + again).doesNotContain("CHECK FAILED");
         assertThat(Files.readString(shipping.resolve("src/main/java/com/example/shipping/ParcelDispatch.java")))
                 .as("the alias renamed on apply").contains("\"orderId\"").doesNotContain("\"order_id\"");
@@ -6892,12 +6949,12 @@ abstract class E2eGoldenTest {
             // a fleet's company.yaml can carry policy besides the vocabulary: the key style here
             Files.writeString(fleet.resolve("company.yaml"), Files.readString(fleet.resolve("company.yaml")) + "logging:\n  keyStyle: camel\n");
             STDERR.setLength(0);
-            run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
+            String applied = run(checkout, "apply", checkout.toString(), "--classpath-file", CLASSPATH);
             assertThat(mapper.readTree(checkoutSnapshot.toFile()).path("report").path("score").asDouble())
                     .as("apply's snapshot\n" + STDERR).isGreaterThan(scoreBefore);
             // only `fleet:` is not set up yet: apply writes the starter choices as the service's own layer, under the fleet
             String ownPolicy = Files.readString(checkout.resolve("logast.yaml"));
-            assertThat(STDERR.toString()).contains("wrote one with what it chose");
+            assertThat(applied).contains("Set up: logast.yaml written (");
             assertThat(ownPolicy).as("the fleet line kept").containsOnlyOnce("\nfleet: payments-fleet\n")
                     .as("the starter choices").contains("packs: [logging, tracing, metrics, resilience, errors, audit]",
                             "\n  rewriteExistingMessages: true\n", "\n  structuredFormat: logstash\n")
@@ -6937,7 +6994,7 @@ abstract class E2eGoldenTest {
                 .doesNotContain("applying");
         String second = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
         // one run is the end state: a second one finds nothing, and neither run trips a self-check
-        assertThat(second).as("a second apply changes nothing").contains("applied (0):").contains("files (0):");
+        assertThat(second).as("a second apply changes nothing").contains("nothing to change");
         assertThat(first + second).as("no CHECK FAILED (a rule that did not see its own fix, or a broken invariant)")
                 .doesNotContain("CHECK FAILED");
         Files.writeString(app.resolve("OUTPUT.txt"), "=== logast apply . --auto --write\n" + first
@@ -6968,7 +7025,9 @@ abstract class E2eGoldenTest {
         }
     }
 
-    private static void assertSameFiles(Map<String, String> expected, Map<String, String> actual) {
+    private static void assertSameFiles(Map<String, String> was, Map<String, String> all) {
+        Map<String, String> expected = withoutIds(was);
+        Map<String, String> actual = withoutIds(all);
         List<String> problems = new ArrayList<>();
         new TreeSet<>(expected.keySet()).stream().filter(k -> !actual.containsKey(k)).forEach(k -> problems.add("missing: " + k));
         new TreeSet<>(actual.keySet()).stream().filter(k -> !expected.containsKey(k)).forEach(k -> problems.add("new file: " + k));
@@ -7565,7 +7624,7 @@ abstract class E2eGoldenTest {
         assertThat(trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "")
                 .as("answered in one pass:\n" + trace).doesNotContain("applying");
         assertThat(run(rated, "apply", rated.toString(), "--auto", "--write", "--classpath-file", CLASSPATH))
-                .as("a second apply changes nothing").contains("applied (0):").contains("files (0):");
+                .as("a second apply changes nothing").contains("nothing to change");
         assertThat(third).doesNotContain("CHECK FAILED");
         Files.writeString(rated.resolve("FINDINGS.txt"), run(rated, "scan", rated.toString(), "--classpath-file", CLASSPATH));
         compile(rated);
@@ -7796,7 +7855,7 @@ abstract class E2eGoldenTest {
         assertThat(Files.readString(work)).contains("  ParcelClient.track:    # Spring Framework @Retryable, "
                 + "src/main/java/com/example/e2e/parcel/ParcelClient.java:11\n    specific: true\n");
         String again = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", classpath);
-        assertThat(again).as("the run after that changes nothing").contains("applied (0):").contains("files (0):")
+        assertThat(again).as("the run after that changes nothing").contains("nothing to change")
                 .doesNotContain("CHECK FAILED");
         compile(app, "UTF-8", PLATFORM, extraClasses[0]);
 
@@ -8148,7 +8207,7 @@ abstract class E2eGoldenTest {
         String second = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         assertThat(second).as("the reworded lines are applied").doesNotContain("REJECTED").doesNotContain("CHECK FAILED");
-        assertThat(third).as("nothing left to change after the rewording:\n" + third).contains("applied (0)").doesNotContain("CHECK FAILED");
+        assertThat(third).as("nothing left to change after the rewording:\n" + third).contains("nothing to change").doesNotContain("CHECK FAILED");
         compile(app);
     }
 
@@ -8285,7 +8344,36 @@ abstract class E2eGoldenTest {
     /** The exit code of the last {@link #run}. */
     private static int LAST_EXIT;
 
+    /**
+     * Runs the CLI; an apply with --verbose (#126): its order ids are what RULES.txt is made from (the default output no
+     * longer lists them). The snapshots of logast's own output hold the default output ({@link #withoutIds}).
+     */
     private static String run(Path app, String... args) {
+        List<String> all = new ArrayList<>(List.of(args));
+        if (!all.isEmpty() && all.get(0).equals("apply") && !all.contains("json") && !all.contains("--verbose")) {
+            all.add("--verbose");
+        }
+        return runDefault(app, all.toArray(String[]::new));
+    }
+
+    /** The lines only --verbose adds to apply's output (#126). */
+    private static final java.util.regex.Pattern VERBOSE = java.util.regex.Pattern.compile(
+            "(?m)^(applied \\(|would apply \\(|files \\(|resolved by other changes: |per step \\(apply in order).*\\n");
+
+    /** Apply's output as it prints by default: without the lines of --verbose. */
+    static String withoutIds(String output) {
+        return VERBOSE.matcher(output).replaceAll("");
+    }
+
+    /** {@code files} with OUTPUT.txt as apply prints it by default. */
+    static Map<String, String> withoutIds(Map<String, String> files) {
+        Map<String, String> out = new TreeMap<>(files);
+        out.computeIfPresent("OUTPUT.txt", (k, v) -> withoutIds(v));
+        return out;
+    }
+
+    /** Runs the CLI in-process as a person would (an apply without --verbose); stdout, cleaned. */
+    private static String runDefault(Path app, String... args) {
         PrintStream out = System.out;
         PrintStream err = System.err;
         ByteArrayOutputStream buf = new ByteArrayOutputStream();

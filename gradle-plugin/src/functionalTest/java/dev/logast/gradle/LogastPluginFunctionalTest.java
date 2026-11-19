@@ -175,7 +175,7 @@ class LogastPluginFunctionalTest {
         assertThat(r.task(":logastApply").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
         // the controller carries the order id in MDC now
         assertThat(Files.readString(order)).contains("MdcScope.of(\"orderId\", orderId)");
-        assertThat(r.getOutput()).contains("applied (").doesNotContain("DRY RUN").doesNotContain("REJECTED")
+        assertThat(r.getOutput()).containsPattern("\\d+ changes? in \\d+ files?").doesNotContain("DRY RUN").doesNotContain("REJECTED")
                 .doesNotContain("CHECK FAILED");
 
         assertThat(gradle("compileJava").build().task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
@@ -205,7 +205,7 @@ class LogastPluginFunctionalTest {
         Path order = project.resolve("src/main/java/demo/OrderController.java");
 
         BuildResult option = gradle("logastApply", "--preview").build();
-        assertThat(option.getOutput()).contains("DRY RUN").contains("would apply (").contains("OrderController.java");
+        assertThat(option.getOutput()).contains("DRY RUN").contains("would apply ").contains("OrderController.java");
         assertThat(Files.readString(order)).isEqualTo(ORDER_CONTROLLER);
 
         gradle("logastApply", "-PlogastDryRun").build();

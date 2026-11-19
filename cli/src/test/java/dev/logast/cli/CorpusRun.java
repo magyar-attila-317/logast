@@ -75,7 +75,7 @@ class CorpusRun {
         exec(clone, "git", "-c", "user.name=corpus", "-c", "user.email=corpus@localhost", "commit", "--quiet", "-m", "first apply");
         String second = cli("apply", app.toString(), "--auto", "--write");
         String diff = exec(clone, "git", "diff");
-        assertThat(second).as(name + ": a second apply changes nothing\n" + second + "\nwhat it changed:\n" + diff).contains("applied (0):");
+        assertThat(second).as(name + ": a second apply changes nothing\n" + second + "\nwhat it changed:\n" + diff).contains("nothing to change");
         assertThat(first + second).as(name + ": no CHECK FAILED").doesNotContain("CHECK FAILED");
 
         Path gradlew = app.resolve("gradlew");
