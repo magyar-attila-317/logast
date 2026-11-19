@@ -16,7 +16,7 @@ writes it to `application.yml` for the pack that uses it.
 |---|---|---|
 | what logast does | copies its classes into `<app package>.logging` | adds `dev.logast:logging-support` to `build.gradle(.kts)` |
 | upgrades | re-copy, or switch to the dependency later | bump the version |
-| when | no shared artifact yet, or the service must not take new dependencies | you publish the starter to your repository (the default once the policy, or a company policy it extends, sets `support.repository` or `support.coordinates`) |
+| when | the default while the service's build cannot resolve the starter, or the service must not take new dependencies | the default once the service's build resolves the starter (published with `install.sh`), or once the policy, or a company policy it extends, sets `support.repository` or `support.coordinates` |
 
 Both give the same generated code. In vendor mode, copied classes from an older logast are updated by an AUTO order
 (the dry run shows the diff). `logast init --support vendor` writes the mode into `logast.yaml`; the other settings
@@ -41,17 +41,42 @@ already sets, `true` or `false`, is left as it is.
 
 ## Publishing it
 
-To Maven Local (`~/.m2`), for trying it out: `./install.sh --starter`.
+`./install.sh` asks (Enter = no):
 
-To your company repository:
+- **Maven Local** (`~/.m2`): builds on this machine that list `mavenLocal()` resolve it. `--starter` or `-y` say yes
+  without asking.
+- **A remote repository**: install.sh lists the Maven repositories this machine's Gradle already configures (logast's
+  own build with your `~/.gradle/init.d` scripts; Maven Central, the Plugin Portal and Maven Local left out), then
+  `another URL`:
+
+  ```
+    Publish the support library to a repository too? Then every build that resolves from there gets the jar:
+      1) acme-releases            https://nexus.example.com/repository/maven-releases/ (hosted: takes uploads)
+      2) acme-public              https://nexus.example.com/repository/maven-public/
+      3) another URL
+    Choose [1-3, Enter = no]
+  ```
+
+  A known repository is published to with the credentials configured on it; another URL takes `REPO_USER` /
+  `REPO_PASSWORD` or asks (the password hidden). `--publish-to <name|url>` answers without asking. A refused upload
+  is one line (401: credentials, 403: not allowed, 405: no uploads there, a group or proxy repository; 400: the
+  version is there already) and install.sh exits non-zero; the command is installed either way.
+
+Then `logast apply` wires it in wherever the service's build resolves it (no repository line, no policy change:
+[configuration.md](configuration.md#support-the-runtime-helper-library)).
+
+The same without install.sh:
 
 ```bash
+./gradlew -q logastRepositories                              # the repositories install.sh offers: name, url
+./gradlew :logging-support:publishAllPublicationsToCompanyRepository :test-capture:publishAllPublicationsToCompanyRepository \
+    -PrepoName=acme-releases                                   # a known one, with its credentials
 ./gradlew :logging-support:publish :test-capture:publish \
     -PrepoUrl=https://nexus.example.com/repository/maven-releases/ -PrepoUser=… -PrepoPassword=…
 # or REPO_URL / REPO_USER / REPO_PASSWORD in the environment (CI)
 ```
 
-Then point services at it in their policy: `support.coordinates: com.example:logging-support:<version>`. The version
+To pin other coordinates in the policy: `support.coordinates: com.example:logging-support:<version>`. The version
 comes from `gradle.properties`. `test-capture` is the jar `logast verify` adds to test runs.
 
 ### Releases and versions

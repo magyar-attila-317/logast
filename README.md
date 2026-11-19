@@ -62,7 +62,7 @@ flowchart LR
 
 ```bash
 git clone https://github.com/magyar-attila-317/logast.git && cd logast
-./install.sh          # asks once whether to set up Gradle too (-y: yes, --no-gradle: no)
+./install.sh          # asks: set up Gradle? publish the support library to Maven Local? to a repository? (-y: yes to the first two)
 logast --version
 ```
 
@@ -75,9 +75,10 @@ the build ([docs/gradle-plugin.md](docs/gradle-plugin.md)).
 |---|---|
 | *(none)* | builds the CLI, installs it to `~/.local/share/logast` and links `~/.local/bin/logast` |
 | `--skill` | installs the Claude Code skill to `~/.claude/skills/logast/SKILL.md`, so Claude Code knows the workflow |
-| `--starter` | puts `dev.logast:logging-support` and `dev.logast:test-capture` into Maven Local (`~/.m2`); not needed for the default vendor mode |
+| `--starter` | puts `dev.logast:logging-support` and `dev.logast:test-capture` into Maven Local (`~/.m2`) without asking; `apply` then adds the jar where a build resolves it |
+| `--publish-to <name\|url>` | publishes them to a repository your Gradle knows (by name, with its credentials) or a URL, without asking ([docs/starter.md](docs/starter.md#publishing-it)) |
 | `--zip <file>` | installs a release zip instead of building |
-| `-y` / `--no-gradle` | sets up Gradle without asking / skips it: the plugin in Maven Local and an init script, so `./gradlew logastApply` works in any Java build ([docs/gradle-plugin.md](docs/gradle-plugin.md)); asked otherwise |
+| `-y` / `--no-gradle` | `-y`: yes to the Gradle setup and to Maven Local without asking; `--no-gradle`: skips the Gradle setup (the plugin in Maven Local and an init script, so `./gradlew logastApply` works in any Java build, [docs/gradle-plugin.md](docs/gradle-plugin.md)) |
 
 - `LOGAST_HOME` / `LOGAST_BIN` override the install locations.
 - **Update:** pull and run `./install.sh` again. It replaces the installed copy and refreshes an installed skill; add
@@ -229,7 +230,8 @@ logast scan . --since origin/main --format sarif > logast.sarif  # changed lines
 
 - **It switches nothing on by itself.** Each behaviour has a `logging-support.*.enabled` property, off unless
   `true`; logast writes the ones a pack uses into `application.yml`.
-- A service gets its classes copied in (`support.mode: vendor`, the default): nothing to publish.
+- A service gets its classes copied in (`support.mode: vendor`): nothing to publish. Once the service's build resolves
+  the starter (published with `install.sh`), `apply` adds the jar instead.
 
 Properties and modes: [docs/starter.md](docs/starter.md).
 

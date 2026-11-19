@@ -70,6 +70,8 @@ val functionalTestTask = tasks.register<Test>("functionalTest") {
         "publishAllPublicationsToLogastTestRepository")
     systemProperty("logast.initScript", layout.buildDirectory.file("init-script/logast.gradle").get().asFile.absolutePath)
     systemProperty("logast.testRepo", rootProject.layout.buildDirectory.dir("logast-test-repo").get().asFile.absolutePath)
+    systemProperty("logast.publishingScript", rootProject.file("gradle/publishing.gradle").absolutePath)   // #127
+    inputs.file(rootProject.file("gradle/publishing.gradle"))
     systemProperty("logast.version", project.version.toString())
     systemProperty("logast.fixture.classpath",
         project(":fixtures:sample-app").layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)

@@ -17,14 +17,20 @@ services: one starter, one company policy, one vocabulary, one report and one CI
 By default (`support.mode: vendor`) logast copies the `logging-support` classes into each service. To have services
 depend on the starter instead:
 
-1. Publish it to your repository:
+1. Publish it to your repository: `./install.sh` offers the repositories your Gradle already knows (with their
+   credentials) or another URL; `./install.sh --publish-to <name|url>` without asking. By hand:
 
    ```bash
    ./gradlew :logging-support:publish :test-capture:publish \
        -PrepoUrl=https://nexus.example.com/repository/maven-releases/ -PrepoUser=… -PrepoPassword=…
+   # or -PrepoName=<a repository from ./gradlew -q logastRepositories>, with the credentials configured on it
    ```
 
-2. Set it once in the company policy; every service that extends it switches:
+   That alone is enough for services whose build resolves from there: `apply` checks it with the service's own
+   repositories and adds the jar instead of copying the classes in, with no repository line
+   ([configuration.md](configuration.md#support-the-runtime-helper-library)).
+
+2. Or set it once in the company policy; every service that extends it switches:
 
    ```yaml
    support:

@@ -1,0 +1,123 @@
+// Where logast's libraries publish besides Maven Local (#127); applied by the root build.gradle.kts.
+//
+//   ./gradlew -q logastRepositories                 the Maven repositories this machine's Gradle configures for this build
+//                                                   (settings and projects, with what ~/.gradle/init.d scripts add),
+//                                                   without Maven Central, the Plugin Portal and Maven Local: name<TAB>url
+//   -PrepoName=<name>                               publish to that repository ("company"), with the credentials
+//                                                   configured on it
+//   -PrepoUrl=<url> (REPO_URL)                      publish to that URL ("company"), with -PrepoUser/-PrepoPassword
+//                                                   (REPO_USER / REPO_PASSWORD)
+//   ./gradlew -q logastPublishTarget [-PrepoName=…]  where "company" points: name<TAB>url<TAB>user (or -)<TAB>password set|-
+//
+// Then `./gradlew :logging-support:publishAllPublicationsToCompanyRepository` (install.sh does that).
+
+def publicHosts = ['repo.maven.apache.org', 'repo1.maven.org', 'plugins.gradle.org']
+
+// every Maven repository the build resolves from, settings first; a URL once
+def knownRepositories = {
+    def all = []
+    if (gradle.extensions.extraProperties.has('logastSettingsRepositories')) {
+        gradle.extensions.extraProperties.get('logastSettingsRepositories').each { all.addAll(it) }
+    }
+    rootProject.allprojects.each { all.addAll(it.repositories) }
+    def seen = new HashSet()
+    all.findAll { it instanceof MavenArtifactRepository && it.url != null && seen.add(it.url.toString().replaceAll('/+$', '')) }
+}
+
+def offered = { MavenArtifactRepository r ->
+    def url = r.url
+    if (r.name == 'MavenLocal' || publicHosts.contains(url.host)) {
+        return false
+    }
+    if (url.scheme == 'file') {
+        def local = new File(System.getProperty('maven.repo.local') ?: "${System.getProperty('user.home')}/.m2/repository").canonicalFile
+        return new File(url).canonicalFile != local
+    }
+    true
+}
+
+// the credentials configured on a repository, without giving one that has none an empty set
+def configuredCredentials = { MavenArtifactRepository r ->
+    try {
+        def c = r.configuredCredentials   // AuthenticationSupportedInternal (Gradle 6.6+): Property<Credentials>
+        return c instanceof Provider ? c.orNull : c
+    } catch (MissingPropertyException ignored) {
+        return r.credentials   // older Gradle: assigns empty credentials to a repository without any
+    }
+}
+
+tasks.register('logastRepositories') {
+    group = 'publishing'
+    description = 'Lists the Maven repositories this build resolves from on this machine (for install.sh): name, url'
+    notCompatibleWithConfigurationCache('reads every project\'s repositories')
+    doLast {
+        knownRepositories().findAll(offered).each { println "${it.name}\t${it.url}" }
+    }
+}
+
+def repoName = findProperty('repoName')
+def repoUrl = findProperty('repoUrl') ?: System.getenv('REPO_URL')
+if (repoName && repoUrl) {
+    throw new GradleException("-PrepoName and -PrepoUrl (REPO_URL) both name where to publish: give one")
+}
+
+// "company": the repository named repoName as this machine configures it, or repoUrl with repoUser/repoPassword
+def company = { RepositoryHandler repos ->
+    if (repoName) {
+        def source = knownRepositories().find { it.name == repoName }
+        if (source == null) {
+            throw new GradleException("no repository named '$repoName' in this build: ./gradlew -q logastRepositories lists them")
+        }
+        def creds = configuredCredentials(source)
+        repos.maven {
+            name = 'company'
+            url = source.url
+            allowInsecureProtocol = source.allowInsecureProtocol
+            if (creds instanceof PasswordCredentials && creds.username != null) {
+                it.credentials(PasswordCredentials) {
+                    username = creds.username
+                    password = creds.password
+                }
+            }
+        }
+    } else if (repoUrl) {
+        repos.maven {
+            name = 'company'
+            url = repoUrl
+            def user = findProperty('repoUser') ?: System.getenv('REPO_USER')
+            if (user != null) {
+                it.credentials(PasswordCredentials) {
+                    username = user
+                    password = findProperty('repoPassword') ?: System.getenv('REPO_PASSWORD')
+                }
+            }
+        }
+    }
+}
+
+// once every project is configured: the init scripts' and builds' repositories are all there
+gradle.projectsEvaluated {
+    subprojects.each { p ->
+        p.plugins.withId('maven-publish') {
+            company(p.extensions.getByType(PublishingExtension).repositories)
+        }
+    }
+}
+
+tasks.register('logastPublishTarget') {
+    group = 'publishing'
+    description = 'Where -PrepoName / -PrepoUrl publish: name, url, user, whether a password is set'
+    notCompatibleWithConfigurationCache('reads the publishing repositories')
+    doLast {
+        def target = subprojects.findResult { p ->
+            p.extensions.findByType(PublishingExtension)?.repositories?.findByName('company')
+        }
+        if (target == null) {
+            println '-'
+        } else {
+            def c = configuredCredentials(target)
+            def user = c instanceof PasswordCredentials ? c.username : null
+            println "${target.name}\t${target.url}\t${user ?: '-'}\t${c instanceof PasswordCredentials && c.password ? 'password set' : '-'}"
+        }
+    }
+}

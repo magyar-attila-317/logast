@@ -1,9 +1,18 @@
 // Written by `logast classpath`: dumps every project's compileClasspath plus its compiled main classes (when they
 // already exist from a normal build; nothing is compiled here) into <root>/.logast/classpath-<project>.txt.
 // With class directories present, apply rounds re-parse only the files they changed.
+// #127: it also tries to resolve the support jar of this logast's release with the build's own repositories (a detached
+// configuration, lenient: a missing jar or an unreachable repository is a "no") and writes the answer to
+// <root>/.logast/support-resolvable.txt; resolvable, apply adds the jar instead of copying its classes in.
+def logastSupport = 'dev.logast:logging-support:@LOGAST_SUPPORT_VERSION@'
+def logastSupportChecked = java.util.Collections.synchronizedList([])
 allprojects {
     tasks.register('logastClasspath') {
         notCompatibleWithConfigurationCache('reads configurations at execution time')
+        if (project == project.rootProject) {
+            // the root writes the answer once every project has checked
+            dependsOn(project.subprojects.collect { it.path + ':logastClasspath' })
+        }
         doLast {
             def cp = project.configurations.findByName('compileClasspath')
             if (cp != null && cp.canBeResolved) {
@@ -16,6 +25,19 @@ allprojects {
                     entries += ss.main.output.classesDirs.files.findAll { d -> d.exists() && project.fileTree(d).matching { include '**/*.class' }.files.size() > 0 }.collect { it.absolutePath }
                 }
                 out.text = entries.join('\n')
+                def found = false
+                try {
+                    def support = project.configurations.detachedConfiguration(project.dependencies.create(logastSupport))
+                    support.transitive = false
+                    found = !support.incoming.artifactView { v -> v.lenient(true) }.files.files.isEmpty()
+                } catch (Exception ignored) {
+                }
+                logastSupportChecked << found
+            }
+            if (project == project.rootProject && !logastSupportChecked.isEmpty()) {
+                def out = project.file('.logast/support-resolvable.txt')
+                out.parentFile.mkdirs()
+                out.text = "resolvable=${logastSupportChecked.contains(true)}\nversion=${logastSupport.split(':')[2]}\n"
             }
         }
     }

@@ -78,21 +78,10 @@ public final class PolicyLoader {
      */
     public static Policy load(Path root, Path explicit, List<String> extraParents, Path project) {
         PolicyLoader loader = new PolicyLoader();
-        ObjectNode merged = JsonNodeFactory.instance.objectNode();
-        loader.layer(merged, DEFAULTS, null);
-        for (String extra : extraParents) {
-            loader.layer(merged, extra, null);
-        }
+        ObjectNode merged = loader.merge(root, explicit, extraParents, project);
         Path file = explicit != null ? explicit : root == null ? null : defaultFile(root);
-        if (file != null && Files.exists(file)) {
-            String top = file.toAbsolutePath().normalize().toString();
-            if (project != null) {
-                loader.relativeTo.put(top, project.toAbsolutePath().normalize().resolve(file.getFileName()).toString());
-            }
-            loader.layer(merged, top, null);
-        } else if (explicit != null) {
-            throw new IllegalArgumentException("policy file not found: " + explicit);
-        }
+        // #127: no layer chose the support mode: dependency when the service's build resolves the starter
+        SupportResolvable.decide(merged, project != null ? project : root);
         merged.remove("extends");
         merged.remove("fleet");
         merged.set("overrides", JsonNodeFactory.instance.arrayNode().addAll(loader.overrides.stream().map(TextNode::new).toList()));
@@ -104,6 +93,31 @@ public final class PolicyLoader {
             throw new IllegalArgumentException("invalid policy (" + file + "): " + e.getMessage(), e);
         }
         return loader.validate(policy);
+    }
+
+    /** The layers merged (defaults, {@code extraParents}, the file with its parents), as the policy is read from. */
+    private ObjectNode merge(Path root, Path explicit, List<String> extraParents, Path project) {
+        ObjectNode merged = JsonNodeFactory.instance.objectNode();
+        layer(merged, DEFAULTS, null);
+        for (String extra : extraParents) {
+            layer(merged, extra, null);
+        }
+        Path file = explicit != null ? explicit : root == null ? null : defaultFile(root);
+        if (file != null && Files.exists(file)) {
+            String top = file.toAbsolutePath().normalize().toString();
+            if (project != null) {
+                relativeTo.put(top, project.toAbsolutePath().normalize().resolve(file.getFileName()).toString());
+            }
+            layer(merged, top, null);
+        } else if (explicit != null) {
+            throw new IllegalArgumentException("policy file not found: " + explicit);
+        }
+        return merged;
+    }
+
+    /** The merged layers of the project's policy as written, before any default is decided (#127). */
+    static ObjectNode merged(Path root, Path explicit) {
+        return new PolicyLoader().merge(root, explicit, List.of(), null);
     }
 
     /** Errors fail the load, all of them in one message; warnings travel with the policy. */
