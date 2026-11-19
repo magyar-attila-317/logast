@@ -21,6 +21,9 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 <label class="muted" style="margin:0;font-weight:400"><input type="checkbox" id="auto" checked> also apply AUTO orders</label>
 <button class="secondary" id="dry">Dry run</button><button id="write">Apply to files</button></div></header>
 <main><p class="muted" id="intro"></p><div id="result"></div><div id="list"></div>
+<section id="decisions"><h2 style="font-size:15px">Metrics and retries <span class="muted" style="font-weight:400">optional: left blank, each keeps its default</span></h2>
+<div id="metrics"></div><div id="retry"></div>
+<button class="secondary" id="save">Save decisions</button> <span class="muted" id="saved">then Dry run / Apply, or <code>logast apply .</code></span></section>
 <details id="others"><summary>AUTO and REPORT-ONLY orders</summary><div id="rest"></div></details></main>
 <script>
 const T = new URLSearchParams(location.search).get('t');
@@ -43,6 +46,28 @@ async function load() {
       <div class="err" data-err></div></div>`).join('') || '<p>No orders need text.</p>';
   document.getElementById('rest').innerHTML = rest.map(o => `<div class="card"><div class="top"><span class="id">${o.id}</span><span class="sev ${o.severity}">${o.severity}</span><b>${esc(o.kind)}</b><span class="muted">${esc(o.where)}</span></div><div>${esc(o.title)}</div>${o.suggestion ? `<div class="muted">${esc(o.suggestion)}</div>` : ''}</div>`).join('');
 }
+async function loadDecisions() {
+  const d = await api('/api/decisions');
+  const opt = (vals, cur) => vals.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${v || '(blank)'}</option>`).join('');
+  document.getElementById('metrics').innerHTML = d.metrics.map(m => `
+    <div class="card" data-metric="${esc(m.id)}"><div class="top"><span class="id">${esc(m.id)}</span><b>${esc(m.message)}</b><span class="muted">${esc(m.where)}</span></div>
+      <label>count <span class="muted" style="font-weight:400">${esc(m.default)}${m.tag ? ' · tag: ' + esc(m.tag) : ''}</span></label>
+      <select data-count>${opt(['', 'counter', 'tag', 'skip'], m.count)}</select>
+      <label>name / outcome</label><input type="text" data-name value="${esc(m.name)}"><input type="text" data-outcome value="${esc(m.outcome)}"></div>`).join('');
+  document.getElementById('retry').innerHTML = d.retry.map(r => `
+    <div class="card" data-retry="${esc(r.id)}"><div class="top"><b>${esc(r.id)}</b><span class="muted">${esc(r.where)}</span></div>
+      <label>retry <span class="muted" style="font-weight:400">${esc(r.default)}</span></label><select data-answer>${opt(['', 'yes', 'no'], r.retry)}</select></div>`).join('');
+  document.getElementById('decisions').hidden = !d.metrics.length && !d.retry.length;
+}
+async function saveDecisions() {
+  const metrics = {}, retry = {};
+  document.querySelectorAll('[data-metric]').forEach(c => metrics[c.dataset.metric] = {count: c.querySelector('[data-count]').value,
+    name: c.querySelector('[data-name]').value, outcome: c.querySelector('[data-outcome]').value});
+  document.querySelectorAll('[data-retry]').forEach(c => retry[c.dataset.retry] = c.querySelector('[data-answer]').value);
+  const r = await api('/api/decide', {metrics, retry});
+  document.getElementById('saved').textContent = `${r.saved} saved to .logast/decisions/; then Dry run / Apply, or logast apply .`;
+}
+document.getElementById('save').onclick = saveDecisions;
 function fills() {
   const out = {};
   document.querySelectorAll('#list .card').forEach(c => {
@@ -66,11 +91,12 @@ async function run(write) {
     }
     res.innerHTML = `<div class="card"><b class="${Object.keys(r.rejected||{}).length ? '' : 'ok'}">${write ? 'Applied' : 'Dry run'}: ${r.applied.length} applied, ${Object.keys(r.rejected||{}).length} rejected, ${r.changedFiles.length} files</b>
       ${write ? '' : `<details><summary>diff</summary><div id="diff">${esc(r.diff)}</div></details>`}</div>`;
-    if (write) await load();
+    if (write) { await load(); await loadDecisions(); }
   } catch (e) { res.innerHTML = `<p class="err">${esc(e)}</p>`; }
   for (const b of document.querySelectorAll('button')) b.disabled = false;
 }
 document.getElementById('dry').onclick = () => run(false);
 document.getElementById('write').onclick = () => { if (confirm('Write the changes to the project files?')) run(true); };
 load();
+loadDecisions();
 </script></body></html>

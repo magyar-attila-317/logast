@@ -29,7 +29,7 @@ class FillsFileTest {
         Path file = root.resolve(FillsFile.PATH);
         assertThat(FillsFile.update(root, List.of(order("SWA-1"))).written()).isTrue();
         String created = Files.readString(file);
-        assertThat(created).startsWith("# Write the message text").contains("# 1 finding(s) below need a message text.\n")
+        assertThat(created).startsWith("# Optional. Write a message text").contains("# 1 finding(s) below need a message text.\n")
                 .contains("SWA-1:\n  MSG: \"\"\n  _MSG: \"What failed | was: Export failed\"\n  _where: src/A.java:12 A.run\n");
         assertThat(FillsFile.update(root, List.of(order("SWA-1"))).written()).as("nothing changed").isFalse();
 
@@ -46,6 +46,22 @@ class FillsFileTest {
             FillsFile.save(root, Map.of("SWA-2", Fill.of(Map.of("MSG", text), List.of())));
             assertThat(FillsFile.read(file).get("SWA-2").slots()).as("read back as written").containsEntry("MSG", text);
         }
+    }
+
+    /** #122: every decision file says what an entry left blank does, so nothing in it reads as required. */
+    @Test
+    void theHeadersSpellOutWhatABlankEntryDoes() throws IOException {
+        FillsFile.update(root, List.of(order("SWA-1")));
+        assertThat(DecisionYaml.header(root.resolve(FillsFile.PATH))).startsWith("# Optional.")
+                .contains("Left blank: nothing changes, the current or generated text stays.").doesNotContain("--auto");
+        WorkOrder outcome = new WorkOrder("OUM-1", MetricsFile.RULE, List.of(MetricsFile.RULE), "low", "t", "src/A.java", 12, List.of(),
+                "A.run", List.of(), null, List.of(), Map.of(), null, List.of(),
+                Map.of("name", "a.run", "outcome", "done", "event", "done", "message", "INFO \"Done\""), null, null, List.of());
+        MetricsFile.update(root, List.of(outcome));
+        assertThat(DecisionYaml.header(root.resolve(MetricsFile.PATH)).replace("\n# ", " ")).startsWith("# Optional.")
+                .contains("Left blank: no metric is added.").doesNotContain("--auto");
+        assertThat(dev.logast.Traffic.template(List.of(), dev.logast.Traffic.none()))
+                .contains("# Optional. Left blank: no volume estimate");
     }
 
     @Test

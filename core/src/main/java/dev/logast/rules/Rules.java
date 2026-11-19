@@ -374,7 +374,7 @@ public final class Rules {
                     .data("message", u.level().toUpperCase(java.util.Locale.ROOT) + " \"" + u.message() + "\"")
                     .data("frequency", u.frequency()).data("paths", u.paths()).data("tagAvailable", g.tagAvailable())
                     .doneWhen("a metric counts this outcome, or its decision in " + dev.logast.apply.MetricsFile.PATH
-                            + " is applied (logast apply . --auto)");
+                            + " is applied (logast apply .)");
             if (!ctx.policy.metrics().amounts().equals("off") && !g.amounts().isEmpty()) {
                 b.data("amounts", List.copyOf(g.amounts().keySet()));   // numbers the line logs: metrics.yaml offers them
             }
@@ -390,7 +390,7 @@ public final class Rules {
             OrderBuilder b = builders.get(i);
             String advice = "Decide in " + dev.logast.apply.MetricsFile.PATH + ": count: counter (Outcomes.count(\"" + g.name()
                     + "\", \"" + u.event() + "\"))" + (g.tagAvailable() ? ", tag (Outcomes.tag(\"" + u.event() + "\") on the running timer)" : "")
-                    + " or skip; then logast apply . --auto. Count it only if a dashboard or alert needs it.";
+                    + " or skip; then logast apply . Count it only if a dashboard or alert needs it.";
             dev.logast.apply.MetricsFile.Decision d = decisions.get(b.id());
             String marker = null;
             String category = d == null ? defaultCategory(ctx, g) : null;

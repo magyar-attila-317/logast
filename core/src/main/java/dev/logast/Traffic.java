@@ -90,7 +90,7 @@ public final class Traffic {
         StringBuilder sb = new StringBuilder()
                 .append("# Calls per day for each entrypoint, from production (e.g. Prometheus:\n")
                 .append("#   sum by (method, uri) (increase(http_server_requests_seconds_count[1d])) ).\n")
-                .append("# Leave a value empty when you don't know it: logast never estimates traffic.\n")
+                .append("# Optional. Left blank: no volume estimate (logast never estimates traffic); log levels and metrics stay cautious.\n")
                 .append("# Regenerate with `logast traffic <root>`: filled-in values are kept, new entrypoints are added.\n")
                 .append("entrypoints:\n");
         Set<String> labels = new LinkedHashSet<>();

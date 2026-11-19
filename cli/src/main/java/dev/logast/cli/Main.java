@@ -531,14 +531,19 @@ public final class Main {
                 also.add(new dev.logast.Todo.Item("read the REJECTED lines above", (r.rejected().size() == 1 ? "1 fix" : r.rejected().size() + " fixes")
                         + " could not be applied; each says why"));
             }
+            // #122: what this run did comes first ("Done"); what is left is optional ("Optional (N)", Todo.lines)
+            List<String> done = new ArrayList<>();
             if (write && !r.changedFiles().isEmpty()) {
-                also.add(new dev.logast.Todo.Item("git diff", "review the changes (one diff per kind of change in .logast/reports/steps/)"));
+                done.add(Ansi.bold("Done: ") + dev.logast.Todo.plural(r.applied().size(), "change") + " in "
+                        + dev.logast.Todo.plural(r.changedFiles().size(), "file")
+                        + (cp.isEmpty() ? "" : ", each compiled before it was kept"));
+                done.add("  review: " + Ansi.cyan("git diff") + Ansi.dim("   (one diff per kind of change in .logast/reports/steps/)"));
             }
             // what is left after this run: what logast still applies, what waits on the person, the optional checks (#101)
             dev.logast.orders.ScanResult left = write ? r.after() : r.before();
             dev.logast.Todo todo = dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, r.applied(), write);
             also.addAll(todo.also());
-            printBlocks(List.of(), todo.lines(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
+            printBlocks(done, todo.lines(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
                     ledgerLines(ledger, List.of()), dev.logast.Todo.alsoLines(also));
             return r.rejected().isEmpty() ? 0 : 1;
         }

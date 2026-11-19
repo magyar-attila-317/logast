@@ -97,7 +97,7 @@ OUM-ed9954:
   _frequency: low
   _tag: not available here …
 ```
-`logast apply . --auto` then writes one line after the log line: `Outcomes.count("settlement.export", "completed")` (a
+`logast apply .` then writes one line after the log line: `Outcomes.count("settlement.export", "completed")` (a
 counter `settlement.export{outcome="completed"}`, created once and cached), `Outcomes.tag("completed")` (`outcome` on the
 timer already running, offered only where one is known to run), or for `skip` a `// logast:ignore
 METRIC_OUTCOME_UNMEASURED` comment, so the decision lives in the code. `Outcomes` is in logging-support (copied in

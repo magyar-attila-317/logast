@@ -120,18 +120,14 @@ final class Init implements Callable<Integer> {
             Out.skipped(".logast/baseline.json", "not recorded (add --baseline, or later `logast scan . --update-baseline`)");
         }
 
+        // #122: the flow, in order; only apply is needed: it reads the classpath itself, and every decision has a default
         List<String[]> next = new ArrayList<>();
-        if (!haveClasspath) {
-            next.add(new String[]{"logast classpath .", "lets logast understand types (needs a working Gradle build)"});
-        }
-        // the whole flow, in order: the files to fill in only exist after the first apply (their entries belong to the
-        // code apply writes), and the second apply runs on top of the migrated code
-        next.add(new String[]{"open logast.yaml", "organise the found terms as its example shows; the comments explain every setting"});
-        next.add(new String[]{"logast apply .", "changes the code and creates .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml "
-                + "(--dry-run: a preview)"});
-        next.add(new String[]{"fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml", "the texts and metric decisions only a person knows"});
-        next.add(new String[]{"logast apply .", "again, on the migrated code (don't revert it): writes what you filled in"});
+        next.add(new String[]{"logast apply .", "changes the code; every change is compiled before it is kept (--dry-run: a preview)"
+                + (haveClasspath ? "" : "; reads the classpath first (a working Gradle build)")});
         next.add(new String[]{"git diff", "review the result"});
+        next.add(new String[]{"optional: logast review", "message texts, metrics, retries in .logast/decisions/; each has a default. "
+                + "Then logast apply . again, on the migrated code (don't revert it)"});
+        next.add(new String[]{"optional: open logast.yaml", "organise the found terms as its example shows; the comments explain every setting"});
         Out.next(next);
         return 0;
     }

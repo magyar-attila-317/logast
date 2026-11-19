@@ -28,7 +28,7 @@ public final class Sarif {
         for (WorkOrder o : orders) {
             String text = (o.title() == null ? o.rule() : o.title())
                     + (o.suggestion() == null ? "" : " — " + o.suggestion())
-                    + " [" + o.id() + (o.reportOnly() ? ", report-only" : o.slots().isEmpty() ? ", fix: logast apply --auto" : ", fix: needs text") + "]";
+                    + " [" + o.id() + (o.reportOnly() ? ", report-only" : o.slots().isEmpty() ? ", fix: logast apply" : ", fix: needs text") + "]";
             List<Map<String, Object>> locations = new ArrayList<>();
             locations.add(location(o.file(), o.line()));
             Map<String, Object> result = new LinkedHashMap<>();

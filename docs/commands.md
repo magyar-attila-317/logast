@@ -5,11 +5,11 @@ examples. Output samples are illustrations; counts and ids differ per service an
 
 | command | what it does |
 |---|---|
-| `logast init [svc]` | one-time setup: `logast.yaml`, `.gitignore`, classpath, traffic template (`--baseline` for CI) |
+| `logast init [svc]` | optional: choose before the first apply (`logast.yaml`, `.gitignore`, classpath, traffic template; `--baseline` for CI). `apply` does the same setup itself when there is no `logast.yaml` |
 | `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
 | `logast scan <svc>` | finds gaps, writes `.logast/reports/orders.json`, prints the work orders |
 | `logast apply <svc> [--only ids] [--dry-run] [--force]` | applies every order that needs no text (`--only`: just these) on a scratch copy, rescanning between rounds, and writes the result (`--dry-run`: preview only). Refuses a git working tree with uncommitted changes unless `--force`. On a service without `logast.yaml` it writes one first (what `init` writes), on a Gradle build without a classpath file it reads one. Message texts come from `.logast/decisions/messages.yaml` (or `--fills <file>`); `--auto` and `--write` are accepted and are the default |
-| `logast review <svc> [--open]` | local page for people to write the messages and apply |
+| `logast review <svc> [--open]` | local page for the optional decisions (message texts, metrics, retries), dry run and apply |
 | `logast verify <svc>` | runs the existing tests with log capture and checks what was really logged |
 | `logast explain <svc> [--entrypoint "POST /x"]` | lists entrypoints, or the call tree below one with log/MDC/async markers |
 | `logast lifecycle <svc>` | every flow's lifecycle lines: which exist, who owns the start and the outcome, what logast will add; implementation families that log unevenly |
@@ -49,13 +49,16 @@ round, the number of fixes done and the elapsed time. In CI or a pipe each step 
 
 ## init
 
+Optional: `apply` on a service without `logast.yaml` does the same setup with the defaults (every pack, the key style
+and log format the code already uses, the keys it finds). Run `init` first to choose differently.
+
 | option | what it does |
 |---|---|
 | `--extends <url\|file>` | build on your company's shared settings (comma-separated) |
 | `--key-style <style>` | spelling of MDC and `[k=v]` keys: `dotted`, `camel`, `pascal`, `snake`. Without it: the style the code already uses most, else `camel` |
 | `--keep-wording` | legacy service: fix structure, keep the wording of existing messages |
-| `--support vendor` | copy the [starter](starter.md)'s classes into the service instead of adding the library (until it is in your repository) |
-| `--pack logging,tracing,metrics` | which packs run (default `logging,tracing`; also `metrics`, `resilience`, `errors`, `audit`) |
+| `--support vendor` | copy the [starter](starter.md)'s classes into the service (the default unless the policy names a repository; see [platform.md](platform.md)) |
+| `--pack logging,tracing,metrics` | which packs run (default: all six, `logging`, `tracing`, `metrics`, `resilience`, `errors`, `audit`) |
 | `--baseline` | scan once and record today's findings for CI |
 | `--no-classpath` / `--no-traffic` | skip those steps |
 | `--force` | write a fresh `logast.yaml` over an existing one |
@@ -117,24 +120,23 @@ SWA-d5b58b  low  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/shop
 
 ### What happens next
 
-The end of `scan` and `apply` is for a person: it groups what is left by what you do about it, not by rule.
-`scan --format summary` prints only that part, plus the worst findings that wait on you:
+The end of `scan` and `apply` is for a person: it says what was done and groups what is left by what you may do about
+it, not by rule. Nothing in it is required: every entry has a default. `scan --format summary` prints only that part,
+plus the worst findings:
 
 ```
 Applied earlier: 100 changes in 53 files (git diff to review)
 
-Waiting on you — logast can't continue without these:
-  21 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
-  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
-  34 decisions                     → logast scan .   (each says what to decide)
+Optional (67) — left as is, each keeps its default:
+  21 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
+  12 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
+  34 decisions                      → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
-  then run: logast apply . --auto --write   (on this code: don't revert it)
+  to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
 Fix first (high):
   async work loses the log context   src/…/EdgeFlow.java:44          ASYNC_CONTEXT_LOSS
   async work loses the log context   src/…/QuoteController.java:18   ASYNC_CONTEXT_LOSS
-  async work loses the log context   src/…/QuoteController.java:19   ASYNC_CONTEXT_LOSS
-  async work loses the log context   src/…/QuoteController.java:27   ASYNC_CONTEXT_LOSS
   transactions without a timeout     src/…/application.yml:1         DB_NO_TIMEOUT
   (23 medium, 39 low: logast scan .)
 
@@ -142,16 +144,18 @@ Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/r
 Places that should log: 17 of 21 do (jobs 9/9, endpoints 8/12)
 ```
 
-- **Applied earlier** appears when an `apply --write` changed files (`.logast/reports/last-apply.txt`).
-- **Next** comes first when logast still has fixes of its own to make: `logast apply . --auto --write`. The person's
-  work is then listed as what follows, since the apply changes it.
-- **Waiting on you** is what logast cannot do: message wording (`messages.yaml`), whether to count a logged outcome
-  (`metrics.yaml`), and decisions it only reports (the three most frequent kinds by name). `then run` appears when
-  something you fill in is applied by the next `apply`; decisions are done by changing the code.
-- When nothing is pending and nothing waits on you, it says `Nothing left`.
-- **Fix first** lists the findings of the worst severity among those that wait on you (up to 8), by a short name, with
+- **Applied earlier** appears when an `apply` changed files (`.logast/reports/last-apply.txt`).
+- **Done** (after `apply`): how many changes in how many files, each compiled before it was kept; `git diff` reviews them.
+- **Next** comes first in `scan` when logast still has fixes of its own to make: `logast apply .`.
+- **Optional (N)** is what logast leaves to you, each with its default: message wording (`messages.yaml`; blank: the
+  current or generated text stays), whether to count a logged outcome (`metrics.yaml`; blank: no metric), whether to
+  retry a call (`retry.yaml`; blank: no retry), and decisions it only reports (the three most frequent kinds by name).
+  One pointer covers them: `logast review` (or the yaml files), then `logast apply .` again. Reported decisions are
+  done by changing the code.
+- When nothing is pending and nothing is left to decide, it says `Nothing left`.
+- **Fix first** lists the findings of the worst severity among those left to a person (up to 8), by a short name, with
   the rule id last; the rest are counted.
-- **Also** holds the optional and follow-up checks (`logast verify .`, traffic rates, vocabulary).
+- **Also** holds the optional and follow-up checks (`logast verify .`, traffic rates).
 
 The compact listing (the default) ends with the same blocks, without "Fix first" (the listing is the detail).
 
@@ -161,7 +165,7 @@ report.
 
 ### Every log call is accounted for
 
-A line without a finding could mean "checked, fine" or "never looked at", so `scan` (and `apply --write`) also writes
+A line without a finding could mean "checked, fine" or "never looked at", so `scan` (and `apply`) also writes
 `.logast/reports/coverage.txt`: one line per log call, in file/line order, with what logast did with it:
 
 ```
@@ -180,7 +184,7 @@ Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/r
 
 | outcome | meaning |
 |---|---|
-| `fixed` | an `apply --write` changed it (rule and id). Later runs keep saying so while the file is unchanged since; the file's fingerprint is at the end of `coverage.txt` |
+| `fixed` | an `apply` changed it (rule and id). Later runs keep saying so while the file is unchanged since; the file's fingerprint is at the end of `coverage.txt` |
 | `reported` | a finding sits on the line (rule and id, as in the scan output) |
 | `ignored` | a `// logast:ignore RULE` comment silenced that rule there |
 | `skipped` | a rule passed it over on purpose, with the reason it recorded where it decided: a protected message, a log helper's body, a message that is not a literal (a constant, built at runtime), a message that comes from an argument (`"{}"`), a fluent call (`log.atInfo()…`: format and level not checked), TRACE (arguments not checked), the logging-support classes copied into the service, or another logging API (Log4j2, java.util.logging, …: logast edits SLF4J only) |
@@ -203,25 +207,27 @@ what is left, grouped by what you do about it ([what happens next](#what-happens
 applied (100): SLG-d7dbb8 SUP-065aa3 …
 files (53): …  ·  10 rounds, 41.2s
 
-Waiting on you — logast can't continue without these:
-  21 log lines need wording        → write "MSG" in .logast/decisions/messages.yaml
-  12 outcomes: count, tag or skip  → .logast/decisions/metrics.yaml
-  34 decisions                     → logast scan .   (each says what to decide)
+Done: 100 changes in 53 files, each compiled before it was kept
+  review: git diff   (one diff per kind of change in .logast/reports/steps/)
+
+Optional (67) — left as is, each keeps its default:
+  21 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
+  12 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
+  34 decisions                      → logast scan .   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
-  then run: logast apply . --auto --write   (on this code: don't revert it)
+  to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
 Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
-  git diff                                            review the changes (one diff per kind of change in .logast/reports/steps/)
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  logast verify .                                     build and run the tests with log capture: does the result really log what it should?
+  logast verify .                                               build and run the tests with log capture: does the result really log what it should?
 ```
 
-One `apply` does everything automatic; a second one is only for what you filled in. Fill the files, run
-`logast apply . --auto --write` again on the migrated code, and repeat until nothing is left. `logast scan .` shows
-the same without changing anything. `apply --write` records what it changed in `.logast/reports/last-apply.txt`, so a later
-scan starts with "Applied earlier: 100 changes in 53 files".
+One `apply` does everything automatic, and its result compiles: the service is done there. A second one is only for
+what you decided: `logast review` (or the files in `.logast/decisions/`), then `logast apply .` again on the migrated
+code. `logast scan .` shows the same without changing anything. `apply` records what it changed in
+`.logast/reports/last-apply.txt`, so a later scan starts with "Applied earlier: 100 changes in 53 files".
 
 - **Steps.** `apply` runs in steps (setup, structure, lines, mdc, messages, exceptions, levels, reports), each on the
   result of the previous one, and saves one diff per step in `.logast/reports/steps/` (`01-setup.diff`, `02-structure.diff`,
@@ -232,7 +238,7 @@ scan starts with "Applied earlier: 100 changes in 53 files".
   started/completed per method, the result still compiles) and prints `CHECK FAILED file:line` if something breaks
   that.
 - **Trace.** `.logast/reports/apply-trace.txt` records what each round applied and what its rescan brought up.
-- **Coverage.** With `--write`, `.logast/reports/coverage.txt` lists every log call of the result; the ones this run changed
+- **Coverage.** Unless `--dry-run`, `.logast/reports/coverage.txt` lists every log call of the result; the ones this run changed
   show as `fixed` ([every log call is accounted for](#every-log-call-is-accounted-for)).
 - `--only <ids>` restricts it to some orders; `--format json` prints the result for tools.
 
@@ -242,9 +248,16 @@ scan starts with "Applied earlier: 100 changes in 53 files".
 logast review . --open
 ```
 
-Opens a local page (127.0.0.1, token-protected) with one input per message. Texts already in `.logast/decisions/messages.yaml`
-are filled in, and what you type is saved there. It shows the code, the path from the entrypoint, the required
-phrasing and the suffix keys. *Dry run* shows the diff and any rejections; *Apply* writes.
+Opens a local page (127.0.0.1, token-protected) for everything optional, in one place:
+
+- one input per message; texts already in `.logast/decisions/messages.yaml` are filled in, and what you type is saved
+  there. It shows the code, the path from the entrypoint, the required phrasing and the suffix keys. Blank: the
+  current or generated text stays.
+- the outcomes of `.logast/decisions/metrics.yaml` (count: counter, tag or skip, name and outcome; blank: no metric) and
+  the retry candidates of `.logast/decisions/retry.yaml` (yes or no; blank: no retry). *Save decisions* writes them
+  into those files, which stay the stored form.
+
+*Dry run* shows the diff and any rejections; *Apply* writes (or run `logast apply .`).
 
 ## verify
 
@@ -395,7 +408,7 @@ standard"*. It follows [llm-workflow.md](llm-workflow.md):
 
 ```bash
 logast scan .                       # also writes .logast/decisions/messages.yaml: the LLM fills in the empty "MSG" values
-logast apply . --auto               # dry run: diff + REJECTED reasons (uses .logast/decisions/messages.yaml)
-logast apply . --auto --write
+logast apply . --dry-run            # diff + REJECTED reasons (uses .logast/decisions/messages.yaml)
+logast apply .
 logast scan .                       # until only REPORT-ONLY remains
 ```

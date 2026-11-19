@@ -266,6 +266,10 @@ abstract class E2eGoldenTest {
         assertThat(app.resolve("src/main/java/com/example/e2e/logging/MdcScope.java")).as("support classes copied in (vendor)").exists();
         assertThat(Files.readString(app.resolve("build.gradle.kts"))).as("no starter to publish").doesNotContain("logging-support");
         assertThat(first).as("no publishing step").doesNotContain("resolves");
+        assertThat(first).as("#122: what was done, then what is optional, with one pointer; no required step\n" + first)
+                .containsSubsequence("Done: ", "Optional (", "to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again")
+                .doesNotContain("logast vocabulary .").doesNotContain("--auto --write").doesNotContain("Waiting on you")
+                .doesNotContain("can't continue");
         String trace = Files.readString(app.resolve(".logast/reports/apply-trace.txt"));
         String afterPass1 = trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "";
         assertThat(afterPass1).as("pass 2 of the first apply applies nothing:\n" + trace).doesNotContain("applying");
@@ -1327,8 +1331,9 @@ abstract class E2eGoldenTest {
         Map<String, String> before = files(app);
         String output = run(app, "init", app.toString(), "--no-classpath");
         Files.writeString(app.resolve("OUTPUT.txt"), output);
-        assertThat(output).as("the flow, in order").containsSubsequence("logast apply .",
-                "fill in .logast/decisions/messages.yaml and .logast/decisions/metrics.yaml", "logast apply .", "git diff");
+        assertThat(output).as("the flow, in order").containsSubsequence("logast apply .", "git diff",
+                "optional: logast review", "Then logast apply . again");
+        assertThat(output).as("#122: nothing after the apply reads as required").doesNotContain("fill in").doesNotContain("--auto");
         Map<String, String> written = new TreeMap<>();
         files(app).forEach((k, v) -> {
             if (!v.equals(before.get(k))) {

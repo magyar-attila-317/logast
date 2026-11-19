@@ -320,7 +320,7 @@ reporting:
                           #   metrics.yaml (a debugging aid; scan adds and removes them)
 ```
 
-Independent of this setting, `scan` and `apply --write` with the logging pack write `.logast/reports/coverage.txt`: every log
+Independent of this setting, `scan` and `apply` with the logging pack write `.logast/reports/coverage.txt`: every log
 call with what logast did with it (fixed, reported, ignored, skipped with the reason, checked). See "Every log call is
 accounted for" in [commands](commands.md#every-log-call-is-accounted-for).
 
