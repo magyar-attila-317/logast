@@ -6536,12 +6536,19 @@ abstract class E2eGoldenTest {
     }
 
     /**
-     * #113: fleet compares services. orders calls three services and sends a Kafka record:
+     * #113: fleet compares services. orders calls four services and sends a Kafka record:
      * <ul>
-     *   <li>GET /shipments/{id} on shipping through a RestClient from the injected builder: the trace goes on;</li>
-     *   <li>POST http://billing/invoices through RestClient.create() (HTTP_CLIENT_UNTRACED): breaks at orders, the caller;</li>
-     *   <li>ledger.url (a property with no value in the code) + "/entries/" + id through a RestTemplate: matched on the path
-     *   only, and said so;</li>
+     *   <li>GET /shipments/{id} on shipping through a RestClient from the injected builder, its baseUrl from
+     *   {@code ${shipping.url:http://shipping:8080}}: confirmed by the host (#128), the trace goes on;</li>
+     *   <li>POST http://billing/invoices through RestClient.create() (HTTP_CLIENT_UNTRACED): breaks at orders, the caller.
+     *   invoicing has POST /invoices too: the host decides for billing (#128);</li>
+     *   <li>ledger.url + "/entries/" + id through a RestTemplate: ledger.url is set only in application-local.yml
+     *   (localhost, left out) and application-k8s.yml (ledger.finance.svc.cluster.local): confirmed, ledger (#128);</li>
+     *   <li>the same path on {@code ${archive.url:http://archive-service}}: a host that names no service of the fleet, listed
+     *   under "Same path, other host" and not as a link to ledger (#128);</li>
+     *   <li>GET /receipts/{id} without a base URL, which billing and invoicing both have: one ambiguous row (#128);</li>
+     *   <li>OpenFeign {@code @FeignClient(name = "invoice-api")} POST /invoices: invoicing's spring.application.name,
+     *   confirmed for invoicing (#128);</li>
      *   <li>topic orders.placed (sender and shipping's listener name it through a property set in application.yml),
      *   template observed: shipping's listener is observed (goes on), billing's is not (breaks at billing, the callee:
      *   KAFKA_OBSERVATION_DISABLED).</li>
@@ -6556,9 +6563,11 @@ abstract class E2eGoldenTest {
         Path shipping = tmp.resolve("shipping");
         Path billing = tmp.resolve("billing");
         Path ledger = tmp.resolve("ledger");
+        Path invoicing = tmp.resolve("invoicing");
         writeSource(orders, "com/example/orders/ShippingClient.java", """
                 package com.example.orders;
 
+                import org.springframework.beans.factory.annotation.Value;
                 import org.springframework.stereotype.Component;
                 import org.springframework.web.client.RestClient;
 
@@ -6566,8 +6575,8 @@ abstract class E2eGoldenTest {
                 class ShippingClient {
                     private final RestClient restClient;
 
-                    ShippingClient(RestClient.Builder builder) {
-                        this.restClient = builder.build();
+                    ShippingClient(RestClient.Builder builder, @Value("${shipping.url:http://shipping:8080}") String url) {
+                        this.restClient = builder.baseUrl(url).build();
                     }
 
                     String status(long id) {
@@ -6611,6 +6620,61 @@ abstract class E2eGoldenTest {
                     String entry(long id) {
                         return restTemplate.getForObject(ledgerUrl + "/entries/" + id, String.class);
                     }
+                }
+                """);
+        writeSource(orders, "com/example/orders/ArchiveClient.java", """
+                package com.example.orders;
+
+                import org.springframework.beans.factory.annotation.Value;
+                import org.springframework.boot.restclient.RestTemplateBuilder;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestTemplate;
+
+                @Component
+                class ArchiveClient {
+                    private final RestTemplate restTemplate;
+                    private final String archiveUrl;
+
+                    ArchiveClient(RestTemplateBuilder builder, @Value("${archive.url:http://archive-service}") String archiveUrl) {
+                        this.restTemplate = builder.build();
+                        this.archiveUrl = archiveUrl;
+                    }
+
+                    String archived(long id) {
+                        return restTemplate.getForObject(archiveUrl + "/entries/" + id, String.class);
+                    }
+                }
+                """);
+        writeSource(orders, "com/example/orders/ReceiptClient.java", """
+                package com.example.orders;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+
+                @Component
+                class ReceiptClient {
+                    private final RestClient restClient;
+
+                    ReceiptClient(RestClient.Builder builder) {
+                        this.restClient = builder.build();
+                    }
+
+                    String receipt(long id) {
+                        return restClient.get().uri("/receipts/{id}", id).retrieve().body(String.class);
+                    }
+                }
+                """);
+        writeSource(orders, "com/example/orders/InvoiceApi.java", """
+                package com.example.orders;
+
+                import org.springframework.cloud.openfeign.FeignClient;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+
+                @FeignClient(name = "invoice-api")
+                interface InvoiceApi {
+                    @PostMapping("/invoices")
+                    void create(@RequestBody String orderId);
                 }
                 """);
         writeSource(orders, "com/example/orders/OrderDispatch.java", """
@@ -6663,6 +6727,15 @@ abstract class E2eGoldenTest {
                 app:
                   topics:
                     placed: orders.placed
+                """);
+        // ledger.url only in profile files: the local one is left out, the Kubernetes one names ledger (#128)
+        Files.writeString(orders.resolve("src/main/resources/application-local.yml"), """
+                ledger:
+                  url: http://localhost:8083
+                """);
+        Files.writeString(orders.resolve("src/main/resources/application-k8s.yml"), """
+                ledger:
+                  url: http://ledger.finance.svc.cluster.local:8080
                 """);
         writeSource(shipping, "com/example/shipping/ShipmentController.java", """
                 package com.example.shipping;
@@ -6772,6 +6845,48 @@ abstract class E2eGoldenTest {
                     }
                 }
                 """);
+        writeSource(billing, "com/example/billing/ReceiptController.java", """
+                package com.example.billing;
+
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class ReceiptController {
+                    @GetMapping("/receipts/{receiptId}")
+                    String receipt(@PathVariable long receiptId) {
+                        return "receipt";
+                    }
+                }
+                """);
+        writeSource(invoicing, "com/example/invoicing/InvoiceController.java", """
+                package com.example.invoicing;
+
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class InvoiceController {
+                    @PostMapping("/invoices")
+                    void create(@RequestBody String orderId) {
+                    }
+
+                    @GetMapping("/receipts/{id}")
+                    String receipt(@PathVariable long id) {
+                        return "receipt";
+                    }
+                }
+                """);
+        Files.createDirectories(invoicing.resolve("src/main/resources"));
+        Files.writeString(invoicing.resolve("src/main/resources/application.yml"), """
+                spring:
+                  application:
+                    name: invoice-api
+                """);
         writeSource(ledger, "com/example/ledger/EntryController.java", """
                 package com.example.ledger;
 
@@ -6789,7 +6904,7 @@ abstract class E2eGoldenTest {
                 """);
         Path report = tmp.resolve("report");
         String out = run(tmp, "fleet", "--out", report.toString(), "--classpath-file", CLASSPATH,
-                orders.toString(), shipping.toString(), billing.toString(), ledger.toString());
+                orders.toString(), shipping.toString(), billing.toString(), ledger.toString(), invoicing.toString());
         assertThat(out).as("the untraced client: the caller's side, with its order")
                 .contains("orders -> billing  POST /invoices", "breaks at the caller (orders): RestClient in a field initializer")
                 .as("the unobserved listener: the callee's side")
@@ -6797,14 +6912,30 @@ abstract class E2eGoldenTest {
                 .as("traced client to an observed endpoint, observed template to an observed listener: no finding")
                 .contains("orders -> shipping  GET /shipments/{id}", "orders -> shipping  topic orders.placed")
                 .doesNotContain("breaks at the callee (shipping)")
-                .as("a base URL from a property: matched on the path only, and said so")
-                .containsPattern("orders -> ledger  GET /entries/\\{\\?}  \\(.*\\)  path only: base URL not in the code")
+                .as("#128: the host decides between services with the same path: a literal base URL")
+                .contains("confirmed: host billing (invoicing has this path too)")
+                .as("the client's baseUrl from a @Value constructor parameter's default")
+                .containsPattern("orders -> shipping  GET /shipments/\\{id}  \\(.*\\)  confirmed: host shipping\\n")
+                .as("a base URL only in profile files (the local one left out): a Kubernetes service name")
+                .containsPattern("orders -> ledger  GET /entries/\\{\\?}  \\(.*\\)  confirmed: host ledger.finance.svc.cluster.local\\n")
+                .as("OpenFeign's name: invoicing's spring.application.name")
+                .contains("confirmed: host invoice-api (spring.application.name of invoicing) (billing has this path too)")
+                .as("no base URL, two services with the path: one row with both candidates")
+                .containsPattern("orders -> billing or invoicing  GET /receipts/\\{id}  \\(.*\\)  ambiguous: billing or invoicing have this path")
+                .doesNotContain("orders -> billing  GET /receipts", "orders -> invoicing  GET /receipts")
+                .as("a host that names no service of the fleet: not a link, listed apart")
+                .contains("Same path, other host: 1 call", "orders -> http://archive-service  GET /entries/{?}",
+                        "different host: archive-service names no service of the fleet; ledger has this path")
+                .doesNotContain("orders -> ledger  GET /entries/{?}  (src/main/java/com/example/orders/ArchiveClient")
                 .as("one outcome under two names: reported with both places")
                 .contains("\"Order shipped\" counted as orders.shipped (orders), shipment.completed (shipping)")
                 .as("the same name in two services is no candidate").doesNotContain("invoices.sent (");
         String html = Files.readString(report.resolve("fleet.html"));
         assertThat(html).contains("<h2>Trace across services</h2>", "breaks at billing", "<h2>One outcome, several metric names</h2>",
-                "<code>shipment.completed</code> shipping");
+                "<code>shipment.completed</code> shipping")
+                .as("#128: the match in words, the candidates of an ambiguous call, the other-host list")
+                .contains("confirmed: host billing", "ambiguous: billing or invoicing have this path", "<b>invoicing</b>? <code>GET /receipts/{id}</code>",
+                        "<h2>Same path, other host</h2>", "different host: archive-service names no service of the fleet");
         Path json;
         try (Stream<Path> s = Files.list(report)) {
             json = s.filter(p -> p.getFileName().toString().matches("fleet-.*\\.json")).findFirst().orElseThrow();
@@ -6819,7 +6950,7 @@ abstract class E2eGoldenTest {
             }
         });
         // the per-service score lines move with every rule change: not this scenario's subject (#110)
-        snapshot.put("COMMANDS.txt", "=== logast fleet --out <tmp>/report orders shipping billing ledger\n"
+        snapshot.put("COMMANDS.txt", "=== logast fleet --out <tmp>/report orders shipping billing ledger invoicing\n"
                 + out.replace(tmp.toString(), "<tmp>").replace("<app>", "<tmp>").replaceAll("(?m)^\\S+\\s+score .*\\R", ""));
         snapshot.put("fleet-links.json", links);
         golden(EXPECTED.resolveSibling("expected-fleet-links"), snapshot);
@@ -6920,6 +7051,7 @@ abstract class E2eGoldenTest {
                     .containsPattern("payments\\s+score ").contains("snapshot just now").doesNotContain("no snapshot")
                     .as("the trace break between them")
                     .contains("checkout -> payments  POST /payments", "breaks at the caller (checkout)")
+                    .as("#128: the host names the member").contains("confirmed: host payments\n")
                     .as("the vocabulary conflict").contains("Vocabulary: 1 conflict", "paymentId ~ payment_id: same type Long");
             String json = run(tmp, "fleet", "payments-fleet", "--json");
             assertThat(dev.logast.orders.OrderJson.MAPPER.readTree(json).path("services")).hasSize(2);

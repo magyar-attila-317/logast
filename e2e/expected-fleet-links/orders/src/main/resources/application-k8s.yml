@@ -1,0 +1,2 @@
+ledger:
+  url: http://ledger.finance.svc.cluster.local:8080
