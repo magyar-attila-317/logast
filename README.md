@@ -172,7 +172,7 @@ Rules come in six packs, all on by default (`packs:` in `logast.yaml` switches o
 | [errors](docs/packs/errors.md) | error responses that don't leak internals, exceptions mapped to the right status, the trace id in error bodies, causes kept |
 | [audit](docs/packs/audit.md) | audit records that exist, say who, what and with which outcome, are written after commit and routed apart |
 
-Every rule, its severity and how it is fixed: [docs/rules.md](docs/rules.md) (`logast rules` lists them from the code).
+Every rule, its severity and how it is fixed: [docs/rules.md](docs/rules.md) (`logast explain rules` lists them from the code).
 Silence one finding with `// logast:ignore RULE` on the line or the line above.
 
 ---
@@ -194,7 +194,7 @@ vocabulary:
 - Every setting, with its default: [docs/configuration.md](docs/configuration.md).
 - Vocabulary, phrasing and levels: [docs/vocabulary.md](docs/vocabulary.md). The vocabulary starts from your code:
   the keys the service already uses, one term each, for you to organise.
-- `logast policy .` prints the merged result and every override.
+- `logast explain policy .` prints the merged result and every override.
 
 ---
 

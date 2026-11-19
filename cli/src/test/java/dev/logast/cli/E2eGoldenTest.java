@@ -463,7 +463,7 @@ abstract class E2eGoldenTest {
                   <root level="INFO"><appender-ref ref="JSON"/></root>
                 </configuration>
                 """);
-        String q = run(app, "queries", app.toString(), "--stdout", "--classpath-file", CLASSPATH);
+        String q = run(app, "explain", "queries", app.toString(), "--classpath-file", CLASSPATH);
         assertThat(q).as("Logstash fields").contains("in the `logstash` format")
                 .contains("index=shop-logs \"service.name\"=\"e2e-shop\" level=ERROR\n| stats count latest(_time) as last by logger_name, message")
                 .doesNotContain("log.level");
@@ -474,8 +474,38 @@ abstract class E2eGoldenTest {
         Files.writeString(policyOnly.resolve("logast.yml"), Files.readString(policyOnly.resolve("logast.yml"))
                 + "queries:\n  splunk:\n    index: shop-logs\n");
         assertThat(Files.readString(policyOnly.resolve("src/main/resources/application.yml"))).contains("console: ecs");
-        assertThat(run(policyOnly, "queries", policyOnly.toString(), "--stdout", "--classpath-file", CLASSPATH))
+        assertThat(run(policyOnly, "explain", "queries", policyOnly.toString(), "--classpath-file", CLASSPATH))
                 .as("the format of logast.yaml").contains("in the `logstash` format").contains(" level=ERROR").doesNotContain("log.level");
+    }
+
+    /**
+     * #125: every apply (after writing) and every scan writes metrics.md, queries.md and lifecycle.txt to
+     * .logast/reports: exactly what `logast explain metrics|queries|lifecycle` prints for the code as it then stands,
+     * and the run's last line says where they are.
+     */
+    @Test
+    void scanAndApplyWriteTheReportsExplainPrints() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Map<String, String> reports = Map.of("metrics", ".logast/reports/metrics.md", "queries", ".logast/reports/queries.md",
+                "lifecycle", ".logast/reports/lifecycle.txt");
+        String applied = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(applied).endsWith("\nreports: .logast/reports/ metrics.md queries.md lifecycle.txt "
+                + "(logast explain metrics|queries|lifecycle prints them)\n");
+        for (var e : reports.entrySet()) {
+            assertThat(app.resolve(e.getValue())).as("written by apply").exists();
+            assertThat(clean(app, Files.readString(app.resolve(e.getValue())))).as(e.getValue() + " after apply")
+                    .isEqualTo(run(app, "explain", e.getKey(), app.toString(), "--classpath-file", CLASSPATH)).isNotBlank();
+            Files.delete(app.resolve(e.getValue()));
+        }
+        assertThat(run(app, "scan", app.toString(), "--classpath-file", CLASSPATH)).contains("\nreports: .logast/reports/");
+        for (var e : reports.entrySet()) {
+            assertThat(clean(app, Files.readString(app.resolve(e.getValue())))).as(e.getValue() + " after scan")
+                    .isEqualTo(run(app, "explain", e.getKey(), app.toString(), "--classpath-file", CLASSPATH));
+        }
+        assertThat(run(app, "lifecycle", app.toString(), "--classpath-file", CLASSPATH)).as("the old name prints the same")
+                .isEqualTo(clean(app, Files.readString(app.resolve(reports.get("lifecycle")))));
+        assertThat(STDERR.toString()).contains("`logast lifecycle` is now `logast explain lifecycle`");
     }
 
     /**
@@ -753,8 +783,8 @@ abstract class E2eGoldenTest {
                 + "\n=== after writing every text and counting every outcome\n" + third);
         compile(app);
         // #106: the queries for what the service now measures and logs; every counter, observation and MDC key shows
-        String queries = run(app, "queries", app.toString(), "--classpath-file", CLASSPATH);
-        assertThat(queries).as("written, all three backends").contains("PromQL").contains("NRQL").contains("SPL");
+        String queries = Files.readString(app.resolve(".logast/reports/queries.md"));   // #125: the apply above wrote it
+        assertThat(queries).as("all three backends").contains("PromQL").contains("NRQL").contains("SPL");
         assertThat(Files.readString(app.resolve(".logast/reports/queries.md"))).as("counters through the catalog or inline, observations "
                         + "named by catalog constants")
                 .contains("sum by (outcome) (increase(pledge_resend_total{application=\"e2e-shop\"}[1h]))")
@@ -4426,7 +4456,7 @@ abstract class E2eGoldenTest {
                         + "        try (var mdc = MdcScope.of(\"pledgeId\", request.getPledgeId())) {\n");
         assertThat(actual.get(RELAY + "RelayLog.java")).as("RedisMessageListenerContainer logs a listener's exception: the "
                 + "logged-and-rethrown line goes").doesNotContain("Relay forward failed");
-        String lifecycle = run(tmp.resolve("app"), "lifecycle", tmp.resolve("app").toString(), "--classpath-file", classpath);
+        String lifecycle = run(tmp.resolve("app"), "explain", "lifecycle", tmp.resolve("app").toString(), "--classpath-file", classpath);
         assertThat(lifecycle.indexOf("grpc PledgeGrpcService.watch")).as("gRPC: the call's status is its outcome, like HTTP:\n" + lifecycle)
                 .isGreaterThan(lifecycle.indexOf("http (")).isLessThan(lifecycle.indexOf("message ("));
         golden(EXPECTED.resolveSibling("expected-relay-entrypoints"), actual);
@@ -8200,7 +8230,12 @@ abstract class E2eGoldenTest {
             System.setErr(err);
             STDERR.append(errBuf.toString(StandardCharsets.UTF_8));
         }
-        return buf.toString(StandardCharsets.UTF_8)
+        return clean(app, buf.toString(StandardCharsets.UTF_8));
+    }
+
+    /** Output as the snapshots hold it: the app folder as <app>, no colours, no times, no trailing blanks. */
+    private static String clean(Path app, String text) {
+        return text
                 .replace(app.toString(), "<app>")
                 .replaceAll("\u001b\\[[0-9;]*m", "")
                 .replaceAll("\\d+(\\.\\d+)?s\\b", "<t>")

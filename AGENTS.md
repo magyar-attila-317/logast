@@ -51,7 +51,7 @@ on real services; the background is in issue #7.
 
 ## How to investigate
 - Measure before redesigning: `.logast/apply-trace.txt` shows what each apply round did and what its rescan brought up;
-  `LOGAST_TIMING=1` prints scan times; `logast why . <key>` explains MDC placement.
+  `LOGAST_TIMING=1` prints scan times; `logast explain mdc <key>` explains MDC placement.
 - When behaviour differs between machines, suspect the environment first (classpath content, JDK version, Lombok,
   class folders), and reproduce it in a variant of an e2e test.
 - Check framework behaviour in the official documentation (Spring Boot properties, observation support) instead of

@@ -18,6 +18,8 @@ Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
   logast verify .                                               build and run the tests with log capture: does the result really log what it should?
 
+reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)
+
 === the same again (what one run left behind)
 applied (0):
 files (0):   ·  0 rounds, <t>
@@ -34,3 +36,5 @@ Log lines: 85 — 52 fixed, 15 with a finding, 10 fine, 8 not checked (.logast/r
 Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
   logast verify .                                               build and run the tests with log capture: does the result really log what it should?
+
+reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)

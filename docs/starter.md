@@ -62,6 +62,6 @@ comes from `gradle.properties`. `test-capture` is the jar `logast verify` adds t
   differ), then `./gradlew publish -PrepoUrl=…` to the repository your services resolve from (company Nexus, GitHub
   Packages, any Maven repository; Maven Local without `-PrepoUrl`).
 - A service that pins an older starter (`support.coordinates: …:<older>`) in dependency mode gets a warning from
-  `scan`, `apply` and `logast policy . --check`: generated code may call members the older release does not have.
+  `scan`, `apply` and `logast explain policy . --check`: generated code may call members the older release does not have.
   Pin the version of the logast you run, or use `support.mode: vendor` (the classes are copied into the service).
 

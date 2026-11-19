@@ -593,7 +593,7 @@ public static void pledgeResendFailed() {
 
 ### Queries for what the service now measures and logs
 
-`logast queries` turns the counters, observations and MDC keys into queries to paste (#106).
+`.logast/reports/queries.md` (written by every scan and apply) turns the counters, observations and MDC keys into queries to paste (#106).
 *`e2e/expected-decided/.logast/reports/queries.md`, with `queries.splunk.index: shop-logs`.*
 
 The counter of the failed resend above, in Prometheus and New Relic:

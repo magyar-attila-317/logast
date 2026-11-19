@@ -48,7 +48,7 @@ logging:
   rewriteExistingMessages: false   # legacy service: fix structure, keep the wording
 ```
 
-- Layers, merge order and overrides: [vocabulary.md](vocabulary.md#layers); `logast policy .` prints the merged
+- Layers, merge order and overrides: [vocabulary.md](vocabulary.md#layers); `logast explain policy .` prints the merged
   result and every override.
 - A complete company layer: [examples/restaurant-company.yaml](../examples/restaurant-company.yaml).
 - Every setting: [configuration.md](configuration.md).

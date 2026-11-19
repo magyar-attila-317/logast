@@ -66,8 +66,8 @@ public final class QueryWriter {
         Doc d = new Doc();
         List<String> hints = new ArrayList<>();
         Map<String, Integer> counts = new LinkedHashMap<>();
-        d.text("# Queries for " + s.service() + "\n\nWritten by `logast queries` from the code as it stands; run it again "
-                + "after `logast apply`. Time ranges and thresholds are starting points.\n");
+        d.text("# Queries for " + s.service() + "\n\nWritten by every `logast scan` and `logast apply` from the code as it stands "
+                + "(`logast explain queries` prints it). Time ranges and thresholds are starting points.\n");
         int before = d.count;
         if (q.backends().contains("prometheus")) {
             prometheus(s, d);

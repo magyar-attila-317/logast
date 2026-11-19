@@ -4,7 +4,7 @@ WARNING: 2 calls did not resolve: paths through them may be missing (`--format c
 143 findings: 93 logast fixes, 5 need a message, 11 outcomes to count or skip, 34 need your decision
   logast fixes     message not in house format 41, business id missing from MDC 7, logged outcome not counted 7, same i…
   messages         write in .logast/decisions/messages.yaml or `logast review .`: business id missing from MDC 3, excep…
-  outcomes         decide in .logast/decisions/metrics.yaml (`logast metrics .` has the context): 11 logged but not counted
+  outcomes         decide in .logast/decisions/metrics.yaml (.logast/reports/metrics.md has the context): 11 logged but not counted
 
 Your decisions (most important first; → what to do)
   high
@@ -98,3 +98,5 @@ Log lines: 64 — 51 with a finding, 10 fine, 3 not checked (.logast/reports/cov
 
 Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+
+reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)

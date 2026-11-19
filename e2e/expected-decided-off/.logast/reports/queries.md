@@ -1,6 +1,6 @@
 # Queries for e2e-shop
 
-Written by `logast queries` from the code as it stands; run it again after `logast apply`. Time ranges and thresholds are starting points.
+Written by every `logast scan` and `logast apply` from the code as it stands (`logast explain queries` prints it). Time ranges and thresholds are starting points.
 
 ## Prometheus (PromQL)
 

@@ -70,7 +70,7 @@ public final class HumanFormat {
         }
         if (!outcomes.isEmpty()) {
             sb.append("  ").append(Ansi.cyan("outcomes")).append("         ").append(Ansi.dim("decide in .logast/decisions/metrics.yaml "
-                    + "(`logast metrics .` has the context): ")).append(outcomes.size()).append(" logged but not counted").append('\n');
+                    + "(.logast/reports/metrics.md has the context): ")).append(outcomes.size()).append(" logged but not counted").append('\n');
         }
 
         if (!retries.isEmpty()) {

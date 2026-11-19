@@ -163,7 +163,7 @@ Merge rules, from the bottom layer up:
 | scalars (`logging.swallowedLevel`) | later layer wins; recorded as an override when it replaces a non-default value |
 | `override: true` on an object | replaces the whole object; always recorded |
 
-`logast policy <root>` prints the merged result, and `scan` lists every override at the end, so deviations from
+`logast explain policy <root>` prints the merged result, and `scan` lists every override at the end, so deviations from
 the company standard stay visible without blocking anyone.
 
 ## Vocabulary entries
@@ -281,7 +281,7 @@ quietly mean "no data".
 
 Every pack runs by default (`packs: [logging, tracing, metrics, resilience, errors, audit]`); leave one out to switch it off. `scan --pack metrics`
 runs only the metrics rules. [rules.md](rules.md) describes every pack and rule.
-`logast rules` lists every rule with its packs.
+`logast explain rules` lists every rule with its packs.
 
 ## Worked example
 

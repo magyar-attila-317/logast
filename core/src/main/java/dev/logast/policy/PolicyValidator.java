@@ -71,7 +71,7 @@ public final class PolicyValidator {
         }
         p.rules().forEach((id, cfg) -> {
             if (!Rules.all().contains(id)) {
-                error("rules." + id, "unknown rule id" + didYouMean(id, Rules.all()) + " (`logast rules` lists them)");
+                error("rules." + id, "unknown rule id" + didYouMean(id, Rules.all()) + " (`logast explain rules` lists them)");
             } else if (cfg != null && cfg.severity() != null && !SEVERITIES.contains(cfg.severity().toLowerCase(Locale.ROOT))) {
                 error("rules." + id + ".severity", "'" + cfg.severity() + "' is not a severity; use one of " + SEVERITIES);
             }

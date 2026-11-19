@@ -84,7 +84,7 @@ class PolicyCheckCliTest {
                 "package demo;\n\nclass AuditLog {\n    void record() {\n    }\n}\n");
         Files.writeString(app.resolve("src/main/java/demo/Ok.java"), "package demo;\n\nclass Ok {\n    int one() {\n"
                 + "        return 1; // logast:ignore LOG_FORAMT\n    }\n}\n");
-        Run r = run("policy", app.toString(), "--check");
+        Run r = run("explain", "policy", app.toString(), "--check");
         assertThat(r.exit()).as(r.out() + r.err()).isEqualTo(1);
         assertThat(r.out()).contains("logast.yaml: audit.emitters[0]: demo.Audit is not in the code or on the classpath")
                 .contains("logast.yaml: vocabulary.order.mdc.sources.types: demo.Order is not in the code or on the classpath")
@@ -94,10 +94,10 @@ class PolicyCheckCliTest {
         assertThat(run("scan", app.toString(), "--format", "json").err()).as("scan says it too")
                 .contains("policy: src/main/java/demo/Ok.java:5: logast:ignore LOG_FORAMT names no rule");
 
-        Run clean = run("policy", project("packs: [logging]\n").toString(), "--check");
+        Run clean = run("explain", "policy", project("packs: [logging]\n").toString(), "--check");
         assertThat(clean.exit()).as(clean.out() + clean.err()).isZero();
         assertThat(clean.out()).contains("policy ok");
-        assertThat(run("policy", project("packs: [loging]\n").toString(), "--check").exit()).as("a load error").isEqualTo(2);
+        assertThat(run("explain", "policy", project("packs: [loging]\n").toString(), "--check").exit()).as("a load error").isEqualTo(2);
     }
 
     /** #56: an --only id that matches no order is said, not dropped silently. */
@@ -124,11 +124,11 @@ class PolicyCheckCliTest {
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/shared.yaml";
             String hash = java.util.HexFormat.of().formatHex(sha256(shared));
-            Run unpinned = run("policy", project("extends: [\"" + url + "\"]\n").toString(), "--check");
+            Run unpinned = run("explain", "policy", project("extends: [\"" + url + "\"]\n").toString(), "--check");
             assertThat(unpinned.out()).contains("extends: " + url + " is not pinned").contains(url + "#sha256=" + hash);
-            Run pinned = run("policy", project("extends: [\"" + url + "#sha256=" + hash + "\"]\n").toString(), "--check");
+            Run pinned = run("explain", "policy", project("extends: [\"" + url + "#sha256=" + hash + "\"]\n").toString(), "--check");
             assertThat(pinned.exit()).as(pinned.out() + pinned.err()).isZero();
-            Run changed = run("policy", project("extends: [\"" + url + "#sha256=00ff\"]\n").toString(), "--check");
+            Run changed = run("explain", "policy", project("extends: [\"" + url + "#sha256=00ff\"]\n").toString(), "--check");
             assertThat(changed.exit()).isEqualTo(2);
             assertThat(changed.err()).contains("policy " + url + " changed: its sha256 is " + hash);
         } finally {
@@ -157,9 +157,9 @@ class PolicyCheckCliTest {
     @Test
     void anOlderPinnedStarterIsAWarning() throws IOException {
         Path app = project("support:\n  coordinates: dev.logast:logging-support:0.0.9\n");
-        Run r = run("policy", app.toString(), "--check");
+        Run r = run("explain", "policy", app.toString(), "--check");
         assertThat(r.out()).contains("support.coordinates: pins logging-support 0.0.9, but this logast (");
-        assertThat(run("policy", project("support:\n  coordinates: dev.logast:logging-support:0.0.9\n  mode: vendor\n")
+        assertThat(run("explain", "policy", project("support:\n  coordinates: dev.logast:logging-support:0.0.9\n  mode: vendor\n")
                 .toString(), "--check").out()).as("vendor mode copies the classes: no pin to match").doesNotContain("pins logging-support");
     }
 
