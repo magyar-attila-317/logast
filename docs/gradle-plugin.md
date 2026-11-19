@@ -2,7 +2,8 @@
 
 The `dev.logast` Gradle plugin runs logast inside a service's own build: no installed CLI and no `logast classpath`
 step, because the plugin hands logast the classpath the build has already resolved. It is meant for CI and for
-everyone on the team who does not run the CLI. Migrating code (`apply`, `review`, `verify`) stays with the CLI.
+everyone on the team who does not run the CLI. It can also migrate the code (`logastApply`); reviewing message texts
+(`review`) and the log-capture check (`verify`) stay with the CLI.
 
 ## Applying it
 
@@ -35,6 +36,7 @@ logast {                                        // all optional; these are the d
 | `logastBaseline` | records today's findings in the baseline (commit the file) | `logast scan . --update-baseline` |
 | `logastCheck` | the CI gate: fails on findings that are not in the baseline at or above `failOn`, naming each | `logast scan . --baseline --fail-on medium` |
 | `logastSarif` | writes the findings as SARIF to `build/reports/logast/logast.sarif`, for code scanning | `logast scan . --format sarif > logast.sarif` |
+| `logastApply` | applies every fix that needs no message text to the sources; `--preview` (or `-PlogastDryRun`) only prints the diff | `logast apply . --auto --write` |
 
 - One-off overrides: `./gradlew logastCheck --fail-on high`, `./gradlew logastScan --format human`.
 - `logastCheck` also fails when there is no baseline yet (it says to run `logastBaseline`) and when the analysis is
@@ -49,6 +51,22 @@ logast {                                        // all optional; these are the d
         RuntimeException is caught and dropped without a log line in PaymentController.pay (falls back silently)
   Fix them (`logast scan .` shows each in full), or record them as known with `./gradlew logastBaseline`.
 ```
+
+### Adopt in one step
+
+```bash
+./gradlew logastApply      # migrates the project's sources with the build's classpath
+git diff                   # review; one diff per kind of change in .logast/reports/steps/
+```
+
+- `./gradlew logastApply --preview` (or `-PlogastDryRun`) prints the diff and changes nothing. (Not `--dry-run`:
+  that is Gradle's own flag, which skips every task.)
+- The task fails when apply rejects a fix (the `REJECTED` lines say why; the other fixes are applied), when apply
+  cannot run, and on `CHECK FAILED` (the result breaks a migration invariant: a logast bug, please report it).
+- When apply adds dependencies to the build, it does not run Gradle again from inside the build to refresh the
+  classpath: run `./gradlew logastApply` once more, so the new dependencies' types are resolved.
+- Fixes that need a message text wait for `.logast/decisions/messages.yaml`, as with the CLI; apply's output lists
+  what is left.
 
 ### What it scans
 

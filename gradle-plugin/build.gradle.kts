@@ -49,7 +49,7 @@ dependencies {
 // The sample build the tests write compiles against the fixture's Spring classpath (no download in TestKit's own
 // Gradle home): the same jars the e2e tests use.
 val functionalTestTask = tasks.register<Test>("functionalTest") {
-    description = "Gradle TestKit: a sample build applies dev.logast; logastScan, logastBaseline and logastCheck"
+    description = "Gradle TestKit: a sample build applies dev.logast; logastScan, logastBaseline, logastCheck, logastSarif, logastApply"
     group = "verification"
     testClassesDirs = functionalTest.output.classesDirs
     classpath = functionalTest.runtimeClasspath

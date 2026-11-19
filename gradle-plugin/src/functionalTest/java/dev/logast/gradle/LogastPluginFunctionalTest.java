@@ -151,6 +151,67 @@ class LogastPluginFunctionalTest {
         assertThat(gradle("logastCheck").build().task(":logastCheck").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
     }
 
+    /**
+     * What logastApply needs no text for on the sample: the logging setup and the order id in MDC. Vendor mode: the
+     * support classes are copied into the service (dependency mode adds a library this sample build cannot resolve).
+     */
+    static final String APPLY_POLICY = """
+            support:
+              mode: vendor
+            vocabulary:
+              order:
+                mdc:
+                  key: orderId
+                  sources:
+                    params: [orderId]
+            """;
+
+    @Test
+    void applyMigratesTheSourcesAndTheBuildStillCompiles() throws IOException {   // #122 step 4
+        write("logast.yaml", APPLY_POLICY);
+        Path order = project.resolve("src/main/java/demo/OrderController.java");
+
+        BuildResult r = gradle("logastApply").build();
+        assertThat(r.task(":logastApply").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+        // the controller carries the order id in MDC now
+        assertThat(Files.readString(order)).contains("MdcScope.of(\"orderId\", orderId)");
+        assertThat(r.getOutput()).contains("applied (").doesNotContain("DRY RUN").doesNotContain("REJECTED")
+                .doesNotContain("CHECK FAILED");
+
+        assertThat(gradle("compileJava").build().task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    }
+
+    /**
+     * Apply adds a dependency (dependency mode, the default): the CLI refreshes the classpath by running the service's
+     * Gradle, which must not happen inside the build (the build's classpath came with --classpath-file). The stand-in
+     * gradlew would leave a marker; apply says to run logastApply again instead.
+     */
+    @Test
+    void applyInsideTheBuildRunsNoNestedGradle() throws IOException {
+        Path gradlew = project.resolve("gradlew");
+        Files.writeString(gradlew, "#!/bin/sh\ntouch nested-gradle-ran\n");
+        assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+
+        BuildResult r = gradle("logastApply").build();
+        assertThat(Files.readString(project.resolve("deps.gradle"))).contains("dev.logast:logging-support");
+        assertThat(project.resolve("nested-gradle-ran")).doesNotExist();
+        assertThat(r.getOutput()).contains("apply again (./gradlew logastApply)");
+    }
+
+    @Test
+    void applyPreviewLeavesTheSourcesUnchanged() throws IOException {
+        write("logast.yaml", APPLY_POLICY);
+        Path order = project.resolve("src/main/java/demo/OrderController.java");
+
+        BuildResult option = gradle("logastApply", "--preview").build();
+        assertThat(option.getOutput()).contains("DRY RUN").contains("would apply (").contains("OrderController.java");
+        assertThat(Files.readString(order)).isEqualTo(ORDER_CONTROLLER);
+
+        gradle("logastApply", "-PlogastDryRun").build();
+        assertThat(Files.readString(order)).isEqualTo(ORDER_CONTROLLER);
+        assertThat(project.resolve("src/main/resources/application.yml")).doesNotExist();
+    }
+
     private void buildScript(String logastBlock) throws IOException {
         Files.writeString(project.resolve("build.gradle"), """
                 plugins {
@@ -167,8 +228,10 @@ class LogastPluginFunctionalTest {
         Files.writeString(file, content);
     }
 
-    private GradleRunner gradle(String task) {
+    private GradleRunner gradle(String... args) {
+        List<String> all = new java.util.ArrayList<>(List.of(args));
+        all.addAll(List.of("--configuration-cache", "--stacktrace"));
         return GradleRunner.create().withProjectDir(project.toFile()).withPluginClasspath()
-                .withArguments(task, "--configuration-cache", "--stacktrace").forwardOutput();
+                .withArguments(all).forwardOutput();
     }
 }
