@@ -94,6 +94,18 @@ support_state() {   # $1: version, $2: Maven Local
   echo none
 }
 
+# ── the program's folder is shared with what logast keeps there (#135: fleets/ by default): an install replaces
+#    only the entries the release brings (bin, lib, gradle, …), never the folder as a whole ─────────────────────────
+replace_program() {   # $1: the unpacked release folder, $2: the program's folder
+  local entry
+  mkdir -p "$2"
+  for entry in "$1"/* "$1"/.[!.]*; do
+    [ -e "$entry" ] || continue
+    rm -rf "${2:?}/$(basename "$entry")"
+    mv "$entry" "$2/"
+  done
+}
+
 # ── the user config: install.* keys, one line each; everything else in the file (fleets.*) is kept ───────────────
 config_file() { printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/logast/config.yaml"; }
 
@@ -399,8 +411,8 @@ BANNER
   # ── 3. install ──────────────────────────────────────────────────────────────────────────────────────────────────
   if [ "$UPTODATE" = 0 ]; then
     step "Installing the command"
-    rm -rf "$PREFIX"; mkdir -p "$(dirname "$PREFIX")" "$BIN_DIR"
-    mv "$tmp"/dist/logast-* "$PREFIX"
+    mkdir -p "$BIN_DIR"
+    replace_program "$(echo "$tmp"/dist/logast-*)" "$PREFIX"
     ln -sf "$PREFIX/bin/logast" "$BIN_DIR/logast"
     version="$("$BIN_DIR/logast" --version)"
     ok "$version  ${D}${old:+(was: $old)}${N}"
