@@ -119,6 +119,28 @@ final class Fleet implements Callable<Integer> {
         return 0;
     }
 
+    interface MemberScan {
+        void run() throws IOException;
+    }
+
+    /**
+     * #136: one member that fails to scan (a repo that is no Java service, a crash on its code) is reported and skipped;
+     * the other members are still scanned, and the failed one's snapshot stays as it was. True when it was scanned.
+     */
+    static boolean skipOnFailure(String service, MemberScan scan) {
+        try {
+            scan.run();
+            return true;
+        } catch (IOException | RuntimeException e) {
+            Out.warn("fleet: " + service + " skipped, its scan failed: " + e
+                    + " (its snapshot stays as it was; `logast scan` in the repo shows the whole error)");
+            if (System.getenv("LOGAST_DEBUG") != null) {
+                e.printStackTrace();
+            }
+            return false;
+        }
+    }
+
     /** Scans one service as `logast scan` does; the result is what a member's snapshot holds. */
     private NamedFleet.Snapshot scan(Path r) {
         Main.migrate(r);
@@ -213,8 +235,10 @@ final class Fleet implements Callable<Integer> {
                     Out.warn("fleet: " + m.getKey() + " is not at " + m.getValue() + " on this machine; its snapshot stays as it was");
                     continue;
                 }
-                NamedFleet.write(dir, added.containsKey(m.getKey()) ? scanAdded(dir, m.getKey(), m.getValue(), classpathFile)
-                        : scan(m.getValue()));
+                String svc = m.getKey();
+                Path root = m.getValue();
+                skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc) ? scanAdded(dir, svc, root, classpathFile)
+                        : scan(root)));
             }
         }
         if (service != null) {
@@ -654,8 +678,9 @@ final class Fleet implements Callable<Integer> {
                     + " → the repo's own logast.yaml, if it has one");
             if (scan) {
                 for (var e : toScan.entrySet()) {
-                    NamedFleet.write(at.dir(), scanAdded(at.dir(), e.getKey(), e.getValue(), classpathFile));
-                    System.out.println("  " + e.getKey() + ": scanned, results in " + NamedFleet.outputDir(at.dir(), e.getKey()));
+                    if (skipOnFailure(e.getKey(), () -> NamedFleet.write(at.dir(), scanAdded(at.dir(), e.getKey(), e.getValue(), classpathFile)))) {
+                        System.out.println("  " + e.getKey() + ": scanned, results in " + NamedFleet.outputDir(at.dir(), e.getKey()));
+                    }
                 }
                 CompanyPolicy.refresh(at.dir(), name, NamedFleet.snapshots(at.dir()).values());
             }

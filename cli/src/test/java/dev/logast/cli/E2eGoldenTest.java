@@ -7349,6 +7349,17 @@ abstract class E2eGoldenTest {
                 assertThat(repo.resolve(".logast")).doesNotExist();
             }
 
+            // #136: a member whose scan fails (orders, scanned first) is skipped with the reason; the others are still scanned
+            Path ordersPolicy = orders.resolve("logast.yaml");
+            Files.writeString(ordersPolicy, "logging: [unclosed\n");
+            Files.delete(fleet.resolve("services/stock.json"));
+            STDERR.setLength(0);
+            String failing = run(tmp, "fleet", "shop", "--refresh");
+            assertThat(failing + STDERR).as(failing + STDERR).contains("fleet: orders skipped, its scan failed: ");
+            assertThat(fleet.resolve("services/stock.json")).as("stock still scanned after orders failed").isRegularFile();
+            assertThat(fleet.resolve("services/orders.json")).as("orders' snapshot stays").isRegularFile();
+            Files.delete(ordersPolicy);
+
             assertThat(run(tmp, "fleet", "remove", "shop", "stock")).contains("stock removed from fleet shop");
             assertThat(fleet.resolve("services/stock")).doesNotExist();
             assertThat(fleet.resolve("services/stock.json")).doesNotExist();
