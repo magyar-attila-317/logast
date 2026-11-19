@@ -243,6 +243,37 @@ class PolicyCheckCliTest {
         assertThat(run("apply", app.toString(), "--force").exit()).isZero();
     }
 
+    /**
+     * #131: what apply wrote, recorded with its content hash, is logast's own change: apply → review → apply again runs
+     * without a commit. A file edited after the apply, or one logast never wrote, still counts; no record, as before.
+     * The service sits in a folder of the git repository (git's paths start at its top, the record's at the service).
+     */
+    @Test
+    void applysOwnChangesDoNotCountAsUncommitted() throws IOException {
+        Path app = project("packs: [logging]\n");
+        Path other = app.resolve("src/main/java/demo/Other.java");
+        Files.writeString(other, "package demo;\n\nclass Other {\n}\n");
+        git(tmp, "init", "--quiet");
+        git(tmp, "add", "-A");
+        git(tmp, "commit", "--quiet", "-m", "start");
+        Path ok = app.resolve("src/main/java/demo/Ok.java");
+        Files.writeString(ok, Files.readString(ok) + "// written by apply\n");
+        assertThat(Main.uncommitted(app)).as("no record (an earlier logast): as before").containsExactly("app/src/main/java/demo/Ok.java");
+        Main.recordApplied(app, java.util.List.of("src/main/java/demo/Ok.java"));
+        assertThat(Main.uncommitted(app)).as("unchanged since apply wrote it").isEmpty();
+        Files.writeString(other, "package demo;\n\nclass Other {\n    // edited\n}\n");
+        assertThat(Main.uncommitted(app)).as("a file logast never wrote").containsExactly("app/src/main/java/demo/Other.java");
+        git(tmp, "checkout", "--quiet", "--", "app/src/main/java/demo/Other.java");
+        Files.writeString(ok, Files.readString(ok) + "// edited after apply\n");
+        assertThat(Main.uncommitted(app)).as("edited after apply").containsExactly("app/src/main/java/demo/Ok.java");
+        Main.recordApplied(app, java.util.List.of("src/main/java/demo/Other.java"));
+        assertThat(Main.appliedState(app)).as("merged across applies").containsOnlyKeys("src/main/java/demo/Ok.java",
+                "src/main/java/demo/Other.java");
+        Run refused = run("apply", app.toString());
+        assertThat(refused.exit()).as(refused.err()).isEqualTo(2);
+        assertThat(refused.err()).contains("uncommitted changes (app/src/main/java/demo/Ok.java)");
+    }
+
     private static void git(Path dir, String... args) throws IOException {
         java.util.List<String> cmd = new java.util.ArrayList<>(java.util.List.of("git", "-c", "user.name=t", "-c", "user.email=t@localhost",
                 "-c", "commit.gpgsign=false"));

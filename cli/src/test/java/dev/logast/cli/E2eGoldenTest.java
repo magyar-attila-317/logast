@@ -82,7 +82,8 @@ abstract class E2eGoldenTest {
     }
     private static final boolean UPDATE = Boolean.getBoolean("logast.e2e.update");
     /** Generated each run or machine-specific: not part of the snapshot. */
-    private static final Set<String> SKIP = Set.of(".logast/reports/orders.json", ".logast/classpath.txt", ".logast/classpath-root.txt");
+    private static final Set<String> SKIP = Set.of(".logast/reports/orders.json", ".logast/classpath.txt", ".logast/classpath-root.txt",
+            ".logast/applied-state.txt");
 
     @TempDir
     Path tmp;
@@ -240,8 +241,8 @@ abstract class E2eGoldenTest {
      * #122: one command adopts logast. e2e/before without logast.yml and without a classpath file, a clean git repo:
      * {@code logast apply .} with no flag reads the classpath (a stand-in gradlew writes it; no Gradle run in the test),
      * writes logast.yaml (every pack, the support classes copied in) and changes the code; the result compiles, settles
-     * in one pass and leaves no "check the starter resolves" step. A second apply on the uncommitted result is refused
-     * (`git diff` would mix both runs); once committed it changes nothing.
+     * in one pass and leaves no "check the starter resolves" step. #131: a second apply on the uncommitted result runs and
+     * changes nothing; a file edited after it, or one logast did not write, blocks it (--force goes on); once committed it changes nothing.
      */
     @Test
     void oneCommandOnAServiceWithNothingSetUp() throws IOException {
@@ -275,10 +276,34 @@ abstract class E2eGoldenTest {
         String afterPass1 = trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "";
         assertThat(afterPass1).as("pass 2 of the first apply applies nothing:\n" + trace).doesNotContain("applying");
 
+        // #131: apply → review → apply again, without a commit: the first apply's own changes do not block it
+        STDERR.setLength(0);
+        String again = run(app, "apply", app.toString());
+        assertThat(LAST_EXIT).as("#131: logast's own uncommitted changes don't count\n" + again + STDERR).isZero();
+        assertThat(again).as("the second apply changes nothing").contains("nothing to change");
+        List<String> logastChanged = git(app, "diff", "--name-only", "--", "src").lines().toList();
+        assertThat(logastChanged).as("the first apply's changes are still uncommitted").isNotEmpty();
+        // a file logast changed, edited afterwards, is the user's change
+        Path edited = app.resolve(logastChanged.get(0));
+        String asApplied = Files.readString(edited);
+        Files.writeString(edited, asApplied + "// edited after apply\n");
         STDERR.setLength(0);
         String refused = run(app, "apply", app.toString());
-        assertThat(LAST_EXIT).as("uncommitted changes: refused\n" + refused + STDERR).isEqualTo(2);
-        assertThat(STDERR.toString()).contains("uncommitted changes").contains("--force");
+        assertThat(LAST_EXIT).as("a file edited after apply: refused\n" + refused + STDERR).isEqualTo(2);
+        assertThat(STDERR.toString()).contains("uncommitted changes (" + logastChanged.get(0) + ")").contains("--force");
+        Files.writeString(edited, asApplied);
+        // a tracked file logast did not change
+        String untouchedName = git(app, "ls-files", "src").lines().filter(f -> f.endsWith(".java") && !logastChanged.contains(f)).findFirst().orElseThrow();
+        Path untouched = app.resolve(untouchedName);
+        String original = Files.readString(untouched);
+        Files.writeString(untouched, original + "// edited\n");
+        STDERR.setLength(0);
+        refused = run(app, "apply", app.toString());
+        assertThat(LAST_EXIT).as("a file logast never wrote: refused\n" + refused + STDERR).isEqualTo(2);
+        assertThat(STDERR.toString()).contains("uncommitted changes (" + untouchedName + ")");
+        run(app, "apply", app.toString(), "--force");
+        assertThat(LAST_EXIT).as("--force writes anyway").isZero();
+        Files.writeString(untouched, original);
 
         git(app, "add", "-A");
         git(app, "commit", "--quiet", "-m", "logast apply");

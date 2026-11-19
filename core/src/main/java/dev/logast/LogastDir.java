@@ -42,6 +42,8 @@ public final class LogastDir {
     public static final String VERIFY = REPORTS + "/verify.json";
 
     public static final String BASELINE = DIR + "/baseline.json";
+    /** #131: machine state, the content (SHA-256) of each file apply wrote, so its own changes don't block the next apply. */
+    public static final String APPLIED_STATE = DIR + "/applied-state.txt";
     public static final String README = DIR + "/README.md";
 
     /** Reports of the earlier layout, at the top of .logast, that now live in reports/. */
