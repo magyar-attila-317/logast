@@ -100,6 +100,120 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #7 ("behaviour preserved"): with the logging pack alone, a migration changes only observability code. Every Java
+     * file of e2e/before, compared with its migrated version after both are reduced to the statements that are not
+     * logging, MDC, metrics or observation code (comments, imports, blank lines and braces dropped: MDC and observation
+     * wrappers move a body into a block or lambda without changing what it does), must be the same. Other packs change
+     * behaviour on purpose (a cause kept, a timeout set, a retry added) and are not part of this check.
+     */
+    @Test
+    void theLoggingPackChangesOnlyObservabilityCode() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [logging]"));
+        });
+        Map<String, String> before = files(BEFORE);
+        List<String> changed = new ArrayList<>();
+        for (var e : before.entrySet()) {
+            if (!e.getKey().endsWith(".java") || !actual.containsKey(e.getKey())) {
+                continue;
+            }
+            List<String> was = behaviour(e.getValue());
+            List<String> now = behaviour(actual.get(e.getKey()));
+            if (!was.equals(now)) {
+                List<String> gone = new ArrayList<>(was);
+                gone.removeAll(now);
+                List<String> added = new ArrayList<>(now);
+                added.removeAll(was);
+                changed.add(e.getKey() + "\n  gone:  " + gone + "\n  added: " + added);
+            }
+        }
+        assertThat(changed).as("non-observability statements the logging pack changed").isEmpty();
+        // the check sees a real change: one call swapped in a migrated file
+        String job = actual.get("src/main/java/com/example/e2e/coupon/CouponCleanupJob.java");
+        assertThat(behaviour(job.replace("findOpen()", "findAll()"))).as("a changed call is a behaviour change")
+                .isNotEqualTo(behaviour(job));
+    }
+
+    private static final java.util.regex.Pattern OBSERVABILITY = java.util.regex.Pattern.compile(
+            "\\b(log|logger|LOG|LOGGER|Logger|LoggerFactory|MDC|MdcScope|ObservedContext|Outcomes|Observation|"
+                    + "ObservationRegistry|Metrics|MeterRegistry|Counter|Timer|Tracer|Span)\\b|\\b\\w*(log|LOG)\\w*\\."
+                    + "(trace|debug|info|warn|error|at\\w+)\\(|^\\.(mdc|quiet|debugOnSuccess|failureLoggedByCaller|describe|tag|"
+                    + "contextualName|run|call)\\(|^\\)$|^\\)\\)$");
+    /** Annotations that only switch observability on: removed from a statement, which stays. */
+    private static final java.util.regex.Pattern OBSERVABILITY_ANNOTATION = java.util.regex.Pattern.compile("@(Slf4j|Observed|NewSpan|Timed|Counted)\\b(\\([^)]*\\))?\\s*");
+    /** {@code T name = expr} (a local declaration). */
+    private static final java.util.regex.Pattern LOCAL = java.util.regex.Pattern.compile("^(?:final )?[\\w<>\\[\\], ?.]+? (\\w+) = (.+)$");
+
+    /**
+     * The statements of a Java source that are not observability code, in order: comments, imports, the package line,
+     * blank lines and braces dropped, string literals kept as written.
+     */
+    static List<String> behaviour(String java) {
+        String text = java.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?m)//.*$", "")
+                .replaceAll("(?m)^\\s*(import|package) .*$", "");
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inString = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '"' && (i == 0 || text.charAt(i - 1) != '\\')) {
+                inString = !inString;
+            }
+            if (!inString && (c == ';' || c == '{' || c == '}')) {
+                add(out, cur.toString());
+                cur.setLength(0);
+                continue;
+            }
+            cur.append(c);
+        }
+        add(out, cur.toString());
+        return inlineLocals(out);
+    }
+
+    /**
+     * Locals with one use or none, folded into where they are used (both sides alike): logast captures a value to log it
+     * ({@code int rows = jdbc.update(..)}, {@code var ids = repository.findOpen(); for (.. : ids)}), which is the same
+     * behaviour as before.
+     */
+    private static List<String> inlineLocals(List<String> statements) {
+        List<String> out = new ArrayList<>(statements);
+        for (int i = 0; i < out.size(); i++) {
+            java.util.regex.Matcher m = LOCAL.matcher(out.get(i));
+            if (!m.matches()) {
+                continue;
+            }
+            java.util.regex.Pattern use = java.util.regex.Pattern.compile("\\b" + m.group(1) + "\\b");
+            List<Integer> uses = new ArrayList<>();
+            for (int j = i + 1; j < out.size(); j++) {
+                if (use.matcher(out.get(j)).find()) {
+                    uses.add(j);
+                }
+            }
+            if (uses.size() > 1) {
+                continue;
+            }
+            if (uses.size() == 1) {
+                int j = uses.getFirst();
+                out.set(j, use.matcher(out.get(j)).replaceAll(java.util.regex.Matcher.quoteReplacement(m.group(2))));
+                out.remove(i);
+            } else {
+                out.set(i, m.group(2));
+            }
+            i = -1;   // start over: a folded local may make another one foldable
+        }
+        return out;
+    }
+
+    private static void add(List<String> out, String statement) {
+        String s = OBSERVABILITY_ANNOTATION.matcher(statement.replaceAll("\\s+", " ")).replaceAll("").strip();
+        if (!s.isEmpty() && !s.equals(")") && !OBSERVABILITY.matcher(s).find() && !s.startsWith("try (var mdc")
+                && !s.equals("try") && !s.equals("finally") && !s.matches("\\) -> ?|\\(\\) ->")) {
+            out.add(s);
+        }
+    }
+
+    /**
      * #120: a WARN / ERROR or outcome line that leaves out the business id its method has at hand gets it: one
      * candidate is added ([orderId={}] before the exception); two are a decision; an id MDC already carries is not
      * repeated. Every file must equal e2e/expected-log-id-missing.
