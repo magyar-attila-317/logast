@@ -546,7 +546,7 @@ final class Fleet implements Callable<Integer> {
         boolean followCompany;
         @Option(names = "--service", description = "Only this member")
         String service;
-        @Option(names = "--force", description = "Edit a logast.yaml that has uncommitted changes too")
+        @Option(names = "--force", hidden = true, description = "No longer needed: uncommitted changes of logast.yaml don't block the tidy")
         boolean force;
         @Mixin
         FleetsDir fleetsDir;
@@ -575,18 +575,19 @@ final class Fleet implements Callable<Integer> {
                     exit = 1;
                     continue;
                 }
-                if (!force && dirty(m.getValue(), file)) {
-                    Out.warn("fleet tidy: " + m.getKey() + ": " + file.getFileName() + " has uncommitted changes; commit them first "
-                            + "(--force edits it anyway)");
-                    exit = 1;
-                    continue;
-                }
                 if (FleetTidy.plan(m.getValue(), at.dir().resolve(CentralVocabulary.COMPANY)).isEmpty()) {
                     System.out.println(m.getKey() + ": nothing to tidy");
                     continue;
                 }
+                // logast.yaml is logast's own file (init, join and scan write it, apply's guard leaves it out too): its
+                // uncommitted changes don't block the tidy, they are named so the diff is read with them in mind
+                boolean wasDirty = dirty(m.getValue(), file);
                 System.out.println(m.getKey() + ":");
                 tidy(m.getValue(), at.dir(), followCompany, "logast fleet tidy " + name + " --follow-company");
+                if (wasDirty) {
+                    System.out.println("  (" + file.getFileName() + " had uncommitted changes already: `git diff " + file.getFileName()
+                            + "` shows them together with the tidy)");
+                }
             }
             return exit;
         }
