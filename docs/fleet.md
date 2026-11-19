@@ -205,6 +205,35 @@ and by `logast fleet <name>`. After two members scanned:
 - A fleet created before this gets its company.yaml (or, in an existing one, the suggestions part before the
   vocabulary part) on the next snapshot.
 
+## A fleet in its own git repo
+
+`logast fleet init <name>` makes the current folder (a git repo, e.g. `my-company-logast`) the fleet's home (#147): the
+fleet folder as `fleet create --dir .` makes it, plus
+
+| file | what it is |
+|---|---|
+| `repos.yaml` | the members by repo URL (`https://…`, `git@…`; an entry may name a `branch` and a `name`) |
+| `README.md` | what the owner does, and what service developers run |
+| `.github/workflows/logast-fleet.yml` | on push to main/master, weekday mornings and by hand: builds logast at the commit that scaffolded it (`LOGAST_REF`), clones the repos, runs `logast fleet . --refresh --no-builds --classpath-file .cache/classpath.txt`, writes the overview to the run's summary and keeps `report/` as the run's artifact; publishes it to GitHub Pages only when the repository variable `LOGAST_PAGES` is `true` |
+| `.gitignore` | `.cache/`, `services/`, `report/`, `members.yaml`: generated, never committed |
+| `classpath/build.gradle.kts` | the libraries the workflow resolves the members' code against (common Spring ones; add your company's): `gradle -p classpath writeClasspath` writes `.cache/classpath.txt` |
+
+Existing files are kept. `logast fleet <path> --refresh` (`.` in the fleet repo) clones each repo of `repos.yaml` shallow
+(newest commit of its branch) into `.cache/repos/<name>`, or fetches and resets an existing clone, registers it as an
+added member and scans it read-only. A folder with `repos.yaml` is a fleet even without `members.yaml` (a fresh checkout).
+
+- **`--no-builds`**: an added member is scanned without running its own Gradle. In the fleet's CI a member's build
+  script would run next to a token that reads every repo, so it never runs there; the code is resolved against
+  `classpath/build.gradle.kts` instead (survey quality: types of the members' own libraries stay unresolved). Precise
+  scans with each repo's own build come from the repo's own CI (#146).
+- **Private repos** in the workflow: a repository secret `LOGAST_REPOS_TOKEN` with read access to them (a fine-grained
+  token with *Contents: read*, or a GitHub App token); without it only public repos clone.
+- **Who sees the page**: on GitHub Free, Pro and Team a Pages site of a private repo is public on the internet; only
+  Enterprise Cloud restricts it. The report names services, endpoints, hosts and file paths, so publishing is off until
+  `LOGAST_PAGES` is set; the artifact is always there.
+- Service developers register a clone of the fleet repo (`logast fleet create <name> --dir <clone>`) and join it; the
+  README says how. Extending the fleet by its git URL, listing a GitHub org and rollout PRs: #146.
+
 ## Where fleets live
 
 The fleets folder, first match wins:

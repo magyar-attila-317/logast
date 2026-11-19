@@ -126,7 +126,8 @@ public final class NamedFleet {
 
     /** True when {@code dir} is a fleet folder. */
     public static boolean exists(Path dir) {
-        return Files.isRegularFile(dir.resolve(MEMBERS));
+        // #147: a fleet kept in a git repo has repos.yaml; its members.yaml (this machine's paths) is not committed
+        return Files.isRegularFile(dir.resolve(MEMBERS)) || Files.isRegularFile(dir.resolve(FleetRepos.FILE));
     }
 
     /** The fleets this machine knows: folders under the fleets folder and the ones the user config remembers. */
