@@ -93,7 +93,9 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
         // #122: no "logast vocabulary ." hint here: apply's setup harvests the vocabulary; extending it is a platform
         // task (docs/platform.md), not a step of the service path
         boolean starterAdded = applied.stream().anyMatch(id -> id.startsWith("SUP-"));
-        if (starterAdded && !policy.support().vendor()) {
+        // #127: the classpath run already resolved it with the build's own repositories
+        if (starterAdded && !policy.support().vendor()
+                && !Boolean.TRUE.equals(dev.logast.policy.SupportResolvable.read(root, policy.support().version()))) {
             also.add(new Item("check " + policy.support().coordinates() + " resolves", "the build now depends on it; or set support.mode: vendor in logast.yaml"));
         }
         if (wrote) {

@@ -45,6 +45,38 @@ class PolicyTest {
         assertThat(PolicyLoader.load(dir, null).support().mode()).isEqualTo("vendor");
     }
 
+    /**
+     * #127: the classpath run found the support jar in the build's repositories: dependency mode where no layer chose;
+     * a choice in any layer wins, an answer for another version or a service carrying copied-in classes keeps vendor.
+     */
+    @Test
+    void aSupportJarTheBuildResolvesMeansDependencyUnlessALayerChose() throws IOException {
+        String version = dev.logast.policy.Policy.Support.releaseVersion();
+        Files.createDirectories(dir.resolve(".logast"));
+        Path answer = dir.resolve(dev.logast.policy.SupportResolvable.FILE);
+        Files.writeString(dir.resolve("logast.yaml"), "packs: [logging]\n");
+        Files.writeString(answer, "resolvable=true\nversion=" + version + "\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).as("resolvable").isEqualTo("dependency");
+        assertThat(PolicyLoader.load(dir, null).support().repository()).as("no repository line").isEmpty();
+        assertThat(dev.logast.policy.SupportResolvable.hint(dir, null)).isNull();
+
+        Files.writeString(dir.resolve("logast.yaml"), "support:\n  mode: vendor\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).as("the service's choice wins").isEqualTo("vendor");
+
+        Files.writeString(dir.resolve("logast.yaml"), "packs: [logging]\n");
+        Files.writeString(answer, "resolvable=true\nversion=0.0.1-other\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).as("checked for another logast").isEqualTo("vendor");
+
+        Files.writeString(answer, "resolvable=false\nversion=" + version + "\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).isEqualTo("vendor");
+        assertThat(dev.logast.policy.SupportResolvable.hint(dir, null)).contains("publish it (install.sh)");
+
+        Files.writeString(answer, "resolvable=true\nversion=" + version + "\n");
+        Path copy = Files.createDirectories(dir.resolve("src/main/java/com/example/logging")).resolve("MdcScope.java");
+        Files.writeString(copy, "// Copied by logast (support.mode: vendor) from logging-support.\npackage com.example.logging;\n");
+        assertThat(PolicyLoader.load(dir, null).support().mode()).as("classes copied in earlier stay").isEqualTo("vendor");
+    }
+
     @Test
     void layersMergeAppendAndRecordOverrides() throws IOException {
         Files.writeString(dir.resolve("company.yaml"), """

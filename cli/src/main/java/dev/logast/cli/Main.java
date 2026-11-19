@@ -358,6 +358,14 @@ public final class Main {
         @CommandLine.Spec
         CommandLine.Model.CommandSpec spec;
 
+        /** #127: the one line when the support classes are copied in only because the build cannot resolve the jar. */
+        private void supportHint() {
+            String hint = format.equals("json") ? null : dev.logast.policy.SupportResolvable.hint(root(), policyFile);
+            if (hint != null) {
+                Out.progress(hint);
+            }
+        }
+
         @Override
         public Integer call() throws IOException {
             // #122: one command on a service with nothing set up; writing is the default, git is the safety net
@@ -399,6 +407,7 @@ public final class Main {
                     return 2;
                 }
                 Out.progress("classpath read (" + cpr.entries() + " entries in .logast/classpath*.txt)");
+                supportHint();
             }
             Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
             String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
@@ -676,9 +685,7 @@ public final class Main {
         /** Runs Gradle with the classpath init script (compiles nothing); prints only Gradle's own errors. */
         static Result write(Path r) throws IOException, InterruptedException {
             Path init = Files.createTempFile("logast-classpath", ".init.gradle");
-            try (InputStream in = Main.class.getResourceAsStream("/logast-classpath.init.gradle")) {
-                Files.write(init, Objects.requireNonNull(in).readAllBytes());
-            }
+            Files.writeString(init, initScript());
             Path wrapper = r.resolve(System.getProperty("os.name").toLowerCase().contains("win") ? "gradlew.bat" : "gradlew");
             String gradle = Files.exists(wrapper) ? wrapper.toString() : "gradle";
             Process p = new ProcessBuilder(gradle, "-q", "--no-configuration-cache", "--init-script", init.toString(), "logastClasspath")
@@ -687,6 +694,14 @@ public final class Main {
             Files.deleteIfExists(init);
             List<Path> cp = rc == 0 ? Logast.classpath(r, null) : List.of();
             return new Result(rc, cp.size(), dev.logast.parse.ProjectParser.hasCompiledClasses(cp));
+        }
+
+        /** The classpath init script; its support check (#127) looks for the logging-support of this logast's release. */
+        static String initScript() throws IOException {
+            try (InputStream in = Main.class.getResourceAsStream("/logast-classpath.init.gradle")) {
+                return new String(Objects.requireNonNull(in).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("@LOGAST_SUPPORT_VERSION@", Policy.Support.releaseVersion());
+            }
         }
 
         @Override

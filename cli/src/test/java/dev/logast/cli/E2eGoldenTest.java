@@ -289,6 +289,69 @@ abstract class E2eGoldenTest {
         compile(app);
     }
 
+    /**
+     * #127: the support jar was published where the service's build resolves from (install.sh): the classpath run says
+     * so ({@code .logast/support-resolvable.txt}) and apply, with nothing chosen in logast.yaml, adds the jar instead of
+     * copying its classes in, and no repository line (the build already reaches it). The stand-in gradlew answers as
+     * the classpath init script does; once the build names the starter, its classes are on the classpath it writes.
+     */
+    @Test
+    void aSupportJarTheBuildResolvesIsAddedAsADependency() throws IOException {
+        Path app = serviceWithoutSetup(true);
+
+        String first = run(app, "apply", app.toString());
+        assertThat(LAST_EXIT).as(first + STDERR).isZero();
+        String build = Files.readString(app.resolve("build.gradle.kts"));
+        assertThat(build).as("the starter, from the build's own repositories")
+                .contains("implementation(\"dev.logast:logging-support:" + dev.logast.policy.Policy.Support.releaseVersion() + "\")")
+                .doesNotContain("maven").doesNotContain("repositories");
+        assertThat(app.resolve("src/main/java/com/example/e2e/logging")).as("nothing copied in").doesNotExist();
+        assertThat(Files.readString(app.resolve("logast.yaml"))).as("a decision of this machine: not written down").doesNotContain("\nsupport:");
+        assertThat(first + STDERR).as("it resolves: nothing to check, nothing to publish")
+                .doesNotContain("resolves").doesNotContain("isn't in this build's repositories").doesNotContain("CHECK FAILED");
+
+        git(app, "add", "-A");
+        git(app, "commit", "--quiet", "-m", "logast apply");
+        String second = run(app, "apply", app.toString());
+        assertThat(second).as("a second apply changes nothing").contains("applied (0):").contains("files (0):");
+        compile(app, "UTF-8", PLATFORM, Path.of(System.getProperty("logast.e2e.support")));
+    }
+
+    /** #127: the classpath run could not resolve the support jar: its classes are copied in, with the one line on how to wire it in. */
+    @Test
+    void aSupportJarTheBuildCannotResolveIsCopiedInWithAHint() throws IOException {
+        Path app = serviceWithoutSetup(false);
+
+        String first = run(app, "apply", app.toString());
+        assertThat(LAST_EXIT).as(first + STDERR).isZero();
+        assertThat(app.resolve("src/main/java/com/example/e2e/logging/MdcScope.java")).as("copied in (vendor)").exists();
+        assertThat(Files.readString(app.resolve("build.gradle.kts"))).doesNotContain("logging-support");
+        assertThat(STDERR.toString()).as("one line: publish it to wire it in")
+                .containsOnlyOnce("the support jar isn't in this build's repositories: publish it (install.sh) to wire it in instead");
+        compile(app);
+    }
+
+    /**
+     * e2e/before without logast.yml, in a clean git repo, whose stand-in gradlew writes the classpath (with the starter's
+     * classes once the build names it) and the support check's answer.
+     */
+    private Path serviceWithoutSetup(boolean supportResolvable) throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Files.delete(app.resolve("logast.yml"));
+        Path gradlew = app.resolve("gradlew");
+        Files.writeString(gradlew, "#!/bin/sh\nmkdir -p .logast\ncp '" + CLASSPATH + "' .logast/classpath-main.txt\n"
+                + "if grep -q logging-support build.gradle.kts; then printf '\\n%s\\n' '" + System.getProperty("logast.e2e.support")
+                + "' >> .logast/classpath-main.txt; fi\n"
+                + "printf 'resolvable=" + supportResolvable + "\\nversion=" + dev.logast.policy.Policy.Support.releaseVersion()
+                + "\\n' > .logast/support-resolvable.txt\n");
+        assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+        git(app, "init", "--quiet");
+        git(app, "add", "-A");
+        git(app, "commit", "--quiet", "-m", "before");
+        return app;
+    }
+
     /** Runs git in {@code dir} (as a throwaway committer); its output. */
     private static String git(Path dir, String... args) throws IOException {
         List<String> cmd = new ArrayList<>(List.of("git", "-c", "user.name=e2e", "-c", "user.email=e2e@localhost",

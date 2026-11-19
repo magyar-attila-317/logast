@@ -7,5 +7,7 @@ plugins {
 dependencyResolutionManagement {
     repositories { mavenCentral() }
 }
+// #127: the settings' repositories (with what init scripts add) for gradle/publishing.gradle: a project cannot reach them
+gradle.extra["logastSettingsRepositories"] = listOf(dependencyResolutionManagement.repositories, pluginManagement.repositories)
 
 include("core", "cli", "gradle-plugin", "logging-support", "test-capture", "fixtures:sample-app")

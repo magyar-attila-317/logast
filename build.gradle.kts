@@ -4,8 +4,9 @@ subprojects {
         into("META-INF") { from(rootProject.file("LICENSE"), rootProject.file("NOTICE")) }
     }
     // Libraries other projects consume (the starter, the test capture, the Gradle plugin with core and cli) publish to
-    // Maven Local, or to a company repository when -PrepoUrl=... (or REPO_URL) is set, with repoUser/repoPassword
-    // (REPO_USER/REPO_PASSWORD).
+    // Maven Local, or to a company repository: -PrepoUrl=... (or REPO_URL) with repoUser/repoPassword
+    // (REPO_USER/REPO_PASSWORD), or -PrepoName=<a repository this machine's Gradle already knows> (#127,
+    // gradle/publishing.gradle).
     plugins.withId("maven-publish") {
         extensions.configure<PublishingExtension> {
             publications {
@@ -35,17 +36,7 @@ subprojects {
                     name = "logastTest"
                     setUrl(rootProject.layout.buildDirectory.dir("logast-test-repo"))
                 }
-                val url = (findProperty("repoUrl") as String?) ?: System.getenv("REPO_URL")
-                if (url != null) {
-                    maven {
-                        name = "company"
-                        setUrl(url)
-                        credentials {
-                            username = (findProperty("repoUser") as String?) ?: System.getenv("REPO_USER")
-                            password = (findProperty("repoPassword") as String?) ?: System.getenv("REPO_PASSWORD")
-                        }
-                    }
-                }
+                // "company" (-PrepoUrl, -PrepoName): gradle/publishing.gradle
             }
         }
     }
@@ -60,3 +51,6 @@ subprojects {
         }
     }
 }
+
+// #127: where logast's libraries publish besides Maven Local; the repositories install.sh offers
+apply(from = "gradle/publishing.gradle")

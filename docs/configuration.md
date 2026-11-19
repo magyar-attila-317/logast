@@ -222,10 +222,20 @@ support:
   vendorPackage: com.example.shop.logging        # where to copy the classes (vendor mode; default <app>.logging)
 ```
 
-- `mode` defaults to `vendor`: nothing has to be published for the result to build. It defaults to `dependency`
-  when the policy names a published starter: `repository` or `coordinates` set, here or in a layer reached through
-  `extends:` (a company policy switches every service at once). An explicit `mode` always wins.
-- In dependency mode, after the first apply adds the starter, logast reminds you to check it resolves.
+- An explicit `mode` (here or in any layer reached through `extends:`) always wins. Without one:
+  - `dependency` when the policy names a published starter: `repository` or `coordinates` set, here or in a layer (a
+    company policy switches every service at once);
+  - `dependency` when the service's own build resolves `dev.logast:logging-support:<this logast's version>`: the
+    Gradle run that reads the classpath tries it with the build's repositories (and your `~/.gradle/init.d` scripts)
+    and writes the answer to `.logast/support-resolvable.txt`. The jar is added with **no repository line**: the
+    build already reaches it. Publish it with `install.sh` (Maven Local, or a repository your Gradle knows);
+  - `vendor` otherwise, with one line in apply's output: *the support jar isn't in this build's repositories:
+    publish it (install.sh) to wire it in instead*. Nothing has to be published for the result to build.
+- A service that already carries copied-in support classes stays in vendor mode when the jar becomes resolvable;
+  switching it is a choice (`mode: dependency`, then remove the copies). The check runs with the classpath run
+  (the first apply, a build change, `logast classpath .`); `./gradlew logastApply` does not run it.
+- In dependency mode, after the first apply adds the starter, logast reminds you to check it resolves, unless the
+  classpath run already resolved it.
 - `repository`: when logast adds the starter, it also adds this Maven repository to the service's build, unless a
   build script already names it. Not needed when your Gradle setup already reaches it (a repository in the build, or
   an init script in `~/.gradle/init.d/`, which logast's Gradle runs respect). When `settings.gradle` manages the
