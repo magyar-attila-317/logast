@@ -80,7 +80,7 @@ final class Init implements Callable<Integer> {
         } else {
             long t0 = System.nanoTime();
             Out.progress("  running Gradle to read the classpath (nothing is compiled)…");
-            Main.Classpath.Result cp = Main.Classpath.write(r);
+            Main.Classpath.Result cp = Main.Classpath.write(r).printIfFailed();
             haveClasspath = cp.exitCode() == 0;
             if (haveClasspath) {
                 Out.step(".logast/classpath-*.txt", cp.entries() + " jars and class folders (" + Out.seconds(t0)

@@ -359,7 +359,7 @@ class RuleLedgerTest {
         assertThat(dirs).as("e2e snapshots under " + E2E).isNotEmpty();
         for (Path dir : dirs) {
             String name = "e2e " + dir.getFileName();
-            for (String file : List.of("FINDINGS.txt", "OUTPUT.txt", ".logast/reports/apply-trace.txt", "RULES.txt")) {
+            for (String file : List.of("FINDINGS.txt", "OUTPUT.txt", ".logast/reports/apply-trace.txt", ".logast/reports/last-apply.txt", "RULES.txt")) {
                 Path f = dir.resolve(file);
                 if (!Files.exists(f)) {
                     continue;

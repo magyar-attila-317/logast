@@ -138,7 +138,7 @@ Places that should log: 17 of 21 do (jobs 9/9, endpoints 8/12)
 ```
 
 - **Applied earlier** appears when an `apply` changed files (`.logast/reports/last-apply.txt`).
-- **Done** (after `apply`): how many changes in how many files, each compiled before it was kept; `git diff` reviews them.
+- After `apply`, the same blocks read as sentences: see [apply](#apply).
 - **Next** comes first in `scan` when logast still has fixes of its own to make: `logast apply .`.
 - **Optional (N)** is what logast leaves to you, each with its default: message wording (`messages.yaml`; blank: the
   current or generated text stays), whether to count a logged outcome (`metrics.yaml`; blank: no metric), whether to
@@ -197,25 +197,40 @@ file, creates the files to fill (`.logast/decisions/messages.yaml`, `.logast/dec
 what is left, grouped by what you do about it ([what happens next](#what-happens-next)):
 
 ```
-applied (100): SLG-d7dbb8 SUP-065aa3 …
-files (53): …  ·  10 rounds, 41.2s
+Set up: classpath refreshed for the new dependencies (84 entries), one more round with the refreshed classpath
 
-Done: 100 changes in 53 files, each compiled before it was kept
-  review: git diff   (one diff per kind of change in .logast/reports/steps/)
+✓ 104 changes in 53 files (41.2s)
+  44 log lines rewritten in the standard format
+  15 log lines added where something happened silently
+  10 outcomes counted (a metric next to their log line)
+  9 setup changes (dependencies, configuration, tracing)
+  9 MDC keys tidied
+  17 other changes
+  support code copied into com/example/e2e/logging (16 files)
+  review: git diff   (one diff per kind: .logast/reports/steps/)
 
-Optional (67) — left as is, each keeps its default:
-  21 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
-  12 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
-  34 decisions                      → logast scan .   (each says what to decide)
-     mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
-  to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
+Worth a look (optional) — the service works without these:
+  21 log lines could say more, 12 outcomes could be counted → logast review
+  34 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 85 — 51 fixed, 15 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 85 — 52 fixed, 15 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
-Also:
-  fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
-  logast verify .                                               build and run the tests with log capture: does the result really log what it should?
+Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+Also: logast verify .   build and run the tests with log capture: does the result really log what it should?
+
+reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)
 ```
+
+- **Set up** appears only when this run set something up: `logast.yaml` written, the classpath read with Gradle, or
+  refreshed after a build-file change. After a refresh, apply runs one more round with the new types; the summary
+  counts both.
+- **✓ N changes in M files**: one line, then what they did by kind (from the pipeline steps), largest first.
+- **Worth a look** is optional: what `logast review` decides (wording, counting outcomes, retries), and what logast
+  can't fix itself, with the most frequent kinds (`logast scan .` lists them).
+- On a terminal, the run shows one progress line that updates in place (`migrating… step 3/8: missing log lines`);
+  elsewhere (CI, pipes) only the summary is printed. Gradle's own output (classpath read or refreshed) is shown only
+  when it fails.
+- `--verbose` adds the applied order ids and the changed files; `.logast/reports/last-apply.txt` always has them.
 
 One `apply` does everything automatic, and its result compiles: the service is done there. A second one is only for
 what you decided: `logast review` (or the files in `.logast/decisions/`), then `logast apply .` again on the migrated

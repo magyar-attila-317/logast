@@ -60,7 +60,7 @@ final class PrivateRegression {
         String first = run(args);
         String second = run(args);
         List<String> problems = new ArrayList<>();
-        if (!second.contains("applied (0):")) {
+        if (!second.contains("nothing to change")) {
             problems.add("a second apply still changes something");
         }
         if ((first + second).contains("CHECK FAILED")) {

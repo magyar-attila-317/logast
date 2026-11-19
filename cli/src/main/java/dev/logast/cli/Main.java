@@ -355,19 +355,39 @@ public final class Main {
         /** #117: set on the round apply runs itself after refreshing the classpath (once). */
         @Option(names = "--refreshed", hidden = true)
         boolean refreshed;
+        @Option(names = "--verbose", description = "Also list the applied order ids and the changed files "
+                + "(.logast/reports/last-apply.txt always has them)")
+        boolean verbose;
         @CommandLine.Spec
         CommandLine.Model.CommandSpec spec;
 
-        /** #127: the one line when the support classes are copied in only because the build cannot resolve the jar. */
-        private void supportHint() {
+        /**
+         * #127: the one line when the support classes are copied in only because the build cannot resolve the jar;
+         * #126: in the "Set up" header.
+         */
+        private void supportHint(List<String> header) {
             String hint = format.equals("json") ? null : dev.logast.policy.SupportResolvable.hint(root(), policyFile);
             if (hint != null) {
-                Out.progress(hint);
+                header.add(hint);
             }
         }
 
+        /**
+         * #126: what the run before a classpath refresh did, handed to the run it starts with --refreshed (in the same
+         * JVM), so the one summary at the end counts both runs.
+         */
+        record Carried(List<String> applied, List<String> files, Map<String, String> rejected, List<String> violations,
+                       List<String> header, long t0) {
+        }
+
+        static Carried carried;
+
         @Override
         public Integer call() throws IOException {
+            Carried earlier = refreshed ? carried : null;
+            carried = null;
+            // #126: what this run set up, said once at the top of the summary (of both runs, after a refresh)
+            List<String> header = new ArrayList<>(earlier == null ? List.of() : earlier.header());
             // #122: one command on a service with nothing set up; writing is the default, git is the safety net
             write = !dryRun;
             auto = auto || only.isEmpty();   // --only alone is a selection; texts in messages.yaml come with --auto
@@ -384,7 +404,7 @@ public final class Main {
             if (policyFile == null && dev.logast.ServiceSetup.needsSetup(root())) {
                 if (write) {
                     dev.logast.ServiceSetup.Bootstrap set = dev.logast.ServiceSetup.bootstrap(root(), dev.logast.ServiceSetup.Choices.defaults(), false);
-                    Out.progress("no logast.yaml yet: wrote one with what it chose (" + set.summary() + "); edit it and apply again to change them");
+                    header.add("logast.yaml written (" + set.summary() + "; edit it and apply again to change them)");
                 } else {
                     Out.progress("no logast.yaml yet: previewing with the built-in defaults (apply without --dry-run writes one)");
                 }
@@ -393,34 +413,28 @@ public final class Main {
             // reject correct fixes with errors that look like a bug: fetch it now (#122), stop only when Gradle fails
             boolean gradleBuild = Files.exists(root().resolve("build.gradle")) || Files.exists(root().resolve("build.gradle.kts"));
             if (gradleBuild && classpathFile == null && !withoutClasspath && Logast.classpath(root(), null).isEmpty()) {
-                Main.Classpath.Result cpr;
-                try (Out.Progress p = new Out.Progress("no classpath yet: running Gradle to read it (nothing is compiled)")) {
-                    cpr = Main.Classpath.write(root());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    cpr = new Main.Classpath.Result(130, 0, false);
-                }
+                Main.Classpath.Result cpr = Main.Classpath.run(root(), "~reading the classpath with Gradle (nothing is compiled)");
                 if (cpr.exitCode() != 0) {
-                    Out.warn("no classpath (.logast/classpath*.txt): Gradle failed (exit " + cpr.exitCode() + "), its error is above "
+                    Out.warn("no classpath (.logast/classpath*.txt): Gradle failed (exit " + cpr.exitCode() + "), its output is above "
                             + "(often a JDK the build's toolchain asks for is not installed). Nothing applied; fix the build and run "
                             + "again, or --without-classpath applies anyway, with library types unresolved.");
                     return 2;
                 }
-                Out.progress("classpath read (" + cpr.entries() + " entries in .logast/classpath*.txt)");
-                supportHint();
+                header.add("classpath read with Gradle (" + cpr.entries() + (cpr.entries() == 1 ? " entry)" : " entries)"));
+                supportHint(header);
             }
             Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
             String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
             if (olderJdk != null) {
                 Out.warn(olderJdk);
             }
-            if (!fillMap.isEmpty() && !format.equals("json")) {
+            if (!fillMap.isEmpty() && earlier == null && !format.equals("json")) {
                 Out.progress("using " + fillMap.size() + " message text(s) from " + (fills != null ? fills : dev.logast.apply.FillsFile.PATH));
             }
             if (!write && !format.equals("json")) {
                 Out.progress("DRY RUN: previewing only, no files are changed (run without --dry-run to apply)");
             }
-            long t0 = System.nanoTime();
+            long t0 = earlier != null ? earlier.t0() : System.nanoTime();
             Policy policy = policy();
             List<Path> cp = classpath();
             Path project = root();   // relative extends: resolve from the project, not from apply's scratch copy (#113)
@@ -443,10 +457,21 @@ public final class Main {
                         }
                     });
             Applier.Result r;
-            try (Out.Progress p = new Out.Progress("~starting")) {
-                applier.onProgress(p::update);
+            // #126: one live line on a terminal ("migrating… step 3/8: log lines"); elsewhere no per-round lines
+            try (Out.Progress p = new Out.Progress("~migrating…")) {
+                applier.onProgress(s -> p.update("~" + ApplySummary.progress(s)));
                 r = applier.apply(root(), new Applier.Selection(auto, only, fillMap, fills == null), write);
             }
+            // #126: both runs of a classpath refresh are one apply
+            List<String> applied = new ArrayList<>(earlier == null ? List.of() : earlier.applied());
+            applied.addAll(r.applied());
+            Set<String> changedSet = new LinkedHashSet<>(earlier == null ? List.of() : earlier.files());
+            changedSet.addAll(r.changedFiles());
+            List<String> changed = new ArrayList<>(changedSet);
+            Map<String, String> rejected = new LinkedHashMap<>(earlier == null ? Map.of() : earlier.rejected());
+            rejected.putAll(r.rejected());
+            List<String> violations = new ArrayList<>(earlier == null ? List.of() : earlier.violations());
+            violations.addAll(r.violations());
             if (write) {   // #124: a fleet member reports what the code is now (a dry run changed nothing)
                 Fleet.snapshot(root(), r.after(), scanner.lastAnalysis, policy);
             }
@@ -458,11 +483,14 @@ public final class Main {
                 fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders());
                 mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders());
             }
-            // what the last apply that changed files did: a later scan starts with it ("Applied earlier", #101)
-            if (write && !r.applied().isEmpty() && !r.changedFiles().isEmpty()) {
+            // what the last apply that changed files did: a later scan starts with its first line ("Applied earlier",
+            // #101); the ids and files follow (#126: the summary lists them only with --verbose)
+            if (write && !applied.isEmpty() && !changed.isEmpty()) {
                 Files.createDirectories(root().resolve(LAST_APPLY).getParent());
-                Files.writeString(root().resolve(LAST_APPLY), dev.logast.Todo.plural(r.applied().size(), "change") + " in "
-                        + dev.logast.Todo.plural(r.changedFiles().size(), "file") + "\n");
+                Files.writeString(root().resolve(LAST_APPLY), dev.logast.Todo.plural(applied.size(), "change") + " in "
+                        + dev.logast.Todo.plural(changed.size(), "file") + "\n"
+                        + "applied (" + applied.size() + "): " + String.join(" ", applied) + "\n"
+                        + "files (" + changed.size() + "): " + String.join(", ", changed) + "\n");
             }
             // every log call of the result, with the ones this run fixed (#72); the logging pack's report, as in scan
             List<dev.logast.LogLedger.Entry> ledger = null;
@@ -483,49 +511,21 @@ public final class Main {
                     }
                 }
             }
+            List<String> stepFiles = new ArrayList<>();
             if (!r.stepDiffs().isEmpty()) {
                 Files.createDirectories(stepsDir);
                 int i = 0;
-                List<String> names = new ArrayList<>();
                 for (var e : r.stepDiffs().entrySet()) {
                     String file = String.format("%02d-%s.diff", ++i, e.getKey());
                     Files.writeString(stepsDir.resolve(file), e.getValue());
-                    names.add(file);
-                }
-                if (!format.equals("json")) {
-                    Out.progress("per step (apply in order, drop what you don't want): .logast/reports/steps/ " + String.join(" ", names));
+                    stepFiles.add(file);
                 }
             }
             if (format.equals("json")) {
                 System.out.println(OrderJson.MAPPER.writeValueAsString(r));
                 return r.rejected().isEmpty() ? 0 : 1;
             }
-            if (!write && !r.diff().isEmpty()) {
-                System.out.print(colorDiff(r.diff()));
-                System.out.println();
-            }
-            System.out.println(Ansi.bold((write ? "applied (" : "would apply (") + r.applied().size() + ")") + ": "
-                    + Ansi.dim(String.join(" ", r.applied())));
-            System.out.println(Ansi.dim("files (" + r.changedFiles().size() + "): " + String.join(", ", r.changedFiles())
-                    + "  ·  " + r.rounds() + " rounds, " + Out.seconds(t0)));
-            if (!r.resolvedIndirectly().isEmpty()) {
-                System.out.println(Ansi.dim("resolved by other changes: " + String.join(" ", r.resolvedIndirectly())));
-            }
-            r.rejected().forEach((id, why) -> System.out.println(Ansi.red("REJECTED " + id) + ": " + why));
-            if (r.before() != null && r.before().stats() != null && r.before().stats().logCallsByName() > 0) {
-                System.out.println(Ansi.warn(loggersByNameLine(r.before().stats().logCallsByName())));
-            }
-            if (!r.violations().isEmpty()) {
-                System.out.println(Ansi.warn("CHECK FAILED (" + r.violations().size() + "): the result breaks a rule every migrated file must follow"));
-                r.violations().forEach(v -> System.out.println("  " + v));
-            }
             List<dev.logast.Todo.Item> also = new ArrayList<>();
-            dev.logast.Todo.Item next = null;
-            if (!write && !r.applied().isEmpty()) {
-                next = new dev.logast.Todo.Item("logast apply ." + (fills != null ? " --fills " + fills : "")
-                        + (only.isEmpty() ? "" : " --only " + String.join(",", only)),
-                        "make these " + r.applied().size() + " changes");
-            }
             boolean buildChanged = write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith(".gradle") || fn.endsWith(".gradle.kts"));
             if (buildChanged && classpathFile != null) {
                 // #122: the caller owns the classpath (the Gradle plugin's logastApply runs inside a build): no nested
@@ -535,21 +535,17 @@ public final class Main {
             } else if (buildChanged) {
                 // a build file, or a script it applies (gradle/dependencies.gradle, #80)
                 // dependencies changed: refresh the classpath right away, so the next scan sees the new types
-                Main.Classpath.Result cpr;
-                try (Out.Progress p = new Out.Progress("dependencies changed: running Gradle to refresh the classpath")) {
-                    cpr = Main.Classpath.write(root());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    cpr = new Main.Classpath.Result(130, 0, false);
-                }
+                Main.Classpath.Result cpr = Main.Classpath.run(root(), "~dependencies changed: refreshing the classpath with Gradle");
                 if (cpr.exitCode() == 0) {
-                    Out.progress("classpath refreshed (" + cpr.entries() + " entries)");
-                    if (!refreshed && classpathFile == null && !format.equals("json")) {
+                    if (!refreshed) {
                         // #117: the new dependencies bring types (OpenTelemetry, Micrometer, …) that setup decisions depend
-                        // on; another round with the refreshed classpath settles them now, not on the next apply
-                        Out.progress("the new dependencies bring new types: one more round with the refreshed classpath");
+                        // on; another round with the refreshed classpath settles them now, not on the next apply. #126: it
+                        // gets what this run did, and its summary is the one summary of both
+                        header.add("classpath refreshed for the new dependencies (" + cpr.entries()
+                                + " entries), one more round with the refreshed classpath");
                         List<String> again = new ArrayList<>(spec.commandLine().getParseResult().originalArgs());   // "apply", …
                         again.add("--refreshed");
+                        carried = new Carried(applied, changed, rejected, violations, header, t0);
                         int rc = new CommandLine(new Main()).execute(again.toArray(String[]::new));
                         return r.rejected().isEmpty() ? rc : 1;
                     }
@@ -558,32 +554,70 @@ public final class Main {
                             + "): fix the build, then refresh the classpath"));
                 }
             }
-            if (!r.violations().isEmpty()) {
-                also.add(new dev.logast.Todo.Item("read the CHECK FAILED lines above", r.violations().size() + " places break a migration invariant: "
+            if (!header.isEmpty()) {
+                System.out.println(Ansi.bold("Set up: ") + String.join("; ", header));
+                System.out.println();
+            }
+            if (!write && !r.diff().isEmpty()) {
+                System.out.print(colorDiff(r.diff()));
+                System.out.println();
+            }
+            String counts = dev.logast.Todo.plural(applied.size(), "change") + " in " + dev.logast.Todo.plural(changed.size(), "file");
+            if (write && !changed.isEmpty()) {
+                System.out.println(Ansi.ok() + " " + Ansi.bold(counts) + Ansi.dim(" (" + Out.seconds(t0) + ")"));
+                String support = scanner.lastAnalysis == null || !policy.support().vendor() ? null : scanner.lastAnalysis.supportPackage;
+                ApplySummary.kinds(applied, changed, support).forEach(l -> System.out.println("  " + l));
+                System.out.println("  review: " + Ansi.cyan("git diff") + Ansi.dim("   (one diff per kind: .logast/reports/steps/)"));
+            } else if (write) {
+                System.out.println(Ansi.ok() + " nothing to change: the code has everything logast applies itself"
+                        + Ansi.dim(" (" + Out.seconds(t0) + ")"));
+            } else {
+                System.out.println(Ansi.bold("would apply " + counts) + Ansi.dim(" (" + Out.seconds(t0) + ")"));
+                ApplySummary.kinds(applied, changed, null).forEach(l -> System.out.println("  " + l));
+            }
+            if (verbose) {
+                System.out.println(Ansi.dim((write ? "applied (" : "would apply (") + applied.size() + "): " + String.join(" ", applied)));
+                System.out.println(Ansi.dim("files (" + changed.size() + "): " + String.join(", ", changed) + "  ·  " + r.rounds() + " rounds"));
+                if (!r.resolvedIndirectly().isEmpty()) {
+                    System.out.println(Ansi.dim("resolved by other changes: " + String.join(" ", r.resolvedIndirectly())));
+                }
+                if (!stepFiles.isEmpty()) {
+                    System.out.println(Ansi.dim("per step (apply in order, drop what you don't want): .logast/reports/steps/ "
+                            + String.join(" ", stepFiles)));
+                }
+            }
+            rejected.forEach((id, why) -> System.out.println(Ansi.red("REJECTED " + id) + ": " + why));
+            if (r.before() != null && r.before().stats() != null && r.before().stats().logCallsByName() > 0) {
+                System.out.println(Ansi.warn(loggersByNameLine(r.before().stats().logCallsByName())));
+            }
+            if (!violations.isEmpty()) {
+                System.out.println(Ansi.warn("CHECK FAILED (" + violations.size() + "): the result breaks a rule every migrated file must follow"));
+                violations.forEach(v -> System.out.println("  " + v));
+            }
+            dev.logast.Todo.Item next = null;
+            if (!write && !applied.isEmpty()) {
+                next = new dev.logast.Todo.Item("logast apply ." + (fills != null ? " --fills " + fills : "")
+                        + (only.isEmpty() ? "" : " --only " + String.join(",", only)),
+                        "make these " + applied.size() + " changes");
+            }
+            if (!violations.isEmpty()) {
+                also.add(new dev.logast.Todo.Item("read the CHECK FAILED lines above", violations.size() + " places break a migration invariant: "
                         + "a logast bug, please report the shape of the code"));
             }
-            if (!r.rejected().isEmpty()) {
-                also.add(new dev.logast.Todo.Item("read the REJECTED lines above", (r.rejected().size() == 1 ? "1 fix" : r.rejected().size() + " fixes")
+            if (!rejected.isEmpty()) {
+                also.add(new dev.logast.Todo.Item("read the REJECTED lines above", (rejected.size() == 1 ? "1 fix" : rejected.size() + " fixes")
                         + " could not be applied; each says why"));
             }
-            // #122: what this run did comes first ("Done"); what is left is optional ("Optional (N)", Todo.lines)
-            List<String> done = new ArrayList<>();
-            if (write && !r.changedFiles().isEmpty()) {
-                done.add(Ansi.bold("Done: ") + dev.logast.Todo.plural(r.applied().size(), "change") + " in "
-                        + dev.logast.Todo.plural(r.changedFiles().size(), "file")
-                        + (cp.isEmpty() ? "" : ", each compiled before it was kept"));
-                done.add("  review: " + Ansi.cyan("git diff") + Ansi.dim("   (one diff per kind of change in .logast/reports/steps/)"));
-            }
-            // what is left after this run: what logast still applies, what waits on the person, the optional checks (#101)
+            // what is left: optional, in plain words (#126); the follow-up checks one line each
             dev.logast.orders.ScanResult left = write ? r.after() : r.before();
-            dev.logast.Todo todo = dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, r.applied(), write);
+            dev.logast.Todo todo = dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, applied, write);
             also.addAll(todo.also());
-            printBlocks(done, todo.lines(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
-                    ledgerLines(ledger, List.of()), dev.logast.Todo.alsoLines(also));
+            printBlocks(todo.worthALook(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
+                    ledgerLines(ledger, List.of()), dev.logast.Todo.alsoShort(also));
             if (write) {
                 Reports.printWritten();
             }
-            return r.rejected().isEmpty() ? 0 : 1;
+            return rejected.isEmpty() ? 0 : 1;
         }
     }
 
@@ -624,7 +658,7 @@ public final class Main {
             if (!Files.isRegularFile(f)) {
                 return List.of();
             }
-            String what = Files.readString(f).strip();
+            String what = Files.readString(f).lines().findFirst().orElse("").strip();   // #126: ids and files follow
             return what.isEmpty() ? List.of() : List.of(Ansi.bold("Applied earlier: ") + what + Ansi.dim(" (git diff to review)"));
         } catch (IOException e) {
             return List.of();
@@ -678,22 +712,61 @@ public final class Main {
         @Parameters(index = "0", defaultValue = ".")
         Path root;
 
-        /** Result of one Gradle run: exit code, classpath entries, whether compiled classes were found. */
-        record Result(int exitCode, int entries, boolean compiledClasses) {
+        /**
+         * Result of one Gradle run: exit code, classpath entries, whether compiled classes were found, and what Gradle
+         * printed (#126: shown only when it failed; the JVM warnings of a run that worked are noise).
+         */
+        record Result(int exitCode, int entries, boolean compiledClasses, String output) {
+            Result(int exitCode, int entries, boolean compiledClasses) {
+                this(exitCode, entries, compiledClasses, "");
+            }
+
+            /** Gradle's own output, on stderr, when it failed; nothing when it worked. */
+            Result printIfFailed() {
+                if (exitCode != 0 && !output.isBlank()) {
+                    System.err.println(output.stripTrailing());
+                    if (brokenJar(output)) {
+                        Out.warn(BROKEN_JAR);
+                    }
+                }
+                return this;
+            }
         }
 
-        /** Runs Gradle with the classpath init script (compiles nothing); prints only Gradle's own errors. */
+        /** The hint for a Gradle failure on an empty or broken jar in a local cache. */
+        static final String BROKEN_JAR = "a jar Gradle uses is empty or broken (an interrupted download?): find ~/.m2/repository "
+                + "~/.gradle/caches/modules-2 -name '*.jar' -size 0, delete what it lists, run again";
+
+        /** Gradle failed reading a jar: an empty or truncated file in ~/.m2 or the Gradle cache. */
+        static boolean brokenJar(String output) {
+            return output.contains("zip file is empty") || output.contains("ZipException") || output.contains("error in opening zip file");
+        }
+
+        /** Runs Gradle with the classpath init script (compiles nothing); its output is captured, not printed. */
         static Result write(Path r) throws IOException, InterruptedException {
             Path init = Files.createTempFile("logast-classpath", ".init.gradle");
             Files.writeString(init, initScript());
             Path wrapper = r.resolve(System.getProperty("os.name").toLowerCase().contains("win") ? "gradlew.bat" : "gradlew");
             String gradle = Files.exists(wrapper) ? wrapper.toString() : "gradle";
             Process p = new ProcessBuilder(gradle, "-q", "--no-configuration-cache", "--init-script", init.toString(), "logastClasspath")
-                    .directory(r.toFile()).inheritIO().start();
+                    .directory(r.toFile()).redirectErrorStream(true).redirectInput(ProcessBuilder.Redirect.INHERIT).start();
+            String output = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             int rc = p.waitFor();
             Files.deleteIfExists(init);
             List<Path> cp = rc == 0 ? Logast.classpath(r, null) : List.of();
-            return new Result(rc, cp.size(), dev.logast.parse.ProjectParser.hasCompiledClasses(cp));
+            return new Result(rc, cp.size(), dev.logast.parse.ProjectParser.hasCompiledClasses(cp), output);
+        }
+
+        /** {@link #write} under a progress line ({@code label}); Gradle's output printed only when it failed. */
+        static Result run(Path r, String label) throws IOException {
+            Result res;
+            try (Out.Progress p = new Out.Progress(label)) {
+                res = write(r);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                res = new Result(130, 0, false);
+            }
+            return res.printIfFailed();   // after the progress line is gone
         }
 
         /** The classpath init script; its support check (#127) looks for the logging-support of this logast's release. */
@@ -709,7 +782,7 @@ public final class Main {
             Path r = root.toAbsolutePath().normalize();
             long t0 = System.nanoTime();
             Out.progress("running Gradle to read the classpath (nothing is compiled)…");
-            Result res = write(r);
+            Result res = write(r).printIfFailed();
             if (res.exitCode() != 0) {
                 Out.failed("classpath", "Gradle failed (exit " + res.exitCode() + ")");
                 Out.warn("run `./gradlew --init-script <script> logastClasspath` without -q in " + r + " to see why. "
