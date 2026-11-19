@@ -44,7 +44,7 @@ elif [ "$GRADLE" = ask ]; then
   if [ -t 0 ]; then
     echo "Set up Gradle, so ./gradlew logastApply works in any Java build on this machine? This will:"
     echo "  - publish dev.logast:core, dev.logast:cli and dev.logast:gradle-plugin to Maven Local (~/.m2)"
-    echo "  - write $GRADLE_INIT (it applies dev.logast where a logast task is run; opt out with -Plogast.disabled)"
+    echo "  - write $GRADLE_INIT (dev.logast in repositories with logast.yaml and for logast tasks; opt out with -Plogast.disabled)"
     printf "Proceed? [y/N] "
     answer=""; read -r answer || true
     case "$answer" in
