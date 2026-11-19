@@ -61,6 +61,34 @@ public final class Outcomes {
         }
     }
 
+    /**
+     * Registers {@code name{outcome}} at 0 without counting (#118): the series exists from the first scrape, so a
+     * dashboard shows 0 instead of "no data", {@code increase()} has its first sample, and an alert on "0 for an hour"
+     * can fire. The metrics catalog calls it at startup for every outcome it knows.
+     */
+    public static void register(String name, String outcome) {
+        counter(name, outcome);
+    }
+
+    /** {@link #register} plus the running total {@code name.amountName{outcome}} of {@link #count(String, String, String, Number)}. */
+    public static void registerTotal(String name, String outcome, String amountName) {
+        counter(name, outcome);
+        counter(name + "." + amountName, outcome);
+    }
+
+    /** {@link #register} plus the per-run summary {@code name.amountName{outcome}} of {@link #record}. */
+    public static void registerPerRun(String name, String outcome, String amountName) {
+        counter(name, outcome);
+        String sizes = name + "." + amountName;
+        SUMMARIES.computeIfAbsent(sizes + '\u0000' + outcome,
+                k -> DistributionSummary.builder(sizes).tag("outcome", outcome).register(Metrics.globalRegistry));
+    }
+
+    private static Counter counter(String name, String outcome) {
+        return COUNTERS.computeIfAbsent(name + '\u0000' + outcome,
+                k -> Counter.builder(name).tag("outcome", outcome).register(Metrics.globalRegistry));
+    }
+
     /** Tags the observation running on this thread (an HTTP request, a job, an ObservedContext); no-op without one. */
     public static void tag(String outcome) {
         Observation current = ObservationRegistryHolder.get().getCurrentObservation();

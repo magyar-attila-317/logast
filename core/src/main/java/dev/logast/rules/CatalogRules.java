@@ -42,6 +42,7 @@ final class CatalogRules {
         final Map<Key, String> members = new LinkedHashMap<>();
         final Set<String> names = new HashSet<>();
         final List<String> added = new ArrayList<>();
+        final List<Key> addedKeys = new ArrayList<>();
         boolean addsMethods;
 
         Catalog(String fqn, SourceFileInfo file, String path) {
@@ -106,6 +107,7 @@ final class CatalogRules {
             c.members.put(u.key(), member);
             c.names.add(member);
             c.added.add(memberSource(u.key(), member));
+            c.addedKeys.add(u.key());
             c.addsMethods |= !u.key().kind().equals("name");
             where.put(u.key(), new String[]{c.fqn, member});
         }
@@ -127,7 +129,18 @@ final class CatalogRules {
             } else {
                 String text = c.file.text();
                 int close = text.lastIndexOf('}');
-                b.edit(Edit.insert(c.file.relPath(), close, String.join("", c.added)));
+                // #118: the new counters are registered at startup too: in the catalog's Registration, or a new one with all
+                String body = String.join("", c.added);
+                int reg = text.indexOf(REGISTRATION_OPEN);
+                if (reg >= 0) {
+                    String lines = registrations(c.addedKeys);
+                    if (!lines.isEmpty()) {
+                        b.edit(Edit.insert(c.file.relPath(), reg + REGISTRATION_OPEN.length(), lines));
+                    }
+                } else {
+                    body += registration(registrations(new ArrayList<>(c.members.keySet())));
+                }
+                b.edit(Edit.insert(c.file.relPath(), close, body));
                 if (c.addsMethods) {
                     b.edits(JavaEdits.imports(c.file, ctx.support("Outcomes")));
                 }
@@ -365,7 +378,49 @@ final class CatalogRules {
                 .append("public final class ").append(c.simpleName()).append(" {\n")
                 .append("    private ").append(c.simpleName()).append("() {\n    }\n");
         c.added.forEach(sb::append);
+        sb.append(registration(registrations(c.addedKeys)));
         return sb.append("}\n").toString();
+    }
+
+    static final String REGISTRATION_OPEN = "        public void afterSingletonsInstantiated() {\n";
+
+    /**
+     * #118: a counter exists once registered; Outcomes registers on the first event. The catalog registers each of its
+     * counters at 0 once the application has started, so a series exists from the first scrape (0, not "no data";
+     * increase() has its first sample; "0 for an hour" can alert). Micrometer adds meters of the global registry to
+     * each registry bound to it later (Micrometer reference, Meter registries: global registry).
+     */
+    private static String registration(String lines) {
+        if (lines.isEmpty()) {
+            return "";
+        }
+        return "\n    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */\n"
+                + "    @org.springframework.stereotype.Component\n"
+                + "    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {\n"
+                + "        @Override\n"
+                + REGISTRATION_OPEN
+                + lines
+                + "        }\n"
+                + "    }\n";
+    }
+
+    /** One register line per counting key (observation names and outcome tags have no counter of their own). */
+    private static String registrations(List<Key> keys) {
+        StringBuilder sb = new StringBuilder();
+        for (Key k : keys) {
+            String line = switch (k.kind()) {
+                case "count" -> "Outcomes.register(" + Text.javaString(k.name()) + ", " + Text.javaString(k.outcome()) + ");";
+                case "total" -> "Outcomes.registerTotal(" + Text.javaString(k.name()) + ", " + Text.javaString(k.outcome()) + ", "
+                        + Text.javaString(k.amount()) + ");";
+                case "per-run" -> "Outcomes.registerPerRun(" + Text.javaString(k.name()) + ", " + Text.javaString(k.outcome()) + ", "
+                        + Text.javaString(k.amount()) + ");";
+                default -> null;
+            };
+            if (line != null) {
+                sb.append("            ").append(line).append('\n');
+            }
+        }
+        return sb.toString();
     }
 
     /** The Outcomes import, when every use of Outcomes in the file moves into a catalog. */

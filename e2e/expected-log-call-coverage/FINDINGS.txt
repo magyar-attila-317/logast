@@ -1,4 +1,4 @@
-logast · 76 files · 21 entrypoints · 83/211 methods reachable · 160 call edges
+logast · 76 files · 21 entrypoints · 83/220 methods reachable · 173 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
 68 orders: 0 AUTO, 21 NEEDS TEXT, 47 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)

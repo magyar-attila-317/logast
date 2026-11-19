@@ -21,4 +21,14 @@ public final class DepartureMetrics {
     public static void cancellationPushFailed() {
         Outcomes.count("cancellation.push", "failed");
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.register("delay.push.to.subscriber", "failed");
+            Outcomes.register("cancellation.push", "failed");
+        }
+    }
 }

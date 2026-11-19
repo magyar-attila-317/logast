@@ -34,4 +34,16 @@ public final class OrderMetrics {
     public static void ordersShipped(Number items) {
         Outcomes.count("orders", "shipped", "items", items);
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.register("order.confirmation", "sent");
+            Outcomes.register("order", "placed");
+            Outcomes.register("order.shipment", "skipped");
+            Outcomes.registerTotal("orders", "shipped", "items");
+        }
+    }
 }

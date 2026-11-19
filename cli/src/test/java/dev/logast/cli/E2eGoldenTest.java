@@ -582,6 +582,14 @@ abstract class E2eGoldenTest {
                     .mapToLong(e -> e.getValue().lines().filter(l -> l.matches(".*(Outcomes\\.(count|record|tag)|ObservedContext\\.entrypoint)\\(\".*")).count())
                     .sum();
             assertThat(outside).as("no metric or observation name, nor an outcome tag (#25), is left at a call site").isZero();
+            // #118: each catalog registers its counters at startup (a series at 0 before the first event)
+            for (String cat : catalogs) {
+                String text = actual.get(cat);
+                if (text.contains("Outcomes.count(") || text.contains("Outcomes.record(")) {
+                    assertThat(text).as(cat + " registers its counters").contains("static final class Registration implements "
+                            + "org.springframework.beans.factory.SmartInitializingSingleton").contains("Outcomes.register");
+                }
+            }
             long calls = actual.entrySet().stream().filter(e -> e.getKey().startsWith("src/") && !catalogs.contains(e.getKey()))
                     .mapToLong(e -> e.getValue().lines().filter(l -> l.matches("\\s*\\w*Metrics\\.[a-z]\\w*\\(.*\\);.*")).count()).sum();
             assertThat(calls).as("every outcome decided in metrics.yaml is counted through the catalog").isEqualTo(decided);

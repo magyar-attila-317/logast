@@ -16,4 +16,13 @@ public final class StockMetrics {
     public static void stockTrackerCompleted() {
         Outcomes.count("stock.tracker", "completed");
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.register("stock.tracker", "completed");
+        }
+    }
 }

@@ -1,9 +1,9 @@
 diff --git a/src/main/java/com/example/e2e/job/JobMetrics.java b/src/main/java/com/example/e2e/job/JobMetrics.java
 new file mode 100644
-index 0000000..d1c5ddc
+index 0000000..bfc5e69
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/job/JobMetrics.java
-@@ -0,0 +1,35 @@ 
+@@ -0,0 +1,46 @@ 
 +package com.example.e2e.job;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -38,13 +38,24 @@ index 0000000..d1c5ddc
 +    public static void preloadExportCompleted() {
 +        Outcomes.count("preload.export", "completed");
 +    }
++
++    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
++    @org.springframework.stereotype.Component
++    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
++        @Override
++        public void afterSingletonsInstantiated() {
++            Outcomes.register("tally", "completed");
++            Outcomes.register("export.job", "completed");
++            Outcomes.register("preload.export", "completed");
++        }
++    }
 +}
 diff --git a/src/main/java/com/example/e2e/messaging/MessagingMetrics.java b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
 new file mode 100644
-index 0000000..d9d4958
+index 0000000..47811f3
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
-@@ -0,0 +1,22 @@ 
+@@ -0,0 +1,31 @@ 
 +package com.example.e2e.messaging;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -66,13 +77,22 @@ index 0000000..d9d4958
 +    public static void pledgeMessagesCompleted() {
 +        Outcomes.count("pledge.messages", "completed");
 +    }
++
++    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
++    @org.springframework.stereotype.Component
++    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
++        @Override
++        public void afterSingletonsInstantiated() {
++            Outcomes.register("pledge.messages", "completed");
++        }
++    }
 +}
 diff --git a/src/main/java/com/example/e2e/order/OrderMetrics.java b/src/main/java/com/example/e2e/order/OrderMetrics.java
 new file mode 100644
-index 0000000..73d8b68
+index 0000000..7e712ec
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/order/OrderMetrics.java
-@@ -0,0 +1,22 @@ 
+@@ -0,0 +1,31 @@ 
 +package com.example.e2e.order;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -93,6 +113,15 @@ index 0000000..73d8b68
 +    /** order.shipment{outcome="skipped"} +1. */
 +    public static void orderShipmentSkipped() {
 +        Outcomes.count("order.shipment", "skipped");
++    }
++
++    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
++    @org.springframework.stereotype.Component
++    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
++        @Override
++        public void afterSingletonsInstantiated() {
++            Outcomes.register("order.shipment", "skipped");
++        }
 +    }
 +}
 diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
@@ -258,10 +287,10 @@ index c2e743a..5b04172 100644
          }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeMetrics.java b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 new file mode 100644
-index 0000000..ded21e8
+index 0000000..699417f
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
-@@ -0,0 +1,29 @@ 
+@@ -0,0 +1,40 @@ 
 +package com.example.e2e.pledge;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -290,13 +319,24 @@ index 0000000..ded21e8
 +    public static void pledgeResendFailed() {
 +        Outcomes.count("pledge.resend", "failed");
 +    }
++
++    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
++    @org.springframework.stereotype.Component
++    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
++        @Override
++        public void afterSingletonsInstantiated() {
++            Outcomes.register("pledge.lookup", "failed");
++            Outcomes.registerTotal("pledges", "updated", "rows");
++            Outcomes.register("pledge.resend", "failed");
++        }
++    }
 +}
 diff --git a/src/main/java/com/example/e2e/edge/EdgeMetrics.java b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
 new file mode 100644
-index 0000000..69dff84
+index 0000000..703cf1b
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
-@@ -0,0 +1,19 @@ 
+@@ -0,0 +1,28 @@ 
 +package com.example.e2e.edge;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -314,5 +354,14 @@ index 0000000..69dff84
 +    /** edge.processing{outcome="completed"} +1. */
 +    public static void edgeProcessingCompleted() {
 +        Outcomes.count("edge.processing", "completed");
++    }
++
++    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
++    @org.springframework.stereotype.Component
++    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
++        @Override
++        public void afterSingletonsInstantiated() {
++            Outcomes.register("edge.processing", "completed");
++        }
 +    }
 +}

@@ -46,4 +46,18 @@ public final class PledgeMetrics {
     public static void pledgeAllotmentCompleted() {
         Outcomes.count("pledge.allotment", "completed");
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.registerPerRun("pledges", "updated", "rows");
+            Outcomes.registerTotal("pledge.usage", "saved", "uses");
+            Outcomes.register("pledge", "sent");
+            Outcomes.register("pledge.resend", "failed");
+            Outcomes.register("pledge", "published");
+            Outcomes.register("pledge.allotment", "completed");
+        }
+    }
 }

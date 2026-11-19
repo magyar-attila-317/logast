@@ -113,4 +113,29 @@ public final class BusinessMetrics {
     public static void ordersShipped(Number items) {
         Outcomes.count("orders", "shipped", "items", items);
     }
+
+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
+    @org.springframework.stereotype.Component
+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
+        @Override
+        public void afterSingletonsInstantiated() {
+            Outcomes.registerPerRun("pledges", "updated", "rows");
+            Outcomes.registerTotal("pledge.usage", "saved", "uses");
+            Outcomes.register("pledge", "sent");
+            Outcomes.register("pledge.resend", "failed");
+            Outcomes.register("pledge", "published");
+            Outcomes.register("pledge.allotment", "completed");
+            Outcomes.register("pledge", "audited");
+            Outcomes.register("pledge", "parsed");
+            Outcomes.register("edge.processing", "completed");
+            Outcomes.register("tally", "completed");
+            Outcomes.register("export.job", "completed");
+            Outcomes.register("preload.export", "completed");
+            Outcomes.register("pledge.messages", "completed");
+            Outcomes.register("order.confirmation", "sent");
+            Outcomes.register("order", "placed");
+            Outcomes.register("order.shipment", "skipped");
+            Outcomes.registerTotal("orders", "shipped", "items");
+        }
+    }
 }
