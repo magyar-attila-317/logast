@@ -17,9 +17,10 @@ import java.util.TreeSet;
  * (solid: confirmed or a message, dashed: path only, dotted: ambiguous), red when the trace breaks on the pair.
  */
 public final class FleetGraph {
-    static final int COL = 230;
     static final int ROW = 58;
-    static final int BOX_W = 160;
+    static final int MAX_BOX_W = 300;
+    static final int CHAR_W = 7;
+    static final int GAP = 90;
     static final int BOX_H = 34;
     static final int PAD = 20;
 
@@ -133,31 +134,80 @@ public final class FleetGraph {
         return d;
     }
 
+    /**
+     * The services of each column, ordered so that arrows cross less: a few sweeps that move each service to the mean
+     * position of the services it links to (the barycenter heuristic), names breaking ties.
+     */
+    static List<List<String>> order(Map<String, Integer> col, List<Edge> edges) {
+        int n = col.values().stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+        List<List<String>> cols = new ArrayList<>();
+        for (int c = 0; c < n; c++) {
+            cols.add(new ArrayList<>());
+        }
+        new TreeMap<>(col).forEach((name, c) -> cols.get(c).add(name));
+        Map<String, List<String>> near = new HashMap<>();
+        edges.forEach(e -> {
+            near.computeIfAbsent(e.from(), k -> new ArrayList<>()).add(e.to());
+            near.computeIfAbsent(e.to(), k -> new ArrayList<>()).add(e.from());
+        });
+        Map<String, Double> pos = new HashMap<>();
+        cols.forEach(c -> place(c, pos));
+        // one column at a time, left to right then back, each against its neighbours' current places
+        for (int sweep = 0; sweep < 8; sweep++) {
+            for (int k = 0; k < n; k++) {
+                List<String> c = cols.get(sweep % 2 == 0 ? k : n - 1 - k);
+                Map<String, Double> key = new HashMap<>();
+                for (String s : c) {
+                    key.put(s, near.getOrDefault(s, List.of()).stream().filter(o -> !c.contains(o))
+                            .mapToDouble(pos::get).average().orElse(pos.get(s)));
+                }
+                c.sort(java.util.Comparator.<String>comparingDouble(key::get).thenComparing(java.util.Comparator.naturalOrder()));
+                place(c, pos);
+            }
+        }
+        return cols;
+    }
+
+    /** Relative places (0 top, 1 bottom), so columns of different heights compare, as they are drawn fanned out. */
+    private static void place(List<String> c, Map<String, Double> pos) {
+        for (int i = 0; i < c.size(); i++) {
+            pos.put(c.get(i), c.size() == 1 ? 0.5 : (double) i / (c.size() - 1));
+        }
+    }
+
+    private static boolean hasBackEdge(List<Edge> edges, Map<String, int[]> at) {
+        return edges.stream().anyMatch(e -> at.get(e.to())[0] <= at.get(e.from())[0]);
+    }
+
     /** The diagram, or a line saying there is nothing to draw. */
     public static String svg(Collection<String> services, FleetLinks.Result links) {
         List<Edge> edges = edges(links);
         if (edges.isEmpty()) {
             return "<p class=muted>No call reaches an entrypoint of another service: nothing to draw.</p>";
         }
-        Map<String, Integer> col = columns(services, edges);
-        Map<Integer, List<String>> byCol = new TreeMap<>();
-        col.forEach((n, c) -> byCol.computeIfAbsent(c, k -> new ArrayList<>()).add(n));
-        Map<String, int[]> at = new HashMap<>();
-        int rows = 0;
-        for (Map.Entry<Integer, List<String>> e : byCol.entrySet()) {
-            List<String> names = e.getValue();
-            for (int i = 0; i < names.size(); i++) {
-                at.put(names.get(i), new int[]{PAD + e.getKey() * COL, PAD + i * ROW});
-            }
-            rows = Math.max(rows, names.size());
-        }
-        int width = PAD * 2 + (byCol.size() - 1) * COL + BOX_W;
-        int height = PAD * 2 + (rows - 1) * ROW + BOX_H;
-        Set<String> linked = new HashSet<>();
+        Set<String> linked = new TreeSet<>();
         edges.forEach(e -> {
             linked.add(e.from());
             linked.add(e.to());
         });
+        List<List<String>> cols = order(columns(linked, edges), edges);
+        int rows = cols.stream().mapToInt(List::size).max().orElse(1);
+        int longest = linked.stream().mapToInt(String::length).max().orElse(10);
+        int boxW = Math.max(120, Math.min(MAX_BOX_W, longest * CHAR_W + 24));
+        int chars = (boxW - 24) / CHAR_W;
+        int colW = boxW + GAP;
+        Map<String, int[]> at = new HashMap<>();
+        for (int c = 0; c < cols.size(); c++) {
+            List<String> names = cols.get(c);
+            // fanned out: a shorter column spreads over the height of the tallest, one service sits in the middle
+            double step = names.size() == 1 ? 0 : (double) (rows - 1) * ROW / (names.size() - 1);
+            int top = names.size() == 1 ? PAD + (rows - 1) * ROW / 2 : PAD;
+            for (int i = 0; i < names.size(); i++) {
+                at.put(names.get(i), new int[]{PAD + c * colW, (int) Math.round(top + i * step)});
+            }
+        }
+        int width = PAD * 2 + (cols.size() - 1) * colW + boxW;
+        int height = PAD * 2 + (rows - 1) * ROW + BOX_H + (hasBackEdge(edges, at) ? ROW : 0);
         StringBuilder svg = new StringBuilder();
         svg.append("<div class=wrap><svg class=graph width=").append(width).append(" height=").append(height)
                 .append(" viewBox='0 0 ").append(width).append(' ').append(height)
@@ -166,7 +216,7 @@ public final class FleetGraph {
         for (Edge e : edges) {
             int[] a = at.get(e.from());
             int[] b = at.get(e.to());
-            double x1 = a[0] + BOX_W;
+            double x1 = a[0] + boxW;
             double y1 = a[1] + BOX_H / 2.0;
             double x2 = b[0];
             double y2 = b[1] + BOX_H / 2.0;
@@ -188,16 +238,21 @@ public final class FleetGraph {
         for (Map.Entry<String, int[]> n : new TreeMap<>(at).entrySet()) {
             String name = n.getKey();
             int[] p = n.getValue();
-            String shown = name.length() > 20 ? name.substring(0, 19) + "…" : name;
-            svg.append("<g class='node").append(linked.contains(name) ? "" : " alone").append("' data-name='").append(esc(name))
+            String shown = name.length() > chars ? name.substring(0, chars - 1) + "…" : name;
+            svg.append("<g class=node data-name='").append(esc(name))
                     .append("'><title>").append(esc(name)).append("</title><rect x=").append(p[0]).append(" y=").append(p[1])
-                    .append(" width=").append(BOX_W).append(" height=").append(BOX_H).append(" rx=6></rect><text x=")
-                    .append(p[0] + BOX_W / 2).append(" y=").append(p[1] + BOX_H / 2 + 4).append(">").append(esc(shown))
+                    .append(" width=").append(boxW).append(" height=").append(BOX_H).append(" rx=6></rect><text x=")
+                    .append(p[0] + boxW / 2).append(" y=").append(p[1] + BOX_H / 2 + 4).append(">").append(esc(shown))
                     .append("</text></g>\n");
         }
+        List<String> alone = new TreeSet<>(services).stream().filter(n -> !linked.contains(n)).toList();
         svg.append("</svg></div>\n<div class=muted>Arrow: caller → callee. Solid: confirmed by the host, or a message; "
                 + "dashed: path only; dotted: ambiguous (one arrow per candidate); red: the trace breaks. Hover an arrow for "
                 + "its calls, click a service to show only its links.</div>\n");
+        if (!alone.isEmpty()) {
+            svg.append("<div class=muted>No link to or from another service: ").append(esc(String.join(", ", alone)))
+                    .append("</div>\n");
+        }
         svg.append("""
                 <script>
                 document.querySelectorAll('svg.graph .node').forEach(function (n) {
@@ -225,8 +280,7 @@ public final class FleetGraph {
     public static final String CSS = """
             svg.graph{display:block;font:12px system-ui,sans-serif}
             svg.graph .node rect{fill:var(--card);stroke:var(--fg);stroke-width:1.2}svg.graph .node{cursor:pointer}
-            svg.graph .node text{fill:var(--fg);text-anchor:middle}svg.graph .node.alone rect{stroke:var(--line)}
-            svg.graph .node.alone text{fill:var(--muted)}
+            svg.graph .node text{fill:var(--fg);text-anchor:middle}
             svg.graph .edge{fill:none;stroke:var(--muted);stroke-width:1.6}svg.graph .edge:hover{stroke-width:3.5}
             svg.graph .edge.pathOnly{stroke-dasharray:6 4}svg.graph .edge.ambiguous{stroke-dasharray:2 4}
             svg.graph .edge.broken{stroke:var(--bad)}

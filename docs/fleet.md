@@ -144,7 +144,8 @@ The report page starts the trace section with a diagram of the links (#140): a b
 callees, one arrow per caller → callee pair. The line shows how sure the match is (solid: confirmed by the host, or a
 message; dashed: path only; dotted: ambiguous, one arrow per candidate), red when the trace breaks on at least one of
 the pair's calls. Hovering an arrow lists its calls and how many break; clicking a service shows only its links. Calls to
-another host are no links and are not drawn.
+another host are no links and are not drawn; services without links are listed under the diagram. Columns fan out over
+the tallest one and are ordered so that arrows cross less.
 
 ## The fleet's vocabulary
 
