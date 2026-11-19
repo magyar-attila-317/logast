@@ -338,9 +338,11 @@ snapshot (`links`):
   interface methods against request mappings (method and path; `/orders/{id}` matches `/orders/42`, a URI template and a
   value the code does not know), and KafkaTemplate / RabbitTemplate / JmsTemplate sends against `@KafkaListener` /
   `@RabbitListener` / `@JmsListener` (topic, queue or routing key, destination). Constants, `@Value("${…}")` fields
-  and placeholders resolve from the service's application.yml. A base URL from a property, a variable or the client's
-  base URL is not known: such a call is matched on its path only, and the output says so. For every pair it lists the
-  call site, the entrypoint and which side drops the trace, with the order of that service's scan that fixes it:
+  and parameters and placeholders resolve from the service's application.yml / application.properties, then from its
+  profile files (`application-<profile>.yml`, and profile documents) when those agree on one value (a `localhost` or
+  loopback value is left out when another remains), then from the placeholder's default (`${billing.url:http://billing}`).
+  For every pair it lists the call site, the entrypoint and which side drops the trace, with the order of that
+  service's scan that fixes it:
   - the caller: an HTTP client built by hand (`HTTP_CLIENT_UNTRACED` where it is built, in the same class or in a
     `@Bean` method of that client kind), OpenFeign without feign-micrometer, a KafkaTemplate without
     `spring.kafka.template.observation-enabled` (`KAFKA_OBSERVATION_DISABLED`), a RabbitTemplate without
@@ -351,6 +353,29 @@ snapshot (`links`):
 
   Pairs where the trace goes on are listed too. Calls inside one service are not compared. The caller side needs the
   tracing pack (its findings are the evidence).
+
+  **Which service an HTTP call reaches** (#128). Two services can have the same path (`/health`, `/api/v1/status`,
+  `POST /invoices`), so the host of the call's base URL decides. The base URL comes from the URI itself, a property
+  (above), the client's `baseUrl(…)` (RestClient, WebClient, `RestClient.create(…)`) or `rootUri(…)`
+  (RestTemplateBuilder) where the client field is built or in the `@Bean` method that builds it (named like the field,
+  else the only one of that type), OpenFeign's `url` (else its `name`, the service id the load balancer resolves) and
+  `@HttpExchange(url = …)`. The part of the host that names a service is its first label: `billing` of
+  `http://billing:8080`, of `billing.payments.svc.cluster.local` (Kubernetes) and of `billing.internal`. It names a
+  service when it equals, ignoring case, the service's fleet name (its folder, the member name of a named fleet), its
+  root folder's name or its `spring.application.name`; as a fallback, the names without a `-service` / `-svc` suffix
+  (`billing-svc` ~ `billing`, and the note says so). `localhost` and IP addresses name no service. Every HTTP pair says
+  how it was matched (`match` in the JSON):
+
+  | match | when | output |
+  |---|---|---|
+  | `confirmed` | the host names the service that has the path | `confirmed: host billing (invoicing has this path too)` |
+  | `pathOnly` | the host is not known, one service has the path | `path only: base URL not in the code` |
+  | `ambiguous` | the host is not known (or names several), several services have the path | one row, `orders -> billing or invoicing`, every candidate's entrypoint; `ambiguous: billing or invoicing have this path` |
+  | `differentHost` | the host names another service, or none of the fleet | not a link: listed under **Same path, other host** (`otherHost` in the JSON), a stale URL or a service outside the fleet |
+
+  An ambiguous call drops the trace at the callee only when every candidate does; when only some do, it is listed
+  under "the trace depends on which service the call reaches", with the candidates that would drop it. Messages are
+  not matched by host: every listener of a topic or queue receives them.
 - **One outcome, several metric names.** Log lines that report an outcome (as METRIC_OUTCOME_UNMEASURED recognises
   them: "Order shipped") and the meter that counts them: the next counting statement in the method (a counter, a
   counter field's `increment()`, `Outcomes.count` / `record`, a metrics catalog method) or `@Counted`. The same subject
@@ -364,7 +389,14 @@ Trace across services: 5 calls reach another service, 2 drop the trace
     entry  src/main/java/com/example/billing/InvoiceController.java:20  POST /invoices, InvoiceController.create
     breaks at the caller (orders): RestClient in a field initializer: no traceparent header on outgoing calls
       fix: order HTC-c8498e (HTTP_CLIENT_UNTRACED) in orders: Build it in the constructor from an injected, …
+    confirmed: host billing (invoicing has this path too)
   …
+  the trace goes on:
+    orders -> ledger  GET /entries/{?}  (…/LedgerClient.java:19 -> …/EntryController.java:10)  confirmed: host ledger.finance.svc.cluster.local
+    orders -> billing or invoicing  GET /receipts/{id}  (…/ReceiptClient.java:15 -> billing …/ReceiptController.java:10, invoicing …/InvoiceController.java:16)  ambiguous: billing or invoicing have this path (base URL not in the code)
+Same path, other host: 1 call (not counted as links)
+  orders -> http://archive-service  GET /entries/{?}  (…/ArchiveClient.java:19 -> ledger …/EntryController.java:10)
+    different host: archive-service names no service of the fleet; ledger has this path (a stale URL, or a service outside the fleet?)
 One outcome, several metric names: 1 candidate (pick one name; nothing is merged)
   "Order shipped" counted as orders.shipped (orders), shipment.completed (shipping)
 ```

@@ -88,6 +88,65 @@ public final class SpringProperties {
         return out;
     }
 
+    /**
+     * The values the service sets only for a profile or platform (#128): {@code application-<profile>.yml|yaml|properties}
+     * (also in {@code config/}) and the documents with {@code spring.config.activate.*} in the base files, key → every
+     * distinct value in file order. Not the service's value: for a caller that needs a hint (the host a client calls).
+     */
+    public static Map<String, List<String>> profileValues(Path root) {
+        Map<String, List<String>> out = new TreeMap<>();
+        Path resources = appResources(root);
+        if (resources == null) {
+            return out;
+        }
+        List<Path> files = new ArrayList<>();
+        for (Path dir : List.of(resources, resources.resolve("config"))) {
+            if (!Files.isDirectory(dir)) {
+                continue;
+            }
+            try (Stream<Path> s = Files.list(dir)) {
+                s.filter(p -> p.getFileName().toString().matches("application(-[^.]+)?\\.(yml|yaml|properties)")).sorted().forEach(files::add);
+            } catch (IOException e) {
+                // unreadable folder: no hints from it
+            }
+        }
+        for (Path p : files) {
+            boolean profileFile = p.getFileName().toString().startsWith("application-");
+            try {
+                String text = dev.logast.parse.SourceText.read(p);
+                List<Map<String, String>> docs = new ArrayList<>();
+                if (p.toString().endsWith(".properties")) {
+                    for (String doc : text.split("(?m)^[#!]---\\s*$")) {
+                        Properties props = new Properties();
+                        props.load(new StringReader(doc));
+                        Map<String, String> flat = new TreeMap<>();
+                        props.forEach((k, v) -> flat.put(String.valueOf(k), String.valueOf(v).trim()));
+                        docs.add(flat);
+                    }
+                } else {
+                    for (JsonNode doc : new ObjectMapper(new YAMLFactory()).readerFor(JsonNode.class).<JsonNode>readValues(text).readAll()) {
+                        Map<String, String> flat = new TreeMap<>();
+                        flatten("", doc, flat);
+                        docs.add(flat);
+                    }
+                }
+                for (Map<String, String> doc : docs) {
+                    if (profileFile || doc.keySet().stream().anyMatch(k -> k.startsWith("spring.config.activate."))) {
+                        doc.forEach((k, v) -> {
+                            List<String> values = out.computeIfAbsent(k, x -> new ArrayList<>());
+                            if (!values.contains(v)) {
+                                values.add(v);
+                            }
+                        });
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                // unreadable config: treat as absent
+            }
+        }
+        return out;
+    }
+
     /** A document that applies always (no spring.config.activate.*) overrides what came before. */
     private static void putBase(Map<String, String> doc, Map<String, String> out) {
         if (doc.keySet().stream().noneMatch(k -> k.startsWith("spring.config.activate."))) {

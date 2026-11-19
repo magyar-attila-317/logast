@@ -1,21 +1,31 @@
-=== logast fleet --out <tmp>/report orders shipping billing ledger
+=== logast fleet --out <tmp>/report orders shipping billing ledger invoicing
 
-Trace across services: 5 calls reach another service, 2 drop the trace
+Trace across services: 7 calls reach another service, 3 drop the trace
+  orders -> invoicing  POST /invoices
+    call   src/main/java/com/example/orders/InvoiceApi.java:9  OpenFeign, InvoiceApi.create
+    entry  src/main/java/com/example/invoicing/InvoiceController.java:12  POST /invoices, InvoiceController.create
+    breaks at the caller (orders): OpenFeign clients without feign-micrometer: no traceparent header, the called service starts a new trace
+      fix: order HTC-2ee5c2 (HTTP_CLIENT_UNTRACED) in orders: Add implementation("io.github.openfeign:feign-micrometer") (version from the Spring Cloud BOM); Spring Cloud OpenFeign then instruments every client.
+    confirmed: host invoice-api (spring.application.name of invoicing) (billing has this path too)
   orders -> billing  POST /invoices
     call   src/main/java/com/example/orders/InvoiceClient.java:11  RestClient, InvoiceClient.request
     entry  src/main/java/com/example/billing/InvoiceController.java:20  POST /invoices, InvoiceController.create
     breaks at the caller (orders): RestClient in a field initializer: no traceparent header on outgoing calls
       fix: order HTC-c8498e (HTTP_CLIENT_UNTRACED) in orders: Build it in the constructor from an injected, instrumented builder (RestClient.Builder).
-    base http://billing: matched on the path
+    confirmed: host billing (invoicing has this path too)
   orders -> billing  topic orders.placed
     call   src/main/java/com/example/orders/OrderDispatch.java:25  KafkaTemplate, OrderDispatch.place
     entry  src/main/java/com/example/billing/OrderPlacedAudit.java:13  @KafkaListener orders.placed, OrderPlacedAudit.onPlaced
     breaks at the callee (billing): the listener is not observed: it does not continue the record's trace
       fix: order KFK-b4ade9 (KAFKA_OBSERVATION_DISABLED) in billing: Kafka listener without observation: the trace stops at the topic
   the trace goes on:
-    orders -> ledger  GET /entries/{?}  (src/main/java/com/example/orders/LedgerClient.java:19 -> src/main/java/com/example/ledger/EntryController.java:10)  path only: base URL not in the code
+    orders -> ledger  GET /entries/{?}  (src/main/java/com/example/orders/LedgerClient.java:19 -> src/main/java/com/example/ledger/EntryController.java:10)  confirmed: host ledger.finance.svc.cluster.local
     orders -> shipping  topic orders.placed  (src/main/java/com/example/orders/OrderDispatch.java:25 -> src/main/java/com/example/shipping/OrderPlacedListener.java:13)
-    orders -> shipping  GET /shipments/{id}  (src/main/java/com/example/orders/ShippingClient.java:15 -> src/main/java/com/example/shipping/ShipmentController.java:23)  path only: base URL not in the code
+    orders -> billing or invoicing  GET /receipts/{id}  (src/main/java/com/example/orders/ReceiptClient.java:15 -> billing src/main/java/com/example/billing/ReceiptController.java:10, invoicing src/main/java/com/example/invoicing/InvoiceController.java:16)  ambiguous: billing or invoicing have this path (base URL not in the code)
+    orders -> shipping  GET /shipments/{id}  (src/main/java/com/example/orders/ShippingClient.java:16 -> src/main/java/com/example/shipping/ShipmentController.java:23)  confirmed: host shipping
+Same path, other host: 1 call (not counted as links)
+  orders -> http://archive-service  GET /entries/{?}  (src/main/java/com/example/orders/ArchiveClient.java:19 -> ledger src/main/java/com/example/ledger/EntryController.java:10)
+    different host: archive-service names no service of the fleet; ledger has this path (a stale URL, or a service outside the fleet?)
 One outcome, several metric names: 1 candidate (pick one name; nothing is merged)
   "Order shipped" counted as orders.shipped (orders), shipment.completed (shipping)
     orders  src/main/java/com/example/orders/OrderDispatch.java:29  "Order shipped" -> orders.shipped (counter)

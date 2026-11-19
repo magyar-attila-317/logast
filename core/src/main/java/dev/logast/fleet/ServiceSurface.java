@@ -1,6 +1,7 @@
 package dev.logast.fleet;
 
 import dev.logast.Analysis;
+import dev.logast.SpringProperties;
 import dev.logast.graph.Constants;
 import dev.logast.model.Annotations;
 import dev.logast.model.ClassInfo;
@@ -26,12 +27,18 @@ import java.util.regex.Pattern;
  * @param calls   outgoing HTTP requests and messages with a known path, topic or queue
  * @param entries request mappings and listeners
  * @param counted outcomes the logs report that a meter counts
+ * @param application its {@code spring.application.name}, a name other services' base URLs may use for it (#128); null
+ *                    when not set (or in a snapshot written before it)
  */
-public record ServiceSurface(List<Call> calls, List<Entry> entries, List<MetricsMap.Counted> counted) {
+public record ServiceSurface(List<Call> calls, List<Entry> entries, List<MetricsMap.Counted> counted, String application) {
     public ServiceSurface {
         calls = calls == null ? List.of() : List.copyOf(calls);
         entries = entries == null ? List.of() : List.copyOf(entries);
         counted = counted == null ? List.of() : List.copyOf(counted);
+    }
+
+    public ServiceSurface(List<Call> calls, List<Entry> entries, List<MetricsMap.Counted> counted) {
+        this(calls, entries, counted, null);
     }
 
     /**
@@ -49,8 +56,9 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
      * @param kind   http, kafka, rabbit or jms
      * @param verb   the HTTP method, null when unknown or not HTTP
      * @param target the path (with {@code {?}} for a value not known in the code), topic or queue
-     * @param base   scheme and host when the code has them literally; null when they come from a property, a variable or
-     *               the client's base URL (then the call is matched on its path only)
+     * @param base   scheme and host when known: literally in the URI, from a property (application.yml, a profile file,
+     *               the placeholder's default), the client's {@code baseUrl} / {@code rootUri}, OpenFeign's {@code url} or
+     *               {@code name}; null when not (then the call is matched on its path only)
      * @param client RestClient, WebClient, RestTemplate, OpenFeign, HTTP interface, KafkaTemplate, RabbitTemplate, JmsTemplate
      * @param breaks null when the trace goes on
      */
@@ -86,12 +94,37 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
     private static final String UNKNOWN = "\u0000";
 
     public static ServiceSurface of(Analysis a, ScanResult r) {
-        return new ServiceSurface(new Calls(a, r).find(), entries(a, r), MetricsMap.counted(a));
+        Props props = new Props(a.springProperties, SpringProperties.profileValues(a.project.root()));
+        String app = props.get("spring.application.name");
+        app = app == null ? null : placeholders(props, app);
+        return new ServiceSurface(new Calls(a, r, props).find(), entries(a, r, props), MetricsMap.counted(a),
+                app == null || app.contains(UNKNOWN) || app.isBlank() ? null : app.strip());
     }
+
+    /**
+     * The service's properties (#128): the base configuration, else a value only profile files or profile documents set
+     * when they agree on it (a local one, {@code localhost} or a loopback address, left out when another remains).
+     */
+    record Props(Map<String, String> base, Map<String, List<String>> profiles) {
+        String get(String key) {
+            String v = base.get(key);
+            if (v != null) {
+                return v;
+            }
+            List<String> values = profiles.getOrDefault(key, List.of());
+            if (values.size() > 1) {
+                List<String> remote = values.stream().filter(x -> !LOCAL.matcher(x).find()).toList();
+                values = remote.isEmpty() ? values : remote;
+            }
+            return values.size() == 1 ? values.getFirst() : null;
+        }
+    }
+
+    private static final Pattern LOCAL = Pattern.compile("(?i)^(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]*@)?(?:localhost|127\\.[0-9.]+|0\\.0\\.0\\.0|\\[::1])(?:[:/]|$)");
 
     // ---- entrypoints ------------------------------------------------------------------------------------------------
 
-    private static List<Entry> entries(Analysis a, ScanResult r) {
+    private static List<Entry> entries(Analysis a, ScanResult r, Props props) {
         List<Entry> out = new ArrayList<>();
         for (Entrypoint ep : a.entrypoints) {
             MethodInfo m = ep.method();
@@ -107,7 +140,7 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
                 }
                 case KAFKA, RABBIT, JMS -> {
                     String kind = ep.kind().name().toLowerCase(Locale.ROOT);
-                    for (String dest : destinations(a, m, ep.kind())) {
+                    for (String dest : destinations(a, m, ep.kind(), props)) {
                         out.add(new Entry(kind, null, dest, ep.label(), m.label(), file, m.line(), b));
                     }
                 }
@@ -146,7 +179,7 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
     }
 
     /** The topics / queues / destinations a listener's annotation names, with property placeholders resolved. */
-    private static List<String> destinations(Analysis a, MethodInfo m, Entrypoint.Kind kind) {
+    private static List<String> destinations(Analysis a, MethodInfo m, Entrypoint.Kind kind, Props props) {
         String annotation = switch (kind) {
             case KAFKA -> "KafkaListener";
             case RABBIT -> "RabbitListener";
@@ -168,7 +201,7 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
                 List<Expression> values = e instanceof J.NewArray na ? na.getInitializer() == null ? List.of() : na.getInitializer() : List.of(e);
                 for (Expression v : values) {
                     String s = v instanceof J.Empty ? null : Constants.concatenated(a.index, v);
-                    String resolved = s == null ? null : placeholders(a, s);
+                    String resolved = s == null ? null : placeholders(props, s);
                     if (resolved != null && !resolved.contains(UNKNOWN)) {
                         out.add(resolved);
                     }
@@ -179,13 +212,24 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
         return out;
     }
 
-    /** {@code ${app.topic:orders}} → the property's value in the service's application.yml, else its default. */
-    private static String placeholders(Analysis a, String s) {
+    /**
+     * {@code ${app.topic:orders}} → the property's value in the service's application.yml (else a profile's, see
+     * {@link Props}), else its default; a value that holds placeholders itself ({@code ${BILLING_URL:http://billing}})
+     * is resolved too.
+     */
+    static String placeholders(Props props, String s) {
+        return placeholders(props, s, 0);
+    }
+
+    private static String placeholders(Props props, String s, int depth) {
         Matcher pm = PLACEHOLDER.matcher(s);
         StringBuilder sb = new StringBuilder();
         while (pm.find()) {
-            String v = a.springProperties.get(pm.group(1));
+            String v = props.get(pm.group(1).strip());
             v = v != null ? v : pm.group(2) != null ? pm.group(2) : UNKNOWN;
+            if (v.contains("${")) {
+                v = depth < 5 ? placeholders(props, v, depth + 1) : UNKNOWN;
+            }
             pm.appendReplacement(sb, Matcher.quoteReplacement(v));
         }
         pm.appendTail(sb);
@@ -197,11 +241,13 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
     private static final class Calls {
         final Analysis a;
         final ScanResult r;
+        final Props props;
         final List<Call> out = new ArrayList<>();
 
-        Calls(Analysis a, ScanResult r) {
+        Calls(Analysis a, ScanResult r, Props props) {
             this.a = a;
             this.r = r;
+            this.props = props;
         }
 
         List<Call> find() {
@@ -316,7 +362,13 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
             if (u == null) {
                 return;
             }
-            String[] bp = basePath(u);
+            if (!URL.matcher(u).matches() && !u.startsWith(UNKNOWN)) {
+                String base = clientBase(m, receiver);   // a relative URI: the client's base URL in front (#128)
+                if (base != null) {
+                    u = base + "/" + u;
+                }
+            }
+            String[] bp = basePath(u.replaceAll("(?<!:)/{2,}", "/"));
             if (bp == null) {
                 return;
             }
@@ -397,6 +449,12 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
             if (feign != null) {
                 prefix = Annotations.attribute(feign, "path").map(e -> literal(c, e)).orElse("");
                 base = Annotations.attribute(feign, "url").map(e -> literal(c, e)).orElse(null);
+                if (base == null) {   // no url: the load balancer resolves the client's name, a service id (#128)
+                    String id = Annotations.attribute(feign, "name", "value").map(e -> literal(c, e)).orElse(null);
+                    base = id == null || id.contains(UNKNOWN) || id.isBlank() ? null : "http://" + id.strip();
+                } else if (!base.contains(UNKNOWN) && !base.contains("://")) {
+                    base = "http://" + base;   // url = "billing:8080"
+                }
             } else if (exchange != null) {
                 prefix = Annotations.attribute(exchange, "value", "url").map(e -> literal(c, e)).orElse("");
             }
@@ -451,7 +509,7 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
 
         private String literal(ClassInfo c, Expression e) {
             String s = Constants.concatenated(a.index, e);
-            return s == null ? null : placeholders(a, s);
+            return s == null ? null : placeholders(props, s);
         }
 
         private static J.Annotation annotation(List<J.Annotation> annotations, String simpleName) {
@@ -473,10 +531,13 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
             }
             String s = Constants.string(a.index, e);
             if (s != null) {
-                return placeholders(a, s);
+                return placeholders(props, s);
             }
             if (e instanceof J.Identifier id) {
-                String injected = injectedValue(m.owner(), id.getSimpleName());
+                String injected = valueParameter(m.decl().getParameters(), id.getSimpleName());   // a @Bean method's parameter
+                if (injected == null) {
+                    injected = injectedValue(m.owner(), id.getSimpleName());
+                }
                 if (injected != null) {
                     return injected;
                 }
@@ -495,6 +556,15 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
                             .forEach(p -> decls.add((J.VariableDeclarations) p));
                 }
             }
+            return valueOf(decls, name);
+        }
+
+        private String valueParameter(List<Statement> parameters, String name) {
+            return valueOf(parameters.stream().filter(p -> p instanceof J.VariableDeclarations)
+                    .map(p -> (J.VariableDeclarations) p).toList(), name);
+        }
+
+        private String valueOf(List<J.VariableDeclarations> decls, String name) {
             for (J.VariableDeclarations vd : decls) {
                 if (vd.getVariables().stream().noneMatch(v -> v.getSimpleName().equals(name))) {
                     continue;
@@ -503,12 +573,113 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
                     if (an.getSimpleName().equals("Value")) {
                         String v = Annotations.attribute(an, "value").map(x -> Constants.string(a.index, x)).orElse(null);
                         if (v != null) {
-                            return placeholders(a, v);
+                            return placeholders(props, v);
                         }
                     }
                 }
             }
             return null;
+        }
+
+        /**
+         * The base URL of the client a call goes through (#128): {@code baseUrl(…)} (RestClient, WebClient) or
+         * {@code rootUri(…)} (RestTemplateBuilder) where the receiver field is built, in its class; for an injected client,
+         * the {@code @Bean} method of the service that builds it (the one named like the field, else the only one of that
+         * client type). Null when none is known.
+         */
+        private String clientBase(MethodInfo m, Expression receiver) {
+            String field = receiver instanceof J.Identifier id ? id.getSimpleName()
+                    : receiver instanceof J.FieldAccess fa ? fa.getSimpleName() : null;
+            if (field == null) {
+                return receiver == null ? null : baseIn(m, receiver);   // RestClient.builder().baseUrl(…).build().get()…
+            }
+            ClassInfo c = m.owner();
+            String type = null;
+            boolean assigned = false;
+            for (Statement s : c.decl().getBody().getStatements()) {
+                if (s instanceof J.VariableDeclarations vd) {
+                    for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
+                        if (v.getSimpleName().equals(field)) {
+                            type = vd.getTypeExpression() == null ? null : simpleType(vd.getTypeExpression());
+                            if (v.getInitializer() != null) {
+                                assigned = true;
+                                String b = baseIn(m, v.getInitializer());
+                                if (b != null) {
+                                    return b;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (MethodInfo other : a.index.methodsOf(c.fqn())) {
+                if (other.decl().getBody() == null) {
+                    continue;
+                }
+                List<Expression> values = new ArrayList<>();
+                new JavaIsoVisitor<Integer>() {
+                    @Override
+                    public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration cd, Integer p) {
+                        return cd;
+                    }
+
+                    @Override
+                    public J.Assignment visitAssignment(J.Assignment as, Integer p) {
+                        Expression v = as.getVariable();
+                        String n = v instanceof J.Identifier id ? id.getSimpleName() : v instanceof J.FieldAccess fa ? fa.getSimpleName() : null;
+                        if (field.equals(n)) {
+                            values.add(as.getAssignment());
+                        }
+                        return super.visitAssignment(as, p);
+                    }
+                }.visit(other.decl().getBody(), 0);
+                for (Expression v : values) {
+                    assigned = true;
+                    String b = baseIn(other, v);
+                    if (b != null) {
+                        return b;
+                    }
+                }
+            }
+            if (assigned || type == null) {
+                return null;   // built in the class without a base URL
+            }
+            List<MethodInfo> beans = new ArrayList<>();
+            for (MethodInfo bm : a.index.methods()) {
+                if (bm.decl().getBody() != null && bm.hasAnnotation("org.springframework.context.annotation.Bean")
+                        && bm.decl().getReturnTypeExpression() != null && simpleType(bm.decl().getReturnTypeExpression()).equals(type)) {
+                    beans.add(bm);
+                }
+            }
+            MethodInfo bean = beans.stream().filter(bm -> bm.decl().getSimpleName().equals(field)).findFirst()
+                    .orElse(beans.size() == 1 ? beans.getFirst() : null);
+            return bean == null ? null : baseIn(bean, bean.decl().getBody());
+        }
+
+        private static String simpleType(TypeTree t) {
+            return t.printTrimmed().replaceAll("<.*$", "").replaceAll("^.*\\.", "");
+        }
+
+        /** The value of the first {@code baseUrl(…)} / {@code rootUri(…)} in {@code tree}, evaluated in {@code m}. */
+        private String baseIn(MethodInfo m, J tree) {
+            List<Expression> args = new ArrayList<>();
+            new JavaIsoVisitor<Integer>() {
+                @Override
+                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                    boolean create = mi.getSimpleName().equals("create") && mi.getSelect() instanceof J.Identifier id
+                            && Set.of("RestClient", "WebClient").contains(id.getSimpleName());   // RestClient.create(baseUrl)
+                    if (args.isEmpty() && (create || Set.of("baseUrl", "rootUri").contains(mi.getSimpleName()))
+                            && !mi.getArguments().isEmpty() && !(mi.getArguments().getFirst() instanceof J.Empty)) {
+                        args.add(mi.getArguments().getFirst());
+                    }
+                    return super.visitMethodInvocation(mi, p);
+                }
+            }.visit(tree, 0);
+            if (args.isEmpty()) {
+                return null;
+            }
+            String v = value(m, args.getFirst());
+            return v == null || v.equals(UNKNOWN) ? null : v;
         }
     }
 

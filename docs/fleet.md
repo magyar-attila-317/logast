@@ -49,6 +49,7 @@ Trace across services: 1 call reaches another service, 1 drops the trace
     entry  src/main/java/com/example/payments/PaymentController.java:15  POST /payments, PaymentController.pay
     breaks at the caller (checkout): RestClient in a field initializer: no traceparent header on outgoing calls
       fix: order HTC-f572b7 (HTTP_CLIENT_UNTRACED) in checkout: Build it in the constructor from an injected, …
+    confirmed: host payments
 One outcome, several metric names: 0 candidates (pick one name; nothing is merged)
 
 Vocabulary: 1 conflict between keys nobody decided yet
@@ -59,7 +60,12 @@ Vocabulary: 1 conflict between keys nobody decided yet
 - Per member: score (as in the [fleet report](commands.md#fleet)), open findings, the snapshot's age and commit. A
   member without a snapshot says where to run `logast scan`.
 - **Trace across services** and **one outcome, several metric names**: the same comparison as `logast fleet <paths…>`
-  ([commands](commands.md#fleet)), made from the snapshots.
+  ([commands](commands.md#fleet)), made from the snapshots. When several members have the path an HTTP call goes to,
+  the host of its base URL decides: a host that names a member (its member name, folder or `spring.application.name`;
+  `billing.payments.svc.cluster.local` names `billing`) is **confirmed**; with no host known, one member is **path
+  only** and several are one **ambiguous** row listing the candidates; a host that names another member or none is not
+  a link but listed under **Same path, other host** (a stale URL?). Snapshots from before this keep working; their
+  services have no `spring.application.name` until the next scan.
 - **Vocabulary**: keys nobody decided yet that look like one value under two names (same identity, source or type)
   or one name with different types, and what is left to decide.
 

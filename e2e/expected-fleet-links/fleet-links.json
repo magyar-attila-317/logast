@@ -5,6 +5,38 @@
       "kind" : "http",
       "verb" : "POST",
       "target" : "/invoices",
+      "base" : "http://invoice-api",
+      "client" : "OpenFeign",
+      "method" : "InvoiceApi.create",
+      "file" : "src/main/java/com/example/orders/InvoiceApi.java",
+      "line" : 9,
+      "breaks" : {
+        "what" : "OpenFeign clients without feign-micrometer: no traceparent header, the called service starts a new trace",
+        "rule" : "HTTP_CLIENT_UNTRACED",
+        "order" : "HTC-2ee5c2",
+        "fix" : "Add implementation(\"io.github.openfeign:feign-micrometer\") (version from the Spring Cloud BOM); Spring Cloud OpenFeign then instruments every client."
+      }
+    },
+    "callee" : "invoicing",
+    "entry" : {
+      "kind" : "http",
+      "verb" : "POST",
+      "target" : "/invoices",
+      "label" : "POST /invoices",
+      "method" : "InvoiceController.create",
+      "file" : "src/main/java/com/example/invoicing/InvoiceController.java",
+      "line" : 12
+    },
+    "breaks" : [ "caller" ],
+    "note" : "confirmed: host invoice-api (spring.application.name of invoicing) (billing has this path too)",
+    "match" : "confirmed",
+    "candidates" : [ ]
+  }, {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "http",
+      "verb" : "POST",
+      "target" : "/invoices",
       "base" : "http://billing",
       "client" : "RestClient",
       "method" : "InvoiceClient.request",
@@ -28,13 +60,16 @@
       "line" : 20
     },
     "breaks" : [ "caller" ],
-    "note" : "base http://billing: matched on the path"
+    "note" : "confirmed: host billing (invoicing has this path too)",
+    "match" : "confirmed",
+    "candidates" : [ ]
   }, {
     "caller" : "orders",
     "call" : {
       "kind" : "http",
       "verb" : "GET",
       "target" : "/entries/{?}",
+      "base" : "http://ledger.finance.svc.cluster.local:8080",
       "client" : "RestTemplate",
       "method" : "LedgerClient.entry",
       "file" : "src/main/java/com/example/orders/LedgerClient.java",
@@ -51,7 +86,9 @@
       "line" : 10
     },
     "breaks" : [ ],
-    "note" : "base URL not in the code (property, variable or the client's base URL): matched on the path only"
+    "note" : "confirmed: host ledger.finance.svc.cluster.local",
+    "match" : "confirmed",
+    "candidates" : [ ]
   }, {
     "caller" : "orders",
     "call" : {
@@ -71,7 +108,8 @@
       "file" : "src/main/java/com/example/shipping/OrderPlacedListener.java",
       "line" : 13
     },
-    "breaks" : [ ]
+    "breaks" : [ ],
+    "candidates" : [ ]
   }, {
     "caller" : "orders",
     "call" : {
@@ -97,17 +135,58 @@
         "fix" : "Kafka listener without observation: the trace stops at the topic"
       }
     },
-    "breaks" : [ "callee" ]
+    "breaks" : [ "callee" ],
+    "candidates" : [ ]
+  }, {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/receipts/{id}",
+      "client" : "RestClient",
+      "method" : "ReceiptClient.receipt",
+      "file" : "src/main/java/com/example/orders/ReceiptClient.java",
+      "line" : 15
+    },
+    "breaks" : [ ],
+    "note" : "ambiguous: billing or invoicing have this path (base URL not in the code)",
+    "match" : "ambiguous",
+    "candidates" : [ {
+      "service" : "billing",
+      "entry" : {
+        "kind" : "http",
+        "verb" : "GET",
+        "target" : "/receipts/{receiptId}",
+        "label" : "GET /receipts/{receiptId}",
+        "method" : "ReceiptController.receipt",
+        "file" : "src/main/java/com/example/billing/ReceiptController.java",
+        "line" : 10
+      },
+      "breaks" : false
+    }, {
+      "service" : "invoicing",
+      "entry" : {
+        "kind" : "http",
+        "verb" : "GET",
+        "target" : "/receipts/{id}",
+        "label" : "GET /receipts/{id}",
+        "method" : "InvoiceController.receipt",
+        "file" : "src/main/java/com/example/invoicing/InvoiceController.java",
+        "line" : 16
+      },
+      "breaks" : false
+    } ]
   }, {
     "caller" : "orders",
     "call" : {
       "kind" : "http",
       "verb" : "GET",
       "target" : "/shipments/{id}",
+      "base" : "http://shipping:8080",
       "client" : "RestClient",
       "method" : "ShippingClient.status",
       "file" : "src/main/java/com/example/orders/ShippingClient.java",
-      "line" : 15
+      "line" : 16
     },
     "callee" : "shipping",
     "entry" : {
@@ -120,7 +199,9 @@
       "line" : 23
     },
     "breaks" : [ ],
-    "note" : "base URL not in the code (property, variable or the client's base URL): matched on the path only"
+    "note" : "confirmed: host shipping",
+    "match" : "confirmed",
+    "candidates" : [ ]
   } ],
   "metrics" : [ {
     "outcome" : "Order shipped",
@@ -138,6 +219,35 @@
       "message" : "Order shipped",
       "file" : "src/main/java/com/example/shipping/ShipmentController.java",
       "line" : 29
+    } ]
+  } ],
+  "otherHost" : [ {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/entries/{?}",
+      "base" : "http://archive-service",
+      "client" : "RestTemplate",
+      "method" : "ArchiveClient.archived",
+      "file" : "src/main/java/com/example/orders/ArchiveClient.java",
+      "line" : 19
+    },
+    "breaks" : [ ],
+    "note" : "different host: archive-service names no service of the fleet; ledger has this path (a stale URL, or a service outside the fleet?)",
+    "match" : "differentHost",
+    "candidates" : [ {
+      "service" : "ledger",
+      "entry" : {
+        "kind" : "http",
+        "verb" : "GET",
+        "target" : "/entries/{entryId}",
+        "label" : "GET /entries/{entryId}",
+        "method" : "EntryController.entry",
+        "file" : "src/main/java/com/example/ledger/EntryController.java",
+        "line" : 10
+      },
+      "breaks" : false
     } ]
   } ]
 }
