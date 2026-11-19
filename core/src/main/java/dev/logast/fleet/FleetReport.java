@@ -24,11 +24,12 @@ import java.util.stream.Stream;
 public final class FleetReport {
     public record Service(String name, String root, int files, int entrypoints, Map<String, Integer> severity,
                           Map<String, Integer> rules, Map<String, Double> packScore, double score,
-                          List<String> overrides, List<dev.logast.metrics.MeterCatalog.Meter> meters, Double logCoverage) {
+                          List<String> overrides, List<dev.logast.metrics.MeterCatalog.Meter> meters, Double logCoverage,
+                          ServiceSurface surface) {
         public Service(String name, String root, int files, int entrypoints, Map<String, Integer> severity,
                        Map<String, Integer> rules, Map<String, Double> packScore, double score,
                        List<String> overrides, List<dev.logast.metrics.MeterCatalog.Meter> meters) {
-            this(name, root, files, entrypoints, severity, rules, packScore, score, overrides, meters, null);
+            this(name, root, files, entrypoints, severity, rules, packScore, score, overrides, meters, null, null);
         }
 
         public Service {
@@ -36,7 +37,8 @@ public final class FleetReport {
         }
     }
 
-    public record Snapshot(String created, List<Service> services) {
+    /** @param links what only the comparison of the services shows (#113); null in snapshots written before it */
+    public record Snapshot(String created, List<Service> services, FleetLinks.Result links) {
     }
 
     private FleetReport() {
@@ -49,6 +51,12 @@ public final class FleetReport {
 
     public static Service service(String name, ScanResult r, List<String> overrides, List<String> packs,
                                   List<dev.logast.metrics.MeterCatalog.Meter> meters) {
+        return service(name, r, overrides, packs, meters, null);
+    }
+
+    /** @param surface its calls, entrypoints and counted outcomes, for comparing it with the other services (#113) */
+    public static Service service(String name, ScanResult r, List<String> overrides, List<String> packs,
+                                  List<dev.logast.metrics.MeterCatalog.Meter> meters, ServiceSurface surface) {
         Map<String, Integer> sev = new TreeMap<>();
         Map<String, Integer> rules = new TreeMap<>();
         Map<String, double[]> perPack = new TreeMap<>();
@@ -68,7 +76,7 @@ public final class FleetReport {
         double total = r.orders().stream().mapToDouble(o -> weight(o.severity())).sum();
         return new Service(name, r.root(), r.stats().files(), r.stats().entrypoints(), sev, rules, packScore,
                 round(100.0 * files / (files + total)), overrides, meters,
-                r.coverage() == null || r.coverage().total() == 0 ? null : r.coverage().percent());
+                r.coverage() == null || r.coverage().total() == 0 ? null : r.coverage().percent(), surface);
     }
 
     private static double weight(String severity) {
@@ -85,10 +93,15 @@ public final class FleetReport {
 
     /** Writes fleet-&lt;timestamp&gt;.json and fleet.html into {@code out}; returns the HTML path. */
     public static Path write(Path out, List<Service> services) {
+        return write(out, services, FleetLinks.of(services));
+    }
+
+    /** As {@link #write(Path, List)}, with the comparison of the services already made. */
+    public static Path write(Path out, List<Service> services, FleetLinks.Result links) {
         try {
             Files.createDirectories(out);
             Snapshot previous = latest(out);
-            Snapshot now = new Snapshot(Instant.now().toString(), services);
+            Snapshot now = new Snapshot(Instant.now().toString(), services, links);
             OrderJson.MAPPER.writeValue(out.resolve("fleet-" + now.created().replace(':', '-') + ".json").toFile(), now);
             Path html = out.resolve("fleet.html");
             Files.writeString(html, html(now, previous));
@@ -171,9 +184,72 @@ public final class FleetReport {
                 names measure the same thing under different names.</div><div class=wrap><table>
                 <tr><th>Meter</th><th>Services</th><th>Finding</th></tr>
                 %s</table></div>
+                <h2>Trace across services</h2>
+                <div class=muted>A call of one service that reaches an entrypoint of another (same path and method, same topic
+                or queue), and the side that drops the trace. A base URL from a property is not known: such calls are
+                matched on their path only.</div><div class=wrap><table>
+                <tr><th>Call</th><th>Entrypoint</th><th>Trace</th></tr>
+                %s</table></div>
+                <h2>One outcome, several metric names</h2>
+                <div class=muted>The same logged outcome counted under different meters in different services: candidates to
+                agree on one name. Nothing is merged.</div><div class=wrap><table>
+                <tr><th>Outcome</th><th>Meters</th><th>Where</th></tr>
+                %s</table></div>
                 <p class=muted>Generated by logast fleet. Fix locally: <code>logast scan &lt;service&gt;</code> then <code>logast apply &lt;service&gt; --auto</code>.</p>
                 </main></body></html>
-                """.formatted(esc(now.created()), services.size(), rows, ruleRows, meterRows);
+                """.formatted(esc(now.created()), services.size(), rows, ruleRows, meterRows,
+                traceRows(now.links()), metricNameRows(now.links()));
+    }
+
+    /** #113: broken pairs first, then the ones that carry the trace on. */
+    static String traceRows(FleetLinks.Result links) {
+        if (links == null || links.trace().isEmpty()) {
+            return "<tr><td colspan=3 class=muted>No call reaches an entrypoint of another service.</td></tr>";
+        }
+        StringBuilder out = new StringBuilder();
+        List<FleetLinks.Trace> sorted = new ArrayList<>(links.trace());
+        sorted.sort(Comparator.comparing((FleetLinks.Trace t) -> t.breaks().isEmpty()));
+        for (FleetLinks.Trace t : sorted) {
+            StringBuilder verdict = new StringBuilder();
+            if (t.breaks().isEmpty()) {
+                verdict.append("<span class=up>goes on</span>");
+            }
+            if (t.call().breaks() != null) {
+                verdict.append("<span class=down>breaks at ").append(esc(t.caller())).append("</span>: ")
+                        .append(esc(t.call().breaks().what())).append("<div class=muted>fix: ")
+                        .append(esc(FleetLinks.fix(t.call().breaks(), t.caller()))).append("</div>");
+            }
+            if (t.entry().breaks() != null) {
+                verdict.append("<span class=down>breaks at ").append(esc(t.callee())).append("</span>: ")
+                        .append(esc(t.entry().breaks().what())).append("<div class=muted>fix: ")
+                        .append(esc(FleetLinks.fix(t.entry().breaks(), t.callee()))).append("</div>");
+            }
+            if (t.note() != null) {
+                verdict.append("<div class=muted>").append(esc(t.note())).append("</div>");
+            }
+            out.append("<tr><td><b>").append(esc(t.caller())).append("</b> <code>").append(esc(FleetLinks.target(t.call())))
+                    .append("</code><div class=muted>").append(esc(t.call().client())).append(" · ")
+                    .append(esc(t.call().file() + ":" + t.call().line())).append("</div></td><td><b>").append(esc(t.callee()))
+                    .append("</b> <code>").append(esc(t.entry().label())).append("</code><div class=muted>")
+                    .append(esc(t.entry().file() + ":" + t.entry().line())).append("</div></td><td>").append(verdict).append("</td></tr>\n");
+        }
+        return out.toString();
+    }
+
+    static String metricNameRows(FleetLinks.Result links) {
+        if (links == null || links.metrics().isEmpty()) {
+            return "<tr><td colspan=3 class=muted>No outcome is counted under different names.</td></tr>";
+        }
+        StringBuilder out = new StringBuilder();
+        for (FleetLinks.MetricNames mn : links.metrics()) {
+            out.append("<tr><td>").append(esc(mn.outcome())).append("</td><td>")
+                    .append(mn.uses().stream().map(u -> "<code>" + esc(u.meter()) + "</code> " + esc(u.service())).distinct()
+                            .collect(Collectors.joining("<br>")))
+                    .append("</td><td>").append(mn.uses().stream().map(u -> esc(u.service() + " " + u.file() + ":" + u.line()
+                            + " \"" + u.message() + "\" (" + u.how() + ")")).collect(Collectors.joining("<br>")))
+                    .append("</td></tr>\n");
+        }
+        return out.toString();
     }
 
     /** Meters shared by services (consistent or not) and names that differ only in spelling. */

@@ -6257,6 +6257,296 @@ abstract class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-central-vocabulary"), snapshot);
     }
 
+    /**
+     * #113: fleet compares services. orders calls three services and sends a Kafka record:
+     * <ul>
+     *   <li>GET /shipments/{id} on shipping through a RestClient from the injected builder: the trace goes on;</li>
+     *   <li>POST http://billing/invoices through RestClient.create() (HTTP_CLIENT_UNTRACED): breaks at orders, the caller;</li>
+     *   <li>ledger.url (a property with no value in the code) + "/entries/" + id through a RestTemplate: matched on the path
+     *   only, and said so;</li>
+     *   <li>topic orders.placed (sender and shipping's listener name it through a property set in application.yml),
+     *   template observed: shipping's listener is observed (goes on), billing's is not (breaks at billing, the callee:
+     *   KAFKA_OBSERVATION_DISABLED).</li>
+     * </ul>
+     * "Order shipped" is counted as orders.shipped in orders and as shipment.completed in shipping (a field counter):
+     * reported as one outcome under two names. "Invoice sent" is invoices.sent in orders and billing: not reported.
+     * Snapshot: the services, the fleet output and the comparison from the JSON snapshot (e2e/expected-fleet-links).
+     */
+    @Test
+    void fleetFindsTraceBreaksBetweenServicesAndOneOutcomeUnderSeveralMetricNames() throws IOException {
+        Path orders = tmp.resolve("orders");
+        Path shipping = tmp.resolve("shipping");
+        Path billing = tmp.resolve("billing");
+        Path ledger = tmp.resolve("ledger");
+        writeSource(orders, "com/example/orders/ShippingClient.java", """
+                package com.example.orders;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+
+                @Component
+                class ShippingClient {
+                    private final RestClient restClient;
+
+                    ShippingClient(RestClient.Builder builder) {
+                        this.restClient = builder.build();
+                    }
+
+                    String status(long id) {
+                        return restClient.get().uri("/shipments/{id}", id).retrieve().body(String.class);
+                    }
+                }
+                """);
+        writeSource(orders, "com/example/orders/InvoiceClient.java", """
+                package com.example.orders;
+
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestClient;
+
+                @Component
+                class InvoiceClient {
+                    private final RestClient restClient = RestClient.create();
+
+                    void request(String orderId) {
+                        restClient.post().uri("http://billing/invoices").body(orderId).retrieve().toBodilessEntity();
+                    }
+                }
+                """);
+        writeSource(orders, "com/example/orders/LedgerClient.java", """
+                package com.example.orders;
+
+                import org.springframework.beans.factory.annotation.Value;
+                import org.springframework.boot.restclient.RestTemplateBuilder;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.client.RestTemplate;
+
+                @Component
+                class LedgerClient {
+                    private final RestTemplate restTemplate;
+                    private final String ledgerUrl;
+
+                    LedgerClient(RestTemplateBuilder builder, @Value("${ledger.url}") String ledgerUrl) {
+                        this.restTemplate = builder.build();
+                        this.ledgerUrl = ledgerUrl;
+                    }
+
+                    String entry(long id) {
+                        return restTemplate.getForObject(ledgerUrl + "/entries/" + id, String.class);
+                    }
+                }
+                """);
+        writeSource(orders, "com/example/orders/OrderDispatch.java", """
+                package com.example.orders;
+
+                import io.micrometer.core.instrument.MeterRegistry;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.beans.factory.annotation.Value;
+                import org.springframework.kafka.core.KafkaTemplate;
+                import org.springframework.stereotype.Service;
+
+                @Service
+                class OrderDispatch {
+                    private static final Logger log = LoggerFactory.getLogger(OrderDispatch.class);
+                    private final KafkaTemplate<String, String> kafkaTemplate;
+                    private final MeterRegistry registry;
+                    private final String placedTopic;
+
+                    OrderDispatch(KafkaTemplate<String, String> kafkaTemplate, MeterRegistry registry,
+                                  @Value("${app.topics.placed}") String placedTopic) {
+                        this.kafkaTemplate = kafkaTemplate;
+                        this.registry = registry;
+                        this.placedTopic = placedTopic;
+                    }
+
+                    void place(String orderId) {
+                        kafkaTemplate.send(placedTopic, orderId);
+                    }
+
+                    void ship(String orderId) {
+                        log.info("Order shipped [orderId={}]", orderId);
+                        registry.counter("orders.shipped").increment();
+                    }
+
+                    void invoice(String orderId) {
+                        log.info("Invoice sent [orderId={}]", orderId);
+                        registry.counter("invoices.sent").increment();
+                    }
+                }
+                """);
+        Files.createDirectories(orders.resolve("src/main/resources"));
+        Files.writeString(orders.resolve("src/main/resources/application.yml"), """
+                spring:
+                  application:
+                    name: orders
+                  kafka:
+                    template:
+                      observation-enabled: true
+                app:
+                  topics:
+                    placed: orders.placed
+                """);
+        writeSource(shipping, "com/example/shipping/ShipmentController.java", """
+                package com.example.shipping;
+
+                import io.micrometer.core.instrument.Counter;
+                import io.micrometer.core.instrument.MeterRegistry;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.RequestMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                @RequestMapping("/shipments")
+                class ShipmentController {
+                    private static final Logger log = LoggerFactory.getLogger(ShipmentController.class);
+                    private final Counter completed;
+
+                    ShipmentController(MeterRegistry registry) {
+                        this.completed = Counter.builder("shipment.completed").register(registry);
+                    }
+
+                    @GetMapping("/{id}")
+                    String status(@PathVariable long id) {
+                        log.info("Shipment status read [shipmentId={}]", id);
+                        return "sent";
+                    }
+
+                    void delivered(String orderId) {
+                        log.info("Order shipped [orderId={}]", orderId);
+                        completed.increment();
+                    }
+                }
+                """);
+        writeSource(shipping, "com/example/shipping/OrderPlacedListener.java", """
+                package com.example.shipping;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.kafka.annotation.KafkaListener;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                class OrderPlacedListener {
+                    private static final Logger log = LoggerFactory.getLogger(OrderPlacedListener.class);
+
+                    @KafkaListener(topics = "${shipping.topics.placed}")
+                    void onPlaced(String orderId) {
+                        log.info("Shipment planned [orderId={}]", orderId);
+                    }
+                }
+                """);
+        Files.createDirectories(shipping.resolve("src/main/resources"));
+        Files.writeString(shipping.resolve("src/main/resources/application.yml"), """
+                spring:
+                  application:
+                    name: shipping
+                  kafka:
+                    listener:
+                      observation-enabled: true
+                shipping:
+                  topics:
+                    placed: orders.placed
+                """);
+        writeSource(billing, "com/example/billing/InvoiceController.java", """
+                package com.example.billing;
+
+                import io.micrometer.core.instrument.MeterRegistry;
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class InvoiceController {
+                    private static final Logger log = LoggerFactory.getLogger(InvoiceController.class);
+                    private final MeterRegistry registry;
+
+                    InvoiceController(MeterRegistry registry) {
+                        this.registry = registry;
+                    }
+
+                    @PostMapping("/invoices")
+                    void create(@RequestBody String orderId) {
+                        log.info("Invoice sent [orderId={}]", orderId);
+                        registry.counter("invoices.sent").increment();
+                    }
+                }
+                """);
+        writeSource(billing, "com/example/billing/OrderPlacedAudit.java", """
+                package com.example.billing;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.kafka.annotation.KafkaListener;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                class OrderPlacedAudit {
+                    private static final Logger log = LoggerFactory.getLogger(OrderPlacedAudit.class);
+
+                    @KafkaListener(topics = "orders.placed", groupId = "billing")
+                    void onPlaced(String orderId) {
+                        log.info("Order placement noted [orderId={}]", orderId);
+                    }
+                }
+                """);
+        writeSource(ledger, "com/example/ledger/EntryController.java", """
+                package com.example.ledger;
+
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class EntryController {
+                    @GetMapping("/entries/{entryId}")
+                    String entry(@PathVariable long entryId) {
+                        return "entry";
+                    }
+                }
+                """);
+        Path report = tmp.resolve("report");
+        String out = run(tmp, "fleet", "--out", report.toString(), "--classpath-file", CLASSPATH,
+                orders.toString(), shipping.toString(), billing.toString(), ledger.toString());
+        assertThat(out).as("the untraced client: the caller's side, with its order")
+                .contains("orders -> billing  POST /invoices", "breaks at the caller (orders): RestClient in a field initializer")
+                .as("the unobserved listener: the callee's side")
+                .contains("orders -> billing  topic orders.placed", "breaks at the callee (billing)", "(KAFKA_OBSERVATION_DISABLED) in billing")
+                .as("traced client to an observed endpoint, observed template to an observed listener: no finding")
+                .contains("orders -> shipping  GET /shipments/{id}", "orders -> shipping  topic orders.placed")
+                .doesNotContain("breaks at the callee (shipping)")
+                .as("a base URL from a property: matched on the path only, and said so")
+                .containsPattern("orders -> ledger  GET /entries/\\{\\?}  \\(.*\\)  path only: base URL not in the code")
+                .as("one outcome under two names: reported with both places")
+                .contains("\"Order shipped\" counted as orders.shipped (orders), shipment.completed (shipping)")
+                .as("the same name in two services is no candidate").doesNotContain("invoices.sent (");
+        String html = Files.readString(report.resolve("fleet.html"));
+        assertThat(html).contains("<h2>Trace across services</h2>", "breaks at billing", "<h2>One outcome, several metric names</h2>",
+                "<code>shipment.completed</code> shipping");
+        Path json;
+        try (Stream<Path> s = Files.list(report)) {
+            json = s.filter(p -> p.getFileName().toString().matches("fleet-.*\\.json")).findFirst().orElseThrow();
+        }
+        var mapper = dev.logast.orders.OrderJson.MAPPER;
+        String links = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(mapper.readTree(json.toFile()).get("links")) + "\n";
+
+        Map<String, String> snapshot = new TreeMap<>();
+        files(tmp).forEach((k, v) -> {
+            if (!k.contains("/.logast/") && !k.startsWith("report/")) {
+                snapshot.put(k, v);
+            }
+        });
+        // the per-service score lines move with every rule change: not this scenario's subject (#110)
+        snapshot.put("COMMANDS.txt", "=== logast fleet --out <tmp>/report orders shipping billing ledger\n"
+                + out.replace(tmp.toString(), "<tmp>").replace("<app>", "<tmp>").replaceAll("(?m)^\\S+\\s+score .*\\R", ""));
+        snapshot.put("fleet-links.json", links);
+        golden(EXPECTED.resolveSibling("expected-fleet-links"), snapshot);
+    }
+
     private static void writeSource(Path service, String path, String text) throws IOException {
         Path file = service.resolve("src/main/java").resolve(path);
         Files.createDirectories(file.getParent());

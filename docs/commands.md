@@ -22,7 +22,7 @@ examples. Output samples are illustrations; counts and ids differ per service an
 | `logast traffic <svc>` | writes `.logast/decisions/traffic.yaml` with every entrypoint, ready to fill in |
 | `logast policy <svc> [--check]` | the effective policy after all layers, with overrides; `--check` (CI) checks it against the code instead: exit 0 fine, 1 warnings, 2 errors |
 | `logast rules` | every rule and its packs |
-| `logast fleet <svc>…` | compliance report across services |
+| `logast fleet <svc>…` | compliance report across services; calls whose trace stops between two services; one outcome counted under several metric names |
 | `logast fleet --vocabulary [--central <dir>] <svc>…` | per service, the keys in the code the vocabulary makes aliases (what apply would rename); with `--central`, as if every service extended `<dir>/company.yaml` |
 | `logast shape <svc>` | exports the code with its own names and words replaced, to send a reproduction ([below](#shape)) |
 
@@ -332,7 +332,47 @@ logast fleet services/*/ --out fleet-report       # fleet-report/fleet.html, wit
 
 A compliance report across services (HTML and a JSON snapshot; earlier snapshots in `--out` give the trend). It also
 compares meters across services: the same name with different types or tags, and similar names
-(`orders.placed` vs `order_placed`). `@file` reads the service roots from a file.
+(`orders.placed` vs `order_placed`). `@file` reads the service roots from a file. `--classpath-file` gives every
+service the same classpath file (default: each service's `.logast/classpath*.txt`).
+
+It also compares the services with each other. Both sections are printed, and are in the HTML and in the JSON
+snapshot (`links`):
+
+- **Trace across services.** Each outgoing call of a service is matched against the entrypoints of the others:
+  RestClient / WebClient (`client.get().uri(…)`), RestTemplate (`getForObject`, `exchange`, …), OpenFeign and HTTP
+  interface methods against request mappings (method and path; `/orders/{id}` matches `/orders/42`, a URI template and a
+  value the code does not know), and KafkaTemplate / RabbitTemplate / JmsTemplate sends against `@KafkaListener` /
+  `@RabbitListener` / `@JmsListener` (topic, queue or routing key, destination). Constants, `@Value("${…}")` fields
+  and placeholders resolve from the service's application.yml. A base URL from a property, a variable or the client's
+  base URL is not known: such a call is matched on its path only, and the output says so. For every pair it lists the
+  call site, the entrypoint and which side drops the trace, with the order of that service's scan that fixes it:
+  - the caller: an HTTP client built by hand (`HTTP_CLIENT_UNTRACED` where it is built, in the same class or in a
+    `@Bean` method of that client kind), OpenFeign without feign-micrometer, a KafkaTemplate without
+    `spring.kafka.template.observation-enabled` (`KAFKA_OBSERVATION_DISABLED`), a RabbitTemplate without
+    `spring.rabbitmq.template.observation-enabled` (no rule: set it by hand). Spring Boot observes the JmsTemplate it
+    configures;
+  - the callee: an entrypoint that is not observed (`ENTRYPOINT_NOT_OBSERVED`), a Kafka or RabbitMQ listener without
+    listener observation (`KAFKA_OBSERVATION_DISABLED`, `RABBIT_OBSERVATION_DISABLED`).
+
+  Pairs where the trace goes on are listed too. Calls inside one service are not compared. The caller side needs the
+  tracing pack (its findings are the evidence).
+- **One outcome, several metric names.** Log lines that report an outcome (as METRIC_OUTCOME_UNMEASURED recognises
+  them: "Order shipped") and the meter that counts them: the next counting statement in the method (a counter, a
+  counter field's `increment()`, `Outcomes.count` / `record`, a metrics catalog method) or `@Counted`. The same subject
+  and outcome counted under different meters in different services is a candidate, with every log line, meter and
+  place. The same name in every service is not. Nothing is merged: pick one name and rename.
+
+```text
+Trace across services: 5 calls reach another service, 2 drop the trace
+  orders -> billing  POST /invoices
+    call   src/main/java/com/example/orders/InvoiceClient.java:11  RestClient, InvoiceClient.request
+    entry  src/main/java/com/example/billing/InvoiceController.java:20  POST /invoices, InvoiceController.create
+    breaks at the caller (orders): RestClient in a field initializer: no traceparent header on outgoing calls
+      fix: order HTC-c8498e (HTTP_CLIENT_UNTRACED) in orders: Build it in the constructor from an injected, …
+  …
+One outcome, several metric names: 1 candidate (pick one name; nothing is merged)
+  "Order shipped" counted as orders.shipped (orders), shipment.completed (shipping)
+```
 
 `logast fleet --vocabulary --central ~/.logast services/*/` scans nothing: it lists per service the keys in its code
 that the vocabulary makes aliases, with their places, i.e. what apply would rename once company.yaml (as generated

@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: shipping
+  kafka:
+    listener:
+      observation-enabled: true
+shipping:
+  topics:
+    placed: orders.placed

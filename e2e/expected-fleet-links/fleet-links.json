@@ -1,0 +1,143 @@
+{
+  "trace" : [ {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "http",
+      "verb" : "POST",
+      "target" : "/invoices",
+      "base" : "http://billing",
+      "client" : "RestClient",
+      "method" : "InvoiceClient.request",
+      "file" : "src/main/java/com/example/orders/InvoiceClient.java",
+      "line" : 11,
+      "breaks" : {
+        "what" : "RestClient in a field initializer: no traceparent header on outgoing calls",
+        "rule" : "HTTP_CLIENT_UNTRACED",
+        "order" : "HTC-c8498e",
+        "fix" : "Build it in the constructor from an injected, instrumented builder (RestClient.Builder)."
+      }
+    },
+    "callee" : "billing",
+    "entry" : {
+      "kind" : "http",
+      "verb" : "POST",
+      "target" : "/invoices",
+      "label" : "POST /invoices",
+      "method" : "InvoiceController.create",
+      "file" : "src/main/java/com/example/billing/InvoiceController.java",
+      "line" : 20
+    },
+    "breaks" : [ "caller" ],
+    "note" : "base http://billing: matched on the path"
+  }, {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/entries/{?}",
+      "client" : "RestTemplate",
+      "method" : "LedgerClient.entry",
+      "file" : "src/main/java/com/example/orders/LedgerClient.java",
+      "line" : 19
+    },
+    "callee" : "ledger",
+    "entry" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/entries/{entryId}",
+      "label" : "GET /entries/{entryId}",
+      "method" : "EntryController.entry",
+      "file" : "src/main/java/com/example/ledger/EntryController.java",
+      "line" : 10
+    },
+    "breaks" : [ ],
+    "note" : "base URL not in the code (property, variable or the client's base URL): matched on the path only"
+  }, {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "kafka",
+      "target" : "orders.placed",
+      "client" : "KafkaTemplate",
+      "method" : "OrderDispatch.place",
+      "file" : "src/main/java/com/example/orders/OrderDispatch.java",
+      "line" : 25
+    },
+    "callee" : "shipping",
+    "entry" : {
+      "kind" : "kafka",
+      "target" : "orders.placed",
+      "label" : "@KafkaListener ${shipping.topics.placed}",
+      "method" : "OrderPlacedListener.onPlaced",
+      "file" : "src/main/java/com/example/shipping/OrderPlacedListener.java",
+      "line" : 13
+    },
+    "breaks" : [ ]
+  }, {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "kafka",
+      "target" : "orders.placed",
+      "client" : "KafkaTemplate",
+      "method" : "OrderDispatch.place",
+      "file" : "src/main/java/com/example/orders/OrderDispatch.java",
+      "line" : 25
+    },
+    "callee" : "billing",
+    "entry" : {
+      "kind" : "kafka",
+      "target" : "orders.placed",
+      "label" : "@KafkaListener orders.placed",
+      "method" : "OrderPlacedAudit.onPlaced",
+      "file" : "src/main/java/com/example/billing/OrderPlacedAudit.java",
+      "line" : 13,
+      "breaks" : {
+        "what" : "the listener is not observed: it does not continue the record's trace",
+        "rule" : "KAFKA_OBSERVATION_DISABLED",
+        "order" : "KFK-b4ade9",
+        "fix" : "Kafka listener without observation: the trace stops at the topic"
+      }
+    },
+    "breaks" : [ "callee" ]
+  }, {
+    "caller" : "orders",
+    "call" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/shipments/{id}",
+      "client" : "RestClient",
+      "method" : "ShippingClient.status",
+      "file" : "src/main/java/com/example/orders/ShippingClient.java",
+      "line" : 15
+    },
+    "callee" : "shipping",
+    "entry" : {
+      "kind" : "http",
+      "verb" : "GET",
+      "target" : "/shipments/{id}",
+      "label" : "GET /shipments/{id}",
+      "method" : "ShipmentController.status",
+      "file" : "src/main/java/com/example/shipping/ShipmentController.java",
+      "line" : 23
+    },
+    "breaks" : [ ],
+    "note" : "base URL not in the code (property, variable or the client's base URL): matched on the path only"
+  } ],
+  "metrics" : [ {
+    "outcome" : "Order shipped",
+    "uses" : [ {
+      "service" : "orders",
+      "meter" : "orders.shipped",
+      "how" : "counter",
+      "message" : "Order shipped",
+      "file" : "src/main/java/com/example/orders/OrderDispatch.java",
+      "line" : 29
+    }, {
+      "service" : "shipping",
+      "meter" : "shipment.completed",
+      "how" : "field completed",
+      "message" : "Order shipped",
+      "file" : "src/main/java/com/example/shipping/ShipmentController.java",
+      "line" : 29
+    } ]
+  } ]
+}

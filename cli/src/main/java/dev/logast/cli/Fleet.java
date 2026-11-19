@@ -1,7 +1,9 @@
 package dev.logast.cli;
 
 import dev.logast.Logast;
+import dev.logast.fleet.FleetLinks;
 import dev.logast.fleet.FleetReport;
+import dev.logast.fleet.ServiceSurface;
 import dev.logast.orders.ScanResult;
 import dev.logast.policy.Policy;
 import picocli.CommandLine.Command;
@@ -14,7 +16,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 
-@Command(name = "fleet", description = "Scan several services and write a compliance report (HTML + JSON snapshot with trend)")
+@Command(name = "fleet", description = "Scan several services and write a compliance report (HTML + JSON snapshot with trend); "
+        + "compares them: calls whose trace stops at a service boundary, one outcome counted under several metric names")
 final class Fleet implements Callable<Integer> {
     @Parameters(description = "Service roots, or a text file with one root per line (prefix it with @)")
     List<String> services = new ArrayList<>();
@@ -26,6 +29,8 @@ final class Fleet implements Callable<Integer> {
     @Option(names = "--central", description = "With --vocabulary: the central vocabulary folder; its company.yaml counts "
             + "as extended by every service, so a change shows before the services take it")
     Path central;
+    @Option(names = "--classpath-file", description = "One classpath file for every service (default: each service's .logast/classpath*.txt)")
+    Path classpathFile;
 
     @Override
     public Integer call() throws Exception {
@@ -40,13 +45,17 @@ final class Fleet implements Callable<Integer> {
             Policy policy = Logast.policy(r, null);
             Main.warnOnce(policy);
             System.err.println("scanning " + r);
-            ScanResult scan = Logast.scan(r, Logast.classpath(r, null), policy);
+            ScanResult scan = Logast.scan(r, Logast.classpath(r, classpathFile), policy);
             result.add(FleetReport.service(r.getFileName().toString(), scan, policy.overrides(), policy.packs(),
-                    dev.logast.metrics.MeterCatalog.of(Logast.lastAnalysis)));
+                    dev.logast.metrics.MeterCatalog.of(Logast.lastAnalysis), ServiceSurface.of(Logast.lastAnalysis, scan)));
         }
-        Path html = FleetReport.write(out, result);
+        FleetLinks.Result links = FleetLinks.of(result);
+        Path html = FleetReport.write(out, result, links);
         result.forEach(s -> System.out.printf("%-28s score %5.1f  high %3d  medium %3d  low %3d%n", s.name(), s.score(),
                 s.severity().getOrDefault("high", 0), s.severity().getOrDefault("medium", 0), s.severity().getOrDefault("low", 0)));
+        System.out.println();
+        System.out.print(FleetLinks.text(links));
+        System.out.println();
         System.out.println("report: " + html.toAbsolutePath());
         return 0;
     }
