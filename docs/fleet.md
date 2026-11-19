@@ -122,8 +122,11 @@ Vocabulary: 1 conflict between keys nobody decided yet
   the host of its base URL decides: a host that names a member (its member name, folder or `spring.application.name`;
   `billing.payments.svc.cluster.local` names `billing`) is **confirmed**; with no host known, one member is **path
   only** and several are one **ambiguous** row listing the candidates; a host that names another member or none is not
-  a link but listed under **Same path, other host** (a stale URL?). Snapshots from before this keep working; their
-  services have no `spring.application.name` until the next scan.
+  a link but listed under **Same path, other host** (a stale URL?). An OpenFeign client without `url` takes its URL
+  from `spring.cloud.openfeign.client.config.<name>.url` (or `feign.client.config…`) when that is set; otherwise its
+  name is used, which names a member only when clients are named after services: a name like `reportingClient` that
+  names none counts as no host, so the path decides (**path only**). Snapshots from before this keep working; their
+  services have no `spring.application.name` until the next scan, and their Feign client names count as hosts.
 - **Vocabulary**: keys nobody decided yet that look like one value under two names (same identity, source or type)
   or one name with different types, and what is left to decide.
 - **Settings all members agree on** that `company.yaml` does not set yet (packs, log format, key style, support mode):

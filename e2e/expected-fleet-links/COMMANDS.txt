@@ -1,6 +1,6 @@
 === logast fleet --out <tmp>/report orders shipping billing ledger invoicing
 
-Trace across services: 7 calls reach another service, 3 drop the trace
+Trace across services: 9 calls reach another service, 5 drop the trace
   orders -> invoicing  POST /invoices
     call   src/main/java/com/example/orders/InvoiceApi.java:9  OpenFeign, InvoiceApi.create
     entry  src/main/java/com/example/invoicing/InvoiceController.java:12  POST /invoices, InvoiceController.create
@@ -13,11 +13,23 @@ Trace across services: 7 calls reach another service, 3 drop the trace
     breaks at the caller (orders): RestClient in a field initializer: no traceparent header on outgoing calls
       fix: order HTC-c8498e (HTTP_CLIENT_UNTRACED) in orders: Build it in the constructor from an injected, instrumented builder (RestClient.Builder).
     confirmed: host billing (invoicing has this path too)
+  orders -> ledger  GET /entries/{entryId}
+    call   src/main/java/com/example/orders/LedgerApi.java:9  OpenFeign, LedgerApi.entry
+    entry  src/main/java/com/example/ledger/EntryController.java:10  GET /entries/{entryId}, EntryController.entry
+    breaks at the caller (orders): OpenFeign clients without feign-micrometer: no traceparent header, the called service starts a new trace
+      fix: order HTC-2ee5c2 (HTTP_CLIENT_UNTRACED) in orders: Add implementation("io.github.openfeign:feign-micrometer") (version from the Spring Cloud BOM); Spring Cloud OpenFeign then instruments every client.
+    confirmed: host ledger
   orders -> billing  topic orders.placed
     call   src/main/java/com/example/orders/OrderDispatch.java:25  KafkaTemplate, OrderDispatch.place
     entry  src/main/java/com/example/billing/OrderPlacedAudit.java:13  @KafkaListener orders.placed, OrderPlacedAudit.onPlaced
     breaks at the callee (billing): the listener is not observed: it does not continue the record's trace
       fix: order KFK-b4ade9 (KAFKA_OBSERVATION_DISABLED) in billing: Kafka listener without observation: the trace stops at the topic
+  orders -> shipping  GET /shipments/{id}
+    call   src/main/java/com/example/orders/ShipmentStatusApi.java:9  OpenFeign, ShipmentStatusApi.status
+    entry  src/main/java/com/example/shipping/ShipmentController.java:23  GET /shipments/{id}, ShipmentController.status
+    breaks at the caller (orders): OpenFeign clients without feign-micrometer: no traceparent header, the called service starts a new trace
+      fix: order HTC-2ee5c2 (HTTP_CLIENT_UNTRACED) in orders: Add implementation("io.github.openfeign:feign-micrometer") (version from the Spring Cloud BOM); Spring Cloud OpenFeign then instruments every client.
+    path only: client name shipmentstatusclient names no service
   the trace goes on:
     orders -> ledger  GET /entries/{?}  (src/main/java/com/example/orders/LedgerClient.java:19 -> src/main/java/com/example/ledger/EntryController.java:10)  confirmed: host ledger.finance.svc.cluster.local
     orders -> shipping  topic orders.placed  (src/main/java/com/example/orders/OrderDispatch.java:25 -> src/main/java/com/example/shipping/OrderPlacedListener.java:13)
