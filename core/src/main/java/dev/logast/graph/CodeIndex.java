@@ -35,8 +35,12 @@ public final class CodeIndex {
             index.registerAncestors(c.fqn(), c.type(), new HashSet<>());
         }
         index.anonTypes.forEach((fqn, type) -> index.registerAncestors(fqn, type, new HashSet<>()));
-        for (MethodInfo m : index.methods.values()) {
-            m.facts(FactsExtractor.extract(m, index.loggers));
+        // #136: every declared method, also one whose key another shares (overloads whose parameter types do not
+        // resolve: `handle(<unknown>)` twice); `methods` keeps one per key, `byClass` has them all
+        for (List<MethodInfo> declared : index.byClass.values()) {
+            for (MethodInfo m : declared) {
+                m.facts(FactsExtractor.extract(m, index.loggers));
+            }
         }
         return index;
     }
