@@ -54,7 +54,7 @@ public final class VocabularyPrune {
             return Report.NONE;
         }
         PolicyLoader.VocabularyLayers layers = PolicyLoader.vocabularyLayers(file);
-        if (layers.parents().isEmpty() || !layers.own().isObject() || !layers.inherited().isObject()) {
+        if (layers.parents().isEmpty() || !layers.own().isObject() || !layers.inherited().isObject() && !layers.inheritedAreas().isObject()) {
             return Report.NONE;
         }
         List<Covered> covered = new ArrayList<>();
@@ -74,17 +74,32 @@ public final class VocabularyPrune {
                     candidates.add(p.getKey());
                 }
             });
+            // #121: a term the parent groups under an area covers the entry's MDC part (MDC keys hold in the whole
+            // service); its words in messages apply only in the area's packages, so an entry with aliases is not covered
+            Map<String, JsonNode> areaTerms = new LinkedHashMap<>();
+            layers.inheritedAreas().fields().forEachRemaining(a -> a.getValue().path("vocabulary").fields().forEachRemaining(p -> {
+                JsonNode mdc = p.getValue().path("mdc");
+                if (p.getKey().equals(name) || ownKey != null
+                        && (ownKey.equals(mdc.path("key").asText(null)) || strings(mdc.path("aliases")).contains(ownKey))) {
+                    areaTerms.put(p.getKey() + " in area " + a.getKey(), p.getValue());
+                }
+            }));
             String firstDifference = null;
             String firstBy = null;
-            for (String c : candidates) {
-                String diff = difference(own, layers.inherited().get(c));
+            Map<String, JsonNode> all = new LinkedHashMap<>();
+            candidates.forEach(c -> all.put(c, layers.inherited().get(c)));
+            all.putAll(areaTerms);
+            for (var c : all.entrySet()) {
+                String diff = areaTerms.containsKey(c.getKey()) && !own.path("aliases").isEmpty()
+                        ? "aliases " + strings(own.path("aliases")) + " everywhere, the parent's only in its area"
+                        : difference(own, c.getValue());
                 if (diff == null) {
-                    covered.add(new Covered(name, c));
+                    covered.add(new Covered(name, c.getKey()));
                     return;
                 }
                 if (firstDifference == null) {
                     firstDifference = diff;
-                    firstBy = c;
+                    firstBy = c.getKey();
                 }
             }
             if (firstDifference != null) {

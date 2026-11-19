@@ -6161,8 +6161,10 @@ abstract class E2eGoldenTest {
      * order_id the same as orderId, entryId local); the next run keeps the decisions and publishes only the decided
      * term to company.yaml. shipping extends company.yaml: fleet --vocabulary shows the rename before it lands, scan
      * says which of shipping's own entries company.yaml now defines, --prune removes it, and apply renames order_id
-     * (MDC_KEY_ALIAS). Snapshot: the worksheet, company.yaml, the services and the commands' output (every file kept:
-     * none sits in .logast/, so scoped() keeps them all) in e2e/expected-central-vocabulary.
+     * (MDC_KEY_ALIAS). #121: ledger's own logast.yaml defines an area, which the worksheet lists; order is decided
+     * with an area, so company.yaml has it under areas.orders.vocabulary (with the packages the worksheet gives the
+     * area), and the alias is still renamed. Snapshot: the worksheet, company.yaml, the services and the commands'
+     * output (every file kept: none sits in .logast/, so scoped() keeps them all) in e2e/expected-central-vocabulary.
      */
     @Test
     void theCentralVocabularyPointsOutPairsAndPublishesOnlyDecidedTerms() throws IOException {
@@ -6229,7 +6231,13 @@ abstract class E2eGoldenTest {
                     }
                 }
                 """);
-        String[] all = {billing.toString(), shipping.toString(), ledger.toString()};
+        Files.writeString(ledger.resolve("logast.yaml"), """
+                areas:
+                  bookkeeping:
+                    packages: [com.example.ledger]
+                    requiredMdc: [entryId]
+                """);
+        String[] all ={billing.toString(), shipping.toString(), ledger.toString()};
         StringBuilder commands = new StringBuilder();
         java.util.function.Function<String[], String> cmd = args -> {
             String out = run(tmp, args);
@@ -6246,13 +6254,17 @@ abstract class E2eGoldenTest {
                 .contains("order_id: same type Long, source Order.id()").doesNotContain("same_as: orderId\n")
                 .as("one name, two types: possibly not the same").contains("one name, different types: Long (ledger), String (shipping)");
         assertThat(Files.readString(central.resolve("company.yaml"))).as("nothing decided: nothing published").contains("vocabulary: {}");
+        assertThat(first).as("the areas the services' policies know").contains("  bookkeeping:\n    known_in:\n      - {service: \"ledger\"");
 
         // the owner decides; the next run keeps it and publishes the decided term only
-        Files.writeString(worksheet, first.replace("  orderId:\n", "  orderId:\n    term: order\n    owner: \"order team\"\n")
+        Files.writeString(worksheet, first.replace("  orderId:\n", "  orderId:\n    term: order\n    area: orders\n    owner: \"order team\"\n")
+                .replace("areas:\n", "areas:\n  orders:\n    packages: [com.example.billing, com.example.shipping]\n")
                 .replace("  order_id:\n", "  order_id:\n    same_as: orderId\n").replace("  entryId:\n", "  entryId:\n    local: true\n"));
         cmd.apply(harvest.toArray(String[]::new));
         String company = Files.readString(central.resolve("company.yaml"));
-        assertThat(company).contains("key: orderId", "aliases: [order_id]").doesNotContain("customerId", "entryId");
+        assertThat(company).contains("key: orderId", "aliases: [order_id]").doesNotContain("customerId", "entryId")
+                .as("decided with an area: under areas.orders.vocabulary, with the area's packages")
+                .contains("areas:\n  orders:\n    packages: [com.example.billing, com.example.shipping]\n    vocabulary:\n      order:");
         assertThat(Files.readString(worksheet)).contains("term: order", "same_as: orderId", "local: true")
                 .contains("order_id (same_as orderId) still in shipping");
 
@@ -6271,7 +6283,7 @@ abstract class E2eGoldenTest {
                 .contains("billing: nothing to rename");
         STDERR.setLength(0);
         run(shipping, "scan", shipping.toString(), "--classpath-file", CLASSPATH);
-        assertThat(STDERR.toString()).contains("company.yaml now defines 1 of this service's entries: orderId (as order)")
+        assertThat(STDERR.toString()).contains("company.yaml now defines 1 of this service's entries: orderId (as order in area orders)")
                 .as("billing's Order in company.yaml is not shipping's concern").doesNotContain("com.example.billing.Order is not in the code");
         cmd.apply(new String[]{"vocabulary", "--prune", shipping.toString()});
         assertThat(Files.readString(shipping.resolve("logast.yaml"))).doesNotContain("orderId").contains("customerId");

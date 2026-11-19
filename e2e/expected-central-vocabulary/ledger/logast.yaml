@@ -1,0 +1,4 @@
+areas:
+  bookkeeping:
+    packages: [com.example.ledger]
+    requiredMdc: [entryId]

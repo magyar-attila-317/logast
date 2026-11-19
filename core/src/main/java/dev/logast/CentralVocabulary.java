@@ -61,9 +61,17 @@ public final class CentralVocabulary {
         }
     }
 
-    /** What the owner wrote for a key; logast keeps it across runs. */
-    public record Decision(String term, String sameAs, boolean local, String owner) {
-        static final Decision NONE = new Decision(null, null, false, null);
+    /**
+     * What the owner wrote for a key; logast keeps it across runs.
+     *
+     * @param area with {@code term}: the area the term is published under ({@code areas.<area>.vocabulary}, #121)
+     */
+    public record Decision(String term, String sameAs, boolean local, String owner, String area) {
+        static final Decision NONE = new Decision(null, null, false, null, null);
+
+        public Decision(String term, String sameAs, boolean local, String owner) {
+            this(term, sameAs, local, owner, null);
+        }
 
         boolean any() {
             return term != null || sameAs != null || local;
@@ -71,8 +79,16 @@ public final class CentralVocabulary {
     }
 
     /** The worksheet of the previous run: its decisions and the keys it listed (to tell new keys). */
-    public record Previous(Map<String, Decision> decisions, Set<String> keys) {
-        public static final Previous NONE = new Previous(Map.of(), Set.of());
+    public record Previous(Map<String, Decision> decisions, Set<String> keys, Map<String, List<String>> areaPackages) {
+        public static final Previous NONE = new Previous(Map.of(), Set.of(), Map.of());
+
+        public Previous(Map<String, Decision> decisions, Set<String> keys) {
+            this(decisions, keys, Map.of());
+        }
+    }
+
+    /** An area a service's own logast.yaml defines ({@code Policy.Area}): listed in the worksheet to decide with (#121). */
+    public record KnownArea(String service, String area, List<String> packages, List<String> vocabulary, List<String> requiredMdc) {
     }
 
     /** The result of one run: the two files' text and the summary lines (also at the top of the worksheet). */
@@ -341,18 +357,64 @@ public final class CentralVocabulary {
         }
         Map<String, Decision> decisions = new TreeMap<>();
         Set<String> keys = new TreeSet<>();
+        Map<String, List<String>> areaPackages = new TreeMap<>();
         if (root != null) {
             root.path("keys").fields().forEachRemaining(e -> {
                 keys.add(e.getKey());
                 JsonNode n = e.getValue();
                 Decision d = new Decision(text(n.get("term")), text(n.get("same_as")),
-                        n.path("local").asBoolean(false) || "true".equals(text(n.get("local"))), text(n.get("owner")));
-                if (d.any() || d.owner() != null) {
+                        n.path("local").asBoolean(false) || "true".equals(text(n.get("local"))), text(n.get("owner")),
+                        text(n.get("area")));
+                if (d.any() || d.owner() != null || d.area() != null) {
                     decisions.put(e.getKey(), d);
                 }
             });
+            root.path("areas").fields().forEachRemaining(e -> {
+                List<String> packages = strings(e.getValue().path("packages"));
+                if (!packages.isEmpty()) {
+                    areaPackages.put(e.getKey(), packages);
+                }
+            });
         }
-        return new Previous(decisions, keys);
+        return new Previous(decisions, keys, areaPackages);
+    }
+
+    /** A YAML list (or map: its keys, or a single scalar) as strings. */
+    private static List<String> strings(JsonNode n) {
+        List<String> out = new ArrayList<>();
+        if (n.isArray()) {
+            n.forEach(x -> {
+                if (!x.asText().isBlank()) {
+                    out.add(x.asText().strip());
+                }
+            });
+        } else if (n.isObject()) {
+            n.fieldNames().forEachRemaining(out::add);
+        } else if (!n.isMissingNode() && !n.isNull() && !n.asText().isBlank()) {
+            out.add(n.asText().strip());
+        }
+        return out;
+    }
+
+    /** The areas a service's own logast.yaml defines (not its parents': the central ones come from the worksheet). */
+    public static List<KnownArea> knownAreas(Path root, String service) {
+        Path file = dev.logast.policy.PolicyLoader.defaultFile(root);
+        if (!Files.exists(file)) {
+            return List.of();
+        }
+        JsonNode node;
+        try {
+            node = YAML.readTree(Files.readString(file));
+        } catch (IOException e) {
+            return List.of();
+        }
+        List<KnownArea> out = new ArrayList<>();
+        if (node != null) {
+            node.path("areas").fields().forEachRemaining(e -> out.add(new KnownArea(service, e.getKey(),
+                    strings(e.getValue().path("packages")), strings(e.getValue().path("vocabulary")),
+                    strings(e.getValue().path("requiredMdc")))));
+        }
+        return out;
     }
 
     private static String text(JsonNode n) {
@@ -362,9 +424,13 @@ public final class CentralVocabulary {
     /** Harvests every service, merges with the earlier worksheet's decisions and writes both files into {@code dir}. */
     public static Result run(Path dir, Map<String, Path> services) {
         List<Use> uses = new ArrayList<>();
-        services.forEach((name, root) -> uses.addAll(uses(root, name)));
+        List<KnownArea> known = new ArrayList<>();
+        services.forEach((name, root) -> {
+            uses.addAll(uses(root, name));
+            known.addAll(knownAreas(root, name));
+        });
         Path worksheet = dir.resolve(WORKSHEET);
-        Result r = build(uses, services.keySet(), read(worksheet));
+        Result r = build(uses, services.keySet(), read(worksheet), known);
         try {
             Files.createDirectories(dir);
             Files.writeString(worksheet, r.worksheet());
@@ -377,6 +443,11 @@ public final class CentralVocabulary {
 
     /** The worksheet and company.yaml for these uses and the earlier decisions. */
     public static Result build(List<Use> uses, Collection<String> serviceNames, Previous previous) {
+        return build(uses, serviceNames, previous, List.of());
+    }
+
+    /** The same, also listing the areas the services' own policies define ({@code known}, #121). */
+    public static Result build(List<Use> uses, Collection<String> serviceNames, Previous previous, List<KnownArea> known) {
         Map<String, List<Use>> byKey = new TreeMap<>();
         uses.forEach(u -> byKey.computeIfAbsent(u.key(), k -> new ArrayList<>()).add(u));
         byKey.values().forEach(l -> l.sort(Comparator.comparing(Use::service).thenComparing(Use::file).thenComparingInt(Use::line)));
@@ -405,6 +476,9 @@ public final class CentralVocabulary {
             }
             if (d.local() && (d.term() != null || d.sameAs() != null)) {
                 problems.add(k + ": local together with " + (d.term() != null ? "term" : "same_as") + "; keep one");
+            }
+            if (d.area() != null && d.term() == null) {
+                problems.add(k + ": area " + d.area() + " without term: an area goes next to term: (its same_as keys follow it)");
             }
             if (d.term() != null && d.sameAs() == null && !d.local()) {
                 String other = termOwners.putIfAbsent(d.term(), k);
@@ -452,6 +526,29 @@ public final class CentralVocabulary {
                 against.add(k + " (local) is used by " + services(u).size() + " services: " + String.join(", ", services(u)));
             }
         }
+        // published terms: a key with term:, its same_as keys as aliases
+        Map<String, String> published = new TreeMap<>();   // term -> root key
+        termOwners.forEach((term, k) -> {
+            if (!clashing.contains(term)) {
+                published.put(term, k);
+            }
+        });
+
+        // areas (#121): the ones decided here, the ones the services' own policies define, and their published terms
+        Map<String, List<String>> areaTerms = new TreeMap<>();
+        published.forEach((term, k) -> {
+            String area = decisions.getOrDefault(k, Decision.NONE).area();
+            if (area != null) {
+                areaTerms.computeIfAbsent(area, a -> new ArrayList<>()).add(term);
+            }
+        });
+        Map<String, List<KnownArea>> knownBy = new TreeMap<>();
+        known.forEach(a -> knownBy.computeIfAbsent(a.area(), x -> new ArrayList<>()).add(a));
+        Set<String> areaNames = new TreeSet<>(areaTerms.keySet());
+        areaNames.addAll(previous.areaPackages().keySet());
+        areaNames.addAll(knownBy.keySet());
+        decisions.values().stream().map(Decision::area).filter(Objects::nonNull).forEach(areaNames::add);
+
         List<String> summary = new ArrayList<>();
         summary.add("services: " + serviceNames.size() + " (" + String.join(", ", new TreeSet<>(serviceNames)) + "), keys: "
                 + byKey.size() + ", decided: " + keys.stream().filter(k -> decisions.getOrDefault(k, Decision.NONE).any()).count());
@@ -459,18 +556,27 @@ public final class CentralVocabulary {
         summary.add("decided, no service uses it any more: " + (unused.isEmpty() ? "-" : String.join(", ", unused)));
         summary.add("still used against a decision:" + (against.isEmpty() ? " -" : ""));
         against.forEach(a -> summary.add("  " + a));
+        if (!areaNames.isEmpty()) {
+            summary.add("areas: " + areaNames.stream().map(a -> {
+                int n = areaTerms.getOrDefault(a, List.of()).size();
+                List<String> notes = new ArrayList<>();
+                notes.add(n + (n == 1 ? " term" : " terms"));
+                if (knownBy.containsKey(a)) {
+                    notes.add("in the logast.yaml of " + String.join(", ", knownBy.get(a).stream().map(KnownArea::service).distinct().sorted().toList()));
+                }
+                if (n > 0 && !previous.areaPackages().containsKey(a)
+                        && knownBy.getOrDefault(a, List.of()).stream().allMatch(k -> k.packages().isEmpty())) {
+                    notes.add("no packages: its terms' words apply nowhere; give it packages: in the areas section");
+                }
+                return a + " (" + String.join("; ", notes) + ")";
+            }).collect(Collectors.joining(", ")));
+        }
         if (!problems.isEmpty()) {
             summary.add("decisions to fix (not published until fixed):");
             problems.forEach(p -> summary.add("  " + p));
         }
 
-        // published terms: a key with term:, its same_as keys as aliases
-        Map<String, String> published = new TreeMap<>();   // term -> root key
-        termOwners.forEach((term, k) -> {
-            if (!clashing.contains(term)) {
-                published.put(term, k);
-            }
-        });        StringBuilder ws = new StringBuilder();
+        StringBuilder ws = new StringBuilder();
         ws.append("""
                 # logast vocabulary worksheet (#113): every key the services use, with its evidence. Decide here, then run
                 # `logast vocabulary --central <this folder> <service>…` again: it keeps your decisions, refreshes the evidence
@@ -479,12 +585,42 @@ public final class CentralVocabulary {
                 #   term: <name>      publish the key as the term <name>; the key is its canonical MDC / [k=v] key
                 #   same_as: <key>    the same value as <key>: published as an alias of <key>'s term (apply renames it)
                 #   local: true       stays in its service, not published
-                #   owner: <team>     optional: who to ask about the term
-                # Everything else (services, types, evidence, similar, suggest) is rewritten on each run.
+                #   owner: <team>     optional: who to ask about the term (a comment in company.yaml)
+                #   area: <name>      optional, with term: published under areas.<name>.vocabulary in company.yaml
+                # Per area (section `areas`): packages: [..] is your decision, published with the area's terms.
+                # Everything else (services, types, evidence, similar, suggest, terms, known_in) is rewritten on each run.
                 #
                 # Summary of this run:
                 """);
         summary.forEach(s -> ws.append("#   ").append(s).append('\n'));
+        if (!areaNames.isEmpty()) {
+            ws.append("areas:\n");
+            for (String a : areaNames) {
+                ws.append("  ").append(VocabularyHarvest.yamlKey(a)).append(":\n");
+                if (previous.areaPackages().containsKey(a)) {
+                    ws.append("    packages: ").append(list(previous.areaPackages().get(a))).append('\n');
+                }
+                if (areaTerms.containsKey(a)) {
+                    ws.append("    terms: ").append(list(areaTerms.get(a))).append('\n');
+                }
+                if (knownBy.containsKey(a)) {
+                    ws.append("    known_in:\n");
+                    for (KnownArea k : knownBy.get(a)) {
+                        ws.append("      - {service: ").append(q(k.service()));
+                        if (!k.packages().isEmpty()) {
+                            ws.append(", packages: ").append(list(k.packages()));
+                        }
+                        if (!k.vocabulary().isEmpty()) {
+                            ws.append(", vocabulary: ").append(list(k.vocabulary()));
+                        }
+                        if (!k.requiredMdc().isEmpty()) {
+                            ws.append(", requiredMdc: ").append(list(k.requiredMdc()));
+                        }
+                        ws.append("}\n");
+                    }
+                }
+            }
+        }
         ws.append("keys:\n");
         for (String k : keys) {
             Decision d = decisions.getOrDefault(k, Decision.NONE);
@@ -501,6 +637,9 @@ public final class CentralVocabulary {
             }
             if (d.owner() != null) {
                 ws.append("    owner: ").append(q(d.owner())).append('\n');
+            }
+            if (d.area() != null) {
+                ws.append("    area: ").append(VocabularyHarvest.yamlKey(d.area())).append('\n');
             }
             ws.append("    services: [").append(String.join(", ", services(u))).append("]\n");
             Map<String, Set<String>> typeServices = typeServices(u);
@@ -539,7 +678,7 @@ public final class CentralVocabulary {
         if (keys.isEmpty()) {
             ws.append("  {}\n");
         }
-        return new Result(ws.toString(), company(published, decisions, root, byKey), summary, published.size());
+        return new Result(ws.toString(), company(published, decisions, root, byKey, previous.areaPackages()), summary, published.size());
     }
 
     /** The key {@code k} is an alias of, following same_as; {@code k} itself when it is no alias; null on a cycle or unknown key. */
@@ -640,7 +779,7 @@ public final class CentralVocabulary {
 
     /** company.yaml: only the decided terms, with their aliases (same_as) and the sources the evidence shows. */
     private static String company(Map<String, String> published, Map<String, Decision> decisions, Map<String, String> root,
-                                  Map<String, List<Use>> byKey) {
+                                  Map<String, List<Use>> byKey, Map<String, List<String>> areaPackages) {
         StringBuilder sb = new StringBuilder("""
                 # GENERATED by `logast vocabulary --central` from vocabulary-worksheet.yaml (#113). Do not edit this file:
                 # decide in the worksheet and run the command again. Services take these terms with
@@ -650,32 +789,60 @@ public final class CentralVocabulary {
         if (published.isEmpty()) {
             return sb.append("vocabulary: {}\n").toString();
         }
-        sb.append("vocabulary:\n");
+        // #121: a term decided with an area goes under areas.<area>.vocabulary, the others stay global
+        Map<String, String> global = new TreeMap<>();
+        Map<String, Map<String, String>> byArea = new TreeMap<>();
         published.forEach((term, key) -> {
-            List<String> group = root.entrySet().stream().filter(e -> e.getValue().equals(key)).map(Map.Entry::getKey).toList();
-            List<String> aliases = group.stream().filter(k -> !k.equals(key)).sorted().toList();
-            List<Use> u = group.stream().flatMap(k -> byKey.getOrDefault(k, List.of()).stream()).toList();
-            Set<String> params = u.stream().map(Use::param).filter(Objects::nonNull).collect(Collectors.toCollection(TreeSet::new));
-            Map<String, String> types = new TreeMap<>();
-            u.stream().filter(x -> x.typeFqn() != null && x.typeFqn().contains(".")).forEach(x -> types.putIfAbsent(x.typeFqn(), x.accessor()));
-            String owner = decisions.getOrDefault(key, Decision.NONE).owner();
-            sb.append("  ").append(VocabularyHarvest.yamlKey(term)).append(":").append(owner == null ? "" : "   # owner: " + owner).append('\n');
-            sb.append("    mdc:\n      key: ").append(VocabularyHarvest.yamlKey(key)).append('\n');
-            if (!aliases.isEmpty()) {
-                sb.append("      aliases: [").append(aliases.stream().map(VocabularyHarvest::yamlKey).collect(Collectors.joining(", "))).append("]\n");
-            }
-            if (!params.isEmpty() || !types.isEmpty()) {
-                sb.append("      sources:\n");
-                if (!params.isEmpty()) {
-                    sb.append("        params: [").append(String.join(", ", params)).append("]\n");
-                }
-                if (!types.isEmpty()) {
-                    sb.append("        types:\n");
-                    types.forEach((t, a) -> sb.append("          ").append(t).append(": ").append(q(a)).append('\n'));
-                }
-            }
+            String area = decisions.getOrDefault(key, Decision.NONE).area();
+            (area == null ? global : byArea.computeIfAbsent(area, a -> new TreeMap<>())).put(term, key);
         });
+        if (!global.isEmpty()) {
+            sb.append("vocabulary:\n");
+            global.forEach((term, key) -> term(sb, "  ", term, key, decisions, root, byKey));
+        }
+        if (!byArea.isEmpty()) {
+            sb.append("areas:\n");
+            byArea.forEach((area, terms) -> {
+                sb.append("  ").append(VocabularyHarvest.yamlKey(area)).append(":\n");
+                if (areaPackages.containsKey(area)) {
+                    sb.append("    packages: ").append(list(areaPackages.get(area))).append('\n');
+                }
+                sb.append("    vocabulary:\n");
+                terms.forEach((term, key) -> term(sb, "      ", term, key, decisions, root, byKey));
+            });
+        }
         return sb.toString();
+    }
+
+    /** One published term: the canonical key, its aliases (same_as) and the sources the evidence shows. */
+    private static void term(StringBuilder sb, String indent, String term, String key, Map<String, Decision> decisions,
+                             Map<String, String> root, Map<String, List<Use>> byKey) {
+        List<String> group = root.entrySet().stream().filter(e -> e.getValue().equals(key)).map(Map.Entry::getKey).toList();
+        List<String> aliases = group.stream().filter(k -> !k.equals(key)).sorted().toList();
+        List<Use> u = group.stream().flatMap(k -> byKey.getOrDefault(k, List.of()).stream()).toList();
+        Set<String> params = u.stream().map(Use::param).filter(Objects::nonNull).collect(Collectors.toCollection(TreeSet::new));
+        Map<String, String> types = new TreeMap<>();
+        u.stream().filter(x -> x.typeFqn() != null && x.typeFqn().contains(".")).forEach(x -> types.putIfAbsent(x.typeFqn(), x.accessor()));
+        String owner = decisions.getOrDefault(key, Decision.NONE).owner();
+        sb.append(indent).append(VocabularyHarvest.yamlKey(term)).append(":").append(owner == null ? "" : "   # owner: " + owner).append('\n');
+        sb.append(indent).append("  mdc:\n").append(indent).append("    key: ").append(VocabularyHarvest.yamlKey(key)).append('\n');
+        if (!aliases.isEmpty()) {
+            sb.append(indent).append("    aliases: ").append(list(aliases)).append('\n');
+        }
+        if (!params.isEmpty() || !types.isEmpty()) {
+            sb.append(indent).append("    sources:\n");
+            if (!params.isEmpty()) {
+                sb.append(indent).append("      params: [").append(String.join(", ", params)).append("]\n");
+            }
+            if (!types.isEmpty()) {
+                sb.append(indent).append("      types:\n");
+                types.forEach((t, a) -> sb.append(indent).append("        ").append(t).append(": ").append(q(a)).append('\n'));
+            }
+        }
+    }
+
+    private static String list(List<String> items) {
+        return "[" + items.stream().map(VocabularyHarvest::yamlKey).collect(Collectors.joining(", ")) + "]";
     }
 
     /** A key the code uses that the policy makes an alias: apply renames it to {@code to} (MDC_KEY_ALIAS). */

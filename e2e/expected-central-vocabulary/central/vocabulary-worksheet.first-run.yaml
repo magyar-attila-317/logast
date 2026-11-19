@@ -5,14 +5,21 @@
 #   term: <name>      publish the key as the term <name>; the key is its canonical MDC / [k=v] key
 #   same_as: <key>    the same value as <key>: published as an alias of <key>'s term (apply renames it)
 #   local: true       stays in its service, not published
-#   owner: <team>     optional: who to ask about the term
-# Everything else (services, types, evidence, similar, suggest) is rewritten on each run.
+#   owner: <team>     optional: who to ask about the term (a comment in company.yaml)
+#   area: <name>      optional, with term: published under areas.<name>.vocabulary in company.yaml
+# Per area (section `areas`): packages: [..] is your decision, published with the area's terms.
+# Everything else (services, types, evidence, similar, suggest, terms, known_in) is rewritten on each run.
 #
 # Summary of this run:
 #   services: 3 (billing, ledger, shipping), keys: 4, decided: 0
 #   to decide: 4 (4 new): customerId (new), entryId (new), orderId (new), order_id (new)
 #   decided, no service uses it any more: -
 #   still used against a decision: -
+#   areas: bookkeeping (0 terms; in the logast.yaml of ledger)
+areas:
+  bookkeeping:
+    known_in:
+      - {service: "ledger", packages: [com.example.ledger], requiredMdc: [entryId]}
 keys:
   customerId:
     services: [ledger, shipping]
