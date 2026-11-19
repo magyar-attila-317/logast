@@ -7001,7 +7001,14 @@ abstract class E2eGoldenTest {
                 "<code>shipment.completed</code> shipping")
                 .as("#128: the match in words, the candidates of an ambiguous call, the other-host list")
                 .contains("confirmed: host billing", "ambiguous: billing or invoicing have this path", "<b>invoicing</b>? <code>GET /receipts/{id}</code>",
-                        "<h2>Same path, other host</h2>", "different host: archive-service names no service of the fleet");
+                        "<h2>Same path, other host</h2>", "different host: archive-service names no service of the fleet")
+                .as("#140: the links as a diagram, one arrow per pair, red where the trace breaks")
+                .contains("<h2>Links between services</h2>", "<svg class=graph",
+                        "<path class='edge confirmed broken' data-from='orders' data-to='billing'",
+                        "<path class='edge confirmed broken' data-from='orders' data-to='invoicing'",
+                        "orders → shipping: the trace breaks on 1 of 3 calls",
+                        "data-from='orders' data-to='shipping'", "data-from='orders' data-to='ledger'")
+                .as("a call to another host is no link").doesNotContain("data-to='archive");
         Path json;
         try (Stream<Path> s = Files.list(report)) {
             json = s.filter(p -> p.getFileName().toString().matches("fleet-.*\\.json")).findFirst().orElseThrow();
