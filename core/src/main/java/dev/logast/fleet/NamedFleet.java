@@ -45,10 +45,16 @@ public final class NamedFleet {
      */
     public record Snapshot(String service, String root, String created, String commit, FleetReport.Service report,
                            List<CentralVocabulary.Use> vocabulary, List<CentralVocabulary.KnownArea> areas,
-                           Settings settings) {
+                           Settings settings, String appPackage) {
         public Snapshot {
             vocabulary = vocabulary == null ? List.of() : vocabulary;
             areas = areas == null ? List.of() : areas;
+        }
+
+        /** A snapshot without the application package (#132 added it: {@code fleet --service} shows paths below it). */
+        public Snapshot(String service, String root, String created, String commit, FleetReport.Service report,
+                        List<CentralVocabulary.Use> vocabulary, List<CentralVocabulary.KnownArea> areas, Settings settings) {
+            this(service, root, created, commit, report, vocabulary, areas, settings, null);
         }
     }
 
@@ -103,7 +109,7 @@ public final class NamedFleet {
         try {
             Files.createDirectories(fleet.resolve(SERVICES));
             if (!Files.exists(fleet.resolve(MEMBERS))) {
-                Files.writeString(fleet.resolve(MEMBERS), membersYaml(Map.of()));
+                Files.writeString(fleet.resolve(MEMBERS), membersYaml(Map.of(), Map.of()));
             }
             if (!Files.exists(fleet.resolve(CentralVocabulary.COMPANY))) {
                 Files.writeString(fleet.resolve(CentralVocabulary.COMPANY), CompanyPolicy.initial(name));
@@ -138,8 +144,24 @@ public final class NamedFleet {
         return out;
     }
 
-    /** The members: service → root. */
+    /** The members, joined and added: service → root. */
     public static Map<String, Path> members(Path fleet) {
+        Map<String, Path> out = new TreeMap<>(section(fleet, "added"));
+        out.putAll(section(fleet, "members"));
+        return out;
+    }
+
+    /** #132: the members {@code fleet add} registered (their repos know nothing of the fleet): service → root. */
+    public static Map<String, Path> added(Path fleet) {
+        return section(fleet, "added");
+    }
+
+    /** The members that joined ({@code fleet: <name>} in their logast.yaml): service → root. */
+    public static Map<String, Path> joined(Path fleet) {
+        return section(fleet, "members");
+    }
+
+    private static Map<String, Path> section(Path fleet, String key) {
         Map<String, Path> out = new TreeMap<>();
         Path f = fleet.resolve(MEMBERS);
         if (!Files.isRegularFile(f)) {
@@ -148,12 +170,70 @@ public final class NamedFleet {
         try {
             JsonNode n = YAML.readTree(Files.readString(f));
             if (n != null) {
-                n.path("members").fields().forEachRemaining(e -> out.put(e.getKey(), Path.of(e.getValue().asText())));
+                n.path(key).fields().forEachRemaining(e -> out.put(e.getKey(), Path.of(e.getValue().asText())));
             }
         } catch (IOException e) {
             throw new UncheckedIOException("cannot read " + f, e);
         }
         return out;
+    }
+
+    /**
+     * #132: where an added member's scan writes what {@code logast scan} writes to {@code <root>/.logast} (classpath,
+     * orders, coverage, reports): {@code <fleet>/services/<service>/}, laid out like .logast.
+     */
+    public static Path outputDir(Path fleet, String service) {
+        return fleet.resolve(SERVICES).resolve(service);
+    }
+
+    /** What {@link #add} did with a repo. */
+    public enum Added { ADDED, AGAIN, MOVED, JOINED_ALREADY }
+
+    /**
+     * #132: registers {@code root} as an added member: only the fleet folder changes, nothing is written into the repo.
+     * A service that joined already stays joined.
+     */
+    public static Added add(Path fleet, Path root) {
+        Path r = root.toAbsolutePath().normalize();
+        String service = serviceName(r);
+        Map<String, Path> joined = joined(fleet);
+        if (joined.containsKey(service)) {
+            return Added.JOINED_ALREADY;
+        }
+        Map<String, Path> added = new TreeMap<>(added(fleet));
+        Path before = added.put(service, r);
+        writeMembers(fleet, joined, added);
+        return before == null ? Added.ADDED : before.equals(r) ? Added.AGAIN : Added.MOVED;
+    }
+
+    /**
+     * #132: takes an added member out, by service name or root: its entry, snapshot and output folder go (the repo was
+     * never touched). Null when no added member has that name or root; else the service name.
+     */
+    public static String remove(Path fleet, String serviceOrRoot) {
+        Map<String, Path> added = new TreeMap<>(added(fleet));
+        Path asRoot = Path.of(serviceOrRoot).toAbsolutePath().normalize();
+        String service = added.containsKey(serviceOrRoot) ? serviceOrRoot : added.entrySet().stream()
+                .filter(e -> e.getValue().equals(asRoot)).map(Map.Entry::getKey).findFirst().orElse(null);
+        if (service == null) {
+            return null;
+        }
+        added.remove(service);
+        writeMembers(fleet, joined(fleet), added);
+        try {
+            Files.deleteIfExists(fleet.resolve(SERVICES).resolve(service + ".json"));
+            Path out = outputDir(fleet, service);
+            if (Files.isDirectory(out)) {   // logast's own output for this member, nothing a person wrote
+                try (Stream<Path> s = Files.walk(out)) {
+                    for (Path f : s.sorted(Comparator.reverseOrder()).toList()) {
+                        Files.delete(f);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return service;
     }
 
     /**
@@ -163,9 +243,12 @@ public final class NamedFleet {
      */
     public static Path join(Path fleet, String name, Path root) {
         Path r = root.toAbsolutePath().normalize();
-        Map<String, Path> members = new TreeMap<>(members(fleet));
+        Map<String, Path> members = new TreeMap<>(joined(fleet));
+        Map<String, Path> added = new TreeMap<>(added(fleet));
         Path before = members.put(serviceName(r), r);
-        writeMembers(fleet, members);
+        Path wasAdded = added.remove(serviceName(r));   // #132: an added member that joins is a joined one from now on
+        before = before != null ? before : wasAdded;
+        writeMembers(fleet, members, added);
         setFleetLine(r, name);
         return before == null || before.equals(r) ? null : before;
     }
@@ -175,9 +258,9 @@ public final class NamedFleet {
         Path r = root.toAbsolutePath().normalize();
         String service = serviceName(r);
         if (fleet != null && exists(fleet)) {
-            Map<String, Path> members = new TreeMap<>(members(fleet));
+            Map<String, Path> members = new TreeMap<>(joined(fleet));
             members.remove(service);
-            writeMembers(fleet, members);
+            writeMembers(fleet, members, added(fleet));
             try {
                 Files.deleteIfExists(fleet.resolve(SERVICES).resolve(service + ".json"));
             } catch (IOException e) {
@@ -227,25 +310,33 @@ public final class NamedFleet {
         }
     }
 
-    private static void writeMembers(Path fleet, Map<String, Path> members) {
+    private static void writeMembers(Path fleet, Map<String, Path> members, Map<String, Path> added) {
         try {
             Files.createDirectories(fleet);
-            Files.writeString(fleet.resolve(MEMBERS), membersYaml(members));
+            Files.writeString(fleet.resolve(MEMBERS), membersYaml(members, added));
         } catch (IOException e) {
             throw new UncheckedIOException("cannot write " + fleet.resolve(MEMBERS), e);
         }
     }
 
-    private static String membersYaml(Map<String, Path> members) {
+    private static String membersYaml(Map<String, Path> members, Map<String, Path> added) {
         StringBuilder sb = new StringBuilder("# logast fleet members (#124): service -> its root on this machine; "
                 + "`logast fleet join` / `leave` keep it\nmembers:");
+        entries(sb, members);
+        if (!added.isEmpty()) {
+            sb.append("# #132: repos `logast fleet add` registered without touching them; `logast fleet remove` takes one out\nadded:");
+            entries(sb, added);
+        }
+        return sb.toString();
+    }
+
+    private static void entries(StringBuilder sb, Map<String, Path> members) {
         if (members.isEmpty()) {
             sb.append(" {}");
         }
         sb.append('\n');
         new TreeMap<>(members).forEach((k, v) -> sb.append("  ").append(k).append(": \"")
                 .append(v.toString().replace("\\", "\\\\").replace("\"", "\\\"")).append("\"\n"));
-        return sb.toString();
     }
 
     // ---- snapshots ----------------------------------------------------------------------------------------------------
@@ -260,7 +351,7 @@ public final class NamedFleet {
         FleetReport.Service service = new FleetReport.Service(s.name(), rr.toString(), s.files(), s.entrypoints(), s.severity(),
                 s.rules(), s.packScore(), s.score(), s.overrides(), s.meters(), s.logCoverage(), s.surface());
         return new Snapshot(name, rr.toString(), Instant.now().toString(), commit(rr), service,
-                CentralVocabulary.uses(rr, name), CentralVocabulary.knownAreas(rr, name), Settings.of(policy));
+                CentralVocabulary.uses(rr, name), CentralVocabulary.knownAreas(rr, name), Settings.of(policy), a.appPackage);
     }
 
     /** Writes the snapshot to {@code <fleet>/services/<service>.json} (whole or not at all). */

@@ -7089,8 +7089,8 @@ abstract class E2eGoldenTest {
                     .as("comments only: no setting decided for the members").doesNotContainPattern("(?m)^(packs|logging|support):")
                     .as("the rest of the file as created").startsWith(initial.substring(0, initial.indexOf("# >>> logast suggestions")));
             String overview = run(tmp, "fleet", "payments-fleet");
-            assertThat(overview).as("both members from their snapshots").containsPattern("checkout\\s+score ")
-                    .containsPattern("payments\\s+score ").contains("snapshot just now").doesNotContain("no snapshot")
+            assertThat(overview).as("both members from their snapshots").containsPattern("checkout\\s+joined\\s+score ")
+                    .containsPattern("payments\\s+joined\\s+score ").contains("snapshot just now").doesNotContain("no snapshot")
                     .as("the trace break between them")
                     .contains("checkout -> payments  POST /payments", "breaks at the caller (checkout)")
                     .as("#128: the host names the member").contains("confirmed: host payments\n")
@@ -7162,6 +7162,128 @@ abstract class E2eGoldenTest {
             assertThat(Files.readString(checkout.resolve("logast.yaml"))).doesNotContain("fleet: payments-fleet", "belongs to", "decided by fleet")
                     .contains("\n  # keyStyle: camel\n");
             assertThat(fleet.resolve("services/checkout.json")).doesNotExist();
+        } finally {
+            System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
+        }
+    }
+
+    /**
+     * #132: a fleet made from repos that know nothing of it. orders and stock are clean git repos without logast.yaml
+     * (stock has its own, setting keyStyle camel); {@code fleet add --scan} registers and scans them with the fleet's
+     * company.yaml (keyStyle snake). Their stand-in gradlew writes the classpath where logast asks
+     * (-Plogast.outputDir), else into .logast. Every result lands in {@code <fleet>/services/<service>/}; both repos'
+     * {@code git status --porcelain} stays empty and neither gets a .logast folder. orders takes the company's snake
+     * style (its orderLane is an MDC_KEY_ALIAS finding), stock keeps its own camel. {@code --service} prints the stored
+     * findings, the overview marks the members added, {@code fleet remove} takes one out with its results.
+     */
+    @Test
+    void fleetAddScansReposReadOnlyWithTheFleetsCompanyPolicy() throws IOException {
+        Path home = tmp.resolve("home");
+        Path orders = tmp.resolve("repos/orders");
+        Path stock = tmp.resolve("repos/stock");
+        for (Path repo : List.of(orders, stock)) {
+            String svc = repo.getFileName().toString();
+            String type = svc.equals("orders") ? "Order" : "Item";
+            writeSource(repo, "com/example/" + svc + "/" + type + "Handler.java", """
+                    package com.example.%s;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.slf4j.MDC;
+                    import org.springframework.web.bind.annotation.PathVariable;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    class %sHandler {
+                        private static final Logger log = LoggerFactory.getLogger(%sHandler.class);
+
+                        @PostMapping("/%s/{id}")
+                        void handle(@PathVariable Long id) {
+                            MDC.put("%sLane", String.valueOf(id));
+                            log.info("%s handled");
+                            MDC.remove("%sLane");
+                        }
+                    }
+                    """.formatted(svc, type, type, svc, type.toLowerCase(), type, type.toLowerCase()));
+            Path gradlew = repo.resolve("gradlew");
+            Files.writeString(gradlew, "#!/bin/sh\nout=.logast\nfor a in \"$@\"; do case \"$a\" in -Plogast.outputDir=*) "
+                    + "out=\"${a#-Plogast.outputDir=}\";; esac; done\nmkdir -p \"$out\"\ncp '" + CLASSPATH + "' \"$out/classpath-root.txt\"\n");
+            assertThat(gradlew.toFile().setExecutable(true)).isTrue();
+        }
+        Files.writeString(stock.resolve("logast.yaml"), "logging:\n  keyStyle: camel\n");
+        for (Path repo : List.of(orders, stock)) {
+            git(repo, "init", "--quiet");
+            git(repo, "add", "-A");
+            git(repo, "commit", "--quiet", "-m", "before");
+        }
+        Path list = tmp.resolve("repos.txt");
+        Files.writeString(list, "# the fleet's repos\n" + stock + "\n");
+        System.setProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY, home.toString());
+        try {
+            run(tmp, "fleet", "create", "shop");
+            Path fleet = home.resolve(".local/share/logast/fleets/shop");
+            Path company = fleet.resolve("company.yaml");
+            // the company decides the key style (uncommented by hand, as #129 suggests)
+            Files.writeString(company, Files.readString(company).replaceFirst("\n# logging:\n", "\nlogging:\n")
+                    .replaceFirst("\n#   keyStyle: camel   # how MDC keys", "\n  keyStyle: snake   # how MDC keys"));
+
+            String added = run(tmp, "fleet", "add", "shop", orders.toString(), "--from", list.toString(), "--scan");
+            assertThat(added).as(added + STDERR).contains("orders added to fleet shop", "stock added to fleet shop",
+                    "nothing is written into the repos", "orders: scanned, results in <app>/home/.local/share/logast/fleets/shop/services/orders");
+            assertThat(LAST_EXIT).isZero();
+            for (Path repo : List.of(orders, stock)) {
+                assertThat(git(repo, "status", "--porcelain", "--untracked-files=all")).as(repo.getFileName() + ": the repo as it was").isEmpty();
+                assertThat(repo.resolve(".logast")).as("no .logast in " + repo.getFileName()).doesNotExist();
+                Path out = fleet.resolve("services/" + repo.getFileName());
+                for (String f : List.of("classpath-root.txt", "reports/orders.json", "reports/coverage.txt", "reports/metrics.md",
+                        "reports/queries.md", "reports/lifecycle.txt")) {
+                    assertThat(out.resolve(f)).as("the scan's " + f + " in the fleet folder").isRegularFile();
+                }
+                assertThat(fleet.resolve("services/" + repo.getFileName() + ".json")).as("the snapshot").isRegularFile();
+            }
+            assertThat(Files.readString(fleet.resolve("members.yaml"))).contains("\nmembers: {}\n", "\nadded:\n  orders: \"" + orders
+                    + "\"\n  stock: \"" + stock + "\"\n");
+
+            // the policy: defaults → company.yaml → the repo's own logast.yaml, if any
+            var mapper = dev.logast.orders.OrderJson.MAPPER;
+            assertThat(mapper.readTree(fleet.resolve("services/orders.json").toFile()).path("settings").path("keyStyle").asText())
+                    .as("company.yaml reaches a repo without logast.yaml").isEqualTo("snake");
+            assertThat(mapper.readTree(fleet.resolve("services/stock.json").toFile()).path("settings").path("keyStyle").asText())
+                    .as("a repo's own logast.yaml overrides the company's value").isEqualTo("camel");
+            // and the findings follow it: orders' orderLane is renamed to the company's snake style, stock's itemLane kept
+            assertThat(mapper.readTree(fleet.resolve("services/orders/reports/orders.json").toFile()).path("orders").toString())
+                    .as("MDC_KEY_ALIAS folded into the MDC fix of orders").contains("\"MDC_KEY_ALIAS\"", "order_lane");
+            assertThat(mapper.readTree(fleet.resolve("services/stock/reports/orders.json").toFile()).path("orders").toString())
+                    .as("camel is stock's own style").doesNotContain("\"MDC_KEY_ALIAS\"", "item_lane");
+
+            String ordersFindings = run(tmp, "fleet", "shop", "--service", "orders");
+            assertThat(ordersFindings).as("what `logast scan` printed in orders, from the stored results")
+                    .startsWith("orders  <app>/repos/orders  added, snapshot just now, ")
+                    .contains("logast · 1 files · 1 entrypoint", "5 findings: 3 logast fixes", "MDC.put never removed 1",
+                            "error responses not ProblemDetail  PROBLEM_DETAILS_DISABLED")
+                    .contains("reports: <app>/home/.local/share/logast/fleets/shop/services/orders/reports/");
+            run(tmp, "fleet", "shop", "--service", "nope");
+            assertThat(LAST_EXIT).isEqualTo(2);
+
+            String overview = run(tmp, "fleet", "shop");
+            assertThat(overview).as(overview).contains("(2 members)").containsPattern("orders\\s+added\\s+score .*snapshot just now")
+                    .containsPattern("stock\\s+added\\s+score .*snapshot just now");
+            assertThat(mapper.readTree(run(tmp, "fleet", "shop", "--json")).path("services").findValuesAsText("member"))
+                    .containsExactly("added", "added");
+
+            // --refresh scans the added members the same way: still read-only
+            run(tmp, "fleet", "shop", "--refresh");
+            for (Path repo : List.of(orders, stock)) {
+                assertThat(git(repo, "status", "--porcelain", "--untracked-files=all")).isEmpty();
+                assertThat(repo.resolve(".logast")).doesNotExist();
+            }
+
+            assertThat(run(tmp, "fleet", "remove", "shop", "stock")).contains("stock removed from fleet shop");
+            assertThat(fleet.resolve("services/stock")).doesNotExist();
+            assertThat(fleet.resolve("services/stock.json")).doesNotExist();
+            assertThat(run(tmp, "fleet", "shop")).doesNotContain("stock").contains("(1 member)");
+            assertThat(git(stock, "status", "--porcelain", "--untracked-files=all")).isEmpty();
         } finally {
             System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
         }

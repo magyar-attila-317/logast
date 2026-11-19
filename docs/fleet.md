@@ -39,12 +39,45 @@ logast fleet payments-fleet --vocabulary        # the fleet's vocabulary workshe
 `logast fleet leave [service root]` takes a service out: the `fleet:` line, its member entry and its snapshot go.
 `logast fleet list` shows the fleets this machine knows, their folders and members.
 
+## Adding repos without touching them
+
+To see where a set of repos stands before anyone changes them, add them instead of joining:
+
+```bash
+logast fleet create shop
+logast fleet add shop ~/src/orders ~/src/stock --scan      # shell globs work: ~/src/*/
+logast fleet add shop --from repos.txt --scan              # one repo root per line, '#' starts a comment
+logast fleet shop                                          # the overview, members marked added
+logast fleet shop --service orders                         # what `logast scan` would print in orders
+logast fleet shop --refresh                                # rescan every member
+logast fleet remove shop orders                            # by service name or repo root
+```
+
+- **Nothing is written into an added repo**: no `logast.yaml`, no `.logast/`, no Gradle project cache. Its
+  `git status` stays as it was. The members file lists it under `added:` (joined members stay under `members:`).
+- **Its policy**: logast's defaults → the fleet's `company.yaml` → the repo's own `logast.yaml`, only if it already has
+  one (its settings win, as for a joined member).
+- **Its scan** (`add --scan`, `fleet <name> --refresh`) is the analysis of `logast scan`; every output goes to
+  `<fleet>/services/<service>/`, laid out like `.logast/`: `classpath-*.txt`, `reports/orders.json`,
+  `reports/coverage.txt`, `reports/metrics.md`, `reports/queries.md`, `reports/lifecycle.txt`. The snapshot is
+  `<fleet>/services/<service>.json` as for a joined member. The classpath comes from the repo's own Gradle (the classpath
+  task only, nothing compiled), run with `-Plogast.outputDir=<that folder>` and its project cache there too; or give
+  one file for all with `--classpath-file`. When Gradle fails, the scan uses the classpath of the last scan, else none
+  (one warning). A scan never applies anything, and writes no decision files (messages.yaml, metrics.yaml, traffic.yaml).
+- **`--service <name>`** prints the findings of the member's last scan the way `logast scan` prints them, from the
+  stored `orders.json` (an added member's in the fleet folder, a joined member's in its `.logast/reports/`), with where
+  the reports are. The footer `logast scan` adds (decision files, next steps) is left out: it would write into the repo.
+- Everything else treats an added member like a joined one: trace links, metric names, vocabulary, the company.yaml
+  suggestions.
+- `logast fleet join` in an added repo makes it a joined member (it moves to `members:`); `fleet add` leaves a joined
+  member as it is. `fleet remove` takes only added members (with their snapshot and results); a joined one uses `leave`.
+
 ## The overview
 
 ```text
 fleet payments-fleet  ~/.local/share/logast/fleets/payments-fleet  (2 members)
-  checkout  score  21.6  open   4 (high 2, medium 1, low 1)  snapshot 3 min ago, 4f2a9c1
-  payments  score  42.1  open   5 (high 0, medium 2, low 3)  snapshot 2 h ago, 77b01de
+  checkout  joined  score  21.6  open   4 (high 2, medium 1, low 1)  snapshot 3 min ago, 4f2a9c1
+  payments  joined  score  42.1  open   5 (high 0, medium 2, low 3)  snapshot 2 h ago, 77b01de
 
 Trace across services: 1 call reaches another service, 1 drops the trace
   checkout -> payments  POST /payments
@@ -61,8 +94,9 @@ Vocabulary: 1 conflict between keys nobody decided yet
 4 settings all members agree on aren't company policy yet → ~/.local/share/logast/fleets/payments-fleet/company.yaml
 ```
 
-- Per member: score (as in the [fleet report](commands.md#fleet)), open findings, the snapshot's age and commit. A
-  member without a snapshot says where to run `logast scan`.
+- Per member: `joined` or `added` ([above](#adding-repos-without-touching-them)), score (as in the
+  [fleet report](commands.md#fleet)), open findings, the snapshot's age and commit. A member without a snapshot says
+  where to run `logast scan` (an added one: `--refresh`). `--json` has the same as `member: joined|added`.
 - **Trace across services** and **one outcome, several metric names**: the same comparison as `logast fleet <paths…>`
   ([commands](commands.md#fleet)), made from the snapshots. When several members have the path an HTTP call goes to,
   the host of its base URL decides: a host that names a member (its member name, folder or `spring.application.name`;
@@ -76,7 +110,8 @@ Vocabulary: 1 conflict between keys nobody decided yet
   the suggestions [in company.yaml](#the-fleets-companyyaml). No line when there are none. `--html` lists them too.
 
 Options: `--refresh` rescans every member first (from the roots in the member list; a member not at its root on this
-machine keeps its snapshot); `--html` also writes the report page to `<fleet>/report/fleet.html` (or `--out <dir>`),
+machine keeps its snapshot; an added member's scan writes only to the fleet folder); `--service <name>` prints one
+member's findings from its last scan; `--html` also writes the report page to `<fleet>/report/fleet.html` (or `--out <dir>`),
 with the trend against the previous page; `--json` prints the overview as JSON.
 
 ## The fleet's vocabulary

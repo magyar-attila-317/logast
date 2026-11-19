@@ -814,16 +814,31 @@ public final class Main {
 
         /** Runs Gradle with the classpath init script (compiles nothing); its output is captured, not printed. */
         static Result write(Path r) throws IOException, InterruptedException {
+            return write(r, null);
+        }
+
+        /**
+         * @param outDir #132: where the classpath files go instead of {@code <r>/.logast} (a fleet's added member: the
+         *               fleet folder); Gradle's own project cache goes there too, so the repo stays as it was. Null: .logast
+         */
+        static Result write(Path r, Path outDir) throws IOException, InterruptedException {
             Path init = Files.createTempFile("logast-classpath", ".init.gradle");
             Files.writeString(init, initScript());
             Path wrapper = r.resolve(System.getProperty("os.name").toLowerCase().contains("win") ? "gradlew.bat" : "gradlew");
             String gradle = Files.exists(wrapper) ? wrapper.toString() : "gradle";
-            Process p = new ProcessBuilder(gradle, "-q", "--no-configuration-cache", "--init-script", init.toString(), "logastClasspath")
+            List<String> command = new ArrayList<>(List.of(gradle, "-q", "--no-configuration-cache", "--init-script", init.toString()));
+            if (outDir != null) {
+                Files.createDirectories(outDir);
+                command.addAll(List.of("--project-cache-dir", outDir.resolve("gradle-cache").toString(),
+                        "-Plogast.outputDir=" + outDir.toAbsolutePath().normalize()));
+            }
+            command.add("logastClasspath");
+            Process p = new ProcessBuilder(command)
                     .directory(r.toFile()).redirectErrorStream(true).redirectInput(ProcessBuilder.Redirect.INHERIT).start();
             String output = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             int rc = p.waitFor();
             Files.deleteIfExists(init);
-            List<Path> cp = rc == 0 ? Logast.classpath(r, null) : List.of();
+            List<Path> cp = rc != 0 ? List.of() : outDir != null ? Logast.classpathIn(outDir) : Logast.classpath(r, null);
             return new Result(rc, cp.size(), dev.logast.parse.ProjectParser.hasCompiledClasses(cp), output);
         }
 

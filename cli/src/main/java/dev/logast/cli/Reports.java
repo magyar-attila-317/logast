@@ -78,15 +78,20 @@ final class Reports {
      * {@code plan} by the run that calls this): the same text the explain topics print when not in a terminal.
      */
     static void write(Path root, Analysis a, LifecyclePlan plan) throws IOException {
+        writeTo(root.resolve(LogastDir.DIR), a, plan);
+    }
+
+    /** {@link #write} into {@code out}, a folder laid out like .logast (#132: a fleet's added member). */
+    static void writeTo(Path out, Analysis a, LifecyclePlan plan) throws IOException {
         long t0 = System.nanoTime();
         boolean colours = Ansi.enabled();
         Ansi.enable(false);   // a file: the text a pipe gets ("WARNING:", not a coloured "!")
         try {
-            Files.createDirectories(root.resolve(LogastDir.REPORTS));
-            Files.writeString(root.resolve(LogastDir.METRICS_REPORT), metrics(a, "map"));
-            Files.writeString(root.resolve(LogastDir.QUERIES), queries(a).text());
+            Files.createDirectories(LogastDir.in(out, LogastDir.REPORTS));
+            Files.writeString(LogastDir.in(out, LogastDir.METRICS_REPORT), metrics(a, "map"));
+            Files.writeString(LogastDir.in(out, LogastDir.QUERIES), queries(a).text());
             if (plan != null) {
-                Files.writeString(root.resolve(LogastDir.LIFECYCLE), lifecycle(a, plan));
+                Files.writeString(LogastDir.in(out, LogastDir.LIFECYCLE), lifecycle(a, plan));
             }
         } finally {
             Ansi.enable(colours);

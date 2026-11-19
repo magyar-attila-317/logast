@@ -14,7 +14,8 @@ examples. Output samples are illustrations; counts and ids differ per service an
 | `logast verify <svc>` | runs the existing tests with log capture and checks what was really logged |
 | `logast explain <svc> [topic]` | the call tree below the entrypoints, or one question: `mdc <key>`, `lifecycle`, `metrics`, `queries`, `policy`, `rules` ([below](#explain)) |
 | `logast fleet create\|join\|leave\|list` | named fleets: a service joins once (`fleet: <name>` in its logast.yaml), then its scans and applies leave snapshots in the fleet folder ([fleet.md](fleet.md)) |
-| `logast fleet <name> [--refresh] [--html] [--json] [--vocabulary]` | the fleet's overview from the snapshots: scores, open findings, trace breaks, one outcome under several metric names, vocabulary conflicts; `--vocabulary` writes the fleet's worksheet and company.yaml |
+| `logast fleet add <name> <repo…> [--from <file>] [--scan] [--classpath-file <f>]` / `fleet remove <name> <repo\|service>…` | registers repos in a fleet without writing anything into them; their policy is the fleet's company.yaml (under the repo's own logast.yaml if it has one), their scans write to `<fleet>/services/<service>/` ([fleet.md](fleet.md#adding-repos-without-touching-them)) |
+| `logast fleet <name> [--refresh] [--service <svc>] [--html] [--json] [--vocabulary]` | the fleet's overview from the snapshots: members added / joined, scores, open findings, trace breaks, one outcome under several metric names, vocabulary conflicts; `--service` prints one member's findings from its last scan; `--vocabulary` writes the fleet's worksheet and company.yaml |
 | `logast fleet <svc>…` | the earlier form: scans the given services and writes the report; calls whose trace stops between two services; one outcome counted under several metric names |
 | `logast fleet --vocabulary [--central <dir>] <svc>…` | per service, the keys in the code the vocabulary makes aliases (what apply would rename); with `--central`, as if every service extended `<dir>/company.yaml` |
 | `logast init [svc]` | optional: choose before the first apply (`logast.yaml`, `.gitignore`, classpath, traffic template; `--baseline` for CI). `apply` does the same setup itself when there is no `logast.yaml` |
@@ -313,6 +314,7 @@ question instead:
 ```bash
 logast fleet create payments-fleet                # once, with its company.yaml; --dir <folder> keeps it elsewhere
 logast fleet join payments-fleet                  # in each service: writes `fleet: payments-fleet` into logast.yaml
+logast fleet add payments-fleet repos/*/ --scan   # or: register and scan repos without writing anything into them
 logast fleet payments-fleet                       # the overview from the members' last scans
 logast fleet payments-fleet --vocabulary          # the fleet's vocabulary worksheet and company.yaml
 logast fleet list                                 # the fleets this machine knows
