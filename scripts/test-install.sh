@@ -181,15 +181,17 @@ if command -v java >/dev/null && command -v zip >/dev/null && command -v unzip >
   check "the first run installs" 0 "$code"
   check "the command" "logast 1.0 (abc1234)" "$("$T/inst/bin/logast" --version)"
   case "$first" in *"logast is installed"*) PASSED=$((PASSED + 1)) ;; *) FAILED=$((FAILED + 1)); printf 'FAIL first run:\n%s\n' "$first" ;; esac
-  touch "$T/inst/share/marker"
+  touch "$T/inst/share/bin/marker"
+  mkdir -p "$T/inst/share/fleets/f1" && echo keep >"$T/inst/share/fleets/f1/company.yaml"
   second="$(run)"
   case "$second" in
     *"logast 1.0 (abc1234) is already installed — nothing to do (--force reinstalls)"*"logast is up to date"*) PASSED=$((PASSED + 1)) ;;
     *) FAILED=$((FAILED + 1)); printf 'FAIL second run:\n%s\n' "$second" ;;
   esac
-  holds "the second run leaves the install alone" test -f "$T/inst/share/marker"
+  holds "the second run leaves the install alone" test -f "$T/inst/share/bin/marker"
   run --force >/dev/null
-  fails "--force reinstalls" test -f "$T/inst/share/marker"
+  fails "--force reinstalls" test -f "$T/inst/share/bin/marker"
+  check "a reinstall keeps the fleets (#135)" keep "$(cat "$T/inst/share/fleets/f1/company.yaml" 2>/dev/null)"
 else
   echo "skipped the whole-run check: java, zip or unzip missing"
 fi
