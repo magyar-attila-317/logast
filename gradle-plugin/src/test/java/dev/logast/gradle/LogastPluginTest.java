@@ -41,6 +41,30 @@ class LogastPluginTest {
     }
 
     @Test
+    void applyWritesUnlessADryRunIsAsked() {   // #122
+        Project p = ProjectBuilder.builder().build();
+        p.getPluginManager().apply("java");
+        p.getPluginManager().apply("dev.logast");
+
+        LogastApply apply = (LogastApply) p.getTasks().getByName("logastApply");
+        assertThat(apply.getGroup()).isEqualTo("logast");
+        assertThat(apply.getDryRun().get()).isFalse();
+        assertThat(apply.command()).containsExactly("apply", "--auto", "--write");
+        assertThat(apply.getScanClasspath().getFrom()).isNotEmpty();   // compileClasspath, as for the scan tasks
+
+        apply.getDryRun().set(true);
+        assertThat(apply.command()).containsExactly("apply", "--auto");
+    }
+
+    @Test
+    void applyFailsOnErrorExitsAndOnACheckFailure() {
+        assertThat(LogastWork.applyFailure(0, "applied (3): a b c")).isNull();
+        assertThat(LogastWork.applyFailure(1, "REJECTED X-1: does not compile")).contains("rejected");
+        assertThat(LogastWork.applyFailure(2, "nothing selected")).contains("exit 2");
+        assertThat(LogastWork.applyFailure(0, "CHECK FAILED (1): the result breaks a rule")).contains("CHECK FAILED");
+    }
+
+    @Test
     void noTasksWithoutJava() {
         Project p = ProjectBuilder.builder().build();
         p.getPluginManager().apply("dev.logast");

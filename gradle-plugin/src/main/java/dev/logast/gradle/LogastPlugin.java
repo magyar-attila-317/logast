@@ -5,8 +5,8 @@ import org.gradle.api.Project;
 import org.gradle.api.plugins.JavaPlugin;
 
 /**
- * {@code plugins { id("dev.logast") }}: logastScan, logastBaseline and logastCheck on the project's main sources, with
- * the build's own compile classpath. Tasks are added once the java plugin is applied (a Spring Boot service has it).
+ * {@code plugins { id("dev.logast") }}: logastScan, logastBaseline, logastCheck, logastSarif and logastApply on the
+ * project's main sources, with the build's own compile classpath. Tasks are added once the java plugin is applied (a Spring Boot service has it).
  */
 public class LogastPlugin implements Plugin<Project> {
     public static final String GROUP = "logast";
@@ -36,6 +36,12 @@ public class LogastPlugin implements Plugin<Project> {
             project.getTasks().register("logastSarif", LogastSarif.class, t -> {
                 t.setDescription("Writes the findings as SARIF (build/reports/logast/logast.sarif) for GitHub code scanning");
                 t.getSarifFile().convention(project.getLayout().getBuildDirectory().file("reports/logast/logast.sarif"));
+            });
+            project.getTasks().register("logastApply", LogastApply.class, t -> {
+                t.setDescription("Applies every fix that needs no message text to the sources (review with git diff); "
+                        + "--preview or -PlogastDryRun previews");
+                t.getDryRun().convention(project.getProviders().gradleProperty("logastDryRun")
+                        .map(v -> !v.equalsIgnoreCase("false")).orElse(false));
             });
             project.getTasks().withType(LogastTask.class).configureEach(t -> {
                 t.setGroup(GROUP);

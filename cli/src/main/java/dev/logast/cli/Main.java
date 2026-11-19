@@ -491,7 +491,13 @@ public final class Main {
                         + (only.isEmpty() ? "" : " --only " + String.join(",", only)),
                         "make these " + r.applied().size() + " changes");
             }
-            if (write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith(".gradle") || fn.endsWith(".gradle.kts"))) {
+            boolean buildChanged = write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith(".gradle") || fn.endsWith(".gradle.kts"));
+            if (buildChanged && classpathFile != null) {
+                // #122: the caller owns the classpath (the Gradle plugin's logastApply runs inside a build): no nested
+                // Gradle run here; the caller's next apply resolves the new dependencies
+                also.add(new dev.logast.Todo.Item("apply again (./gradlew logastApply)",
+                        "dependencies changed; the classpath came from --classpath-file, so the new types are resolved on the next apply"));
+            } else if (buildChanged) {
                 // a build file, or a script it applies (gradle/dependencies.gradle, #80)
                 // dependencies changed: refresh the classpath right away, so the next scan sees the new types
                 Main.Classpath.Result cpr;
