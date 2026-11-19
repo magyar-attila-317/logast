@@ -1,0 +1,50 @@
+http (12)
+  DELETE /coupons/{couponId}  src/main/java/com/example/e2e/web/CouponController.java:50
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  GET /audit/settings  src/main/java/com/example/e2e/web/AuditController.java:15
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  GET /coupons  src/main/java/com/example/e2e/web/CouponController.java:26
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  GET /coupons/{couponId}/details  src/main/java/com/example/e2e/web/CouponDetailsController.java:22
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  GET /quotes/{productId}  src/main/java/com/example/e2e/web/QuoteController.java:17
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  GET /quotes/{productId}/refresh  src/main/java/com/example/e2e/web/QuoteController.java:25
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  POST /admin/coupons/{couponId}/revoke  src/main/java/com/example/e2e/web/CouponController.java:57
+    start: present (not needed)   outcome: present (access log / http.server.requests)
+  POST /coupons/redeem  src/main/java/com/example/e2e/web/CouponController.java:45
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  POST /coupons/{couponId}/hold  src/main/java/com/example/e2e/web/CouponDetailsController.java:29
+    start: present (not needed)   outcome: present (access log / http.server.requests)
+  POST /coupons/{couponId}/publish  src/main/java/com/example/e2e/web/CouponController.java:31
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  POST /coupons/{couponId}/use  src/main/java/com/example/e2e/web/CouponController.java:38
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+  POST /orders  src/main/java/com/example/e2e/web/CouponController.java:65
+    start: none (not needed)   outcome: present (access log / http.server.requests)
+message (6)
+  @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)  src/main/java/com/example/e2e/job/SettlementJobExecutor.java:18
+    start: none (not needed (one outcome per message))   outcome: present (observation wrapper (runtime line))
+  @JmsListener coupon-audits  src/main/java/com/example/e2e/messaging/CouponMessages.java:38
+    start: present (not needed (one outcome per message))   outcome: present (the method)
+  @KafkaListener coupon-batches  src/main/java/com/example/e2e/messaging/CouponMessages.java:20
+    start: none (not needed (one outcome per message))   outcome: present (observation wrapper (runtime line))
+  @KafkaListener orders  src/main/java/com/example/e2e/order/OrderEvents.java:15
+    start: none (not needed (one outcome per message))   outcome: present (the method)
+  @RabbitListener coupon-returns  src/main/java/com/example/e2e/messaging/CouponMessages.java:29
+    start: present (not needed (one outcome per message))   outcome: present (the method)
+  @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:25
+    start: present (not needed (one outcome per message))   outcome: present (the method)
+run (3)
+  @Scheduled CouponCleanupJob.cleanup  src/main/java/com/example/e2e/coupon/CouponCleanupJob.java:22
+    start: present (the method)   outcome: present (the method)
+  @Scheduled CouponReloadJob.run  src/main/java/com/example/e2e/coupon/CouponReloadJob.java:17
+    start: present (the method)   outcome: present (the method)
+  @Scheduled EdgeJob.run  src/main/java/com/example/e2e/edge/EdgeJob.java:22
+    start: present (the method)   outcome: present (the method)
+implementation families (1)
+  SettlementJob.doExecute
+    CalculationJob.doExecute: started, completed
+    ExportJob.doExecute: started, completed
+    PreloadJob.doExecute: started, completed

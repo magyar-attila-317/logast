@@ -36,6 +36,9 @@ public final class LogastDir {
     public static final String LAST_APPLY = REPORTS + "/last-apply.txt";
     public static final String STEPS = REPORTS + "/steps";
     public static final String QUERIES = REPORTS + "/queries.md";
+    /** #125: written by every scan and apply, printed by {@code logast explain metrics|lifecycle}. */
+    public static final String METRICS_REPORT = REPORTS + "/metrics.md";
+    public static final String LIFECYCLE = REPORTS + "/lifecycle.txt";
     public static final String VERIFY = REPORTS + "/verify.json";
 
     public static final String BASELINE = DIR + "/baseline.json";

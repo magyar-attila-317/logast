@@ -33,7 +33,7 @@ Legend: [rules.md](../rules.md#how-to-read-the-rule-tables).
 
 Start with the map: what is measured and what is not, rich enough to choose metrics without reading code.
 ```
-$ logast metrics .
+$ logast explain metrics .
 Export: none
   No exporter on the classpath: meters are collected but never leave the application.
 Identity
@@ -189,5 +189,5 @@ metrics:
 ```
 It also catches what silently breaks metrics: one meter name registered with different tag keys (Prometheus drops the
 later ones), gauges on objects nothing else references (they read NaN after GC), meters built per loop item, ids or
-PII as tags. `logast metrics .` lists every meter, and the fleet report compares them across services: same name with
+PII as tags. `logast explain metrics .` lists every meter, and the fleet report compares them across services: same name with
 different types/tags, and similar names (`orders.placed` vs `order_placed`).

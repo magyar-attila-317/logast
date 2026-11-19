@@ -73,6 +73,18 @@ public final class Applier {
         return this;
     }
 
+    private java.util.function.Consumer<Path> onFinish = work -> {
+    };
+
+    /**
+     * Called with the scratch copy after the run (the last scan analysed it; with write, the project now holds the same
+     * files), before the copy is deleted: #125 writes the reports from that analysis, whose files are still there.
+     */
+    public Applier onFinish(java.util.function.Consumer<Path> action) {
+        this.onFinish = action;
+        return this;
+    }
+
     /**
      * Receives a short line for every step (copy, analysis, each round, re-checks); the CLI shows it as it goes.
      * Lines starting with "~" are details: worth showing on a live status line, not worth a line of their own.
@@ -101,7 +113,9 @@ public final class Applier {
         progress.accept("copying the project to a scratch folder");
         Path work = copy(root);
         try {
-            return run(root, work, sel, write);
+            Result r = run(root, work, sel, write);
+            onFinish.accept(work);
+            return r;
         } finally {
             deleteTree(work.getParent());
         }

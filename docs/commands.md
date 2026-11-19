@@ -3,30 +3,21 @@
 Every command prints its options with `--help` (`logast scan --help`). This page explains what they are for, with
 examples. Output samples are illustrations; counts and ids differ per service and version.
 
+`logast --help` lists seven commands; everything else is a report logast writes on its own, a question under
+`explain`, or an [advanced command](#advanced).
+
 | command | what it does |
 |---|---|
-| `logast init [svc]` | optional: choose before the first apply (`logast.yaml`, `.gitignore`, classpath, traffic template; `--baseline` for CI). `apply` does the same setup itself when there is no `logast.yaml` |
-| `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing) |
-| `logast scan <svc>` | finds gaps, writes `.logast/reports/orders.json`, prints the work orders |
 | `logast apply <svc> [--only ids] [--dry-run] [--force]` | applies every order that needs no text (`--only`: just these) on a scratch copy, rescanning between rounds, and writes the result (`--dry-run`: preview only). Refuses a git working tree with uncommitted changes unless `--force`. On a service without `logast.yaml` (or with one that holds only `fleet:` / `extends:`) it writes one first (what `init` writes, leaving to the fleet or extended layer what they set), on a Gradle build without a classpath file it reads one. Message texts come from `.logast/decisions/messages.yaml` (or `--fills <file>`); `--auto` and `--write` are accepted and are the default |
+| `logast scan <svc>` | finds gaps, writes `.logast/reports/orders.json` and the [reports](#reports-written-automatically), prints the work orders |
 | `logast review <svc> [--open]` | local page for the optional decisions (message texts, metrics, retries), dry run and apply |
 | `logast verify <svc>` | runs the existing tests with log capture and checks what was really logged |
-| `logast explain <svc> [--entrypoint "POST /x"]` | lists entrypoints, or the call tree below one with log/MDC/async markers |
-| `logast lifecycle <svc>` | every flow's lifecycle lines: which exist, who owns the start and the outcome, what logast will add; implementation families that log unevenly |
-| `logast why <svc> <key>` | why an MDC key is scoped where it is: every method that logs it, the decision (scope, covered, in MDC, no scope, lifted) and the reason |
-| `logast metrics <svc>` | the metrics map: exporters, identity, metric per entrypoint, meters in code, outcomes not counted (`--format json`, `--format table` = meters only) |
-| `logast queries <svc>` | ready-made PromQL, NRQL and Splunk SPL for the service's metrics and logs, written to `.logast/reports/queries.md` (`--stdout` prints them) |
-| `logast vocabulary <svc>` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything) |
-| `logast vocabulary --central <dir> <svc>…` | one vocabulary across services: every key with its evidence in `<dir>/vocabulary-worksheet.yaml`, your decisions kept, decided terms published to `<dir>/company.yaml` |
-| `logast vocabulary --prune <svc>…` | removes from logast.yaml the vocabulary entries an extended company.yaml now defines in full |
-| `logast traffic <svc>` | writes `.logast/decisions/traffic.yaml` with every entrypoint, ready to fill in |
-| `logast policy <svc> [--check]` | the effective policy after all layers, with overrides; `--check` (CI) checks it against the code instead: exit 0 fine, 1 warnings, 2 errors |
-| `logast rules` | every rule and its packs |
+| `logast explain <svc> [topic]` | the call tree below the entrypoints, or one question: `mdc <key>`, `lifecycle`, `metrics`, `queries`, `policy`, `rules` ([below](#explain)) |
 | `logast fleet create\|join\|leave\|list` | named fleets: a service joins once (`fleet: <name>` in its logast.yaml), then its scans and applies leave snapshots in the fleet folder ([fleet.md](fleet.md)) |
 | `logast fleet <name> [--refresh] [--html] [--json] [--vocabulary]` | the fleet's overview from the snapshots: scores, open findings, trace breaks, one outcome under several metric names, vocabulary conflicts; `--vocabulary` writes the fleet's worksheet and company.yaml |
 | `logast fleet <svc>…` | the earlier form: scans the given services and writes the report; calls whose trace stops between two services; one outcome counted under several metric names |
 | `logast fleet --vocabulary [--central <dir>] <svc>…` | per service, the keys in the code the vocabulary makes aliases (what apply would rename); with `--central`, as if every service extended `<dir>/company.yaml` |
-| `logast shape <svc>` | exports the code with its own names and words replaced, to send a reproduction ([below](#shape)) |
+| `logast init [svc]` | optional: choose before the first apply (`logast.yaml`, `.gitignore`, classpath, traffic template; `--baseline` for CI). `apply` does the same setup itself when there is no `logast.yaml` |
 
 Options most analysing commands share: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`,
 `--traffic <file>`.
@@ -36,7 +27,7 @@ Options most analysing commands share: `--policy <file>`, `--classpath-file <fil
 | folder | what is in it | in git? |
 |---|---|---|
 | `.logast/decisions/` | what a person decides, all YAML: `messages.yaml` (message texts), `metrics.yaml` (count, tag or skip a logged outcome), `traffic.yaml` (calls/day per entrypoint), `retry.yaml` (every retry decision: settings per usage, and yes / no for the calls logast recommends retrying). logast keeps the entries in step with the code and keeps what you wrote | yes |
-| `.logast/reports/` | what logast writes for you to read: `orders.json`, `coverage.txt`, `steps/`, `apply-trace.txt`, `last-apply.txt`, `queries.md`, `verify.json` | no |
+| `.logast/reports/` | what logast writes for you to read: `orders.json`, `coverage.txt`, `metrics.md`, `queries.md`, `lifecycle.txt` ([written automatically](#reports-written-automatically)), `steps/`, `apply-trace.txt`, `last-apply.txt`, `verify.json` | no |
 | `.logast/` | `classpath-*.txt` (machine input), `baseline.json` (CI), `README.md`, `shape/` | baseline and README |
 
 A `.logast` from an earlier logast version (`fills.json`, `metrics.json`, `traffic.yaml`, `retry.yaml` and the reports
@@ -81,7 +72,7 @@ logast · 53 files · 21 entrypoints · log coverage 42.9%
 143 findings: 93 logast fixes, 5 need a message, 11 outcomes to count or skip, 34 need your decision
   logast fixes     message not in house format 41, business id missing from MDC 7, …
   messages         write in .logast/decisions/messages.yaml or `logast review .`: business id missing from MDC 3, …
-  outcomes         decide in .logast/decisions/metrics.yaml (`logast metrics .` has the context): 11 logged but not counted
+  outcomes         decide in .logast/decisions/metrics.yaml (.logast/reports/metrics.md has the context): 11 logged but not counted
 
 Your decisions (most important first; → what to do)
   high
@@ -228,7 +219,8 @@ Also:
 
 One `apply` does everything automatic, and its result compiles: the service is done there. A second one is only for
 what you decided: `logast review` (or the files in `.logast/decisions/`), then `logast apply .` again on the migrated
-code. `logast scan .` shows the same without changing anything. `apply` records what it changed in
+code. `logast scan .` shows the same without changing anything. Both also write the
+[reports](#reports-written-automatically). `apply` records what it changed in
 `.logast/reports/last-apply.txt`, so a later scan starts with "Applied earlier: 100 changes in 53 files".
 
 - **Steps.** `apply` runs in steps (setup, structure, lines, mdc, messages, exceptions, levels, reports), each on the
@@ -286,61 +278,20 @@ verify:
   gradleDir: ../..                  # optional: run Gradle from the repo root (service is a subproject)
 ```
 
-## metrics
+## explain
 
-```
-$ logast metrics .
-Export: none
-  No exporter on the classpath: meters are collected but never leave the application.
-Identity
-  spring.application.name: shop
-  spring.application.version: (not set: manifest Implementation-Version, if any)
-Measured without code: …
-Entrypoints no metric covers: …
-Outcomes logged but not counted: …
-```
+`logast explain .` lists the entrypoints; `--entrypoint "POST /orders"` shows the call tree below one, with log, MDC
+and async markers and the ids of the orders on each method (`--depth`, default 12). A topic after `explain` asks one
+question instead:
 
-`--format json` has every entry, with the exact metric and tag values to query. More in the
-[metrics pack](packs/metrics.md#the-metrics-map).
-
-## queries
-
-```
-$ logast queries .
-queries: 30 PromQL, 20 NRQL, 12 SPL in .logast/reports/queries.md
-```
-
-Queries to paste, one code block each, for what the service measures and logs as the code stands (run it after
-`apply`):
-
-- **Prometheus (PromQL) and New Relic (NRQL):**
-  - calls, failure share, average and p95 duration of the HTTP endpoints, scheduled jobs and Kafka listeners that
-    Spring times, with each entrypoint's labels;
-  - the same for every observation (`ObservedContext`, `@Observed`, `Observation`) and timer in code;
-  - every business outcome counter and summary (`Outcomes.count` / `record`, catalogs, Micrometer builders), by
-    `outcome`.
-- **Splunk (SPL):** errors over time, the most frequent errors, exceptions by type, everything one trace logged,
-  everything logged for one business id (each vocabulary MDC key the service uses), the ids with the most errors, and
-  the loggers that write the most. Field names follow `logging.structured.format.console` (ecs, logstash, gelf).
-
-Which backends, the Splunk index and the Prometheus service label come from `queries:` in `logast.yaml`
-([configuration](configuration.md#queries-ready-made-queries)). Without a Splunk index the Splunk part is left out with
-a hint.
-
-## vocabulary, policy, traffic
-
-- `logast vocabulary .` collects the identifier keys the service uses (MDC keys, `[k=v]` keys, id-like variables)
-  that the policy doesn't cover yet; `init` writes the same harvest into `logast.yaml`. How to organise it:
-  [vocabulary.md](vocabulary.md#start-from-the-code).
-- `logast vocabulary --central ~/.logast <svc>…` keeps one vocabulary across services: a worksheet with every key's
-  evidence where you decide (`term`, `same_as`, `local`), and a generated `company.yaml` with the decided terms that
-  services extend. `--prune <svc>` removes the service's own entries company.yaml now defines; `scan` names them.
-  The workflow: [vocabulary.md](vocabulary.md#one-vocabulary-across-services). In a named fleet,
-  `logast fleet <name> --vocabulary` does the same without paths ([fleet.md](fleet.md#the-fleets-vocabulary)).
-- `logast policy .` prints the merged result of all layers and every override. `logast policy . --check` checks the
-  policy against the code for CI ([configuration](configuration.md#how-the-configuration-is-put-together)).
-- `logast traffic .` lists every entrypoint in `.logast/decisions/traffic.yaml`; fill in calls/day (or pass a Prometheus query
-  result with `--traffic`) so logast can judge log volume. Existing values are kept.
+| topic | what it prints |
+|---|---|
+| `explain mdc <key>` (or `explain mdc <svc> <key>`) | why an MDC key is scoped where it is: every method that logs it, the decision (scope, covered, in MDC, no scope, lifted) and the reason, plus the scopes already in the code |
+| `explain lifecycle <svc>` | every flow's lifecycle lines: which exist, who owns the start and the outcome, what logast will add; implementation families that log unevenly. The same as `.logast/reports/lifecycle.txt` |
+| `explain metrics <svc>` | the metrics map ([below](#metricsmd)). The same as `.logast/reports/metrics.md`; `--format json` has every entry with the exact metric and tag values, `--format table` the meters only |
+| `explain queries <svc>` | the ready-made queries ([below](#queriesmd)). The same as `.logast/reports/queries.md` |
+| `explain policy <svc> [--check]` | the effective policy after all layers, with overrides; `--check` (CI) checks it against the code instead: exit 0 fine, 1 warnings, 2 errors ([configuration](configuration.md#how-the-configuration-is-put-together)) |
+| `explain rules` | every rule and its packs |
 
 ## fleet
 
@@ -409,7 +360,85 @@ now) is extended. Without `--central`, each service's own policy counts. For a n
 --vocabulary` writes the worksheet in the fleet folder from the snapshots, and its members extend the fleet's
 company.yaml by name.
 
-## shape
+## Reports written automatically
+
+Every `scan` and every `apply` (not `--dry-run`) writes these from the analysis it has just made, so they describe the
+code as it stands after the run; the last line of the run says where they are:
+
+```
+reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)
+```
+
+`logast explain metrics` (`queries`, `lifecycle`) prints the same text without writing anything. Besides these,
+`scan` writes `orders.json` and [`coverage.txt`](#every-log-call-is-accounted-for), `apply` its
+[steps and trace](#apply), and `verify` `verify.json`.
+
+### metrics.md
+
+```
+Export: none
+  No exporter on the classpath: meters are collected but never leave the application.
+Identity
+  spring.application.name: shop
+  spring.application.version: (not set: manifest Implementation-Version, if any)
+Measured without code: …
+Entrypoints no metric covers: …
+Outcomes logged but not counted: …
+```
+
+`logast explain metrics . --format json` has every entry, with the exact metric and tag values to query. More in the
+[metrics pack](packs/metrics.md#the-metrics-map).
+
+### queries.md
+
+Queries to paste, one code block each, for what the service measures and logs:
+
+- **Prometheus (PromQL) and New Relic (NRQL):**
+  - calls, failure share, average and p95 duration of the HTTP endpoints, scheduled jobs and Kafka listeners that
+    Spring times, with each entrypoint's labels;
+  - the same for every observation (`ObservedContext`, `@Observed`, `Observation`) and timer in code;
+  - every business outcome counter and summary (`Outcomes.count` / `record`, catalogs, Micrometer builders), by
+    `outcome`.
+- **Splunk (SPL):** errors over time, the most frequent errors, exceptions by type, everything one trace logged,
+  everything logged for one business id (each vocabulary MDC key the service uses), the ids with the most errors, and
+  the loggers that write the most. Field names follow `logging.structured.format.console` (ecs, logstash, gelf).
+
+Which backends, the Splunk index and the Prometheus service label come from `queries:` in `logast.yaml`
+([configuration](configuration.md#queries-ready-made-queries)). Without a Splunk index the Splunk part is left out;
+`logast explain queries` says so.
+
+### lifecycle.txt
+
+Every flow by kind (http, message, job, …): whether it has a start and an outcome line, who owns each, and what
+`apply` will add; then implementation families (implementations of one interface) that log unevenly.
+
+## Advanced
+
+Not in `--help`, for the cases they name; `apply`, `init` and `fleet` do the usual work.
+
+| command | what it does |
+|---|---|
+| `logast classpath <svc>` | runs Gradle once and writes `.logast/classpath-*.txt` (compiles nothing). `apply` and `init` do it when the file is missing |
+| `logast traffic <svc>` | writes `.logast/decisions/traffic.yaml` with every entrypoint, ready to fill in calls/day (or pass a Prometheus query result with `--traffic`) so logast can judge log volume. Existing values are kept |
+| `logast vocabulary <svc>` | draft vocabulary harvested from the code, only terms the policy doesn't cover yet (`--all`: everything); `init` and the first `apply` write the same harvest into `logast.yaml`. How to organise it: [vocabulary.md](vocabulary.md#start-from-the-code) |
+| `logast vocabulary --central <dir> <svc>…` | one vocabulary across services: every key with its evidence in `<dir>/vocabulary-worksheet.yaml` (decide there: `term`, `same_as`, `local`), your decisions kept, decided terms published to `<dir>/company.yaml` ([vocabulary.md](vocabulary.md#one-vocabulary-across-services)). In a named fleet, `logast fleet <name> --vocabulary` does the same without paths ([fleet.md](fleet.md#the-fleets-vocabulary)) |
+| `logast vocabulary --prune <svc>…` | removes from logast.yaml the vocabulary entries an extended company.yaml now defines in full; `scan` names them (a named fleet: [fleet.md](fleet.md)) |
+| `logast shape <svc>` | exports the code with its own names and words replaced, to send a reproduction ([below](#shape)) |
+
+### Old names
+
+These still work for a release and print one line on stderr with their new form (stdout is unchanged):
+
+| old | now |
+|---|---|
+| `logast why <svc> <key>` | `logast explain mdc <svc> <key>` |
+| `logast lifecycle <svc>` | `logast explain lifecycle <svc>`, or `.logast/reports/lifecycle.txt` |
+| `logast metrics <svc>` | `logast explain metrics <svc>`, or `.logast/reports/metrics.md` |
+| `logast queries <svc>` | `.logast/reports/queries.md` (written by every scan and apply), or `logast explain queries <svc>` |
+| `logast policy <svc>` | `logast explain policy <svc>` |
+| `logast rules` | `logast explain rules` |
+
+### shape
 
 `logast shape .` exports the code with its own names and words replaced (`.logast/shape/`, mapping back in
 `.logast/shape-mapping.txt`): the same findings without the content, to send a reproduction. Only known public

@@ -1,7 +1,7 @@
 # Rules and packs
 
 Rules are grouped into packs. A rule runs when any of its packs is selected (`packs:` in `logast.yaml`, or
-`--pack` on the command line). `logast rules` prints every rule id with its packs; that list comes from the code and
+`--pack` on the command line). `logast explain rules` prints every rule id with its packs; that list comes from the code and
 is the authority if this page and the tool ever disagree.
 
 | pack | default | covers | rules |

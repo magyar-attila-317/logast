@@ -26,7 +26,7 @@ public final class MetricsFile {
             + "and outcome freely (lower case, dots). Where the line logs a number (_amounts), amount names one to count too: "
             + "as: total (a counter name.<amount> grows by it) or per-run (each value one sample of a distribution "
             + "summary name.<amount>); an empty as takes metrics.amounts from logast.yaml. Leave amount empty to count "
-            + "how often only. Then: logast apply . `logast metrics . --format json` has the context. Keys starting "
+            + "how often only. Then: logast apply . `logast explain metrics . --format json` has the context. Keys starting "
             + "with _ are hints (_where and _event find the line again when its id changes: keep them).";
 
     /**

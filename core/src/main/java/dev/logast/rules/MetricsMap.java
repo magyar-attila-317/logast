@@ -548,7 +548,7 @@ public final class MetricsMap {
         });
 
         sb.append('\n').append(Ansi.bold("Meters in code: " + m.meters().size()))
-                .append(Ansi.dim(m.meters().isEmpty() ? "" : "   (logast metrics . --format table lists them)")).append('\n');
+                .append(Ansi.dim(m.meters().isEmpty() ? "" : "   (logast explain metrics . --format table lists them)")).append('\n');
 
         java.util.Map<String, Long> byEvent = new TreeMap<>();
         m.outcomes().forEach(u -> byEvent.merge(u.event(), 1L, Long::sum));

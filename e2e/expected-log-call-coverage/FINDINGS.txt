@@ -404,3 +404,5 @@ Log lines: 92 — 53 fixed, 15 with a finding, 10 fine, 1 silenced by logast:ign
 
 Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+
+reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)

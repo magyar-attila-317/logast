@@ -33,8 +33,11 @@ import java.util.stream.Collectors;
 @Command(name = "logast", mixinStandardHelpOptions = true, versionProvider = Main.Version.class, scope = CommandLine.ScopeType.INHERIT,
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
-        subcommands = {Main.Scan.class, Main.Explain.class, Main.Apply.class, Main.Classpath.class, Main.RulesCmd.class,
-                Main.PolicyCmd.class, Init.class, Main.VocabularyCmd.class, Main.MetricsCmd.class, Verify.class, Fleet.class, Review.class, Main.TrafficCmd.class, Main.WhyCmd.class, Main.ShapeCmd.class, Main.LifecycleCmd.class, Main.QueriesCmd.class})
+        // #125: seven in --help; the advanced ones and the old names (each says its new one) are hidden but keep working
+        subcommands = {Main.Apply.class, Main.Scan.class, Review.class, Verify.class, Main.Explain.class, Fleet.class, Init.class,
+                Main.ShapeCmd.class, Main.Classpath.class, Main.TrafficCmd.class, Main.VocabularyCmd.class,
+                Main.MetricsCmd.class, Main.QueriesCmd.class, Main.WhyCmd.class, Main.LifecycleCmd.class, Main.PolicyCmd.class,
+                Main.RulesCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override
@@ -148,7 +151,7 @@ public final class Main {
             List<String> unknown = rules.stream().filter(id -> !Rules.all().contains(id)).toList();
             if (!unknown.isEmpty()) {
                 unknown.forEach(id -> Out.warn("--rule " + id + ": unknown rule id"
-                        + dev.logast.policy.PolicyValidator.didYouMean(id, Rules.all()) + " (`logast rules` lists them)"));
+                        + dev.logast.policy.PolicyValidator.didYouMean(id, Rules.all()) + " (`logast explain rules` lists them)"));
                 return 2;
             }
             if (format == null) {
@@ -165,7 +168,7 @@ public final class Main {
             if (olderJdk != null) {
                 Out.warn(olderJdk);
             }
-            // #56: names in the policy and ignore comments that match nothing (also: logast policy . --check)
+            // #56: names in the policy and ignore comments that match nothing (also: logast explain policy . --check)
             dev.logast.rules.PolicyUsage.warnings(Logast.lastAnalysis).forEach(w -> Out.warn("policy: " + w));
             if (policyFile == null) {   // #113: entries an extended company.yaml now defines
                 dev.logast.VocabularyPrune.check(root()).lines(root.toString()).forEach(Out::warn);
@@ -193,6 +196,7 @@ public final class Main {
                     ledger = Logast.lastAnalysis.ledger.write(root(), Logast.lastAnalysis, r.orders(), Map.of());
                 }
                 dev.logast.apply.FindingComments.update(root(), Logast.lastAnalysis, r.orders());
+                Reports.write(root(), Logast.lastAnalysis, Rules.lastLifecycle);   // #125
             }
 
             Path baselineFile = baseline == null || baseline.isEmpty() ? root().resolve(dev.logast.LogastDir.BASELINE) : Path.of(baseline);
@@ -278,6 +282,9 @@ public final class Main {
                         ledgerLines(ledger, List.of()),
                         dev.logast.Todo.alsoLines(todo.also()));
             }
+            if (out == null && (format.equals("compact") || format.equals("human") || format.equals("summary"))) {
+                Reports.printWritten();
+            }
             if (failOn != null && !gaps.isEmpty()) {
                 // a broken analysis finds less: it must not turn a CI gate green (#55)
                 gaps.forEach(g -> Out.warn("analysis incomplete: " + g));
@@ -291,7 +298,10 @@ public final class Main {
         }
     }
 
-    @Command(name = "explain", description = "Call tree below entrypoints with log / MDC / async markers and order ids")
+    @Command(name = "explain", description = "Call tree below entrypoints with log / MDC / async markers and order ids; "
+            + "topics: mdc <key>, lifecycle, metrics, queries, policy, rules",
+            subcommands = {ExplainMdc.class, ExplainLifecycle.class, ExplainMetrics.class, ExplainQueries.class,
+                    ExplainPolicy.class, ExplainRules.class})
     static class Explain extends Common implements Callable<Integer> {
         @Option(names = "--entrypoint", description = "Entrypoint label or method filter; omit to list entrypoints")
         String entrypoint;
@@ -411,7 +421,18 @@ public final class Main {
             });
             Rules.Step untilStep = until == null ? null : Rules.Step.valueOf(until.toUpperCase(java.util.Locale.ROOT));
             Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).compileWith(cp)
-                    .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files));
+                    .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files))
+                    .onFinish(work -> {
+                        // #125: the reports from the last scan, while the scratch copy it analysed is still there
+                        if (write && scanner.lastAnalysis != null) {
+                            try {
+                                Reports.write(project, traffic == null ? scanner.lastAnalysis
+                                        : scanner.lastAnalysis.withTraffic(dev.logast.Traffic.load(project, traffic)), scanner.lastLifecycle);
+                            } catch (IOException e) {
+                                throw new java.io.UncheckedIOException(e);
+                            }
+                        }
+                    });
             Applier.Result r;
             try (Out.Progress p = new Out.Progress("~starting")) {
                 applier.onProgress(p::update);
@@ -550,6 +571,9 @@ public final class Main {
             also.addAll(todo.also());
             printBlocks(done, todo.lines(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
                     ledgerLines(ledger, List.of()), dev.logast.Todo.alsoLines(also));
+            if (write) {
+                Reports.printWritten();
+            }
             return r.rejected().isEmpty() ? 0 : 1;
         }
     }
@@ -638,7 +662,7 @@ public final class Main {
         return sb.substring(0, sb.length() - 1);
     }
 
-    @Command(name = "classpath", description = "Run Gradle once to write <root>/.logast/classpath-*.txt (needed for type resolution)")
+    @Command(name = "classpath", hidden = true, description = "Run Gradle once to write <root>/.logast/classpath-*.txt (needed for type resolution)")
     static class Classpath implements Callable<Integer> {
         @Parameters(index = "0", defaultValue = ".")
         Path root;
@@ -680,7 +704,7 @@ public final class Main {
         }
     }
 
-    @Command(name = "traffic", description = "Write .logast/decisions/traffic.yaml listing every entrypoint (rates empty to fill in; existing values kept)")
+    @Command(name = "traffic", hidden = true, description = "Write .logast/decisions/traffic.yaml listing every entrypoint (rates empty to fill in; existing values kept)")
     static class TrafficCmd extends Common implements Callable<Integer> {
         @Override
         public Integer call() throws IOException {
@@ -695,7 +719,7 @@ public final class Main {
         }
     }
 
-    @Command(name = "vocabulary", description = "Harvest a draft vocabulary from the code (MDC keys, [k=v] keys in log messages, "
+    @Command(name = "vocabulary", hidden = true, description = "Harvest a draft vocabulary from the code (MDC keys, [k=v] keys in log messages, "
             + "id-like variables) the policy does not cover yet: one term per key as written, hints in comments, to organise and "
             + "paste into logast.yaml")
     static class VocabularyCmd extends Common implements Callable<Integer> {
@@ -765,39 +789,59 @@ public final class Main {
         }
     }
 
+    /** #125: the one stderr line an old command name prints before it runs; stdout stays as it was. */
+    static void moved(String old, String now) {
+        Out.progress("`logast " + old + "` is now `logast " + now + "` (this name goes in a later release)");
+    }
+
     @Command(name = "metrics", description = "What the service measures and what it does not: exporters, service/version "
             + "identity, the metric (and tag values) covering each entrypoint, meters in code, and outcomes the logs report "
-            + "that no metric counts")
-    static class MetricsCmd extends Common implements Callable<Integer> {
+            + "that no metric counts (also in .logast/reports/metrics.md after every scan and apply)")
+    static class ExplainMetrics extends Common implements Callable<Integer> {
         @Option(names = "--format", defaultValue = "map", description = "map (default) | json (the same, for tools and LLMs) | table (meters only)")
         String format;
 
         @Override
         public Integer call() throws IOException {
             Analysis a = Logast.analyse(root(), classpath(), policy()).withTraffic(dev.logast.Traffic.load(root(), traffic));
-            if (format.equals("table")) {
-                System.out.print(dev.logast.metrics.MeterCatalog.table(dev.logast.metrics.MeterCatalog.of(a)));
-                return 0;
-            }
-            dev.logast.rules.MetricsMap.Map map = dev.logast.rules.MetricsMap.of(a);
-            System.out.print(format.equals("json") ? OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(map) + "\n"
-                    : dev.logast.rules.MetricsMap.text(map));
+            System.out.print(Reports.metrics(a, format));
             return 0;
         }
     }
 
+    @Command(name = "metrics", hidden = true, description = "Now `logast explain metrics`")
+    static class MetricsCmd extends ExplainMetrics {
+        @Override
+        public Integer call() throws IOException {
+            moved("metrics", "explain metrics");
+            return super.call();
+        }
+    }
+
     @Command(name = "queries", description = "Ready-made queries for the service's metrics and logs: PromQL, NRQL and "
-            + "Splunk SPL per entrypoint, business outcome and MDC key, written to <root>/.logast/reports/queries.md (backends and "
-            + "the Splunk index: queries: in logast.yaml)")
+            + "Splunk SPL per entrypoint, business outcome and MDC key (also in .logast/reports/queries.md after every scan "
+            + "and apply; backends and the Splunk index: queries: in logast.yaml)")
+    static class ExplainQueries extends Common implements Callable<Integer> {
+        @Override
+        public Integer call() {
+            Analysis a = Logast.analyse(root(), classpath(), policy());
+            dev.logast.queries.QueryWriter.Result r = Reports.queries(a);
+            System.out.print(r.text());
+            r.hints().forEach(Out::warn);
+            return 0;
+        }
+    }
+
+    @Command(name = "queries", hidden = true, description = "Now `logast explain queries`: writes <root>/.logast/reports/queries.md")
     static class QueriesCmd extends Common implements Callable<Integer> {
         @Option(names = "--stdout", description = "Print the queries instead of writing .logast/reports/queries.md")
         boolean stdout;
 
         @Override
         public Integer call() throws IOException {
+            moved("queries", "explain queries");
             Analysis a = Logast.analyse(root(), classpath(), policy());
-            dev.logast.queries.ServiceSignals s = dev.logast.queries.ServiceSignals.of(a);
-            dev.logast.queries.QueryWriter.Result r = dev.logast.queries.QueryWriter.markdown(s, a.policy.queries());
+            dev.logast.queries.QueryWriter.Result r = Reports.queries(a);
             if (stdout) {
                 System.out.print(r.text());
                 return 0;
@@ -811,14 +855,23 @@ public final class Main {
         }
     }
 
-    @Command(name = "why", description = "Why an MDC key is (or is not) scoped where it is: every method that logs it, "
-            + "the decision and the reason")
-    static class WhyCmd extends Common implements Callable<Integer> {
-        @CommandLine.Parameters(index = "1", description = "MDC key, e.g. couponId")
+    @Command(name = "mdc", description = "Why an MDC key is (or is not) scoped where it is: every method that logs it, "
+            + "the decision and the reason. `explain mdc <key>` or `explain mdc <root> <key>`")
+    static class ExplainMdc extends Common implements Callable<Integer> {
+        @CommandLine.Parameters(index = "1", arity = "0..1", description = "MDC key, e.g. couponId")
         String key;
+
+        /** One argument is the key, in the current folder; two are root and key. */
+        void resolveArguments() {
+            if (key == null) {
+                key = root.toString();
+                root = Path.of(".");
+            }
+        }
 
         @Override
         public Integer call() throws IOException {
+            resolveArguments();
             Analysis a = Logast.analyse(root(), classpath(), policy());
             Rules.scan(a);
             List<dev.logast.rules.RepeatedValueRules.Decision> ds = Rules.lastMdcDecisions.stream()
@@ -860,7 +913,16 @@ public final class Main {
         }
     }
 
-    @Command(name = "shape", description = "Export the code's shape with its own names and words replaced (to send a "
+    @Command(name = "why", hidden = true, description = "Now `logast explain mdc`")
+    static class WhyCmd extends ExplainMdc {
+        @Override
+        public Integer call() throws IOException {
+            moved("why", "explain mdc");
+            return super.call();
+        }
+    }
+
+    @Command(name = "shape", hidden = true, description = "Export the code's shape with its own names and words replaced (to send a "
             + "reproduction without the content): <root>/.logast/shape/, mapping back in <root>/.logast/shape-mapping.txt")
     static class ShapeCmd extends Common implements Callable<Integer> {
         @Option(names = "--public-group", split = ",", description = "A library group/package whose names may stay as they "
@@ -884,44 +946,29 @@ public final class Main {
     }
 
     @Command(name = "lifecycle", description = "Every flow's lifecycle lines: kind, which lines exist, who owns the start and "
-            + "the outcome, and what logast will add; plus implementation families that log unevenly")
-    static class LifecycleCmd extends Common implements Callable<Integer> {
+            + "the outcome, and what logast will add; plus implementation families that log unevenly (also in "
+            + ".logast/reports/lifecycle.txt after every scan and apply)")
+    static class ExplainLifecycle extends Common implements Callable<Integer> {
         @Override
-        public Integer call() throws IOException {
+        public Integer call() {
             Analysis a = Logast.analyse(root(), classpath(), policy());
             Rules.scan(a);
-            var plan = Rules.lastLifecycle;
-            Map<String, List<dev.logast.rules.LifecyclePlan.Flow>> byKind = new TreeMap<>();
-            a.entrypoints.forEach(ep -> {
-                var f = plan.flow(ep);
-                byKind.computeIfAbsent(f.kind().name().toLowerCase(java.util.Locale.ROOT), k -> new ArrayList<>()).add(f);
-            });
-            for (var e : byKind.entrySet()) {
-                long open = e.getValue().stream().filter(f -> !f.missing().isEmpty()).count();
-                System.out.println(Ansi.bold(e.getKey() + " (" + e.getValue().size() + ")") + Ansi.dim(open == 0 ? "" : "   " + open + " missing lines"));
-                for (var f : e.getValue()) {
-                    System.out.println("  " + f.label() + Ansi.dim("  " + f.location()));
-                    System.out.println("    start: " + (f.started() ? "present" : "none") + Ansi.dim(" (" + f.startOwner() + ")")
-                            + "   outcome: " + (f.outcome() ? "present" : "none") + Ansi.dim(" (" + f.outcomeOwner() + ")")
-                            + (f.missing().isEmpty() ? "" : Ansi.yellow("   adds: " + String.join(", ", f.missing()))));
-                }
-            }
-            var families = plan.families();
-            if (!families.isEmpty()) {
-                System.out.println(Ansi.bold("implementation families (" + families.size() + ")"));
-                for (var fam : families) {
-                    System.out.println("  " + a.index.method(fam.base()).label());
-                    fam.has().forEach((impl, has) -> System.out.println("    " + a.index.method(impl).label() + ": "
-                            + (has.isEmpty() ? "no lifecycle lines" : String.join(", ", has.keySet()))
-                            + (fam.missing().containsKey(impl) ? Ansi.yellow("   adds: " + String.join(", ", fam.missing().get(impl))) : "")));
-                }
-            }
+            System.out.print(Reports.lifecycle(a, Rules.lastLifecycle));
             return 0;
         }
     }
 
+    @Command(name = "lifecycle", hidden = true, description = "Now `logast explain lifecycle`")
+    static class LifecycleCmd extends ExplainLifecycle {
+        @Override
+        public Integer call() {
+            moved("lifecycle", "explain lifecycle");
+            return super.call();
+        }
+    }
+
     @Command(name = "rules", description = "List rule ids with their packs")
-    static class RulesCmd implements Callable<Integer> {
+    static class ExplainRules implements Callable<Integer> {
         @Override
         public Integer call() {
             Rules.all().forEach(r -> System.out.printf("%-26s %s%n", r, String.join(",", new TreeSet<>(Rules.packsOf(r)))));
@@ -929,8 +976,17 @@ public final class Main {
         }
     }
 
+    @Command(name = "rules", hidden = true, description = "Now `logast explain rules`")
+    static class RulesCmd extends ExplainRules {
+        @Override
+        public Integer call() {
+            moved("rules", "explain rules");
+            return super.call();
+        }
+    }
+
     @Command(name = "policy", description = "Print the effective policy (all layers merged) and its overrides")
-    static class PolicyCmd extends Common implements Callable<Integer> {
+    static class ExplainPolicy extends Common implements Callable<Integer> {
         @Option(names = "--check", description = "For CI: check the policy against the code (names that match nothing, "
                 + "unknown ids in logast:ignore comments) instead of printing it. Exit 0: fine; 1: warnings; 2: errors")
         boolean check;
@@ -956,6 +1012,15 @@ public final class Main {
                     .setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
                     .writeValueAsString(policy()));
             return 0;
+        }
+    }
+
+    @Command(name = "policy", hidden = true, description = "Now `logast explain policy`")
+    static class PolicyCmd extends ExplainPolicy {
+        @Override
+        public Integer call() throws IOException {
+            moved("policy", "explain policy");
+            return super.call();
         }
     }
 }

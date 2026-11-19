@@ -4,7 +4,7 @@
 You only write what differs from the defaults; everything here is optional.
 
 ```bash
-logast policy .        # prints the effective configuration (all layers merged) and what was overridden
+logast explain policy .  # prints the effective configuration (all layers merged) and what was overridden
 ```
 
 ## How the configuration is put together
@@ -20,7 +20,7 @@ built-in defaults           phrasing, levels, PII words, every pack
 
 - **Lists add up**: a service's `pii` list is added to the company's.
 - **Objects merge**: you can change one setting of a term without repeating the rest.
-- **`override: true` replaces** an object instead of merging it. Every override is listed by `logast policy .`
+- **`override: true` replaces** an object instead of merging it. Every override is listed by `logast explain policy .`
   and in the fleet report, so they stay visible.
 
 ```yaml
@@ -38,7 +38,7 @@ file's own `extends:` ([fleets](fleet.md)).
 - **Pin a URL** with `#sha256=<hash of the file>`: when the shared file changes, the load fails and says the new hash, so
   a change of the company rules is reviewed before it applies. An unpinned URL works, with a warning that names the
   hash to pin.
-- **Check it in CI** with `logast policy . --check`: besides the load-time checks it warns about names that match
+- **Check it in CI** with `logast explain policy . --check`: besides the load-time checks it warns about names that match
   nothing in the code (an `audit.emitters` class, a vocabulary `types` entry) and `// logast:ignore RULE` comments
   whose rule does not exist. Exit 0: fine, 1: warnings, 2: errors.
 
@@ -328,7 +328,7 @@ accounted for" in [commands](commands.md#every-log-call-is-accounted-for).
 
 ### `queries`: ready-made queries
 
-What `logast queries` writes ([commands](commands.md#queries)).
+What `.logast/reports/queries.md` holds, written by every scan and apply ([commands](commands.md#queriesmd)).
 
 ```yaml
 queries:
@@ -360,7 +360,7 @@ rules:
   LOG_IN_LOOP: { enabled: false }
 ```
 
-`logast rules` lists every rule and its pack. The log-coverage rules (JOB_OUTCOME_MISSING, SKIP_UNLOGGED,
+`logast explain rules` lists every rule and its pack. The log-coverage rules (JOB_OUTCOME_MISSING, SKIP_UNLOGGED,
 STATE_CHANGE_UNLOGGED, BATCH_SUMMARY_MISSING, DB_OUTCOME_UNLOGGED) add log lines; switch off the ones a service does not want. A single finding is silenced in code with
 `// logast:ignore RULE_NAME` on the line or the line above (rule ids match exactly; list several separated by
 spaces or commas), and in a whole Java file with `// logast:ignore-file RULE_NAME`.

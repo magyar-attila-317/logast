@@ -27,6 +27,8 @@ public final class RoundScanner implements Function<Path, ScanResult> {
 
     /** The analysis behind the latest scan (entrypoints, policy), for what comes after an apply. */
     public volatile Analysis lastAnalysis;
+    /** The lifecycle plan of the latest scan (#125: apply writes .logast/reports/lifecycle.txt from it). */
+    public volatile dev.logast.rules.LifecyclePlan lastLifecycle;
 
     @Override
     public ScanResult apply(Path root) {
@@ -36,6 +38,7 @@ public final class RoundScanner implements Function<Path, ScanResult> {
         Analysis a = Analysis.of(parsed, policy.apply(abs)).withTraffic(Traffic.load(abs, null));
         lastAnalysis = a;
         ScanResult r = Rules.scan(a);
+        lastLifecycle = Rules.lastLifecycle;
         if (System.getenv("LOGAST_TIMING") != null) {
             System.err.printf("timing: scan %d ms%n", (System.nanoTime() - t0) / 1_000_000);
         }

@@ -273,7 +273,7 @@ public final class ServiceSetup {
                 # Lines starting with "#" are switched-off examples: remove the "#" to use one.
                 #
                 # Handy commands
-                #   logast policy .                 the final settings (this file + extends + defaults)
+                #   logast explain policy .         the final settings (this file + extends + defaults)
                 #   logast vocabulary .             business ids in the code that are not listed below yet
                 #   logast scan . --format summary  what logast would change
                 #
@@ -360,7 +360,7 @@ public final class ServiceSetup {
                 # verify:
                 #   tasks: [test, intTest]
 
-                # Turn single rules off or change how serious they are (`logast rules` lists all of them).
+                # Turn single rules off or change how serious they are (`logast explain rules` lists all of them).
                 # rules:
                 #   ENTRYPOINT_SILENT: { severity: low }
                 #   LOG_IN_LOOP: { enabled: false }
@@ -389,7 +389,7 @@ public final class ServiceSetup {
                 | `reports/orders.json` | the result of the last `logast scan` (full detail, read by `apply` and `review`). | no |
                 | `reports/coverage.txt` | every log call and what logast did with it: fixed, reported, ignored, skipped (with the reason) or checked. Written by `scan` and `apply --write` with the logging pack. | no |
                 | `reports/steps/`, `reports/apply-trace.txt`, `reports/last-apply.txt` | the last `apply`: one diff per kind of change, what each round did, what it changed. | no |
-                | `reports/queries.md` | dashboard and alert queries from `logast queries .`. | no |
+                | `reports/metrics.md`, `reports/queries.md`, `reports/lifecycle.txt` | what the service measures (and what it does not), dashboard and alert queries (PromQL, NRQL, Splunk), every flow's start and outcome lines. Written by every `scan` and `apply`; `logast explain metrics` (`queries`, `lifecycle`) prints them. | no |
                 | `reports/verify.json` | the result of the last `logast verify`. | no |
 
                 Configuration lives in `logast.yaml` next to this folder: %s

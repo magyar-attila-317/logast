@@ -5,7 +5,7 @@
 # Lines starting with "#" are switched-off examples: remove the "#" to use one.
 #
 # Handy commands
-#   logast policy .                 the final settings (this file + extends + defaults)
+#   logast explain policy .         the final settings (this file + extends + defaults)
 #   logast vocabulary .             business ids in the code that are not listed below yet
 #   logast scan . --format summary  what logast would change
 #
@@ -106,7 +106,7 @@ vocabulary:
 # verify:
 #   tasks: [test, intTest]
 
-# Turn single rules off or change how serious they are (`logast rules` lists all of them).
+# Turn single rules off or change how serious they are (`logast explain rules` lists all of them).
 # rules:
 #   ENTRYPOINT_SILENT: { severity: low }
 #   LOG_IN_LOOP: { enabled: false }
