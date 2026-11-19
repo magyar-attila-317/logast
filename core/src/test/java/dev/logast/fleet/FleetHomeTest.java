@@ -94,6 +94,33 @@ class FleetHomeTest {
         assertThat(NamedFleet.members(fleet)).isEmpty();
     }
 
+    /** #132: an added member is registered apart from the joined ones; joining moves it, remove takes only added ones. */
+    @Test
+    void addRegistersAMemberWithoutTouchingItsRepoAndJoinMovesIt() throws IOException {
+        Path fleet = NamedFleet.create(new FleetHome.Env(null, Map.of(), tmp.resolve("home")), "shop", null);
+        Path orders = Files.createDirectories(tmp.resolve("orders"));
+        Path stock = Files.createDirectories(tmp.resolve("stock"));
+        assertThat(NamedFleet.add(fleet, orders)).isEqualTo(NamedFleet.Added.ADDED);
+        assertThat(NamedFleet.add(fleet, orders)).isEqualTo(NamedFleet.Added.AGAIN);
+        assertThat(NamedFleet.add(fleet, stock)).isEqualTo(NamedFleet.Added.ADDED);
+        assertThat(orders.resolve("logast.yaml")).as("nothing written into the repo").doesNotExist();
+        assertThat(NamedFleet.added(fleet)).containsOnlyKeys("orders", "stock");
+        assertThat(NamedFleet.joined(fleet)).isEmpty();
+        assertThat(NamedFleet.members(fleet)).containsEntry("orders", orders).containsEntry("stock", stock);
+
+        NamedFleet.join(fleet, "shop", stock);
+        assertThat(NamedFleet.added(fleet)).containsOnlyKeys("orders");
+        assertThat(NamedFleet.joined(fleet)).containsOnlyKeys("stock");
+        assertThat(NamedFleet.add(fleet, stock)).as("a joined member stays joined").isEqualTo(NamedFleet.Added.JOINED_ALREADY);
+        assertThat(NamedFleet.remove(fleet, "stock")).as("joined: `fleet leave`, not remove").isNull();
+
+        Files.createDirectories(NamedFleet.outputDir(fleet, "orders").resolve("reports"));
+        Files.writeString(NamedFleet.outputDir(fleet, "orders").resolve("reports/orders.json"), "{}");
+        assertThat(NamedFleet.remove(fleet, orders.toString())).as("by root").isEqualTo("orders");
+        assertThat(NamedFleet.outputDir(fleet, "orders")).doesNotExist();
+        assertThat(NamedFleet.members(fleet)).containsOnlyKeys("stock");
+    }
+
     @Test
     void aMembersPolicyExtendsTheFleetsCompanyYamlFoundByName() throws IOException {
         System.setProperty(FleetHome.HOME_PROPERTY, tmp.resolve("home").toString());

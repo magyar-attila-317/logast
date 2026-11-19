@@ -6,6 +6,8 @@
 // <root>/.logast/support-resolvable.txt; resolvable, apply adds the jar instead of copying its classes in.
 def logastSupport = 'dev.logast:logging-support:@LOGAST_SUPPORT_VERSION@'
 def logastSupportChecked = java.util.Collections.synchronizedList([])
+// #132: -Plogast.outputDir=<folder> writes these files there instead of <root>/.logast (a fleet scans a repo read-only)
+def logastOut = { p -> def o = p.rootProject.findProperty('logast.outputDir'); o ? new File(o.toString()) : p.rootProject.file('.logast') }
 allprojects {
     tasks.register('logastClasspath') {
         notCompatibleWithConfigurationCache('reads configurations at execution time')
@@ -17,7 +19,7 @@ allprojects {
             def cp = project.configurations.findByName('compileClasspath')
             if (cp != null && cp.canBeResolved) {
                 def name = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '_')
-                def out = project.rootProject.file(".logast/classpath-${name}.txt")
+                def out = new File(logastOut(project), "classpath-${name}.txt")
                 out.parentFile.mkdirs()
                 def entries = cp.files.collect { it.absolutePath }
                 def ss = project.extensions.findByName('sourceSets')
@@ -35,7 +37,7 @@ allprojects {
                 logastSupportChecked << found
             }
             if (project == project.rootProject && !logastSupportChecked.isEmpty()) {
-                def out = project.file('.logast/support-resolvable.txt')
+                def out = new File(logastOut(project), 'support-resolvable.txt')
                 out.parentFile.mkdirs()
                 out.text = "resolvable=${logastSupportChecked.contains(true)}\nversion=${logastSupport.split(':')[2]}\n"
             }

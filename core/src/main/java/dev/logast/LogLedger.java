@@ -191,7 +191,11 @@ public final class LogLedger {
      * @param fixedNow lines an apply changed in this run (empty for a scan)
      */
     public List<Entry> write(Path root, Analysis a, List<WorkOrder> orders, Map<String, ? extends Map<Integer, Set<String>>> fixedNow) {
-        Path target = root.resolve(PATH);
+        return writeTo(root.resolve(PATH), a, orders, fixedNow);
+    }
+
+    /** {@link #write} to {@code target} (#132: a fleet's added member keeps it in the fleet folder, not in the repo). */
+    public List<Entry> writeTo(Path target, Analysis a, List<WorkOrder> orders, Map<String, ? extends Map<Integer, Set<String>>> fixedNow) {
         Map<String, String> current = new HashMap<>();
         a.project.files().forEach(f -> current.put(f.relPath(), fingerprint(f.text())));
         Map<String, Map<Integer, Set<String>>> fixed = new HashMap<>();

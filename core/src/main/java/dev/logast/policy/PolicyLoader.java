@@ -64,6 +64,15 @@ public final class PolicyLoader {
     }
 
     /**
+     * #132: the policy of a repo a fleet added without touching it: logast's defaults → the fleet's company.yaml (when
+     * it has one) → the repo's own logast.yaml, only if it already has one. The fleet is given, not read from the file.
+     */
+    public static Policy forFleet(Path root, Path fleetDir) {
+        Path company = fleetDir.resolve(dev.logast.CentralVocabulary.COMPANY).toAbsolutePath().normalize();
+        return load(root, null, Files.isRegularFile(company) ? List.of(company.toString()) : List.of());
+    }
+
+    /**
      * @param extraParents layered after the defaults as if the service's file extended them first: what a central
      *                     layer (company.yaml) would change before the service extends it (#113, fleet --vocabulary)
      */

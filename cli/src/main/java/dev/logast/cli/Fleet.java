@@ -3,6 +3,7 @@ package dev.logast.cli;
 import dev.logast.Analysis;
 import dev.logast.CentralVocabulary;
 import dev.logast.Logast;
+import dev.logast.LogastDir;
 import dev.logast.fleet.CompanyPolicy;
 import dev.logast.fleet.FleetHome;
 import dev.logast.fleet.FleetLinks;
@@ -33,8 +34,9 @@ import java.util.concurrent.Callable;
 @Command(name = "fleet", description = "Named fleets (#124): services join a fleet (`logast fleet join <name>`), every scan and "
         + "apply of a member leaves a snapshot in the fleet folder, and `logast fleet <name>` compares them without rescanning: "
         + "scores, trace breaks between services, one outcome under several metric names, vocabulary conflicts. "
-        + "The earlier form `logast fleet <service roots…>` still scans the given roots.",
-        subcommands = {Fleet.Create.class, Fleet.Join.class, Fleet.Leave.class, Fleet.ListFleets.class})
+        + "`logast fleet add <name> <repos…>` registers repos without touching them (#132): their scans write only to the "
+        + "fleet folder. The earlier form `logast fleet <service roots…>` still scans the given roots.",
+        subcommands = {Fleet.Create.class, Fleet.Join.class, Fleet.Leave.class, Fleet.Add.class, Fleet.Remove.class, Fleet.ListFleets.class})
 final class Fleet implements Callable<Integer> {
     @Parameters(description = "A fleet's name; or (the earlier form) service roots, or a text file with one root per line (prefix it with @)")
     List<String> services = new ArrayList<>();
@@ -50,8 +52,11 @@ final class Fleet implements Callable<Integer> {
     Path central;
     @Option(names = "--classpath-file", description = "One classpath file for every service (default: each service's .logast/classpath*.txt)")
     Path classpathFile;
-    @Option(names = "--refresh", description = "Named fleet: rescan every member first (default: the snapshots their last scan or apply left)")
+    @Option(names = "--refresh", description = "Named fleet: rescan every member first (default: the snapshots their last scan or apply left); "
+            + "an added member's scan writes only to the fleet folder")
     boolean refresh;
+    @Option(names = "--service", description = "Named fleet: what `logast scan` printed for this member, from its stored results")
+    String service;
     @Option(names = "--html", description = "Named fleet: also write the report page (<fleet folder>/report/fleet.html, or --out)")
     boolean html;
     @Option(names = "--json", description = "Named fleet: the overview as JSON")
@@ -121,18 +126,96 @@ final class Fleet implements Callable<Integer> {
         return NamedFleet.snapshot(r, scan, Logast.lastAnalysis, policy);
     }
 
+    /**
+     * #132: scans a member {@code fleet add} registered: the analysis of `logast scan`, with the policy defaults →
+     * the fleet's company.yaml → the repo's own logast.yaml if it has one. Every output (classpath, orders.json,
+     * coverage, reports) goes to {@code <fleet>/services/<service>/}, laid out like .logast; nothing is written into the
+     * repo (no .logast migration, no decision files, no traffic or retry worksheets). The classpath: {@code classpathFile},
+     * else the repo's own Gradle run with its output and project cache in the fleet folder.
+     */
+    static NamedFleet.Snapshot scanAdded(Path fleetDir, String service, Path root, Path classpathFile) throws IOException {
+        Path r = root.toAbsolutePath().normalize();
+        Path out = NamedFleet.outputDir(fleetDir, service);
+        Policy policy = dev.logast.policy.PolicyLoader.forFleet(r, fleetDir);
+        Main.warnOnce(policy);
+        List<Path> cp = classpathFile != null ? Logast.classpath(r, classpathFile) : addedClasspath(service, r, out);
+        System.err.println("scanning " + r + " (read-only; results in " + out + ")");
+        ScanResult scan = Logast.scan(r, cp, policy);
+        Analysis a = Logast.lastAnalysis;
+        Path orders = LogastDir.in(out, LogastDir.ORDERS);
+        Files.createDirectories(orders.getParent());
+        OrderJson.MAPPER.writeValue(orders.toFile(), scan);
+        if (policy.packSelected("logging")) {
+            a.ledger.writeTo(LogastDir.in(out, LogastDir.COVERAGE), a, scan.orders(), Map.of());
+        }
+        Reports.writeTo(out, a, dev.logast.rules.Rules.lastLifecycle);
+        return NamedFleet.snapshot(r, scan, a, policy);
+    }
+
+    /** The added member's classpath from its own Gradle (reads only), written to {@code out}; the last one if Gradle fails. */
+    private static List<Path> addedClasspath(String service, Path r, Path out) throws IOException {
+        boolean gradle = Files.exists(r.resolve("gradlew")) || Files.exists(r.resolve("build.gradle"))
+                || Files.exists(r.resolve("build.gradle.kts"));
+        if (!gradle) {
+            Out.warn("fleet: " + service + " has no Gradle build at " + r + ": scanned without a classpath (--classpath-file gives one)");
+            return Logast.classpathIn(out);
+        }
+        Main.Classpath.Result res;
+        try (Out.Progress p = new Out.Progress("running Gradle in " + service + " to read the classpath (nothing is compiled)")) {
+            res = Main.Classpath.write(r, out);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            res = new Main.Classpath.Result(130, 0, false);
+        }
+        if (res.printIfFailed().exitCode() != 0) {
+            Out.warn("fleet: " + service + ": Gradle failed (exit " + res.exitCode() + "); "
+                    + (Logast.classpathIn(out).isEmpty() ? "scanned without a classpath" : "scanned with the classpath of its last scan"));
+        }
+        return Logast.classpathIn(out);
+    }
+
+    /** #132: {@code logast fleet <fleet> --service <name>}: what `logast scan` printed for the member, from its stored orders.json. */
+    private int service(String name, Path dir, String svc, Map<String, Path> members, Map<String, Path> added) throws IOException {
+        NamedFleet.Snapshot snap = NamedFleet.snapshots(dir).get(svc);
+        if (!members.containsKey(svc) && snap == null) {
+            Out.warn("fleet: " + name + " has no member " + svc + " (members: " + String.join(", ", members.keySet()) + ")");
+            return 2;
+        }
+        boolean isAdded = added.containsKey(svc);
+        Path root = members.containsKey(svc) ? members.get(svc) : Path.of(snap.root());
+        Path orders = isAdded ? LogastDir.in(NamedFleet.outputDir(dir, svc), LogastDir.ORDERS) : root.resolve(LogastDir.ORDERS);
+        if (!Files.isRegularFile(orders)) {
+            Out.warn("fleet: no stored scan of " + svc + " (" + orders + "): " + (isAdded ? "`logast fleet " + name + " --refresh` scans it"
+                    : "run `logast scan` in " + root));
+            return 2;
+        }
+        ScanResult r = OrderJson.MAPPER.copy().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .readValue(orders.toFile(), ScanResult.class);
+        System.out.println(Ansi.bold(svc) + Ansi.dim("  " + root + "  " + (isAdded ? "added" : "joined")
+                + (snap == null ? "" : ", snapshot " + age(snap.created(), Instant.now()) + (snap.commit() == null ? "" : ", " + snap.commit()))));
+        System.out.print(dev.logast.orders.HumanFormat.render(r, r.orders(), snap == null ? null : snap.appPackage(), Out.width()));
+        Path reports = orders.getParent();
+        Main.printBlocks(List.of(Ansi.dim("reports: " + reports + "/ metrics.md queries.md lifecycle.txt coverage.txt")));
+        return 0;
+    }
+
     // ---- logast fleet <name> -----------------------------------------------------------------------------------------
 
     private int named(String name, Path dir) throws IOException {
         Map<String, Path> members = NamedFleet.members(dir);
+        Map<String, Path> added = NamedFleet.added(dir);
         if (refresh) {
             for (var m : members.entrySet()) {
                 if (!Files.isDirectory(m.getValue())) {
                     Out.warn("fleet: " + m.getKey() + " is not at " + m.getValue() + " on this machine; its snapshot stays as it was");
                     continue;
                 }
-                NamedFleet.write(dir, scan(m.getValue()));
+                NamedFleet.write(dir, added.containsKey(m.getKey()) ? scanAdded(dir, m.getKey(), m.getValue(), classpathFile)
+                        : scan(m.getValue()));
             }
+        }
+        if (service != null) {
+            return service(name, dir, service, members, added);
         }
         Map<String, NamedFleet.Snapshot> snaps = NamedFleet.snapshots(dir);
         List<FleetReport.Service> services = snaps.values().stream().map(NamedFleet.Snapshot::report).toList();
@@ -160,6 +243,7 @@ final class Fleet implements Callable<Integer> {
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("service", s);
                 row.put("root", members.containsKey(s) ? members.get(s).toString() : snaps.get(s).root());
+                row.put("member", !members.containsKey(s) ? "former" : added.containsKey(s) ? "added" : "joined");   // #132
                 NamedFleet.Snapshot snap = snaps.get(s);
                 if (snap != null) {
                     row.put("score", snap.report().score());
@@ -187,9 +271,11 @@ final class Fleet implements Callable<Integer> {
         int w = names.stream().mapToInt(String::length).max().orElse(8) + 2;
         for (String s : names) {
             NamedFleet.Snapshot snap = snaps.get(s);
-            String pad = String.format("  %-" + w + "s", s);
+            // #132: added (the repo knows nothing of the fleet) or joined (fleet: in its logast.yaml)
+            String pad = String.format("  %-" + w + "s%-8s", s, !members.containsKey(s) ? "" : added.containsKey(s) ? "added" : "joined");
             if (snap == null) {
-                System.out.println(pad + "no snapshot yet: run `logast scan` in " + members.get(s));
+                System.out.println(pad + (added.containsKey(s) ? "no snapshot yet: `logast fleet " + name + " --refresh` scans it"
+                        : "no snapshot yet: run `logast scan` in " + members.get(s)));
                 continue;
             }
             FleetReport.Service r = snap.report();
@@ -325,7 +411,7 @@ final class Fleet implements Callable<Integer> {
 
         @Override
         public Integer call() {
-            if (!FleetHome.validName(name) || Set.of("create", "join", "leave", "list").contains(name)) {
+            if (!FleetHome.validName(name) || Set.of("create", "join", "leave", "add", "remove", "list").contains(name)) {
                 Out.warn("fleet create: " + name + " is not a fleet name (letters, digits, '.', '-', '_'; not a subcommand)");
                 return 2;
             }
@@ -396,6 +482,109 @@ final class Fleet implements Callable<Integer> {
             NamedFleet.leave(FleetHome.fleetDir(fleetsDir.env(), name).dir(), r);
             System.out.println(NamedFleet.serviceName(r) + " left fleet " + name);
             return 0;
+        }
+    }
+
+    @Command(name = "add", description = "Register repos in a fleet without touching them (#132): nothing is written into a repo, "
+            + "no logast.yaml needed; their policy is the fleet's company.yaml (under the repo's own logast.yaml if it has one), "
+            + "and their scans (--scan, `logast fleet <name> --refresh`) write only to <fleet>/services/<service>/")
+    static final class Add implements Callable<Integer> {
+        @Parameters(index = "0", description = "The fleet's name")
+        String name;
+        @Parameters(index = "1..*", arity = "0..*", description = "Repo roots (shell globs work)")
+        List<Path> repos = new ArrayList<>();
+        @Option(names = "--from", description = "A text file with one repo root per line ('#' starts a comment)")
+        Path from;
+        @Option(names = "--scan", description = "Scan the added repos right away (read-only: the results go to the fleet folder)")
+        boolean scan;
+        @Option(names = "--classpath-file", description = "With --scan: one classpath file for every repo (default: each repo's own Gradle)")
+        Path classpathFile;
+        @Mixin
+        FleetsDir fleetsDir;
+
+        @Override
+        public Integer call() throws IOException {
+            FleetHome.Location at = FleetHome.fleetDir(fleetsDir.env(), name);
+            if (!NamedFleet.exists(at.dir())) {
+                Out.warn("fleet add: no fleet named " + name + " at " + at.dir() + " (" + at.source() + "); `logast fleet create "
+                        + name + "` makes it");
+                return 2;
+            }
+            List<Path> all = new ArrayList<>(repos);
+            if (from != null) {
+                Files.readAllLines(from).stream().map(String::strip).filter(l -> !l.isEmpty() && !l.startsWith("#")).map(Path::of).forEach(all::add);
+            }
+            if (all.isEmpty()) {
+                Out.warn("fleet add: name the repos (paths, globs, or --from <file>)");
+                return 2;
+            }
+            int rc = 0;
+            Map<String, Path> toScan = new LinkedHashMap<>();
+            for (Path repo : all) {
+                Path r = repo.toAbsolutePath().normalize();
+                String svc = NamedFleet.serviceName(r);
+                if (!Files.isDirectory(r)) {
+                    Out.warn("fleet add: " + r + " is not a folder; skipped");
+                    rc = 2;
+                    continue;
+                }
+                switch (NamedFleet.add(at.dir(), r)) {
+                    case ADDED -> System.out.println(svc + " added to fleet " + name + " (" + r + ")");
+                    case AGAIN -> System.out.println(svc + " is in fleet " + name + " already (" + r + ")");
+                    case MOVED -> System.out.println(svc + " added to fleet " + name + ", now at " + r);
+                    case JOINED_ALREADY -> {
+                        System.out.println(svc + " joined fleet " + name + " already: its own scans report to it");
+                        continue;
+                    }
+                }
+                toScan.put(svc, r);
+            }
+            System.out.println("  nothing is written into the repos; their policy: logast defaults → " + at.dir().resolve(CentralVocabulary.COMPANY)
+                    + " → the repo's own logast.yaml, if it has one");
+            if (scan) {
+                for (var e : toScan.entrySet()) {
+                    NamedFleet.write(at.dir(), scanAdded(at.dir(), e.getKey(), e.getValue(), classpathFile));
+                    System.out.println("  " + e.getKey() + ": scanned, results in " + NamedFleet.outputDir(at.dir(), e.getKey()));
+                }
+                CompanyPolicy.refresh(at.dir(), name, NamedFleet.snapshots(at.dir()).values());
+            }
+            System.out.println("next: `logast fleet " + name + "` compares the members" + (scan ? "" : " (`--refresh` scans them first)")
+                    + "; `logast fleet " + name + " --service <service>` shows one member's findings");
+            return rc;
+        }
+    }
+
+    @Command(name = "remove", description = "Take a member `fleet add` registered out of the fleet: its entry, snapshot and results in "
+            + "the fleet folder go (a joined member leaves with `logast fleet leave`)")
+    static final class Remove implements Callable<Integer> {
+        @Parameters(index = "0", description = "The fleet's name")
+        String name;
+        @Parameters(index = "1..*", arity = "1..*", description = "Repo roots or service names")
+        List<String> members = new ArrayList<>();
+        @Mixin
+        FleetsDir fleetsDir;
+
+        @Override
+        public Integer call() {
+            FleetHome.Location at = FleetHome.fleetDir(fleetsDir.env(), name);
+            if (!NamedFleet.exists(at.dir())) {
+                Out.warn("fleet remove: no fleet named " + name + " at " + at.dir() + " (" + at.source() + ")");
+                return 2;
+            }
+            int rc = 0;
+            for (String m : members) {
+                String removed = NamedFleet.remove(at.dir(), m);
+                if (removed != null) {
+                    System.out.println(removed + " removed from fleet " + name);
+                } else if (NamedFleet.joined(at.dir()).containsKey(m) || NamedFleet.joined(at.dir()).containsValue(Path.of(m).toAbsolutePath().normalize())) {
+                    Out.warn("fleet remove: " + m + " joined fleet " + name + " (fleet: in its logast.yaml): `logast fleet leave <root>` takes it out");
+                    rc = 2;
+                } else {
+                    Out.warn("fleet remove: " + m + " is no added member of fleet " + name);
+                    rc = 2;
+                }
+            }
+            return rc;
         }
     }
 

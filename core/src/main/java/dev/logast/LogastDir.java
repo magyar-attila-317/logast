@@ -54,6 +54,17 @@ public final class LogastDir {
     }
 
     /**
+     * #132: {@code path} (one of the constants above, under {@value #DIR}/) in {@code out}, a folder laid out like
+     * {@code <root>/.logast}: a fleet's added member writes its classpath and reports to {@code <fleet>/services/<service>/}.
+     */
+    public static Path in(Path out, String path) {
+        if (!path.startsWith(DIR + "/")) {
+            throw new IllegalArgumentException(path + " is not under " + DIR);
+        }
+        return out.resolve(path.substring(DIR.length() + 1));
+    }
+
+    /**
      * What {@link #migrate} did.
      *
      * @param moved    "fills.json → decisions/messages.yaml", one per decision file, then "reports/ (…)" for the reports

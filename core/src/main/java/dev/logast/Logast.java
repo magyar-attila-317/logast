@@ -24,7 +24,11 @@ public final class Logast {
         if (explicit != null) {
             return ProjectParser.readClasspathFile(explicit);
         }
-        Path dir = root.resolve(".logast");
+        return classpathIn(root.resolve(LogastDir.DIR));
+    }
+
+    /** Every {@code classpath*.txt} in {@code dir} (a .logast folder, or a fleet's folder for an added member, #132). */
+    public static List<Path> classpathIn(Path dir) {
         if (!Files.isDirectory(dir)) {
             return List.of();
         }
