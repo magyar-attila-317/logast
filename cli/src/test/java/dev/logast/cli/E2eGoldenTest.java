@@ -7277,13 +7277,13 @@ abstract class E2eGoldenTest {
                     .isEqualTo(checkoutOwn.replace("  keyStyle: camel   # as the company\n", ""));
             git(checkout, "commit", "--quiet", "-am", "tidied");
             STDERR.setLength(0);
-            String tidyAll = run(tmp, "fleet", "tidy", "payments-fleet");
-            assertThat(tidyAll).contains("checkout: nothing to tidy");
-            assertThat(STDERR.toString()).contains("fleet tidy: payments: logast.yaml has uncommitted changes; commit them first");
-            assertThat(LAST_EXIT).isEqualTo(1);
-            assertThat(Files.readString(payments.resolve("logast.yaml"))).as("refused: untouched").isEqualTo(paymentsOwn + "# not committed yet\n");
-            assertThat(run(tmp, "fleet", "tidy", "payments-fleet", "--follow-company", "--force"))
-                    .contains("payments:\n  payments: removed logging.keyStyle: snake (company: camel)\n");
+            String tidyAll = run(tmp, "fleet", "tidy", "payments-fleet", "--follow-company");
+            assertThat(tidyAll).contains("checkout: nothing to tidy")
+                    .as("logast.yaml is logast's own file: its uncommitted changes don't block the tidy, they are named")
+                    .contains("payments:\n  payments: removed logging.keyStyle: snake (company: camel)\n",
+                            "  (logast.yaml had uncommitted changes already: `git diff logast.yaml` shows them together with the tidy)");
+            assertThat(LAST_EXIT).isZero();
+            assertThat(STDERR.toString()).doesNotContain("commit them first");
             assertThat(Files.readString(payments.resolve("logast.yaml"))).as("the emptied logging: goes, the comments stay")
                     .isEqualTo(joinedYaml + "# payments' own choices\n# not committed yet\n");
             Files.writeString(checkout.resolve("logast.yaml"), ownPolicy);

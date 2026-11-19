@@ -55,8 +55,9 @@ logast fleet payments-fleet --vocabulary        # the fleet's vocabulary workshe
 `logast fleet leave [service root]` takes a service out: the `fleet:` line, the `fleet:<name>` entry of `extends:` (and
 an `extends:` left empty), its member entry and its snapshot go.
 `logast fleet tidy <name> [--follow-company] [--service <member>]` tidies every joined member's `logast.yaml` as join
-does (each repo's file only) and prints per member what it removed. A member whose `logast.yaml` has uncommitted
-changes is skipped with a warning (`--force` edits it anyway), so each tidy is one reviewable change.
+does (each repo's file only) and prints per member what it removed. Uncommitted changes of `logast.yaml` don't block it
+(logast's own init, join and scan write that file, and apply's guard leaves it out too); the output says so, and
+`git diff logast.yaml` shows them together with the tidy.
 `logast fleet list` shows the fleets this machine knows, their folders and members.
 
 ## Adding repos without touching them
