@@ -97,6 +97,7 @@ public final class JavaExtractor implements Extractor {
         beans(svc, entryIds, sink);
         quartz(svc, service, sink);
         tables(svc, service, entryIds, sink);
+        files(svc, service, entryIds, sink);
         libraries.forEach((ga, version) -> {
             sink.node(Node.of("library", ga, Map.of("version", version), Evidence.at(buildFile, null)));
             sink.edge(Edge.extracted(service, "depends-on", "library:" + ga, Map.of("version", version), Evidence.at(buildFile, null)));
@@ -376,6 +377,29 @@ public final class JavaExtractor implements Extractor {
                 sink.node(sql);
                 to = sql.id();
             }
+            Set<String> from = new LinkedHashSet<>(entryIds.getOrDefault(x.method(), List.of()));
+            for (Entrypoint ep : a.paths.entrypointsReaching(x.method())) {
+                from.addAll(entryIds.getOrDefault(ep.method(), List.of()));
+            }
+            if (from.isEmpty()) {
+                attrs.put("reached", false);
+                sink.edge(Edge.extracted(service, kind, to, attrs, at));
+            }
+            for (String f : from) {
+                sink.edge(Edge.extracted(f, kind, to, attrs, at));
+            }
+        }
+    }
+
+    // ---- files (#172) -----------------------------------------------------------------------------------------------
+
+    private void files(String svc, String service, Map<MethodInfo, List<String>> entryIds, Sorted sink) {
+        for (FileAccess.Access x : new FileAccess(a.index, a.springProperties).accesses()) {
+            Evidence at = Evidence.at(x.file(), line(x.line()));
+            Map<String, Object> attrs = new TreeMap<>();
+            attrs.put("via", x.via());
+            String to = "file-location:" + x.location();
+            String kind = x.write() ? "writes" : "reads";
             Set<String> from = new LinkedHashSet<>(entryIds.getOrDefault(x.method(), List.of()));
             for (Entrypoint ep : a.paths.entrypointsReaching(x.method())) {
                 from.addAll(entryIds.getOrDefault(ep.method(), List.of()));

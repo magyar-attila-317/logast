@@ -84,7 +84,7 @@ Without a host, one candidate is 0.6, several are 0.3 each; a host that names no
 A table named without a schema in code is the `same-as` the one schema in the migrations that has it. `lineage`
 follows these, Kafka topics and database tables, and an orchestrator's job through the profile to the code it runs.
 
-**Risks** (#165): a database handoff is a table one service's scheduled job writes and another's reads; without a
+**Risks** (#165): a handoff is a table, or a file (#172), one service's scheduled job writes and another's reads; without a
 pipeline step (`after`) from the writer's job to the reader's, the reader relies on timing. A job's schedule is its own
 (`@Scheduled`, a CronJob) or that of the orchestrator's job that starts it (job → profile → bean → the entrypoint).
 A service's own schemas are those where it writes tables no other service writes; reading another one is listed.
