@@ -177,7 +177,10 @@ environment, without the `terragrunt` or `terraform` CLIs: no state, no credenti
   (1.x), or `render-json` into a temporary file on older versions (checked with 0.67), so Terragrunt's own functions
   (`get_env`, `get_terragrunt_dir`, `read_terragrunt_config`) are evaluated; nothing is written into the repo. If both
   fail, the HCL is read as above. The unit says which (`inputsFrom: terragrunt|hcl`). `LOGAST_TERRAGRUNT` picks another
-  terragrunt binary than the PATH's.
+  terragrunt binary than the PATH's, `LOGAST_TERRAGRUNT=off` reads the HCL only. Units render 4 at a time
+  (`LOGAST_TERRAGRUNT_THREADS`), with a progress line each; a render may take 60 s (`LOGAST_TERRAGRUNT_TIMEOUT`, in seconds:
+  a `dependency` block reading remote state can hang), then the unit is read from its HCL, and after 3 such timeouts
+  terragrunt is not run for the rest (#185).
 - **Layout**: a unit is a leaf `terragrunt.hcl` (none below it) that, or the file it includes, names a `source`, so
   the classic root `terragrunt.hcl` (remote state, shared arguments) is no unit. The environment is a folder named like
   one (`dev`, `rtl`, `ppe`, `uat`, `staging`, `prod`, …) anywhere in the path, else, under
