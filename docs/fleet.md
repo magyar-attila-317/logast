@@ -259,6 +259,12 @@ connects an MCP client to all of it ([mcp.md](mcp.md)).
 | `mappings/*.yaml` | company-specific facts (a scheduler's job rows as jobs, …) | you |
 | `knowledge.proposed.yml`, `knowledge.decisions.yml` | the LLM's proposals, the review page's decisions | `logast mcp`, `logast mcp review` |
 
+A member is exported again only when its commit or the options changed since its last export (`kb/<member>/.export.json`
+records both, with logast's version); `--kb-full` exports every member. With `--refresh`, a member is exported right
+after its scan, with that scan's classpath and analysis; the others go `--kb-threads` at a time (default 2: one
+analysis can take a few GB). `--flyway` (with `--rows`, `--postgres-image`) adds the tables each member's migrations
+create, per environment, as `logast export --flyway` (needs Docker); changing it re-exports every member once (#184).
+
 In a fleet repo, the workflow `fleet init` writes runs with `--kb` and commits `kb/` when it changed (with the job's own
 token), so `git pull` in a clone brings everyone the newest knowledge base. The facts name endpoints, tables, hosts and
 file paths: the fleet repo is as private as the repos it reads.
