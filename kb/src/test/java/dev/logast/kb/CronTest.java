@@ -91,6 +91,7 @@ class CronTest {
                 {"node":{"id":"job:billing:cleanup","kind":"job","attrs":{"cron":"${cleanup.cron:0 0 1 * * *}","cronResolved":"0 30 1 * * *"},"evidence":{"file":"Cleanup.java","line":9}}}
                 {"node":{"id":"job:billing:poll","kind":"job","attrs":{"fixedRate":"60000"},"evidence":{"file":"Poll.java","line":5}}}
                 {"node":{"id":"job:billing:invoices","kind":"job","env":"prod","evidence":{"file":"V3__pipeline.sql","line":2}}}
+                {"node":{"id":"job:batch:com.example.ArchiveJob","kind":"job","attrs":{"entrypoint":"quartz","cron":"0 15 1 * * ?","cronByProfile":{"prod":"0 15 2 ? * MON-FRI"}},"evidence":{"file":"ArchiveJob.java","line":5}}}
                 {"edge":{"from":"job:shipping:nightly-export","kind":"after","to":"job:billing:invoices","env":"prod","provenance":"extracted","evidence":{"file":"V3__pipeline.sql","line":2}}}
                 """);
         KnowledgeBase kb = KnowledgeBase.load(List.of(tmp));
@@ -109,6 +110,11 @@ class CronTest {
         assertThat(Schedules.nextRuns(kb, "job:shipping:nightly-export", "prod", 2, null, ZonedDateTime.parse("2026-11-20T10:00:00Z")))
                 .contains("- Mon 2026-11-23 02:00:00", "- Tue 2026-11-24 02:00:00");
         assertThat(Schedules.nextRuns(kb, "job:billing:invoices", "prod", 2, null, ZonedDateTime.now(UTC))).contains("no schedule in the facts");
+        // #189: in prod the profile's cron (Quartz: MON-FRI), elsewhere the base one
+        assertThat(Schedules.nextRuns(kb, "job:batch:com.example.ArchiveJob", "prod", 1, null, ZonedDateTime.parse("2026-11-20T10:00:00Z")))
+                .contains("- Mon 2026-11-23 02:15:00");
+        assertThat(Schedules.nextRuns(kb, "job:batch:com.example.ArchiveJob", "dev", 1, null, ZonedDateTime.parse("2026-11-20T10:00:00Z")))
+                .contains("- Sat 2026-11-21 01:15:00");
     }
 
     /** #187: Quartz's dialect: weekdays 1 (Sunday) to 7, ? and an optional year. */

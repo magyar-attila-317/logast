@@ -275,7 +275,12 @@ writes start, so `lineage`, `writers_of` and `readers_of` see them. Its `cron` i
 next to the job's class: one method with `JobBuilder.newJob(X.class)` and `cronSchedule(…)`, or one configuration
 class with one job and its trigger (`CronTriggerFactoryBean.setCronExpression`); a constant is read, a `${…}` resolved as
 for `@Scheduled`. `runs_on` and `next_runs` read it in Quartz's dialect (seconds first, weekdays 1 = Sunday to 7, an
-optional year). Jobs whose schedule lives in database rows link through a mapping on the row's class name
+optional year). A schedule the configuration binds to the jobs (#189: `application.yml` read by a `@ConfigurationProperties` class
+and scheduled by the service's own code) is read from the configuration: an entry (a list item or a map entry) with
+a value naming the job (its class, simple name, bean name, or the entry's key, e.g. `report-job`) and a cron (a key
+containing `cron`, or a value shaped like one) is the job's `cron`, with `cronFrom` naming the key; a profile's
+`application-<profile>.yml` that sets another cron is in `cronByProfile`, and `runs_on`/`next_runs` in that
+environment use it. Jobs whose schedule lives in database rows link through a mapping on the row's class name
 (`handler`).
 
 ## No secrets in facts

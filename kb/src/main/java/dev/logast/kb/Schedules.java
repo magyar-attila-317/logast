@@ -40,10 +40,18 @@ public final class Schedules {
     }
 
     static Schedule of(KnowledgeBase.Fact<Node> job) {
+        return of(job, null);
+    }
+
+    /** #189: in an environment, a cron its profile's configuration sets wins over the base one. */
+    static Schedule of(KnowledgeBase.Fact<Node> job, String env) {
         Map<String, Object> a = job.fact().attrs();
         String expr;
         Cron.Format format;
-        if (a.get("schedule") != null) {
+        if (env != null && !env.isBlank() && a.get("cronByProfile") instanceof Map<?, ?> byProfile && byProfile.get(env) != null) {
+            expr = String.valueOf(byProfile.get(env));
+            format = "quartz".equals(a.get("entrypoint")) ? Cron.Format.QUARTZ : Cron.Format.SPRING;
+        } else if (a.get("schedule") != null) {
             expr = a.get("schedule").toString();
             String sf = String.valueOf(a.get("scheduleFormat"));
             format = "spring".equalsIgnoreCase(sf) ? Cron.Format.SPRING : "quartz".equalsIgnoreCase(sf) ? Cron.Format.QUARTZ : Cron.Format.UNIX;
@@ -159,7 +167,7 @@ public final class Schedules {
             if (!f.fact().kind().equals("job") || !inEnv(f.fact(), env)) {
                 continue;
             }
-            Schedule s = of(f);
+            Schedule s = of(f, env);
             if (s == null) {
                 continue;
             }
@@ -228,7 +236,7 @@ public final class Schedules {
             if (!f.fact().id().equals(id) || !inEnv(f.fact(), env)) {
                 continue;
             }
-            Schedule s = of(f);
+            Schedule s = of(f, env);
             sb.append(id).append(f.fact().env() == null ? "" : " [" + f.fact().env() + "]").append(": ");
             if (s == null) {
                 sb.append("no schedule in the facts (it may run in a pipeline or when called)\n");

@@ -119,4 +119,70 @@ class QuartzJobsTest {
         assertThat(facts.lines().filter(l -> l.contains("\"from\":\"job:reports:com.example.jobs.CleanupJob\"")
                 && l.contains("\"kind\":\"writes\"") && l.contains("daily"))).isNotEmpty();
     }
+
+    /** #189: schedules the configuration binds to the jobs (application.yml, a @ConfigurationProperties class), per profile. */
+    @Test
+    void schedulesFromTheConfigurationPerProfile() throws IOException {
+        Path root = tmp.resolve("batch");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        for (String job : List.of("ArchiveJob", "PurgeJob", "ReportJob")) {
+            write(root, job, """
+                    package com.example.jobs;
+
+                    import org.quartz.Job;
+                    import org.quartz.JobExecutionContext;
+
+                    public class %s implements Job {
+                        @Override
+                        public void execute(JobExecutionContext context) {
+                        }
+                    }
+                    """.formatted(job));
+        }
+        write(root, "JobsProperties", """
+                package com.example.jobs;
+
+                import java.util.List;
+                import org.springframework.boot.context.properties.ConfigurationProperties;
+
+                @ConfigurationProperties("batch")
+                public record JobsProperties(List<Definition> jobs) {
+                    public record Definition(String jobClass, String name, String cron) {
+                    }
+                }
+                """);
+        Path res = Files.createDirectories(root.resolve("src/main/resources"));
+        Files.writeString(res.resolve("application.yml"), """
+                batch:
+                  jobs:
+                    - job-class: com.example.jobs.ArchiveJob
+                      cron: "0 15 1 * * ?"
+                    - name: purge
+                      cron: "0 0 4 ? * SUN"
+                scheduler:
+                  report-job:
+                    cron-expression: "0 30 6 * * ?"
+                    enabled: true
+                """);
+        Files.writeString(res.resolve("application-prod.yml"), """
+                batch:
+                  jobs:
+                    - job-class: com.example.jobs.ArchiveJob
+                      cron: "0 15 2 * * ?"
+                    - name: purge
+                      cron: "0 0 4 ? * SUN"
+                """);
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "batch", "test", out);
+        List<String> jobs = out.toString().lines().filter(l -> l.contains("\"kind\":\"job\"")).toList();
+        assertThat(jobs).as(out.toString()).hasSize(3);
+        assertThat(jobs).filteredOn(l -> l.contains("ArchiveJob")).singleElement().asString()
+                .contains("\"cron\":\"0 15 1 * * ?\"", "\"cronByProfile\":{\"prod\":\"0 15 2 * * ?\"}",
+                        "\"cronFrom\":\"application config: batch.jobs[0].cron\"");
+        assertThat(jobs).filteredOn(l -> l.contains("PurgeJob")).singleElement().asString()
+                .contains("\"cron\":\"0 0 4 ? * SUN\"").doesNotContain("cronByProfile");
+        assertThat(jobs).filteredOn(l -> l.contains("ReportJob")).singleElement().asString()
+                .contains("\"cron\":\"0 30 6 * * ?\"", "scheduler.report-job.cron-expression");
+    }
 }
