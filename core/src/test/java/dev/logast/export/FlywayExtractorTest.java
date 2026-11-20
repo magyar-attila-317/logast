@@ -266,4 +266,31 @@ class FlywayExtractorTest {
         assertThat(c.node("table:public.outbox_event", null).evidence().file()).isEqualTo("outbox-lib-1.4.0.jar!/db/migration/V1__outbox.sql");
         assertThat(c.node("table:public.orders", null).evidence().file()).isEqualTo("src/main/resources/db/migration/V2__orders.sql");
     }
+
+    /**
+     * #194: a library's migration uses a Spring property as its placeholder ({@code ${app.db.schema}}, supplied by the
+     * service's configuration): it gets the property's value, though logast never read that file for placeholders.
+     */
+    @Test
+    void aLibrarysPlaceholderTakesTheSpringPropertyOfThatName() throws IOException {
+        Path root = tmp.resolve("allocation");
+        Path res = root.resolve("src/main/resources");
+        Files.createDirectories(res.resolve("db/migration"));
+        Files.createDirectories(root.resolve("src/main/java/com/example"));
+        Files.writeString(root.resolve("src/main/java/com/example/App.java"),
+                "package com.example;\n\n@org.springframework.boot.autoconfigure.SpringBootApplication\npublic class App {\n}\n");
+        Files.writeString(res.resolve("application.yml"), "app:\n  db:\n    schema: allocation\n");
+        Files.writeString(res.resolve("db/migration/V2__shares.sql"), "create table share (id bigint primary key);\n");
+        Path jar = tmp.resolve("jdbc-ext-2.0.0.jar");
+        try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar))) {
+            zip.putNextEntry(new java.util.zip.ZipEntry("db/migration/V1__bootstrap.sql"));
+            zip.write("create schema if not exists ${app.db.schema};\ncreate table ${app.db.schema}.lock (id bigint primary key);\n".getBytes());
+            zip.closeEntry();
+        }
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("allocation", List.of(), null).withClasspath(List.of(jar));
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.nodes).extracting(Node::id).contains("table:allocation.lock", "table:public.share");
+    }
 }
