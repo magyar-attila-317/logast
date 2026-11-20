@@ -99,6 +99,22 @@ public final class KnowledgeBase {
             in.computeIfAbsent(fe.fact().to(), k -> new ArrayList<>()).add(fe);
         }
         ambiguous.addAll(r.getValue());
+        for (Lineage.Derived d : Lineage.derive(this)) {   // #164: HTTP calls → endpoints, schema-less table names
+            Fact<Edge> fe = new Fact<>(d.edge(), d.basis().header(), d.basis().file());
+            edges.add(fe);
+            out.computeIfAbsent(fe.fact().from(), k -> new ArrayList<>()).add(fe);
+            in.computeIfAbsent(fe.fact().to(), k -> new ArrayList<>()).add(fe);
+        }
+    }
+
+    /** The edges arriving at a node. */
+    public List<Fact<Edge>> incoming(String id) {
+        return in.getOrDefault(id, List.of());
+    }
+
+    /** Every edge, derived ones included. */
+    public List<Fact<Edge>> allEdges() {
+        return List.copyOf(edges);
     }
 
     /**
