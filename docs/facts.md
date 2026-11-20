@@ -70,6 +70,17 @@ Extractors share these, so joins and tools can rely on them; their names are bui
 Edge kinds: `has`, `calls`, `reads`, `writes`, `publishes`, `consumes`, `runs`, `after`, `active-with`,
 `uses-property`, `uses-secret`, `depends-on`, `deploys`, `maps`, `alias`, `defines`.
 
+## A whole repo, any layout: `--out-dir`
+
+`logast export <repo> --out-dir <dir>` exports everything in a repo, without describing its layout (#182): every
+Gradle build (a `settings.gradle(.kts)`, or a build file or `src/main/java` outside any other build; a build's modules
+belong to it), every folder with a `helmfile.yaml`, the Terragrunt units wherever they are, and the repo's workflows and
+Ansible inventory. `.git`, build output, `node_modules`, `.terragrunt-cache` and git worktrees inside the repo are
+skipped. One facts file per root (`apps_orders.jsonl`, `repo.terraform.jsonl`, `repo.workflows.jsonl`); every fact's
+evidence carries its root, so a source reads `repo/apps/orders/src/…:line`. A Java root's classpath: `--classpath-file`,
+else the one its `.logast` has, else (unless `--no-builds`) its Gradle runs once, its output cached in
+`<dir>/.classpath/` (the repo stays as it was). Files an earlier export wrote in `<dir>` are replaced.
+
 ## What `logast export` writes
 
 `logast export <service> [--out facts.jsonl] [--repo <name>]` scans the service (read-only, as `scan` does) and writes

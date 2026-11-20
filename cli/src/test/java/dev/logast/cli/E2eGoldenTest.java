@@ -7384,7 +7384,7 @@ abstract class E2eGoldenTest {
                     "logast fleet create acme --dir ~/logast-fleets/acme", "logast fleet join acme",
                     "Check who can see it first", "LOGAST_REPOS_TOKEN");
             assertThat(Files.readString(fleetRepo.resolve(".github/workflows/logast-fleet.yml")))
-                    .containsPattern("LOGAST_REF: \\S+").contains("logast fleet . --refresh --no-builds --classpath-file .cache/classpath.txt", "$GITHUB_STEP_SUMMARY",
+                    .containsPattern("LOGAST_REF: \\S+").contains("logast fleet . --refresh --kb --no-builds --classpath-file .cache/classpath.txt", "$GITHUB_STEP_SUMMARY",
                             "gradle --quiet -p classpath writeClasspath", "secrets.LOGAST_REPOS_TOKEN",
                             "  pages:\n    # only when the repository variable LOGAST_PAGES is 'true'", "if: vars.LOGAST_PAGES == 'true'");
             assertThat(run(fleetRepo, "fleet", "init", "acme", "--dir", fleetRepo.toString())).as("a second init keeps the files")
@@ -7429,7 +7429,30 @@ abstract class E2eGoldenTest {
             assertThat(git(fleetRepo, "status", "--porcelain", "--untracked-files=all").lines().map(l -> l.substring(3)).toList())
                     .as("only what the owner edits and commits; clones, snapshots, report and members.yaml are ignored")
                     .containsExactlyInAnyOrder(".github/workflows/logast-fleet.yml", ".gitignore", "README.md", "company.yaml", "repos.yaml",
-                            "classpath/build.gradle.kts", "classpath/settings.gradle.kts");
+                            "classpath/build.gradle.kts", "classpath/settings.gradle.kts", "kb/knowledge.yml", "kb/mappings/README.md");
+
+            // #182: the fleet's knowledge base: every member's facts in kb/<member>/, the fleet's mappings applied
+            assertThat(Files.readString(fleetRepo.resolve(".github/workflows/logast-fleet.yml"))).contains("--refresh --kb", "Commit the knowledge base");
+            Files.writeString(fleetRepo.resolve("kb/mappings/owners.yaml"), """
+                    mappings:
+                      - name: owners
+                        match: {kind: endpoint}
+                        edges:
+                          - {from: "team:platform", kind: owns, to: "{_id}"}
+                    """);
+            String kbRun = run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file",
+                    fleetRepo.resolve(".cache/classpath.txt").toString());
+            assertThat(STDERR.toString()).as(kbRun + STDERR).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: 1 facts file(s)",
+                    "fleet --kb: mapping owners: ", "logast mcp config --kb");
+            assertThat(Files.readString(fleetRepo.resolve("kb/orders/repo.jsonl"))).contains("call:orders:http POST http://stock/reservations/{id}");
+            assertThat(Files.readString(fleetRepo.resolve("kb/stock/repo.jsonl"))).contains("endpoint:stock:POST /holds/{id}");
+            assertThat(Files.readString(fleetRepo.resolve("kb/mapped/owners.jsonl"))).contains("\"from\":\"team:platform\",\"kind\":\"owns\",\"to\":\"endpoint:stock:POST /holds/{id}\"");
+            dev.logast.kb.KnowledgeBase kb = dev.logast.kb.KnowledgeBase.load(List.of(fleetRepo.resolve("kb")));
+            assertThat(kb.problems()).isEmpty();
+            assertThat(kb.repos()).contains("orders", "stock", "mapped");
+            assertThat(git(fleetRepo, "status", "--porcelain", "--untracked-files=all").lines().map(l -> l.substring(3)).toList())
+                    .as("kb/ is committed; its classpath cache is not").contains("kb/orders/repo.jsonl", "kb/mapped/owners.jsonl")
+                    .noneMatch(f -> f.contains("kb-classpath"));
         } finally {
             System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
         }

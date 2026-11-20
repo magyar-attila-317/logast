@@ -224,7 +224,7 @@ fleet folder as `fleet create --dir .` makes it, plus
 |---|---|
 | `repos.yaml` | the members by repo URL (`https://…`, `git@…`; an entry may name a `branch` and a `name`) |
 | `README.md` | what the owner does, and what service developers run |
-| `.github/workflows/logast-fleet.yml` | on push to main/master, weekday mornings and by hand: builds logast at the commit that scaffolded it (`LOGAST_REF`), clones the repos, runs `logast fleet . --refresh --no-builds --classpath-file .cache/classpath.txt`, writes the overview to the run's summary and keeps `report/` as the run's artifact; publishes it to GitHub Pages only when the repository variable `LOGAST_PAGES` is `true` |
+| `.github/workflows/logast-fleet.yml` | on push to main/master, weekday mornings and by hand: builds logast at the commit that scaffolded it (`LOGAST_REF`), clones the repos, runs `logast fleet . --refresh --kb --no-builds --classpath-file .cache/classpath.txt`, commits `kb/` when it changed, writes the overview to the run's summary and keeps `report/` as the run's artifact; publishes it to GitHub Pages only when the repository variable `LOGAST_PAGES` is `true` |
 | `.gitignore` | `.cache/`, `services/`, `report/`, `members.yaml`: generated, never committed |
 | `classpath/build.gradle.kts` | the libraries the workflow resolves the members' code against (common Spring ones; add your company's): `gradle -p classpath writeClasspath` writes `.cache/classpath.txt` |
 
@@ -243,6 +243,25 @@ added member and scans it read-only. A folder with `repos.yaml` is a fleet even 
   `LOGAST_PAGES` is set; the artifact is always there.
 - Service developers register a clone of the fleet repo (`logast fleet create <name> --dir <clone>`) and join it; the
   README says how. Extending the fleet by its git URL, listing a GitHub org and rollout PRs: #146.
+
+## The fleet's knowledge base (`kb/`)
+
+`logast fleet <name|path> --kb` (with `--refresh`, after updating the clones) exports every member, whatever its
+layout, into `<fleet>/kb/<member>/` (as `logast export --out-dir`, [facts.md](facts.md#a-whole-repo-any-layout---out-dir)),
+then applies each mapping in `kb/mappings/*.y(a)ml` into `kb/mapped/` (#182). `logast mcp config --kb <fleet>/kb`
+connects an MCP client to all of it ([mcp.md](mcp.md)).
+
+| in `kb/` | what | who writes it |
+|---|---|---|
+| `<member>/*.jsonl` | each member's facts, one file per root | `--kb` (replaced every run) |
+| `mapped/*.jsonl` | what the mappings make of them | `--kb` |
+| `knowledge.yml` | glossary, abbreviations, other names of services, decisions | you (`fleet init` writes a commented one) |
+| `mappings/*.yaml` | company-specific facts (a scheduler's job rows as jobs, …) | you |
+| `knowledge.proposed.yml`, `knowledge.decisions.yml` | the LLM's proposals, the review page's decisions | `logast mcp`, `logast mcp review` |
+
+In a fleet repo, the workflow `fleet init` writes runs with `--kb` and commits `kb/` when it changed (with the job's own
+token), so `git pull` in a clone brings everyone the newest knowledge base. The facts name endpoints, tables, hosts and
+file paths: the fleet repo is as private as the repos it reads.
 
 ## Where fleets live
 
