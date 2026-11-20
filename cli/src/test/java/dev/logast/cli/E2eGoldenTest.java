@@ -9113,6 +9113,13 @@ abstract class E2eGoldenTest {
                         List<Map<String, Object>> open = jdbc.queryForList(OPEN_ENTRIES);
                         jdbc.update("insert into audit.event (kind, ref) select 'synced', id from ledger.entry where open = true");
                         client.sql("select count(*) from shipment").query(Long.class).single();
+                        jdbc.queryForObject("select nextval('ledger_seq')", Long.class);
+                        jdbc.execute("select pg_advisory_xact_lock(42)");
+                        String day = java.time.LocalDate.now().toString();
+                        jdbc.queryForList("select * from ledger.archive where day = '" + day + "'");
+                        jdbc.execute("SET LOCAL lock_timeout = '2s'");
+                        String schema = "tenant_" + day;
+                        jdbc.update("delete from " + schema + ".ledger_cache where day = ?", day);
                     }
 
                     List<Map<String, Object>> any(String table) {
@@ -9138,7 +9145,11 @@ abstract class E2eGoldenTest {
                 "endpoint:billing:GET /invoices/unpaid -reads-> table:billing.invoice",
                 "job:billing:LedgerSync.sync -reads-> table:ledger.entry",
                 "job:billing:LedgerSync.sync -writes-> table:audit.event",
-                "job:billing:LedgerSync.sync -reads-> table:shipment");
+                "job:billing:LedgerSync.sync -reads-> table:shipment",
+                "job:billing:LedgerSync.sync -reads-> table:ledger.archive",
+                "job:billing:LedgerSync.sync -writes-> table:ledger_cache");
+        assertThat(edges).as("#177: a lock, nextval and SET touch no table, and are not SQL logast could not read")
+                .filteredOn(e -> e.startsWith("job:billing:LedgerSync.sync -uses-sql->")).isEmpty();
         assertThat(edges).as("SQL built at runtime: where it runs, not which table")
                 .anySatisfy(e -> assertThat(e).startsWith("service:billing -uses-sql-> sql:billing:src/main/java/com/example/billing/LedgerSync.java:"));
         assertThat(edges).as("a read is not a write").doesNotContain("endpoint:billing:GET /invoices/{id} -writes-> table:billing.invoice");
