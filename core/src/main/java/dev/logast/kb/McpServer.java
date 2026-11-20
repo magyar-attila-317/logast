@@ -130,6 +130,14 @@ public final class McpServer {
                     new String[][]{{"id", "string", "the job id, e.g. job:shipping:nightly-export"},
                             {"env", "string", "the environment; default: every one"}, {"count", "integer", "how many (default 5)"},
                             {"zone", "string", "the time zone of the times shown (default UTC)"}}, new String[]{"id"}),
+            new Tool("lineage", "What follows from a node (downstream: the calls, topics and tables it writes to, who reads and "
+                    + "consumes them, the next pipeline steps) or what leads to it (upstream), across services, as a tree with sources.",
+                    new String[][]{{"id", "string", "the start node: an endpoint, job, listener, table or topic"},
+                            {"direction", "string", "downstream (default) or upstream"}, {"depth", "integer", "default 6"},
+                            {"limit", "integer", "lines (default 200)"}}, new String[]{"id"}),
+            new Tool("risks", "What lineage shows as risky: database handoffs between scheduled jobs of different services with "
+                    + "no pipeline step between them (the reader relies on timing), tables several services write, reads of "
+                    + "another service's schema.", new String[][]{{"env", "string", "the environment; default: every one"}}, new String[0]),
             new Tool("term", "A business term from the company's glossary (knowledge.yml): its definition and source; an alias "
                     + "or an abbreviation finds its term.", new String[][]{{"name", "string", "the term, alias or abbreviation"}}, new String[]{"name"}),
             new Tool("read_name", "A technical name (a table, column, topic, key: ord_inv_ref, ordInvRef) as business words, through "
@@ -185,6 +193,9 @@ public final class McpServer {
                     java.time.LocalDate.now(java.time.ZoneOffset.UTC));
             case "next_runs" -> Schedules.nextRuns(k, a.path("id").asText(), a.path("env").asText(null), a.path("count").asInt(5),
                     a.path("zone").asText(null), java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC));
+            case "lineage" -> Lineage.lineage(k, a.path("id").asText(), !"upstream".equalsIgnoreCase(a.path("direction").asText("downstream")),
+                    a.path("depth").asInt(6), a.path("limit").asInt(200));
+            case "risks" -> Lineage.risks(k, a.path("env").asText(null));
             case "term" -> k.knowledge().term(a.path("name").asText());
             case "read_name" -> {
                 String r = k.knowledge().read(a.path("name").asText());

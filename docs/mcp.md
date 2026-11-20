@@ -53,6 +53,8 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 | `path` | the shortest chain from one node to another, e.g. from a profile to the job that runs it |
 | `runs_on` | which jobs run on a day (a weekday, `today`, an ISO date), in an environment and time zone, at which times; the jobs that run after them in a pipeline; jobs whose schedule is not known, and why |
 | `next_runs` | when a job runs next |
+| `lineage` | what follows from a node (downstream: calls, messages and tables it writes to, who consumes and reads them, the next pipeline steps) or what leads to it (upstream), across services, as a tree with sources |
+| `risks` | database handoffs between scheduled jobs of different services with no pipeline step between them (the reader relies on timing), tables several services write, reads of another service's schema |
 | `term` | a glossary term (or an alias, or an abbreviation): its definition and source |
 | `read_name` | a technical name (`ord_inv_ref`, `ordInvRef`) as business words |
 | `writers_of`, `readers_of` | every entrypoint that writes or reads a table (`schema.name`, or a name in any schema) |
@@ -69,6 +71,18 @@ build pushes when Jib's `to.image` or `bootBuildImage`'s `imageName` say it) is 
 (`deployment:<name>`, a CronJob's `job:…`) by an inferred `deployed-as` edge, per environment, by the strongest rule
 that holds: the same image repository (confidence 0.95), the same name (0.8), the image's last path segment equal to
 the service's name (0.7). A workload two services claim by the same rule is not linked; `summary` lists it.
+
+**Across services** (#164): when the facts load, an HTTP call `reaches` the endpoints with its method and path (a
+path variable matches any segment); its host decides between services that have the path: the service's name or
+application name, a Kubernetes Service that routes its workload, or another name of it in `knowledge.yml` (0.9).
+Without a host, one candidate is 0.6, several are 0.3 each; a host that names no service of the facts gives no link.
+A table named without a schema in code is the `same-as` the one schema in the migrations that has it. `lineage`
+follows these, Kafka topics and database tables, and an orchestrator's job through the profile to the code it runs.
+
+**Risks** (#165): a database handoff is a table one service's scheduled job writes and another's reads; without a
+pipeline step (`after`) from the writer's job to the reader's, the reader relies on timing. A job's schedule is its own
+(`@Scheduled`, a CronJob) or that of the orchestrator's job that starts it (job → profile → bean → the entrypoint).
+A service's own schemas are those where it writes tables no other service writes; reading another one is listed.
 
 ## What people know: `knowledge.yml`
 
