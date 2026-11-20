@@ -121,9 +121,9 @@ public final class RepoExport {
                     case "java" -> {
                         boolean repoFacts = !repoFactsDone && root.dir().equals(r);
                         Export.Analysed done = opts.analysed().apply(root.dir());   // #184: the fleet scan's, when it made one
-                        Export.java(root.dir(), done != null ? done
+                        problems.addAll(prefixed(rel, Export.java(root.dir(), done != null ? done
                                         : Export.analyse(root.dir(), opts.classpathFor().apply(root.dir()), Logast.policy(root.dir(), null)),
-                                repoName, version, opts.flyway(), w, prefix, repoFacts);
+                                repoName, version, opts.flyway(), w, prefix, repoFacts)));
                         repoFactsDone |= repoFacts;
                     }
                     case "helm" -> problems.addAll(prefixed(rel, Export.helm(root.dir(), repoName, version, opts.envs(), opts.helmRender(),

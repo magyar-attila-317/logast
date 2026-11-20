@@ -110,4 +110,18 @@ class CronTest {
                 .contains("- Mon 2026-11-23 02:00:00", "- Tue 2026-11-24 02:00:00");
         assertThat(Schedules.nextRuns(kb, "job:billing:invoices", "prod", 2, null, ZonedDateTime.now(UTC))).contains("no schedule in the facts");
     }
+
+    /** #187: Quartz's dialect: weekdays 1 (Sunday) to 7, ? and an optional year. */
+    @org.junit.jupiter.api.Test
+    void quartz() {
+        java.time.ZonedDateTime fri = java.time.ZonedDateTime.of(2026, 11, 20, 12, 0, 0, 0, java.time.ZoneOffset.UTC);   // a Friday
+        Cron byName = Cron.parse("0 0 3 ? * MON-FRI", Cron.Format.QUARTZ);
+        Cron byNumber = Cron.parse("0 0 3 ? * 2-6", Cron.Format.QUARTZ);
+        org.assertj.core.api.Assertions.assertThat(byName.next(fri, 1).getFirst()).isEqualTo(fri.plusDays(3).withHour(3));
+        org.assertj.core.api.Assertions.assertThat(byNumber.next(fri, 1).getFirst()).as("2 is Monday in Quartz").isEqualTo(fri.plusDays(3).withHour(3));
+        org.assertj.core.api.Assertions.assertThat(Cron.parse("0 0 3 ? * 1", Cron.Format.QUARTZ).next(fri, 1).getFirst()).as("1 is Sunday")
+                .isEqualTo(fri.plusDays(2).withHour(3));
+        org.assertj.core.api.Assertions.assertThat(Cron.parse("0 0 3 1 1 ? 2028", Cron.Format.QUARTZ).next(fri, 1).getFirst())
+                .isEqualTo(java.time.ZonedDateTime.of(2028, 1, 1, 3, 0, 0, 0, java.time.ZoneOffset.UTC));
+    }
 }

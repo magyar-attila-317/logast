@@ -132,6 +132,17 @@ final class McpCmd implements Callable<Integer> {
         }
     }
 
+    /** #187: the exact build, version and commit (every build between releases has the same version). */
+    static String build() throws IOException {
+        Properties p = new Properties();
+        try (var in = McpCmd.class.getResourceAsStream("/logast-version.properties")) {
+            if (in != null) {
+                p.load(in);
+            }
+        }
+        return p.getProperty("version", "dev") + " (" + p.getProperty("commit", "unknown") + ")";
+    }
+
     static String version() throws IOException {
         Properties p = new Properties();
         try (var in = McpCmd.class.getResourceAsStream("/logast-version.properties")) {

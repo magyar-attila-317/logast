@@ -38,7 +38,8 @@ public final class Export {
      */
     public static void java(Path root, List<Path> classpath, Policy policy, String repo, String version, FlywayOptions flyway,
                             Writer out, String rootPrefix, boolean repoFacts) throws IOException {
-        java(root, analyse(root, classpath, policy), repo, version, flyway, out, rootPrefix, repoFacts);
+        java(root, analyse(root, classpath, policy), repo, version, flyway, out, rootPrefix, repoFacts)
+                .forEach(p -> System.err.println("export: " + p));
     }
 
     /** #184: an analysis and its scan, made once and shared (the fleet's scan and the export of the same root). */
@@ -55,9 +56,10 @@ public final class Export {
         return new Analysed(a, dev.logast.rules.Rules.scan(a), classpath);
     }
 
-    /** The facts of a root from an analysis already made. */
-    public static void java(Path root, Analysed analysed, String repo, String version, FlywayOptions flyway,
-                            Writer out, String rootPrefix, boolean repoFacts) throws IOException {
+    /** The facts of a root from an analysis already made; returns what went wrong (the migrations that could not run). */
+    public static List<String> java(Path root, Analysed analysed, String repo, String version, FlywayOptions flyway,
+                                    Writer out, String rootPrefix, boolean repoFacts) throws IOException {
+        List<String> problems = new java.util.ArrayList<>();
         Path r = root.toAbsolutePath().normalize();
         ScanResult scan = analysed.scan();
         Analysis a = analysed.analysis();
@@ -71,16 +73,17 @@ public final class Export {
             String service = JavaExtractor.serviceName(r, dev.logast.fleet.ServiceSurface.of(a, scan));
             GradleProjects.extract(r, repoName, service, w);   // #162: the repo, and the libraries it publishes
             if (repoFacts) {
-                workflows(r, repoName, w);
+                problems.addAll(workflows(r, repoName, w));
             }
             if (flyway != null) {
                 FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image())
                         .withCodeRuns(ProgrammaticFlyway.find(a.index))   // #179: the runs the code makes (per tenant)
                         .withClasspath(classpath);   // #181: migrations a library ships in its jar
                 fx.extract(r, w);
-                fx.problems().forEach(p -> System.err.println("flyway: " + p));
+                problems.addAll(fx.problems());
             }
         }
+        return problems;
     }
 
     /**

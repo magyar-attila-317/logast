@@ -18,13 +18,17 @@ import java.util.Map;
  * {@code L}, {@code W} and {@code #} are not, and say so.
  */
 public final class Cron {
-    public enum Format { UNIX, SPRING }
+    /** QUARTZ (#187): seconds first, 6 or 7 fields (the last a year), weekdays 1-7 from Sunday. */
+    public enum Format { UNIX, SPRING, QUARTZ }
 
     private static final Map<String, String> MACROS = Map.of("@yearly", "0 0 1 1 *", "@annually", "0 0 1 1 *",
             "@monthly", "0 0 1 * *", "@weekly", "0 0 * * 0", "@daily", "0 0 * * *", "@midnight", "0 0 * * *",
             "@hourly", "0 * * * *");
     private static final List<String> MONTHS = List.of("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC");
     private static final List<String> DAYS = List.of("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT");
+    /** Quartz numbers weekdays 1 (Sunday) to 7: the same names, counted from 1. */
+    private static final List<String> QUARTZ_DAYS = java.util.Collections.unmodifiableList(new ArrayList<>(DAYS));   // its own instance: value() tells them apart
+    private BitSet years;   // #187: Quartz's optional year field (offset 1970); null: every year
 
     private final String expression;
     private final BitSet seconds;
@@ -59,6 +63,9 @@ public final class Cron {
             e = format == Format.SPRING ? "0 " + macro : macro;
         }
         String[] f = e.split("\\s+");
+        if (format == Format.QUARTZ) {
+            return quartz(expression, macro != null ? ("0 " + macro).split("\\s+") : f);
+        }
         int expected = format == Format.SPRING ? 6 : 5;
         if (f.length != expected) {
             throw new IllegalArgumentException("'" + expression + "' has " + f.length + " fields, a " + format.name().toLowerCase(Locale.ROOT)
@@ -76,6 +83,24 @@ public final class Cron {
             dow.clear(7);
         }
         return new Cron(expression, format, sec, min, hour, dom, mon, dow, restricted(f[o + 2]), restricted(f[o + 4]));
+    }
+
+    private static Cron quartz(String expression, String[] f) {
+        if (f.length != 6 && f.length != 7) {
+            throw new IllegalArgumentException("'" + expression + "' has " + f.length + " fields, a quartz cron has 6 or 7");
+        }
+        BitSet q = field(f[5], 1, 7, QUARTZ_DAYS, "day of week");
+        BitSet dow = new BitSet();
+        q.stream().forEach(i -> dow.set(i - 1));   // 1 = Sunday → 0 = Sunday
+        Cron c = new Cron(expression, Format.QUARTZ, field(f[0], 0, 59, null, "second"), field(f[1], 0, 59, null, "minute"),
+                field(f[2], 0, 23, null, "hour"), field(f[3], 1, 31, null, "day of month"), field(f[4], 1, 12, MONTHS, "month"), dow,
+                restricted(f[3]), restricted(f[5]));
+        if (f.length == 7 && restricted(f[6])) {
+            BitSet y = field(f[6], 1970, 2199, null, "year");
+            c.years = new BitSet();
+            y.stream().forEach(i -> c.years.set(i - 1970));
+        }
+        return c;
     }
 
     private static boolean restricted(String field) {
@@ -133,7 +158,7 @@ public final class Cron {
         if (names != null) {
             int i = names.indexOf(s.toUpperCase(Locale.ROOT));
             if (i >= 0) {
-                return names == MONTHS ? i + 1 : i;
+                return names == MONTHS || names == QUARTZ_DAYS ? i + 1 : i;
             }
         }
         try {
@@ -144,6 +169,9 @@ public final class Cron {
     }
 
     private boolean dayMatches(LocalDate d) {
+        if (years != null && (d.getYear() < 1970 || !years.get(d.getYear() - 1970))) {
+            return false;
+        }
         boolean dom = daysOfMonth.get(d.getDayOfMonth());
         boolean dow = daysOfWeek.get(d.getDayOfWeek().getValue() % 7);
         if (format == Format.UNIX && domRestricted && dowRestricted) {
