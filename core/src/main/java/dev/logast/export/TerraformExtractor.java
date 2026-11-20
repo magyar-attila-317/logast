@@ -266,7 +266,7 @@ public final class TerraformExtractor implements Extractor {
                         }
                     }
                     if (body.get("tags") instanceof Map<?, ?> tags) {
-                        attrs.put("tags", new TreeMap<>((Map<String, Object>) tags));
+                        attrs.put("tags", cleanTags((Map<String, Object>) tags));
                     }
                     String id = "secret:" + vault + "/" + name;
                     out.node(new Node(id, "secret", env, attrs, at));
@@ -280,11 +280,11 @@ public final class TerraformExtractor implements Extractor {
                 attrs.put("name", name);
                 for (String k : KEEP) {
                     if (known(body.get(k))) {
-                        attrs.put(k, String.valueOf(body.get(k)));
+                        attrs.put(k, dev.logast.facts.Secrets.clean(k, String.valueOf(body.get(k))));   // #183
                     }
                 }
                 if (body.get("tags") instanceof Map<?, ?> tags) {
-                    attrs.put("tags", new TreeMap<>((Map<String, Object>) tags));
+                    attrs.put("tags", cleanTags((Map<String, Object>) tags));
                 }
                 String id = "resource:" + type.getKey() + ":" + name;
                 out.node(new Node(id, "resource", env, attrs, at));
@@ -323,6 +323,13 @@ public final class TerraformExtractor implements Extractor {
             }
         }
         return "vault";
+    }
+
+    /** #183: tags as facts may carry them: a value that looks like a secret is redacted. */
+    private static Map<String, Object> cleanTags(Map<String, Object> tags) {
+        Map<String, Object> out = new TreeMap<>();
+        tags.forEach((k, v) -> out.put(k, v == null ? null : dev.logast.facts.Secrets.clean(k, String.valueOf(v))));
+        return out;
     }
 
     /** A value hcl4j evaluated: not null, not a reference or a type it left as an object. */

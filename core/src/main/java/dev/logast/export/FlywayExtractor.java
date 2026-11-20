@@ -418,7 +418,8 @@ public final class FlywayExtractor implements Extractor {
                 Map<String, Object> values = new LinkedHashMap<>();
                 for (int i = 1; i <= md.getColumnCount(); i++) {
                     Object v = rs.getObject(i);
-                    values.put(md.getColumnName(i), v == null || v instanceof Number || v instanceof Boolean ? v : v.toString());
+                    values.put(md.getColumnName(i), v == null || v instanceof Number || v instanceof Boolean ? v
+                            : dev.logast.facts.Secrets.clean(md.getColumnName(i), v.toString()));   // #183: a row may hold a credential
                 }
                 List<String> keyValues = new ArrayList<>();
                 for (String k : key) {

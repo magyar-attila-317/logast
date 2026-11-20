@@ -363,7 +363,7 @@ public final class JavaExtractor implements Extractor {
                 while (m.find()) {
                     Map<String, Object> pa = new TreeMap<>();
                     if (m.group(2) != null) {
-                        pa.put("default", m.group(2));
+                        pa.put("default", dev.logast.facts.Secrets.clean(m.group(1), m.group(2)));   // #183
                     }
                     sink.edge(Edge.extracted(bean, "uses-property", "property:" + svc + ":" + m.group(1).strip(), pa,
                             Evidence.at(file, line(Pos.line(an)))));

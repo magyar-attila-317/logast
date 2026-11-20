@@ -262,6 +262,23 @@ its paths (#171).
   The [JSON Schema](../facts/src/main/resources/dev/logast/facts/kb-facts-0.schema.json) checks single lines in any
   language.
 
+## No secrets in facts
+
+Facts are committed (the fleet's `kb/`) and read by an LLM, so they never carry a secret (#183). Where a literal value
+reaches the facts (a chart's env var `value`, a `@Value` default, a Terraform attribute or tag, a `--rows` column), it is
+replaced by `<redacted: looks like a secret>` when:
+
+- **its name says secret**: `PASSWORD`, `PWD`, `SECRET`, `TOKEN`, `API_KEY`, `CLIENT_SECRET`, `CONNECTION_STRING`,
+  `AUTH`, `SAS`, … (not names that only look like it: `TOKEN_URL`, `PASSWORD_MIN_LENGTH`, `JWT_EXPIRY_SECONDS`);
+- **its shape is a credential**, whatever the name: a JWT, a PEM block, a URL with `user:password@`, a connection
+  string with `Password=` / `AccountKey=` / `SharedAccessSignature`, known key formats (AWS, GitHub, Slack, Stripe,
+  Google), a long random-looking string.
+
+Kept as they are: test stubs and local defaults (`test`, `dummy`, `changeme`, `secret`, values starting with `test` or
+`fake`, `localhost` URLs, credentials like `orders:test@localhost`), placeholders (`${…}`) and references
+(`secret:<vault>/<object>`). `logast mcp`'s `risks` lists every redacted value as *a secret written in plain text*, with
+where it was found: it belongs in a vault.
+
 ## Checking a file
 
 ```bash
