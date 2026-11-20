@@ -39,6 +39,7 @@ public final class Export {
             new JavaExtractor(a, scan, classpath).extract(r, w);
             String service = JavaExtractor.serviceName(r, dev.logast.fleet.ServiceSurface.of(a, scan));
             GradleProjects.extract(r, repoName, service, w);   // #162: the repo, and the libraries it publishes
+            workflows(r, repoName, w);
             if (flyway != null) {
                 FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image());
                 fx.extract(r, w);
@@ -60,8 +61,10 @@ public final class Export {
         try (FactWriter w = new FactWriter(out, Header.of(HelmExtractor.ID, version, repo != null ? repo : NamedFleet.serviceName(r),
                 NamedFleet.commit(r)))) {
             hx.extract(r, w);
+            List<String> p = new java.util.ArrayList<>(hx.problems());
+            p.addAll(workflows(r, repo != null ? repo : NamedFleet.serviceName(r), w));
+            return p;
         }
-        return hx.problems();
     }
 
     /** #166: a Terragrunt/Terraform repo's resources per environment; returns what could not be read. */
@@ -71,8 +74,48 @@ public final class Export {
         try (FactWriter w = new FactWriter(out, Header.of(TerraformExtractor.ID, version, repo != null ? repo : NamedFleet.serviceName(r),
                 NamedFleet.commit(r)))) {
             tx.extract(r, w);
+            List<String> p = new java.util.ArrayList<>(tx.problems());
+            p.addAll(workflows(r, repo != null ? repo : NamedFleet.serviceName(r), w));
+            return p;
         }
-        return tx.problems();
+    }
+
+    /** #167: only the workflows of a repo that has nothing else logast reads (a CI repo). */
+    public static List<String> workflowsOnly(Path root, String repo, String version, Writer out) throws IOException {
+        Path r = root.toAbsolutePath().normalize();
+        try (FactWriter w = new FactWriter(out, Header.of(WorkflowExtractor.ID, version, repo != null ? repo : NamedFleet.serviceName(r),
+                NamedFleet.commit(r)))) {
+            return workflows(r, repo != null ? repo : NamedFleet.serviceName(r), w);
+        }
+    }
+
+    /** #167: the repo's GitHub Actions workflows, named {@code owner/repo} as other repos' {@code uses:} lines name it. */
+    static List<String> workflows(Path root, String repo, dev.logast.facts.FactSink out) {
+        if (!WorkflowExtractor.applies(root)) {
+            return List.of();
+        }
+        WorkflowExtractor wx = new WorkflowExtractor(githubName(root, repo));
+        wx.extract(root, out);
+        return wx.problems();
+    }
+
+    /** {@code owner/name} from the {@code origin} remote's URL (GitHub's https or ssh form), else the given name. */
+    static String githubName(Path root, String fallback) {
+        try {
+            Process p = new ProcessBuilder("git", "-C", root.toString(), "remote", "get-url", "origin").redirectErrorStream(true).start();
+            String url = new String(p.getInputStream().readAllBytes()).strip();
+            if (p.waitFor() == 0) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("github\\.com[:/]([^/]+/[^/]+?)(?:\\.git)?$").matcher(url);
+                if (m.find()) {
+                    return m.group(1);
+                }
+            }
+        } catch (IOException e) {
+            // no git: the given name
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return fallback;
     }
 
     /** What {@code --flyway} asks for: the tables whose rows become facts, and the PostgreSQL image. */

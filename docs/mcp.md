@@ -56,6 +56,7 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 | `lineage` | what follows from a node (downstream: calls, messages and tables it writes to, who consumes and reads them, the next pipeline steps) or what leads to it (upstream), across services, as a tree with sources |
 | `risks` | database handoffs between scheduled jobs of different services with no pipeline step between them (the reader relies on timing), tables several services write, reads of another service's schema |
 | `secrets` | Key Vault secrets (Terraform, Helm) and who uses them: the workloads that mount or read them, and the services whose code runs there; `expiringDays` for those about to expire |
+| `workflow_refs` | per reusable GitHub Actions workflow, the refs its callers use: who is still on an old one |
 | `term` | a glossary term (or an alias, or an abbreviation): its definition and source |
 | `read_name` | a technical name (`ord_inv_ref`, `ordInvRef`) as business words |
 | `writers_of`, `readers_of` | every entrypoint that writes or reads a table (`schema.name`, or a name in any schema) |

@@ -156,6 +156,19 @@ environment, without the `terragrunt` or `terraform` CLIs: no state, no credenti
   Vault secret is `secret:<vault>/<name>`, the id the Helm facts use, with `content_type`, `expiration_date`, `tags`,
   and its vault `has` it; `tf-unit:<path>` `defines` them. Evidence: the module file and the line of the block.
 
+## GitHub Actions workflows
+
+Every `logast export` also reads the repo's `.github/workflows/*.yml` (a repo with nothing else, a CI repo, gets only
+these) (#167):
+
+- `workflow:<owner/repo>/.github/workflows/<file>` with its `triggers`, `runsOn` labels, `schedule` (a `schedule:`
+  trigger, as `runs_on` reads it); a reusable one (`on: workflow_call`) has `reusable`, `inputs`, `secrets`.
+  `<owner/repo>` comes from the `origin` remote (as other repos' `uses:` lines name it), else `--repo`.
+- `calls` the reusable workflows a job uses, with the `ref`; `uses` the actions its steps use (`action:<owner/name>`,
+  `ref`); `runs` the repo's scripts a step runs (`script:<owner/repo>/<path>`: `./scripts/x.sh`, `bash ci/y.sh`, files
+  the repo has).
+- `logast mcp`'s `workflow_refs` lists, per reusable workflow, the refs its callers use.
+
 ## Company-specific facts: `logast facts map`
 
 Some knowledge is your company's own: a scheduler that keeps its job definitions in database rows, a convention for
