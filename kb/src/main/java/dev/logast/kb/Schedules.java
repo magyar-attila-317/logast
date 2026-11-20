@@ -50,8 +50,11 @@ public final class Schedules {
             expr = String.valueOf(a.get("cronResolved") != null ? a.get("cronResolved") : a.get("cron"));
             format = Cron.Format.SPRING;
         } else if (a.get("fixedRate") != null || a.get("fixedDelay") != null) {
-            String rate = a.get("fixedRate") != null ? "every " + a.get("fixedRate") + " ms" : "every " + a.get("fixedDelay") + " ms after the last run ended";
-            return new Schedule(job, null, rate, null);
+            boolean rate = a.get("fixedRate") != null;
+            String key = rate ? "fixedRate" : "fixedDelay";
+            Object value = a.get(key + "Resolved") != null ? a.get(key + "Resolved") : a.get(key);
+            String every = "every " + interval(String.valueOf(value), a.get("timeUnit") == null ? null : String.valueOf(a.get("timeUnit")));
+            return new Schedule(job, null, rate ? every : every + " after the last run ended", null);
         } else {
             return null;
         }
@@ -66,6 +69,53 @@ public final class Schedules {
         } catch (IllegalArgumentException e) {
             return new Schedule(job, null, null, e.getMessage());
         }
+    }
+
+    /**
+     * #178: an interval as {@code @Scheduled} reads it, readable: a number in {@code timeUnit} (milliseconds by default,
+     * underscores allowed), an ISO duration ({@code PT10M}), or {@code 10s}/{@code 5m}-style; as written otherwise
+     * (a placeholder with no value, a SpEL expression).
+     */
+    static String interval(String value, String timeUnit) {
+        String v = value.strip().replace("_", "");
+        java.time.Duration d = null;
+        try {
+            if (v.matches("\\d+")) {
+                java.util.concurrent.TimeUnit unit = timeUnit == null ? java.util.concurrent.TimeUnit.MILLISECONDS
+                        : java.util.concurrent.TimeUnit.valueOf(timeUnit.toUpperCase(Locale.ROOT));
+                d = java.time.Duration.ofMillis(unit.toMillis(Long.parseLong(v)));
+            } else if (v.toUpperCase(Locale.ROOT).startsWith("P")) {
+                d = java.time.Duration.parse(v.toUpperCase(Locale.ROOT));
+            } else if (v.matches("(?i)\\d+(ms|s|m|h|d)")) {
+                long n = Long.parseLong(v.replaceAll("\\D", ""));
+                d = switch (v.replaceAll("\\d", "").toLowerCase(Locale.ROOT)) {
+                    case "ms" -> java.time.Duration.ofMillis(n);
+                    case "s" -> java.time.Duration.ofSeconds(n);
+                    case "m" -> java.time.Duration.ofMinutes(n);
+                    case "h" -> java.time.Duration.ofHours(n);
+                    default -> java.time.Duration.ofDays(n);
+                };
+            }
+        } catch (RuntimeException e) {
+            d = null;
+        }
+        if (d == null) {
+            return value + (timeUnit == null ? " (as written)" : " " + timeUnit.toLowerCase(Locale.ROOT) + " (as written)");
+        }
+        long ms = d.toMillis();
+        if (ms % 86_400_000 == 0) {
+            return ms / 86_400_000 + " d";
+        }
+        if (ms % 3_600_000 == 0) {
+            return ms / 3_600_000 + " h";
+        }
+        if (ms % 60_000 == 0) {
+            return ms / 60_000 + " min";
+        }
+        if (ms % 1000 == 0) {
+            return ms / 1000 + " s";
+        }
+        return ms + " ms";
     }
 
     /** A weekday ("monday", "mon") as the next such date from today (today included), or an ISO date. */

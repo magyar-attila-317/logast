@@ -33,6 +33,7 @@ class LineageTest {
                 + node("endpoint:orders:POST /orders", "endpoint", "{\"method\":\"POST\",\"path\":\"/orders\"}")
                 + node("call:orders:http POST http://billing/invoices", "call", "{\"transport\":\"http\",\"method\":\"POST\",\"target\":\"/invoices\",\"base\":\"http://billing:8080\"}")
                 + node("call:orders:http GET /receipts/{id}", "call", "{\"transport\":\"http\",\"method\":\"GET\",\"target\":\"/receipts/{id}\"}")
+                + node("call:orders:http GET http://localhost:8080/receipts/{id}", "call", "{\"transport\":\"http\",\"method\":\"GET\",\"target\":\"/receipts/{id}\",\"base\":\"http://localhost:8080\"}")
                 + node("call:orders:http GET /status/{?}", "call", "{\"transport\":\"http\",\"method\":\"GET\",\"target\":\"/status/{?}\"}")
                 + node("call:orders:http GET http://archive/invoices", "call", "{\"transport\":\"http\",\"method\":\"POST\",\"target\":\"/invoices\",\"base\":\"http://archive\"}")
                 + node("call:orders:kafka orders.placed", "call", "{\"transport\":\"kafka\",\"target\":\"orders.placed\"}")
@@ -98,6 +99,10 @@ class LineageTest {
                 .as("a host that names no service of the facts: no link").doesNotContain("reaches");
         assertThat(kb.neighbors("table:audit_event", "out", List.of("same-as"), 10)).contains("-same-as-> table:public.audit_event");
         assertThat(Lineage.host("http://shipping.finance.svc.cluster.local:8080")).isEqualTo("shipping");
+        assertThat(Lineage.host("http://localhost:8080")).as("#178: a local default names no target").isNull();
+        assertThat(Lineage.host("http://127.0.0.1:8080/api")).isNull();
+        assertThat(kb.neighbors("call:orders:http GET http://localhost:8080/receipts/{id}", "out", List.of("reaches"), 10))
+                .contains("-reaches-> endpoint:billing:GET /receipts/{receiptId} [inferred via http:path]");
         assertThat(Lineage.pathMatches("/a/{?}/b", "/a/{id}/b")).isTrue();
         assertThat(Lineage.pathMatches("/a/x", "/a/y")).isFalse();
     }

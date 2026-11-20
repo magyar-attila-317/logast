@@ -60,6 +60,18 @@ class CronTest {
                 .containsExactly("2026-12-01T03:00Z", "2027-01-01T03:00Z");
     }
 
+    /** #178: intervals as @Scheduled reads them, readable. */
+    @Test
+    void intervals() {
+        assertThat(Schedules.interval("300000", null)).isEqualTo("5 min");
+        assertThat(Schedules.interval("60_000", null)).isEqualTo("1 min");
+        assertThat(Schedules.interval("60", "SECONDS")).as("timeUnit").isEqualTo("1 min");
+        assertThat(Schedules.interval("PT10M", null)).isEqualTo("10 min");
+        assertThat(Schedules.interval("90s", null)).isEqualTo("90 s");
+        assertThat(Schedules.interval("1500", null)).isEqualTo("1500 ms");
+        assertThat(Schedules.interval("#{@props.windowMinutes * 60000}", null)).isEqualTo("#{@props.windowMinutes * 60000} (as written)");
+    }
+
     @Test
     void whatIsNotUnderstoodSaysWhy() {
         assertThatThrownBy(() -> Cron.parse("0 0 * *", Cron.Format.UNIX)).hasMessageContaining("has 4 fields, a unix cron has 5");
@@ -86,7 +98,7 @@ class CronTest {
         String monday = Schedules.runsOn(kb, "monday", "prod", null, LocalDate.parse("2026-11-20"));
         assertThat(monday).startsWith("2026-11-23 (monday), times in UTC, prod:")
                 .contains("- 01:30:00  job:billing:cleanup  0 30 1 * * *", "- 02:00:00  job:shipping:nightly-export [prod]  0 2 * * 1-5",
-                        "job:billing:poll: every 60000 ms", "then, in a pipeline:\n- job:billing:invoices after job:shipping:nightly-export",
+                        "job:billing:poll: every 1 min", "then, in a pipeline:\n- job:billing:invoices after job:shipping:nightly-export",
                         "job:billing:report: '${report.cron}' has a placeholder with no value")
                 .doesNotContain("settlement", "*/10");
         assertThat(monday.indexOf("cleanup")).as("by first time").isLessThan(monday.indexOf("nightly-export"));
