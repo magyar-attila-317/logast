@@ -28,7 +28,16 @@ public final class Schedules {
     }
 
     /** A job's schedule: a cron, an interval, or why there is none usable. */
-    record Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem) {
+    record Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem, String trigger) {
+        Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem) {
+            this(job, cron, every, problem, null);
+        }
+
+        /** " · <trigger>" when the job has several. */
+        String triggerLabel() {
+            return trigger == null ? "" : " · " + trigger;
+        }
+
         ZoneId zone(ZoneId fallback) {
             Object z = job.fact().attrs().get("zone");
             try {
@@ -37,6 +46,32 @@ public final class Schedules {
                 return fallback;
             }
         }
+    }
+
+    /** #197: every schedule of a job: one per trigger when its configuration lists several, else its one schedule. */
+    static List<Schedule> all(KnowledgeBase.Fact<Node> job, String env) {
+        Map<String, Object> a = job.fact().attrs();
+        if (a.get("triggers") instanceof List<?> triggers && !triggers.isEmpty()) {
+            Cron.Format format = "quartz".equals(a.get("entrypoint")) ? Cron.Format.QUARTZ : Cron.Format.SPRING;
+            List<Schedule> out = new ArrayList<>();
+            for (Object t : triggers) {
+                if (!(t instanceof Map<?, ?> m) || m.get("cron") == null) {
+                    continue;
+                }
+                String expr = String.valueOf(m.get("cron"));
+                String label = m.get("name") != null ? String.valueOf(m.get("name")) : expr;
+                try {
+                    out.add(new Schedule(job, Cron.parse(expr, format), null, null, label));
+                } catch (IllegalArgumentException e) {
+                    out.add(new Schedule(job, null, null, e.getMessage(), label));
+                }
+            }
+            if (!out.isEmpty()) {
+                return out;
+            }
+        }
+        Schedule one = of(job, env);
+        return one == null ? List.of() : List.of(one);
     }
 
     static Schedule of(KnowledgeBase.Fact<Node> job) {
@@ -167,11 +202,8 @@ public final class Schedules {
             if (!f.fact().kind().equals("job") || !inEnv(f.fact(), env)) {
                 continue;
             }
-            Schedule s = of(f, env);
-            if (s == null) {
-                continue;
-            }
-            String label = f.fact().id() + (f.fact().env() == null ? "" : " [" + f.fact().env() + "]");
+            for (Schedule s : all(f, env)) {
+            String label = f.fact().id() + (f.fact().env() == null ? "" : " [" + f.fact().env() + "]") + s.triggerLabel();
             String src = " (" + KnowledgeBase.cite(f.fact().evidence(), f.header()) + ")";
             if (s.problem() != null) {
                 unknown.add("- " + label + ": " + s.problem() + src);
@@ -188,6 +220,7 @@ public final class Schedules {
                             + (z.equals(zone) ? "" : "  [" + z + "]") + src, times.getFirst(), f.fact().id()));
                     ran.add(f.fact().id());
                 }
+            }
             }
         }
         hits.sort(Comparator.comparing(Hit::first).thenComparing(Hit::line));
@@ -236,11 +269,14 @@ public final class Schedules {
             if (!f.fact().id().equals(id) || !inEnv(f.fact(), env)) {
                 continue;
             }
-            Schedule s = of(f, env);
-            sb.append(id).append(f.fact().env() == null ? "" : " [" + f.fact().env() + "]").append(": ");
-            if (s == null) {
+            List<Schedule> ss = all(f, env);
+            if (ss.isEmpty()) {
+                sb.append(id).append(f.fact().env() == null ? "" : " [" + f.fact().env() + "]").append(": ");
                 sb.append("no schedule in the facts (it may run in a pipeline or when called)\n");
-            } else if (s.problem() != null) {
+            }
+            for (Schedule s : ss) {
+            sb.append(id).append(f.fact().env() == null ? "" : " [" + f.fact().env() + "]").append(s.triggerLabel()).append(": ");
+            if (s.problem() != null) {
                 sb.append(s.problem()).append('\n');
             } else if (s.every() != null) {
                 sb.append(s.every()).append('\n');
@@ -249,6 +285,7 @@ public final class Schedules {
                 sb.append(s.cron().expression()).append(z.equals(zone) ? "" : " [" + z + "]").append('\n');
                 s.cron().next(now.withZoneSameInstant(z), count)
                         .forEach(t -> sb.append("- ").append(t.withZoneSameInstant(zone).format(DateTimeFormatter.ofPattern("EEE yyyy-MM-dd HH:mm:ss", Locale.ROOT))).append('\n'));
+            }
             }
         }
         return sb.isEmpty() ? "No job " + id + (env == null ? "" : " in " + env) + ". " + kb.find(id.substring(id.lastIndexOf(':') + 1), "job", 5) : sb.toString();
