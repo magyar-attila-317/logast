@@ -157,8 +157,11 @@ environment, without the `terragrunt` or `terraform` CLIs: no state, no credenti
   (`get_env`, `get_terragrunt_dir`, `read_terragrunt_config`) are evaluated; nothing is written into the repo. If both
   fail, the HCL is read as above. The unit says which (`inputsFrom: terragrunt|hcl`). `LOGAST_TERRAGRUNT` picks another
   terragrunt binary than the PATH's.
-- **Layout**: units under `terragrunt/<subscription>/<region>/<env>/…`: the environment is the segment after the
-  region. The module is the folder the unit's `source` names under `terraform/` (`…/terraform//<module>`); one level of
+- **Layout**: a unit is a leaf `terragrunt.hcl` (none below it) that, or the file it includes, names a `source`, so
+  the classic root `terragrunt.hcl` (remote state, shared arguments) is no unit. The environment is a folder named like
+  one (`dev`, `rtl`, `ppe`, `uat`, `staging`, `prod`, …) anywhere in the path, else, under
+  `terragrunt/<subscription>/<region>/<env>/…`, the segment after the region. The module is the folder the unit's `source` names: relative, absolute, under `get_parent_terragrunt_dir()` or
+  `get_repo_root()`, or `terraform/<module>`; a module in another repo (`git::`, a registry) is named, not read; one level of
   local submodules (`module` blocks with a `./` source) is followed with the block's arguments as variables.
 - **Facts** per environment: `resource:<type>:<name>` for every resource (`location`, `sku_name`, `tags`, …); a Key
   Vault secret is `secret:<vault>/<name>`, the id the Helm facts use, with `content_type`, `expiration_date`, `tags`,
