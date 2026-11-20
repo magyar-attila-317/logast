@@ -63,6 +63,18 @@ final class Fleet implements Callable<Integer> {
     @Option(names = "--kb", description = "Named fleet: also export every member's facts (any repo layout) into <fleet>/kb/<member>/ "
             + "and apply kb/mappings/*.yaml into kb/mapped/: the fleet's knowledge base for logast mcp (#182)")
     boolean kb;
+    @Option(names = "--kb-full", description = "With --kb: export every member, also those unchanged since their last export (#184)")
+    boolean kbFull;
+    @Option(names = "--kb-threads", defaultValue = "2", description = "With --kb: members exported at a time (one analysis can "
+            + "take a few GB; default: ${DEFAULT-VALUE})")
+    int kbThreads;
+    @Option(names = "--flyway", description = "With --kb: also the tables (and --rows) each member's Flyway migrations create, "
+            + "per environment: runs them in a throwaway PostgreSQL (needs Docker)")
+    boolean flyway;
+    @Option(names = "--rows", split = ",", description = "With --kb --flyway: tables whose rows become facts")
+    List<String> rows = new java.util.ArrayList<>();
+    @Option(names = "--postgres-image", description = "With --kb --flyway: the PostgreSQL image (default: postgres:16-alpine)")
+    String postgresImage;
     @Option(names = "--refresh", description = "Named fleet: rescan every member first, and update the clones of repos.yaml "
             + "(default: the snapshots their last scan or apply left; a member with new commits since its snapshot is rescanned anyway); "
             + "an added member's scan writes only to the fleet folder")
@@ -164,9 +176,16 @@ final class Fleet implements Callable<Integer> {
         Policy policy = Logast.policy(r, null);
         Main.warnOnce(policy);
         System.err.println("scanning " + r);
-        ScanResult scan = Logast.scan(r, Logast.classpath(r, classpathFile), policy);
+        List<Path> cp = Logast.classpath(r, classpathFile);
+        ScanResult scan = Logast.scan(r, cp, policy);
+        lastScanned = new dev.logast.export.Export.Analysed(Logast.lastAnalysis, scan, cp);   // #184: the export reuses it
+        lastScannedRoot = r;
         return NamedFleet.snapshot(r, scan, Logast.lastAnalysis, policy);
     }
+
+    /** #184: the analysis of the member scanned last (the refresh goes one member at a time), for its export. */
+    static dev.logast.export.Export.Analysed lastScanned;
+    static Path lastScannedRoot;
 
     /**
      * #132: scans a member {@code fleet add} registered: the analysis of `logast scan`, with the policy defaults →
@@ -191,6 +210,8 @@ final class Fleet implements Callable<Integer> {
         System.err.println("scanning " + r + " (read-only; results in " + out + ")");
         ScanResult scan = Logast.scan(r, cp, policy);
         Analysis a = Logast.lastAnalysis;
+        lastScanned = new dev.logast.export.Export.Analysed(a, scan, cp);   // #184: the export reuses it
+        lastScannedRoot = r;
         Path orders = LogastDir.in(out, LogastDir.ORDERS);
         Files.createDirectories(orders.getParent());
         OrderJson.MAPPER.writeValue(orders.toFile(), scan);
@@ -249,22 +270,68 @@ final class Fleet implements Callable<Integer> {
     }
 
     /** #182: every member's facts into {@code <fleet>/kb/<member>/}, then the fleet's mappings into {@code kb/mapped/}. */
+    /** #184: members exported during this run's refresh (with the scan's analysis). */
+    private final java.util.Set<String> kbDone = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private dev.logast.export.Export.FlywayOptions flywayOptions() {
+        return flyway ? new dev.logast.export.Export.FlywayOptions(rows, postgresImage) : null;
+    }
+
+    private String kbOptions() throws IOException {
+        return KbExport.optionsKey(McpCmd.version(), flywayOptions(), classpathFile, noBuilds);
+    }
+
+    /** One member's facts into {@code kb/<member>/}, unless its commit and the options are those of its last export. */
+    private void exportMember(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot) {
+        Path out = dir.resolve("kb").resolve(name);
+        try {
+            String commit = dev.logast.fleet.NamedFleet.commit(root);
+            String options = kbOptions();
+            if (!kbFull && KbExport.upToDate(out, commit, options)) {
+                System.err.println("fleet --kb: " + name + ": unchanged since its last export (" + commit + "), kept");
+                return;
+            }
+            Path ar = analysedRoot == null ? null : analysedRoot.toAbsolutePath().normalize();
+            dev.logast.export.RepoExport.Result r = KbExport.repo(root, name, out, dir.resolve(".cache/kb-classpath").resolve(name),
+                    classpathFile, noBuilds, flywayOptions(), List.of(), List.of(),
+                    rootDir -> analysed != null && rootDir.toAbsolutePath().normalize().equals(ar) ? analysed : null);
+            KbExport.stamp(out, commit, options);
+            System.err.println("fleet --kb: " + name + ": " + r.files().size() + " facts file(s) in " + out);
+            r.problems().forEach(p2 -> System.err.println("fleet --kb: " + name + ": " + p2));
+        } catch (IOException | RuntimeException e) {
+            Out.warn("fleet --kb: " + name + " not exported (" + e.getMessage() + ")");
+        }
+    }
+
     private void knowledgeBase(Path dir, Map<String, Path> members) throws IOException {
         Path kbDir = dir.resolve("kb");
         Files.createDirectories(kbDir);
+        List<java.util.concurrent.Callable<Void>> work = new java.util.ArrayList<>();
         for (var m : members.entrySet()) {
+            if (kbDone.contains(m.getKey())) {
+                continue;
+            }
             if (!Files.isDirectory(m.getValue())) {
                 Out.warn("fleet --kb: " + m.getKey() + " is not at " + m.getValue() + " on this machine; its facts stay as they were");
                 continue;
             }
-            try (Out.Progress p = new Out.Progress("exporting the facts of " + m.getKey())) {
-                dev.logast.export.RepoExport.Result r = KbExport.repo(m.getValue(), m.getKey(), kbDir.resolve(m.getKey()),
-                        dir.resolve(".cache/kb-classpath").resolve(m.getKey()), classpathFile, noBuilds, null, List.of(), List.of());
-                System.err.println("fleet --kb: " + m.getKey() + ": " + r.files().size() + " facts file(s) in " + kbDir.resolve(m.getKey()));
-                r.problems().forEach(p2 -> System.err.println("fleet --kb: " + m.getKey() + ": " + p2));
-            } catch (IOException | RuntimeException e) {
-                Out.warn("fleet --kb: " + m.getKey() + " not exported (" + e.getMessage() + ")");
+            work.add(() -> {
+                System.err.println("fleet --kb: exporting " + m.getKey());
+                exportMember(dir, m.getKey(), m.getValue(), null, null);
+                return null;
+            });
+        }
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(Math.max(1, kbThreads));
+        try {
+            for (var f : pool.invokeAll(work)) {
+                f.get();
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException e) {
+            Out.warn("fleet --kb: " + e.getCause());
+        } finally {
+            pool.shutdown();
         }
         KbExport.mappings(kbDir).forEach(l -> System.err.println("fleet --kb: " + l));
         System.err.println("fleet --kb: knowledge base in " + kbDir + "; `logast mcp config --kb " + kbDir + "` connects an MCP client");
@@ -297,8 +364,14 @@ final class Fleet implements Callable<Integer> {
                 }
                 String svc = m.getKey();
                 Path root = m.getValue();
+                lastScanned = null;
                 skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc) ? scanAdded(dir, svc, root, classpathFile, noBuilds)
                         : scan(root)));
+                if (kb && lastScanned != null) {   // #184: exported now, with the analysis the scan just made
+                    exportMember(dir, svc, root, lastScanned, lastScannedRoot);
+                    kbDone.add(svc);
+                }
+                lastScanned = null;
             }
         }
         if (!refresh) {

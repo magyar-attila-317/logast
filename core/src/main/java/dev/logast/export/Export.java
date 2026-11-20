@@ -38,9 +38,30 @@ public final class Export {
      */
     public static void java(Path root, List<Path> classpath, Policy policy, String repo, String version, FlywayOptions flyway,
                             Writer out, String rootPrefix, boolean repoFacts) throws IOException {
+        java(root, analyse(root, classpath, policy), repo, version, flyway, out, rootPrefix, repoFacts);
+    }
+
+    /** #184: an analysis and its scan, made once and shared (the fleet's scan and the export of the same root). */
+    public record Analysed(Analysis analysis, ScanResult scan, List<Path> classpath) {
+    }
+
+    /**
+     * Analyses a root without touching logast's last-analysis statics, so exports can run side by side (#184): as
+     * {@link Logast#scan}, the analysis with the root's traffic file, then the rules.
+     */
+    public static Analysed analyse(Path root, List<Path> classpath, Policy policy) {
         Path r = root.toAbsolutePath().normalize();
-        ScanResult scan = Logast.scan(r, classpath, policy);
-        Analysis a = Logast.lastAnalysis;
+        Analysis a = Logast.analyse(r, classpath, policy).withTraffic(dev.logast.Traffic.load(r, null));
+        return new Analysed(a, dev.logast.rules.Rules.scan(a), classpath);
+    }
+
+    /** The facts of a root from an analysis already made. */
+    public static void java(Path root, Analysed analysed, String repo, String version, FlywayOptions flyway,
+                            Writer out, String rootPrefix, boolean repoFacts) throws IOException {
+        Path r = root.toAbsolutePath().normalize();
+        ScanResult scan = analysed.scan();
+        Analysis a = analysed.analysis();
+        List<Path> classpath = analysed.classpath();
         String commit = NamedFleet.commit(r);
         String extractor = flyway == null ? JavaExtractor.ID : JavaExtractor.ID + "+" + FlywayExtractor.ID;
         String repoName = repo != null ? repo : NamedFleet.serviceName(r);

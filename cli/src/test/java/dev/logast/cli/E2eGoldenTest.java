@@ -7453,6 +7453,24 @@ abstract class E2eGoldenTest {
             assertThat(git(fleetRepo, "status", "--porcelain", "--untracked-files=all").lines().map(l -> l.substring(3)).toList())
                     .as("kb/ is committed; its classpath cache is not").contains("kb/orders/repo.jsonl", "kb/mapped/owners.jsonl")
                     .noneMatch(f -> f.contains("kb-classpath"));
+
+            // #184: unchanged members are kept; a new commit is exported during the refresh that scans it; --kb-full redoes all
+            String cpFile = fleetRepo.resolve(".cache/classpath.txt").toString();
+            STDERR.setLength(0);
+            run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file", cpFile);
+            assertThat(STDERR.toString()).contains("fleet --kb: orders: unchanged since its last export", "fleet --kb: stock: unchanged since its last export")
+                    .doesNotContain("facts file(s)");
+            writeSource(stock, "com/example/stock/StockController.java", Files.readString(
+                    stock.resolve("src/main/java/com/example/stock/StockController.java")).replace("/holds/{id}", "/blocks/{id}"));
+            git(stock, "commit", "--quiet", "-am", "renamed again");
+            STDERR.setLength(0);
+            run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--kb", "--no-builds", "--classpath-file", cpFile);
+            assertThat(STDERR.toString()).as(STDERR.toString()).contains("fleet --kb: orders: unchanged since its last export", "fleet --kb: stock: 1 facts file(s)")
+                    .doesNotContain("fleet --kb: exporting stock");   // exported right after its scan, with that analysis
+            assertThat(Files.readString(fleetRepo.resolve("kb/stock/repo.jsonl"))).contains("endpoint:stock:POST /blocks/{id}");
+            STDERR.setLength(0);
+            run(tmp, "fleet", fleetRepo.toString(), "--kb", "--kb-full", "--no-builds", "--classpath-file", cpFile);
+            assertThat(STDERR.toString()).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: 1 facts file(s)");
         } finally {
             System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
         }
