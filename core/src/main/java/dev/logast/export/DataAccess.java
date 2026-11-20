@@ -183,15 +183,80 @@ final class DataAccess {
 
     private void sql(MethodInfo m, Expression arg, String via, String file, int line, List<Access> out) {
         String text = arg == null ? null : Constants.concatenated(index, arg);
-        if (text == null) {
-            out.add(new Access(m, false, null, via, file, line, false));
-        } else {
+        if (text != null) {
             sqlText(m, text, via, file, line, out);
+            return;
         }
+        // #177: built SQL: the tables its constant parts name (a variable part stands for nothing, so a table name
+        // built at runtime is not guessed); unresolved only when they name none
+        String partial = arg == null ? null : partial(arg, 0);
+        if (partial != null && SESSION.matcher(partial).matches()) {
+            return;
+        }
+        if (partial != null && !partial.isBlank()) {
+            List<Access> found = new ArrayList<>();
+            keywords(m, partial, via, file, line, found);
+            if (found.stream().anyMatch(x -> x.table() != null)) {
+                out.addAll(found);
+                return;
+            }
+        }
+        out.add(new Access(m, false, null, via, file, line, false));
+    }
+
+    /** The constant text of an expression, with {@code \u0000} where the code computes a part. */
+    private String partial(Expression e, int depth) {
+        if (depth > 20) {
+            return "\u0000";
+        }
+        String c = Constants.concatenated(index, e);
+        if (c != null) {
+            return c;
+        }
+        if (e instanceof J.Binary b && b.getOperator() == J.Binary.Type.Addition) {
+            return partial(b.getLeft(), depth + 1) + partial(b.getRight(), depth + 1);
+        }
+        if (e instanceof J.Parentheses<?> p && p.getTree() instanceof Expression inner) {
+            return partial(inner, depth + 1);
+        }
+        return "\u0000";
+    }
+
+    /** Tables from a statement's keywords alone (no parser): for SQL only partly known. */
+    private static void keywords(MethodInfo m, String sql0, String via, String file, int line, List<Access> out) {
+        if (SESSION.matcher(sql0).matches()) {
+            return;
+        }
+        String sql = sql0.replace("\u0000.", "");   // a schema built at runtime (per tenant): the table, without it
+        boolean write = SQL_WRITE.matcher(sql).find();
+        Matcher s = SQL_SOURCE.matcher(sql);
+        boolean first = true;
+        String written = null;
+        Set<String> reads = new LinkedHashSet<>();
+        while (s.find()) {
+            String n = tableName(s.group(1));
+            if (write && first) {
+                written = n;
+            } else if (!n.equals(written)) {
+                reads.add(n);
+            }
+            first = false;
+        }
+        if (written != null) {
+            out.add(new Access(m, true, written, via, file, line, false));
+        }
+        reads.forEach(r -> out.add(new Access(m, false, r, via, file, line, false)));
     }
 
     /** Tables a statement reads and the one it writes; a statement JSqlParser cannot read falls back to its keywords. */
+    /** Session and transaction commands: they touch no table (#177). */
+    private static final Pattern SESSION = Pattern.compile("(?is)^\\s*(set|reset|show|begin|start\\s+transaction|commit|rollback|"
+            + "savepoint|release|discard|listen|notify|unlisten|vacuum|analyze|checkpoint|lock\\s+table)\\b.*");
+
     static void sqlText(MethodInfo m, String sql, String via, String file, int line, List<Access> out) {
+        if (SESSION.matcher(sql).matches()) {
+            return;
+        }
         Set<String> reads = new LinkedHashSet<>();
         String written = null;
         boolean parsed = true;
@@ -230,8 +295,8 @@ final class DataAccess {
         for (String r : reads) {
             out.add(new Access(m, false, r, via, file, line, parsed));
         }
-        if (written == null && reads.isEmpty()) {
-            out.add(new Access(m, false, null, via, file, line, parsed));
+        if (written == null && reads.isEmpty() && !parsed) {   // #177: parsed with no table (a lock, nextval, SET): no fact
+            out.add(new Access(m, false, null, via, file, line, false));
         }
     }
 
