@@ -45,10 +45,11 @@ public final class Schedules {
         Cron.Format format;
         if (a.get("schedule") != null) {
             expr = a.get("schedule").toString();
-            format = "spring".equalsIgnoreCase(String.valueOf(a.get("scheduleFormat"))) ? Cron.Format.SPRING : Cron.Format.UNIX;
+            String sf = String.valueOf(a.get("scheduleFormat"));
+            format = "spring".equalsIgnoreCase(sf) ? Cron.Format.SPRING : "quartz".equalsIgnoreCase(sf) ? Cron.Format.QUARTZ : Cron.Format.UNIX;
         } else if (a.get("cronResolved") != null || a.get("cron") != null) {
             expr = String.valueOf(a.get("cronResolved") != null ? a.get("cronResolved") : a.get("cron"));
-            format = Cron.Format.SPRING;
+            format = "quartz".equals(a.get("entrypoint")) ? Cron.Format.QUARTZ : Cron.Format.SPRING;   // #187
         } else if (a.get("fixedRate") != null || a.get("fixedDelay") != null) {
             boolean rate = a.get("fixedRate") != null;
             String key = rate ? "fixedRate" : "fixedDelay";

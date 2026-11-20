@@ -95,7 +95,6 @@ public final class JavaExtractor implements Extractor {
         Map<MethodInfo, List<String>> entryIds = entrypoints(svc, service, surface, sink);
         calls(svc, service, surface, entryIds, sink);
         beans(svc, entryIds, sink);
-        quartz(svc, service, sink);
         tables(svc, service, entryIds, sink);
         files(svc, service, entryIds, sink);
         libraries.forEach((ga, version) -> {
@@ -171,6 +170,7 @@ public final class JavaExtractor implements Extractor {
                 }
             }
         }
+        quartz(svc, service, sink, ids);
         return ids;
     }
 
@@ -447,18 +447,177 @@ public final class JavaExtractor implements Extractor {
 
     // ---- Quartz -------------------------------------------------------------------------------------------------------
 
-    private void quartz(String svc, String service, Sorted sink) {
-        for (ClassInfo c : a.index.classes()) {
-            if (c.isInterface() || c.type() == null) {
-                continue;
+    private static final Set<String> QUARTZ_TYPES = Set.of("org.quartz.Job", "org.quartz.InterruptableJob", "org.quartz.StatefulJob",
+            "org.springframework.scheduling.quartz.QuartzJobBean");
+    private static final Pattern CLASS_LITERAL = Pattern.compile("\\b([A-Z][A-Za-z0-9_]*)\\.class\\b");
+    private static final Pattern CRON_CALL = Pattern.compile("(?:cronSchedule|cronScheduleNonvalidatedExpression|setCronExpression|"
+            + "withCronSchedule|cronExpression|new\\s+CronExpression)\\s*\\(\\s*(?:\"((?:[^\"\\\\]|\\\\.)*)\"|([A-Za-z_][A-Za-z0-9_.]*))\\s*\\)");
+
+    /**
+     * #187: Quartz jobs: classes that are a {@code org.quartz.Job} (or Spring's {@code QuartzJobBean}), by type when the
+     * classpath has Quartz, else by what the source names (with an import of Quartz), and classes extending such a class
+     * of the repo. Each is an entrypoint: its {@code execute} (or {@code executeInternal}; else the methods it overrides
+     * of a base class) is where its calls, reads and writes start. Its schedule, when the code builds it next to the
+     * job's class ({@code JobBuilder.newJob(X.class)} … {@code cronSchedule("…")}, a {@code CronTriggerFactoryBean}),
+     * is its {@code cron}, in Quartz's dialect.
+     */
+    private void quartz(String svc, String service, Sorted sink, Map<MethodInfo, List<String>> ids) {
+        Map<String, ClassInfo> jobs = quartzJobs();
+        if (jobs.isEmpty()) {
+            return;
+        }
+        Map<String, String> crons = quartzSchedules(jobs);
+        for (ClassInfo c : jobs.values()) {
+            if (c.decl().hasModifier(J.Modifier.Type.Abstract)) {
+                continue;   // a base class: its subclasses are the jobs
             }
-            if (TypeUtils.isAssignableTo("org.quartz.Job", c.type())) {
-                Evidence at = Evidence.at(c.file().relPath(), line(Pos.line(c.decl().getName())));
-                Node n = Node.of("job", svc + ":" + c.fqn(), Map.of("entrypoint", "quartz", "handler", c.fqn()), at);
-                sink.node(n);
-                sink.edge(Edge.extracted(service, "has", n.id(), null, at));
+            List<MethodInfo> own = a.index.methods().stream().filter(m -> m.owner().fqn().equals(c.fqn())).toList();
+            List<MethodInfo> entry = own.stream().filter(m -> m.name().equals("execute") || m.name().equals("executeInternal")).toList();
+            if (entry.isEmpty()) {
+                entry = own.stream().filter(m -> m.decl().getLeadingAnnotations().stream()
+                        .anyMatch(an -> an.getSimpleName().equals("Override"))).toList();
+            }
+            Evidence at = Evidence.at(c.file().relPath(), line(Pos.line(c.decl().getName())));
+            Map<String, Object> attrs = new TreeMap<>();
+            attrs.put("entrypoint", "quartz");
+            attrs.put("handler", c.fqn());
+            String cron = crons.get(c.fqn());
+            if (cron != null) {
+                attrs.put("cron", cron);
+                if (!entry.isEmpty()) {
+                    schedule(entry.getFirst(), attrs);   // resolves a ${…} in it, as for @Scheduled
+                }
+            }
+            Node n = Node.of("job", svc + ":" + c.fqn(), attrs, at);
+            sink.node(n);
+            sink.edge(Edge.extracted(service, "has", n.id(), null, at));
+            for (MethodInfo m : entry) {
+                ids.computeIfAbsent(m, k -> new ArrayList<>()).add(n.id());
             }
         }
+    }
+
+    /** fqn → class, for every Quartz job class of the repo (abstract ones too: their subclasses are found through them). */
+    Map<String, ClassInfo> quartzJobs() {
+        Map<String, ClassInfo> jobs = new LinkedHashMap<>();
+        List<ClassInfo> classes = a.index.classes().stream().filter(c -> !c.isInterface()).toList();
+        for (ClassInfo c : classes) {
+            boolean byType = c.type() != null && QUARTZ_TYPES.stream().anyMatch(t -> TypeUtils.isAssignableTo(t, c.type()));
+            boolean bySource = (c.file().text().contains("org.quartz.") || c.file().text().contains("org.springframework.scheduling.quartz"))
+                    && supertypes(c).stream().anyMatch(n -> QUARTZ_TYPES.contains(n)
+                    || QUARTZ_TYPES.stream().anyMatch(t -> t.endsWith("." + n)));
+            if (byType || bySource) {
+                jobs.put(c.fqn(), c);
+            }
+        }
+        boolean more = true;
+        while (more) {   // a class extending a job class of the repo, without a classpath to say so
+            more = false;
+            for (ClassInfo c : classes) {
+                if (jobs.containsKey(c.fqn())) {
+                    continue;
+                }
+                for (String n : supertypes(c)) {
+                    ClassInfo base = jobs.get(n);
+                    if (base == null) {
+                        base = jobs.values().stream().filter(j -> j.simpleName().equals(n)).findFirst().orElse(null);
+                    }
+                    if (base != null) {
+                        jobs.put(c.fqn(), c);
+                        more = true;
+                        break;
+                    }
+                }
+            }
+        }
+        return jobs;
+    }
+
+    /** The names a class extends and implements, as written (generics dropped) and, when resolved, fully qualified. */
+    private static List<String> supertypes(ClassInfo c) {
+        List<org.openrewrite.java.tree.TypeTree> trees = new ArrayList<>();
+        if (c.decl().getExtends() != null) {
+            trees.add(c.decl().getExtends());
+        }
+        if (c.decl().getImplements() != null) {
+            trees.addAll(c.decl().getImplements());
+        }
+        List<String> out = new ArrayList<>();
+        for (var t : trees) {
+            out.add(t.printTrimmed().replaceAll("<.*|\\s+", ""));
+            if (t.getType() instanceof org.openrewrite.java.tree.JavaType.FullyQualified fq && !(fq instanceof org.openrewrite.java.tree.JavaType.Unknown)) {
+                out.add(fq.getFullyQualifiedName());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * #187: job class → its cron, where the code builds the schedule next to the class: in one method (one job class
+     * literal and a cron), else in one class (a configuration with one job and its trigger). A cron in a constant is
+     * read from the constant; ambiguous places (two jobs, two crons) give none.
+     */
+    private Map<String, String> quartzSchedules(Map<String, ClassInfo> jobs) {
+        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, List<String[]>> perClass = new LinkedHashMap<>();   // class → [job, cron] found in its methods
+        for (MethodInfo m : a.index.methods()) {
+            String text = m.decl().getBody() == null ? "" : m.decl().getBody().printTrimmed();
+            if (!text.contains(".class")) {
+                continue;
+            }
+            java.util.Set<String> js = new java.util.LinkedHashSet<>();
+            Matcher cl = CLASS_LITERAL.matcher(text);
+            while (cl.find()) {
+                String n = cl.group(1);
+                jobs.values().stream().filter(j -> j.simpleName().equals(n) && !j.decl().hasModifier(J.Modifier.Type.Abstract))
+                        .findFirst().ifPresent(j -> js.add(j.fqn()));
+            }
+            java.util.Set<String> cs = new java.util.LinkedHashSet<>();
+            Matcher cr = CRON_CALL.matcher(text);
+            while (cr.find()) {
+                String v = cr.group(1) != null ? cr.group(1) : constant(m.owner(), cr.group(2));
+                if (v != null) {
+                    cs.add(v);
+                }
+            }
+            List<String[]> found = perClass.computeIfAbsent(m.owner().fqn(), k -> new ArrayList<>());
+            js.forEach(j -> found.add(new String[]{j, null}));
+            cs.forEach(c -> found.add(new String[]{null, c}));
+            if (js.size() == 1 && cs.size() == 1) {
+                out.putIfAbsent(js.iterator().next(), cs.iterator().next());
+            }
+        }
+        perClass.forEach((cls, found) -> {
+            List<String> js = found.stream().map(f -> f[0]).filter(java.util.Objects::nonNull).distinct().toList();
+            List<String> cs = found.stream().map(f -> f[1]).filter(java.util.Objects::nonNull).distinct().toList();
+            if (js.size() == 1 && cs.size() == 1) {
+                out.putIfAbsent(js.getFirst(), cs.getFirst());
+            }
+        });
+        return out;
+    }
+
+    /** A string constant's value: {@code NAME = "…"} in the class's file (or {@code Other.NAME} in the repo). */
+    private String constant(ClassInfo owner, String ref) {
+        String name = ref.substring(ref.lastIndexOf('.') + 1);
+        Pattern def = Pattern.compile("\\b" + Pattern.quote(name) + "\\s*=\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+        Matcher mm = def.matcher(owner.file().text());
+        if (mm.find()) {
+            return mm.group(1);
+        }
+        if (ref.contains(".")) {
+            String cls = ref.substring(0, ref.lastIndexOf('.'));
+            String simple = cls.substring(cls.lastIndexOf('.') + 1);
+            for (ClassInfo c : a.index.classes()) {
+                if (c.simpleName().equals(simple)) {
+                    Matcher m2 = def.matcher(c.file().text());
+                    if (m2.find()) {
+                        return m2.group(1);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     // ---- libraries ----------------------------------------------------------------------------------------------------

@@ -265,6 +265,19 @@ its paths (#171).
   The [JSON Schema](../facts/src/main/resources/dev/logast/facts/kb-facts-0.schema.json) checks single lines in any
   language.
 
+## Quartz jobs
+
+A class that is a `org.quartz.Job` (or `InterruptableJob`, `StatefulJob`, Spring's `QuartzJobBean`) is a `job` with
+`entrypoint: quartz` and its class as `handler` (#187): by type when the classpath has Quartz, else by what the source
+names with an import of Quartz, and classes extending a job class of the repo too (an abstract base class is no job).
+Its `execute` (or `executeInternal`; else the methods it overrides of its base class) is where its calls, reads and
+writes start, so `lineage`, `writers_of` and `readers_of` see them. Its `cron` is read where the code builds the schedule
+next to the job's class: one method with `JobBuilder.newJob(X.class)` and `cronSchedule(…)`, or one configuration
+class with one job and its trigger (`CronTriggerFactoryBean.setCronExpression`); a constant is read, a `${…}` resolved as
+for `@Scheduled`. `runs_on` and `next_runs` read it in Quartz's dialect (seconds first, weekdays 1 = Sunday to 7, an
+optional year). Jobs whose schedule lives in database rows link through a mapping on the row's class name
+(`handler`).
+
 ## No secrets in facts
 
 Facts are committed (the fleet's `kb/`) and read by an LLM, so they never carry a secret (#183). Where a literal value

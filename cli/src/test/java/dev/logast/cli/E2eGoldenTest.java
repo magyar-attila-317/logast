@@ -7471,6 +7471,24 @@ abstract class E2eGoldenTest {
             STDERR.setLength(0);
             run(tmp, "fleet", fleetRepo.toString(), "--kb", "--kb-full", "--no-builds", "--classpath-file", cpFile);
             assertThat(STDERR.toString()).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: 1 facts file(s)");
+            // #187: a new logast build (same version until a release) re-exports, the members' code unchanged
+            Path stamp = fleetRepo.resolve("kb/orders/.export.json");
+            Files.writeString(stamp, Files.readString(stamp).replaceFirst("\\(([^)]*)\\)", "(an-older-build)"));
+            STDERR.setLength(0);
+            run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file", cpFile);
+            assertThat(STDERR.toString()).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: unchanged since its last export");
+            // #187: an export with problems is not recorded as done: the next run exports it again
+            Files.createDirectories(stock.resolve(".github/workflows"));
+            Files.writeString(stock.resolve(".github/workflows/broken.yml"), "on: [push\njobs: {\n");
+            git(stock, "add", ".");
+            git(stock, "commit", "--quiet", "-m", "a broken workflow");
+            STDERR.setLength(0);
+            run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--kb", "--no-builds", "--classpath-file", cpFile);
+            assertThat(STDERR.toString()).as(STDERR.toString()).contains("fleet --kb: stock: 1 problem(s), so it is exported again next run");
+            assertThat(fleetRepo.resolve("kb/stock/.export.json")).doesNotExist();
+            STDERR.setLength(0);
+            run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file", cpFile);
+            assertThat(STDERR.toString()).contains("fleet --kb: orders: unchanged since its last export", "fleet --kb: stock: 1 facts file(s)");
         } finally {
             System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
         }

@@ -278,7 +278,7 @@ final class Fleet implements Callable<Integer> {
     }
 
     private String kbOptions() throws IOException {
-        return KbExport.optionsKey(McpCmd.version(), flywayOptions(), classpathFile, noBuilds);
+        return KbExport.optionsKey(McpCmd.build(), flywayOptions(), classpathFile, noBuilds);   // a new logast build re-exports
     }
 
     /** One member's facts into {@code kb/<member>/}, unless its commit and the options are those of its last export. */
@@ -295,9 +295,14 @@ final class Fleet implements Callable<Integer> {
             dev.logast.export.RepoExport.Result r = KbExport.repo(root, name, out, dir.resolve(".cache/kb-classpath").resolve(name),
                     classpathFile, noBuilds, flywayOptions(), List.of(), List.of(),
                     rootDir -> analysed != null && rootDir.toAbsolutePath().normalize().equals(ar) ? analysed : null);
-            KbExport.stamp(out, commit, options);
             System.err.println("fleet --kb: " + name + ": " + r.files().size() + " facts file(s) in " + out);
             r.problems().forEach(p2 -> System.err.println("fleet --kb: " + name + ": " + p2));
+            if (r.problems().isEmpty()) {
+                KbExport.stamp(out, commit, options);
+            } else {   // #187: a partial export is not done: the next run exports it again, once its cause is fixed
+                Files.deleteIfExists(out.resolve(KbExport.STAMP));
+                System.err.println("fleet --kb: " + name + ": " + r.problems().size() + " problem(s), so it is exported again next run");
+            }
         } catch (IOException | RuntimeException e) {
             Out.warn("fleet --kb: " + name + " not exported (" + e.getMessage() + ")");
         }
