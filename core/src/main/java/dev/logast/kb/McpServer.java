@@ -142,6 +142,8 @@ public final class McpServer {
                     + "the services whose code runs there; optionally only those expiring within some days.",
                     new String[][]{{"text", "string", "only secrets whose id contains this"}, {"env", "string", "the environment"},
                             {"expiringDays", "integer", "only secrets that expire within this many days"}}, new String[0]),
+            new Tool("workflow_refs", "Per reusable GitHub Actions workflow, the refs its callers use (who is on an old one).",
+                    new String[][]{{"text", "string", "only workflows whose id contains this"}}, new String[0]),
             new Tool("term", "A business term from the company's glossary (knowledge.yml): its definition and source; an alias "
                     + "or an abbreviation finds its term.", new String[][]{{"name", "string", "the term, alias or abbreviation"}}, new String[]{"name"}),
             new Tool("read_name", "A technical name (a table, column, topic, key: ord_inv_ref, ordInvRef) as business words, through "
@@ -202,6 +204,7 @@ public final class McpServer {
             case "risks" -> Lineage.risks(k, a.path("env").asText(null));
             case "secrets" -> Secrets.list(k, a.path("text").asText(null), a.path("env").asText(null),
                     a.has("expiringDays") ? a.path("expiringDays").asInt() : null, java.time.LocalDate.now(java.time.ZoneOffset.UTC));
+            case "workflow_refs" -> Workflows.refs(k, a.path("text").asText(null));
             case "term" -> k.knowledge().term(a.path("name").asText());
             case "read_name" -> {
                 String r = k.knowledge().read(a.path("name").asText());

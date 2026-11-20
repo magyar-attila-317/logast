@@ -60,6 +60,25 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
             problems.forEach(p -> System.err.println("terraform: " + p));
             return 0;
         }
+        if (rendered == null && dev.logast.export.HelmExtractor.helmfile(root) == null && !javaBuild
+                && !dev.logast.export.TerraformExtractor.applies(root) && dev.logast.export.WorkflowExtractor.applies(root)) {   // #167
+            Writer w = out == null ? new OutputStreamWriter(System.out, StandardCharsets.UTF_8) : Files.newBufferedWriter(out, StandardCharsets.UTF_8);
+            java.util.List<String> problems;
+            try {
+                problems = Export.workflowsOnly(root, repo, version(), w);
+            } finally {
+                if (out != null) {
+                    w.close();
+                } else {
+                    w.flush();
+                }
+            }
+            if (out != null) {
+                System.err.println("facts: " + out);
+            }
+            problems.forEach(p -> System.err.println("workflows: " + p));
+            return 0;
+        }
         if (rendered != null || dev.logast.export.HelmExtractor.helmfile(root) != null) {   // #160: a Helm repo
             java.util.List<String> problems;
             if (out == null) {
