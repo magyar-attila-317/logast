@@ -221,7 +221,7 @@ public final class KnowledgeBase {
     /** {@code knowledge.yml} / {@code knowledge.yaml}: what people decided, loaded with the facts (#163). */
     static boolean isKnowledge(Path f) {
         String n = f.getFileName().toString();
-        return n.equals("knowledge.yml") || n.equals("knowledge.yaml") || n.equals("knowledge.proposed.yml");
+        return n.equals("knowledge.yml") || n.equals("knowledge.yaml") || n.equals("knowledge.proposed.yml") || n.equals("knowledge.decisions.yml");
     }
 
     public Knowledge knowledge() {

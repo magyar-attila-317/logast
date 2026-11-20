@@ -138,5 +138,16 @@ logast manages, so `knowledge.yml` stays the people's.
   name and starts from each of its nodes.
 - Started without a kb path (or from a client that cannot write there), the server is read-only and says so.
 
+## Deciding on a page: `logast mcp review`
+
+`logast mcp review [--kb …] [--by <name>] [--open]` serves a local page (loopback only) with what waits for a person
+(#169): inferred links with no decision or a stale one (the rule, confidence and evidence), workloads two services
+claim, and the LLM's proposals. Approve or reject each:
+
+- Decisions go to `knowledge.decisions.yml` next to `knowledge.yml`: a file logast manages and loads like
+  `knowledge.yml`, so the people's file keeps its comments and layout. Each records who (`--by`, else the user name),
+  when, and the evidence it was decided on, so it goes stale like any other.
+- Approving a proposal copies it there as approved and removes it from `knowledge.proposed.yml`; rejecting removes it.
+
 The server speaks MCP's stdio transport (JSON-RPC 2.0, one message per line: `initialize`, `tools/list`,
 `tools/call`, `ping`); it writes diagnostics to stderr only.
