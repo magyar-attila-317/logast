@@ -338,6 +338,30 @@ public final class FlywayExtractor implements Extractor {
         return v;
     }
 
+    /** Copies of the migration folders without the files named (Flyway then runs the others). */
+    private static List<Path> without(List<Path> folders, Set<String> leave) {
+        List<Path> out = new ArrayList<>();
+        try {
+            for (Path d : folders) {
+                Path copy = Files.createTempDirectory("logast-flyway");
+                try (Stream<Path> s = Files.walk(d)) {
+                    for (Path f : s.filter(Files::isRegularFile).toList()) {
+                        if (leave.contains(f.getFileName().toString())) {
+                            continue;
+                        }
+                        Path to = copy.resolve(d.relativize(f).toString());
+                        Files.createDirectories(to.getParent());
+                        Files.copy(f, to);
+                    }
+                }
+                out.add(copy);
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return out;
+    }
+
     private static final Pattern MISSING = Pattern.compile("(schema|role) \"([^\"]+)\" does not exist"
             + "|No value provided for placeholder: \\$\\{([^}]+)}");
 
@@ -363,21 +387,44 @@ public final class FlywayExtractor implements Extractor {
      * the missing one is created, empty, and the migrations run again (a failed one rolled back: PostgreSQL's DDL is
      * transactional). Said on stderr; what the migrations create still counts.
      */
-    private static void migrateCreatingWhatIsMissing(org.flywaydb.core.api.configuration.FluentConfiguration flyway, String url,
+    /** #196: a migration left out because it needs an object another service makes. */
+    record Skipped(String script, String kind, String name) {
+    }
+
+    private static final Pattern ELSEWHERE = Pattern.compile("(relation|sequence|type|view) \"([^\"]+)\" does not exist");
+    private static final Pattern SCRIPT = Pattern.compile("(?:script|[Mm]igration) ([^\\s/\\\\]+\\.sql)");
+
+    private static List<Skipped> migrateCreatingWhatIsMissing(org.flywaydb.core.api.configuration.FluentConfiguration flyway, String url,
                                                      String user, String password, Run run, Map<String, String> placeholders,
                                                      Map<String, String> config, Set<String> defaulted) throws SQLException {
         Set<String> created = new LinkedHashSet<>();
+        List<Skipped> skipped = new ArrayList<>();
         while (true) {
             try {
                 flyway.load().migrate();
-                return;
+                return skipped;
             } catch (org.flywaydb.core.api.FlywayException e) {
                 Matcher m = null;
-                for (Throwable t = e; t != null && m == null; t = t.getCause()) {
+                StringBuilder all = new StringBuilder();
+                for (Throwable t = e; t != null; t = t.getCause()) {
+                    all.append(t.getMessage()).append('\n');
                     Matcher mm = MISSING.matcher(String.valueOf(t.getMessage()));
-                    if (mm.find()) {
+                    if (m == null && mm.find()) {
                         m = mm;
                     }
+                }
+                Matcher other = ELSEWHERE.matcher(all);
+                Matcher script = SCRIPT.matcher(all);
+                if (m == null && other.find() && script.find() && skipped.size() < 30
+                        && skipped.stream().noneMatch(sk -> sk.script().equals(script.group(1)))) {
+                    // #196: it reads what another service makes (a view on its table, its sequence): left out, the rest still run
+                    skipped.add(new Skipped(script.group(1), other.group(1), other.group(2)));
+                    Set<String> leave = new LinkedHashSet<>();
+                    skipped.forEach(sk -> leave.add(sk.script()));
+                    flyway.locations(without(run.folders(), leave).stream().map(p -> "filesystem:" + p).toArray(String[]::new));
+                    System.err.println("flyway" + (run.env() == null ? "" : " " + run.env()) + ": left out " + script.group(1) + ": it needs "
+                            + other.group(1) + " " + other.group(2) + ", which another service makes");
+                    continue;
                 }
                 if (m == null || created.size() >= 20 || !created.add(m.group(0))) {
                     throw e;
@@ -439,7 +486,18 @@ public final class FlywayExtractor implements Extractor {
                 }
             }
         }
-        migrateCreatingWhatIsMissing(flyway, url, user, password, run, placeholders, config, defaulted);
+        List<Skipped> skipped = migrateCreatingWhatIsMissing(flyway, url, user, password, run, placeholders, config, defaulted);
+        for (Skipped sk : skipped) {   // #196: what a migration needs from elsewhere is a fact: this service reads it
+            String rel = sk.name().contains(".") ? sk.name() : (run.schema() != null ? run.schema()
+                    : config.getOrDefault("spring.flyway.default-schema", "public")) + "." + sk.name();
+            Path f = files.stream().filter(x -> x.getFileName().toString().equals(sk.script())).findFirst().orElse(null);
+            Evidence at = Evidence.at(f == null ? sk.script() : name(root, f), null);
+            Map<String, Object> ea = new TreeMap<>();
+            ea.put("via", "migration " + sk.script());
+            ea.put("madeElsewhere", true);
+            ea.put("objectKind", sk.kind());
+            out.edge(Edge.extracted("service:" + service, "reads", "table:" + rel, ea, at).inEnv(run.env()));
+        }
 
         Map<String, Evidence> createdIn = createdIn(root, files, placeholders);
         try (Connection c = DriverManager.getConnection(url, user, password)) {

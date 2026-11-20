@@ -799,8 +799,17 @@ public final class Main {
                 this(exitCode, entries, compiledClasses, "");
             }
 
+            String whatWentWrong() {
+                return Classpath.whatWentWrong(output);
+            }
+
             /** Gradle's own output, on stderr, when it failed; nothing when it worked. */
             Result printIfFailed() {
+                if (exitCode != 0 && !output.isBlank() && Out.Progress.quiet) {   // #196: a fleet run: one line, not Gradle's dump
+                    Out.warn("Gradle could not read the classpath: " + whatWentWrong() + " (scanned from the source alone; "
+                            + "`./gradlew` in the repo shows the whole error)");
+                    return this;
+                }
                 if (exitCode != 0 && !output.isBlank()) {
                     System.err.println(output.stripTrailing());
                     if (brokenJar(output)) {
@@ -809,6 +818,18 @@ public final class Main {
                 }
                 return this;
             }
+        }
+
+        /** #196: Gradle's failure in a line: the line after "What went wrong:", else its last line. */
+        static String whatWentWrong(String output) {
+            List<String> lines = output.lines().map(String::strip).filter(l -> !l.isEmpty()).toList();
+            for (int i = 0; i < lines.size() - 1; i++) {
+                if (lines.get(i).startsWith("* What went wrong")) {
+                    String w = lines.get(i + 1);
+                    return w.length() > 200 ? w.substring(0, 199) + "…" : w;
+                }
+            }
+            return lines.isEmpty() ? "" : lines.getLast();
         }
 
         /** The hint for a Gradle failure on an empty or broken jar in a local cache. */

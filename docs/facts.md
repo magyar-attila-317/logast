@@ -75,8 +75,10 @@ Edge kinds: `has`, `calls`, `reads`, `writes`, `publishes`, `consumes`, `runs`, 
 Migrations that expect a schema or a role made elsewhere (a DBA, an init script, another service: `create table
 cache.x`, `grant … to reporting_reader`) fail in the throwaway database. logast creates the missing one, empty, and runs
 the migrations again (#192: a failed migration rolls back, PostgreSQL's DDL is transactional), and says so on stderr.
-A table of another service the migrations read (`relation … does not exist`) is not made up: that environment is
-reported as a problem.
+A migration that reads what another service makes (`relation|sequence|type|view … does not exist`: a view on its
+table, its sequence) is left out and the migrations after it still run (#196); it says so on stderr, and what it
+reads becomes an edge `service:<svc> -reads-> table:<schema.name>` with `via: migration <file>` and
+`madeElsewhere: true`. The objects the left-out migration itself would have made are missing.
 
 ## A whole repo, any layout: `--out-dir`
 
