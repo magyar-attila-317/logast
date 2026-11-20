@@ -34,10 +34,12 @@ public final class Export {
         Analysis a = Logast.lastAnalysis;
         String commit = NamedFleet.commit(r);
         String extractor = flyway == null ? JavaExtractor.ID : JavaExtractor.ID + "+" + FlywayExtractor.ID;
-        try (FactWriter w = new FactWriter(out, Header.of(extractor, version, repo != null ? repo : NamedFleet.serviceName(r), commit))) {
+        String repoName = repo != null ? repo : NamedFleet.serviceName(r);
+        try (FactWriter w = new FactWriter(out, Header.of(extractor, version, repoName, commit))) {
             new JavaExtractor(a, scan, classpath).extract(r, w);
+            String service = JavaExtractor.serviceName(r, dev.logast.fleet.ServiceSurface.of(a, scan));
+            GradleProjects.extract(r, repoName, service, w);   // #162: the repo, and the libraries it publishes
             if (flyway != null) {
-                String service = JavaExtractor.serviceName(r, dev.logast.fleet.ServiceSurface.of(a, scan));
                 FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image());
                 fx.extract(r, w);
                 fx.problems().forEach(p -> System.err.println("flyway: " + p));
