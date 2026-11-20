@@ -260,7 +260,8 @@ connects an MCP client to all of it ([mcp.md](mcp.md)).
 | `knowledge.proposed.yml`, `knowledge.decisions.yml` | the LLM's proposals, the review page's decisions | `logast mcp`, `logast mcp review` |
 
 A member is exported again only when its commit or the options changed since its last export (`kb/<member>/.export.json`
-records both, with logast's build: a new logast re-exports every member once); `--kb-full` exports every member. An export with problems (Terragrunt or Flyway that could not run, a file
+records both, with logast's build: a new logast re-exports every member once); `--kb-full` exports every member with everything (it implies `--kb` and `--flyway`; a member without migrations
+needs no Docker). An export with problems (Terragrunt or Flyway that could not run, a file
 logast could not read) is not recorded, so the next run exports it again once the cause is fixed. With `--refresh`, a member is exported right
 after its scan, with that scan's classpath and analysis; the others go `--kb-threads` at a time (default 2: one
 analysis can take a few GB). `--flyway` (with `--rows`, `--postgres-image`) adds the tables each member's migrations

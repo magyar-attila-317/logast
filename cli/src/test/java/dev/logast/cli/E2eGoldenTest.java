@@ -7469,13 +7469,14 @@ abstract class E2eGoldenTest {
                     .doesNotContain("fleet --kb: exporting stock");   // exported right after its scan, with that analysis
             assertThat(Files.readString(fleetRepo.resolve("kb/stock/repo.jsonl"))).contains("endpoint:stock:POST /blocks/{id}");
             STDERR.setLength(0);
-            run(tmp, "fleet", fleetRepo.toString(), "--kb-full", "--no-builds", "--classpath-file", cpFile);   // #191: --kb implied
+            run(tmp, "fleet", fleetRepo.toString(), "--kb-full", "--no-builds", "--classpath-file", cpFile);   // #191: --kb and --flyway implied
+            assertThat(Files.readString(fleetRepo.resolve("kb/orders/.export.json"))).as("the options of a full export").contains("flyway");
             assertThat(STDERR.toString()).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: 1 facts file(s)");
             // #187: a new logast build (same version until a release) re-exports, the members' code unchanged
             Path stamp = fleetRepo.resolve("kb/orders/.export.json");
             Files.writeString(stamp, Files.readString(stamp).replaceFirst("\\(([^)]*)\\)", "(an-older-build)"));
             STDERR.setLength(0);
-            run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file", cpFile);
+            run(tmp, "fleet", fleetRepo.toString(), "--kb", "--flyway", "--no-builds", "--classpath-file", cpFile);   // the full export's options
             assertThat(STDERR.toString()).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: unchanged since its last export");
             // #187: an export with problems is not recorded as done: the next run exports it again
             Files.createDirectories(stock.resolve(".github/workflows"));

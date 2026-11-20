@@ -70,6 +70,14 @@ Extractors share these, so joins and tools can rely on them; their names are bui
 Edge kinds: `has`, `calls`, `reads`, `writes`, `publishes`, `consumes`, `runs`, `after`, `active-with`,
 `uses-property`, `uses-secret`, `depends-on`, `deploys`, `maps`, `alias`, `defines`.
 
+## Schemas and roles made outside Flyway
+
+Migrations that expect a schema or a role made elsewhere (a DBA, an init script, another service: `create table
+cache.x`, `grant … to reporting_reader`) fail in the throwaway database. logast creates the missing one, empty, and runs
+the migrations again (#192: a failed migration rolls back, PostgreSQL's DDL is transactional), and says so on stderr.
+A table of another service the migrations read (`relation … does not exist`) is not made up: that environment is
+reported as a problem.
+
 ## A whole repo, any layout: `--out-dir`
 
 `logast export <repo> --out-dir <dir>` exports everything in a repo, without describing its layout (#182): every

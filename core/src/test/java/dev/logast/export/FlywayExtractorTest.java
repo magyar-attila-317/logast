@@ -127,6 +127,24 @@ class FlywayExtractorTest {
         assertThat(c.nodes).allSatisfy(n -> assertThat(n.attrs()).doesNotContainKey("placeholdersWithoutValue"));
     }
 
+    /** #192: a schema and a role made outside Flyway (a DBA, an init script) are created empty; the migrations still count. */
+    @Test
+    void aSchemaOrRoleMadeOutsideFlywayIsCreated() throws IOException {
+        Path root = tmp.resolve("costs");
+        Path mig = Files.createDirectories(root.resolve("src/main/resources/db/migration"));
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        Files.writeString(mig.resolve("V1__costs.sql"), "create table region (id bigint primary key, name text);\n");
+        Files.writeString(mig.resolve("V2__manual_mapping.sql"), """
+                create table shared.region_mapping (id bigint primary key, region_id bigint);
+                grant select on shared.region_mapping to reporting_reader;
+                """);
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("costs", List.of(), null);
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.nodes).extracting(Node::id).contains("table:public.region", "table:shared.region_mapping");
+    }
+
     /** #179: migrations the service's code runs itself, into each tenant's schema, beside Spring Boot's. */
     @Test
     void migrationsTheCodeRunsPerTenant() throws IOException {
