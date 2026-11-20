@@ -67,6 +67,8 @@ final class Fleet implements Callable<Integer> {
     String service;
     @Option(names = "--html", description = "Named fleet: the report page is written by every overview (<fleet folder>/report/fleet.html, or --out); kept for scripts")
     boolean html;
+    @Option(names = "--open", description = "Named fleet: open the report page in the browser")
+    boolean openPage;
     @Option(names = "--json", description = "Named fleet: the overview as JSON")
     boolean json;
     @Mixin
@@ -291,9 +293,11 @@ final class Fleet implements Callable<Integer> {
         Path company = dir.resolve(CentralVocabulary.COMPANY);
         List<CompanyPolicy.Suggestion> suggestions = CompanyPolicy.refresh(dir, name, snaps.values());
         String agreed = CompanyPolicy.overviewLine(suggestions, company);
+        // #149: what to do next, on the page and at the end of the overview
+        List<String> next = dev.logast.fleet.FleetNext.steps(name, dir, members, NamedFleet.joined(dir), snaps, suggestions, links, vocab);
         // #141: every overview rewrites the page (--html only says so explicitly)
         Path page = FleetReport.writeDaily(out != null ? out : dir.resolve("report"), services, links,
-                suggestions.stream().map(CompanyPolicy.Suggestion::text).toList());
+                suggestions.stream().map(CompanyPolicy.Suggestion::text).toList(), next);
         Instant now = Instant.now();
         if (json) {
             Map<String, Object> o = new LinkedHashMap<>();
@@ -321,6 +325,7 @@ final class Fleet implements Callable<Integer> {
             o.put("links", links);
             o.put("vocabulary", Map.of("summary", vocab.summary(), "conflicts", vocab.conflicts()));
             o.put("company", Map.of("file", company.toString(), "suggestions", suggestions));
+            o.put("next", next);
             if (page != null) {
                 o.put("report", page.toAbsolutePath().toString());
             }
@@ -382,10 +387,33 @@ final class Fleet implements Callable<Integer> {
         if (agreed != null) {
             System.out.println(agreed);
         }
-        if (page != null) {
-            System.out.println("report: " + page.toAbsolutePath());
+        System.out.println();
+        if (next.isEmpty()) {
+            System.out.println(Ansi.bold("Next:") + " nothing left: the members follow the company policy and nothing high is open");
+        } else {
+            System.out.println(Ansi.bold("Next:"));
+            for (int i = 0; i < next.size(); i++) {
+                System.out.println("  " + (i + 1) + ". " + next.get(i));
+            }
+        }
+        // #149: a file:// URL, clickable in a terminal; --open shows it in the browser
+        System.out.println("report: " + page.toAbsolutePath().toUri());
+        if (openPage) {
+            openInBrowser(page);
         }
         return 0;
+    }
+
+    /** The system's opener (xdg-open, open, start); a failure is one warning, never the command's. */
+    static void openInBrowser(Path page) {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        List<String> cmd = os.contains("mac") ? List.of("open", page.toString())
+                : os.contains("win") ? List.of("cmd", "/c", "start", "", page.toString()) : List.of("xdg-open", page.toString());
+        try {
+            new ProcessBuilder(cmd).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+        } catch (IOException e) {
+            Out.warn("fleet: could not open the page (" + e.getMessage() + "); open " + page.toUri());
+        }
     }
 
     private static int open(FleetReport.Service s) {
@@ -435,8 +463,10 @@ final class Fleet implements Callable<Integer> {
             List<CompanyPolicy.Suggestion> suggestions = CompanyPolicy.refresh(dir, name, snaps.values());   // #129
             // #141: the fleet's page follows every member's snapshot
             List<FleetReport.Service> services = snaps.values().stream().map(NamedFleet.Snapshot::report).toList();
-            FleetReport.writeDaily(dir.resolve("report"), services, FleetLinks.of(services),
-                    suggestions.stream().map(CompanyPolicy.Suggestion::text).toList());
+            FleetLinks.Result links = FleetLinks.of(services);
+            FleetReport.writeDaily(dir.resolve("report"), services, links, suggestions.stream().map(CompanyPolicy.Suggestion::text).toList(),
+                    dev.logast.fleet.FleetNext.steps(name, dir, NamedFleet.members(dir), NamedFleet.joined(dir), snaps, suggestions,
+                            links, NamedFleet.vocabulary(dir, snaps.values())));
         } catch (RuntimeException e) {
             Out.warn("fleet " + name + ": no snapshot written (" + e.getMessage() + "); the fleet overview shows the previous one");
         }

@@ -7165,6 +7165,14 @@ abstract class E2eGoldenTest {
                     .as("#128: the host names the member").contains("confirmed: host payments\n")
                     .as("the vocabulary conflict").contains("Vocabulary: 1 conflict", "paymentId ~ payment_id: same type Long")
                     .as("#129").contains("4 settings all members agree on aren't company policy yet → " + shown + "/company.yaml");
+            assertThat(overview).as("#149: what to do next, each with its command or file")
+                    .contains("\nNext:\n  1. Make 4 settings every member uses company policy (packs: [",
+                            "): uncomment them in `" + shown + "/company.yaml`",
+                            "Decide 1 vocabulary conflict: `logast fleet payments-fleet --vocabulary` writes the worksheet",
+                            "Close 1 trace break between services: `logast apply .` in checkout",
+                            "`logast apply .` in checkout (3), payments (1), lowest score first");
+            assertThat(Files.readString(fleet.resolve("report/fleet.html"))).as("#149: the same on top of the page")
+                    .contains("<div class=next><b>Next steps</b><ol>", "<li>Close 1 trace break between services: <code>logast apply .</code> in checkout");
             String json = run(tmp, "fleet", "payments-fleet", "--json");
             assertThat(dev.logast.orders.OrderJson.MAPPER.readTree(json).path("services")).hasSize(2);
 
@@ -7195,7 +7203,7 @@ abstract class E2eGoldenTest {
             Files.writeString(payments.resolve("logast.yaml"), joinedYaml.replace(company.toString(), "/elsewhere/company.yaml"));
             run(payments, "scan", payments.toString(), "--classpath-file", CLASSPATH);
             assertThat(Files.readString(payments.resolve("logast.yaml"))).as("the comment refreshed").isEqualTo(joinedYaml);
-            assertThat(run(tmp, "fleet", "payments-fleet", "--html")).contains("report: " + shown + "/report/fleet.html");
+            assertThat(run(tmp, "fleet", "payments-fleet", "--html")).contains("report: file://" + shown + "/report/fleet.html");
 
             // apply reports too: the snapshot is the code after the changes
             var mapper = dev.logast.orders.OrderJson.MAPPER;
