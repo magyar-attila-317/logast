@@ -278,6 +278,11 @@ class TerraformExtractorTest {
                 """);
         assertThat(TerraformExtractor.units(root)).as("the root file is no unit").extracting(p -> root.relativize(p).toString())
                 .containsExactly("live/prod/network/terragrunt.hcl", "live/prod/orders/terragrunt.hcl", "live/rtl/orders/terragrunt.hcl");
+        Path parentWithSource = Files.createDirectories(tmp.resolve("nested/app"));
+        Files.writeString(tmp.resolve("nested/terragrunt.hcl"), "terraform {\n  source = \"../modules/base\"\n}\n");
+        Files.writeString(parentWithSource.resolve("terragrunt.hcl"), "terraform {\n  source = \"../../modules/app\"\n}\n");
+        assertThat(TerraformExtractor.units(tmp.resolve("nested"))).as("a file with units below it is a parent, even with a source")
+                .extracting(p -> tmp.resolve("nested").relativize(p).toString()).containsExactly("app/terragrunt.hcl");
         List<Node> nodes = new ArrayList<>();
         TerraformExtractor tx = new TerraformExtractor(false);
         tx.extract(root, new FactSink() {
