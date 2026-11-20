@@ -519,6 +519,11 @@ public final class JavaExtractor implements Extractor {
             if (triggers.size() > 1) {   // #197: a job with several triggers runs at each
                 attrs.put("triggers", triggers);
             }
+            java.util.Set<String> zones = new java.util.LinkedHashSet<>();
+            triggers.forEach(t -> zones.add(t.get("zone")));
+            if (zones.size() == 1 && zones.iterator().next() != null) {   // #199: the zone its schedule is read in
+                attrs.put("zone", zones.iterator().next());
+            }
             if (!byProfile.isEmpty()) {
                 attrs.put("cronByProfile", byProfile);
                 attrs.putIfAbsent("cronFrom", configured.get("@from"));
@@ -858,9 +863,14 @@ public final class JavaExtractor implements Extractor {
             if (job == null) {
                 continue;
             }
+            String zone = zoneOf(m.owner(), body);   // #199: the trigger's time zone, when the code sets one
             Matcher cm = SET_CRON.matcher(body);
             while (cm.find()) {
-                for (Map<String, String> t : cronOrigin(m, body, cm.group(1).strip(), prefixes, props, byNorm)) {
+                for (Map<String, String> t0 : cronOrigin(m, body, cm.group(1).strip(), prefixes, props, byNorm)) {
+                    Map<String, String> t = new TreeMap<>(t0);
+                    if (zone != null) {
+                        t.put("zone", zone);
+                    }
                     List<Map<String, String>> list = out.computeIfAbsent(job.fqn(), x -> new ArrayList<>());
                     if (list.stream().noneMatch(o -> java.util.Objects.equals(o.get("from"), t.get("from")) && java.util.Objects.equals(o.get("cron"), t.get("cron")))) {
                         list.add(t);
@@ -869,6 +879,42 @@ public final class JavaExtractor implements Extractor {
             }
         }
         return out;
+    }
+
+    private static final Pattern SET_ZONE = Pattern.compile("(?:setTimeZone|inTimeZone)\\(\\s*((?:[^()]|\\([^()]*\\))+?)\\s*\\)");
+    private static final Pattern ZONE_LITERAL = Pattern.compile("\"((?:[A-Z][A-Za-z]+/[A-Za-z_+-]+(?:/[A-Za-z_]+)?)|UTC|GMT|Z)\"");
+
+    /**
+     * #199: the time zone a trigger method sets ({@code setTimeZone(X)}, {@code inTimeZone(X)}): a literal in it
+     * ({@code TimeZone.getTimeZone("Europe/London")}, {@code ZoneId.of(…)}), or a constant defined so in the repo.
+     */
+    private String zoneOf(ClassInfo owner, String body) {
+        Matcher z = SET_ZONE.matcher(body);
+        if (!z.find()) {
+            return null;
+        }
+        String arg = z.group(1).strip();
+        Matcher lit = ZONE_LITERAL.matcher(arg);
+        if (lit.find()) {
+            return lit.group(1);
+        }
+        String name = arg.substring(arg.lastIndexOf('.') + 1);
+        if (!name.matches("[A-Za-z_]\\w*")) {
+            return null;
+        }
+        Pattern def = Pattern.compile("\\b" + Pattern.quote(name) + "\\s*=\\s*([^;]+);");
+        List<String> texts = new ArrayList<>(List.of(owner.file().text()));
+        a.index.classes().forEach(c -> texts.add(c.file().text()));
+        for (String text : texts) {
+            Matcher d = def.matcher(text);
+            if (d.find()) {
+                Matcher l = ZONE_LITERAL.matcher(d.group(1));
+                if (l.find()) {
+                    return l.group(1);
+                }
+            }
+        }
+        return null;
     }
 
     /** The job a trigger is for: a class literal in the method, or the bean its JobDetail parameter names. */

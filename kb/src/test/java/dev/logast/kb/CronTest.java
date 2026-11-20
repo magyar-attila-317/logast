@@ -118,6 +118,14 @@ class CronTest {
         assertThat(Schedules.nextRuns(kb, "job:stock:com.example.StockEnrichmentJob", "prod", 1, null, ZonedDateTime.parse("2026-11-20T10:05:00Z")))
                 .contains("StockEnrichmentJob · Stock_North_EveryDay: 0 0 10 ? * * *\n- Sat 2026-11-21 10:00:00",
                         "StockEnrichmentJob · Stock_South_EveryDay: 0 10 10 ? * * *\n- Fri 2026-11-20 10:10:00");
+        // #199: a trigger set to a time zone runs at its local time: 10:00 in London is 09:00 UTC in summer
+        Files.writeString(tmp.resolve("zoned.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"java","repo":"parcels"}}
+                {"node":{"id":"job:parcels:com.example.ParcelSyncJob","kind":"job","attrs":{"entrypoint":"quartz","cron":"0 0 10 ? * *","zone":"Europe/London"},"evidence":{"file":"ParcelSyncJob.java","line":5}}}
+                """);
+        KnowledgeBase zoned = KnowledgeBase.load(List.of(tmp.resolve("zoned.jsonl")));
+        assertThat(Schedules.runsOn(zoned, "2026-07-06", null, "UTC", LocalDate.parse("2026-07-01")))
+                .contains("- 09:00:00  job:parcels:com.example.ParcelSyncJob  0 0 10 ? * *  [Europe/London]");
         // #189: in prod the profile's cron (Quartz: MON-FRI), elsewhere the base one
         assertThat(Schedules.nextRuns(kb, "job:batch:com.example.ArchiveJob", "prod", 1, null, ZonedDateTime.parse("2026-11-20T10:00:00Z")))
                 .contains("- Mon 2026-11-23 02:15:00");
