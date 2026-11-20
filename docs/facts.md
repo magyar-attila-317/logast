@@ -113,6 +113,31 @@ migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes w
 - An environment whose migrations fail is named on stderr, with the placeholders that had no value; the others are
   still written.
 
+## A Helm repo: what runs where
+
+`logast export <repo>` on a repo with a `helmfile.yaml` (or `.gotmpl`) writes what runs in each environment (#160):
+
+```bash
+logast export ~/src/deploy --out kb/deploy.jsonl                       # runs helmfile list + template per environment
+logast export ~/src/deploy --env dev,prod --helm-render kafka-topics    # also render a third-party release
+logast export ~/src/deploy --rendered out/                              # out/<env>.yaml rendered elsewhere: no CLI needed
+```
+
+- **Environments**: `--env`, else the helmfile's `environments:`.
+- **Rendered**: the releases whose chart is in the repo, plus `--helm-render` ones (third-party charts that carry your
+  topics, users or dashboards). Every release, rendered or not, is a `release:<name>` fact with its chart, version and
+  namespace. `helm` and `helmfile` must be on `PATH` (or use `--rendered`).
+- **Facts** per environment: `deployment:<name>` (Deployment, StatefulSet, DaemonSet, Job) with `images`, `env` (a
+  value, `configmap:<name>/<key>`, or `secret:<vault>/<object>` for a Key Vault object a SecretProviderClass syncs into
+  a Secret), `envFrom`, `replicas`, `release`, `chart`; `deploys` `image:<repository>` (`tag`); `uses-secret`
+  `secret:<vault>/<object>`. CronJobs are `job:<release>:<name>` with `schedule`, `scheduleFormat: unix` and `zone`, so
+  `runs_on` lists them. `k8s-service:<name>` `routes` the workloads it selects, `ingress:<name>` (`hosts`) `routes`
+  services. Strimzi `topic:<name>` (`partitions`, `replicas`, `config`; evidence: the values file line that names it)
+  and `kafka-user:<name>` `may-read` / `may-write` topics. Grafana dashboards (ConfigMaps with `grafana_dashboard`):
+  `dashboard:<title>` `queries` `metric:<name>` for the metric names in their queries.
+- **Evidence**: the chart template from the manifest's `# Source:` line, as a path in the repo (subcharts of an
+  umbrella chart included).
+
 ## Company-specific facts: `logast facts map`
 
 Some knowledge is your company's own: a scheduler that keeps its job definitions in database rows, a convention for
