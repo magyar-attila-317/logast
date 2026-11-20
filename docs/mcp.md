@@ -60,6 +60,7 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 | `flows` | business flows: approved (knowledge.yml) and proposed, with their nodes; stale ones marked |
 | `propose_flow`, `propose_summary` | the LLM proposes a flow (a name for a chain of nodes) or a node's summary, with sources; a person approves |
 | `unknown_terms` | words in the names of tables, columns, topics and properties the glossary does not know yet, most frequent first |
+| `runners` | self-hosted runner hosts (Ansible): groups, labels, count, the workflows that run on them, and self-hosted workflows no runner fits |
 | `term` | a glossary term (or an alias, or an abbreviation): its definition and source |
 | `read_name` | a technical name (`ord_inv_ref`, `ordInvRef`) as business words |
 | `writers_of`, `readers_of` | every entrypoint that writes or reads a table (`schema.name`, or a name in any schema) |

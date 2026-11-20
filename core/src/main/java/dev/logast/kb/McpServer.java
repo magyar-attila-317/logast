@@ -167,6 +167,8 @@ public final class McpServer {
             new Tool("unknown_terms", "Words in the names of tables, columns, topics and properties that the glossary does not know "
                     + "yet, most frequent first, with examples: what to define next.",
                     new String[][]{{"limit", "integer", "default 40"}}, new String[0]),
+            new Tool("runners", "Self-hosted runner hosts (from Ansible): groups, labels, count, the workflows that run on them, and "
+                    + "self-hosted workflows no runner fits.", new String[0][], new String[0]),
             new Tool("term", "A business term from the company's glossary (knowledge.yml): its definition and source; an alias "
                     + "or an abbreviation finds its term.", new String[][]{{"name", "string", "the term, alias or abbreviation"}}, new String[]{"name"}),
             new Tool("read_name", "A technical name (a table, column, topic, key: ord_inv_ref, ordInvRef) as business words, through "
@@ -252,6 +254,7 @@ public final class McpServer {
                 }
             }
             case "unknown_terms" -> k.unknownTerms(a.path("limit").asInt(40));
+            case "runners" -> Lineage.runners(k);
             case "term" -> k.knowledge().term(a.path("name").asText());
             case "read_name" -> {
                 String r = k.knowledge().read(a.path("name").asText());

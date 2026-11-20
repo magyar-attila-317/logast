@@ -22,7 +22,7 @@ import java.util.TreeSet;
  * without a schema is the {@code same-as} the one schema that has it. Then lineage (downstream and upstream) and the
  * risks lineage shows: database handoffs that rely on timing, tables several services write, cross-schema reads.
  */
-final class Lineage {
+public final class Lineage {
     private Lineage() {
     }
 
@@ -36,6 +36,7 @@ final class Lineage {
         List<Derived> out = new ArrayList<>();
         http(kb, out);
         sameTable(kb, out);
+        runners(kb, out);
         return out;
     }
 
@@ -167,6 +168,62 @@ final class Lineage {
                 }
             }
         }
+    }
+
+    /** GitHub's default labels of a self-hosted runner: present on every one, so they need no match (#173). */
+    static final java.util.Set<String> DEFAULT_LABELS = java.util.Set.of("self-hosted", "linux", "windows", "macos", "x64", "arm64", "arm");
+
+    /** #173: a workflow on self-hosted labels runs on the runner hosts whose labels cover them. */
+    private static void runners(KnowledgeBase kb, List<Derived> out) {
+        List<KnowledgeBase.Fact<Node>> runners = kb.nodes().stream().filter(n -> n.fact().kind().equals("runner-host")).toList();
+        for (KnowledgeBase.Fact<Node> w : kb.nodes()) {
+            if (!w.fact().kind().equals("workflow") || !(w.fact().attrs().get("runsOn") instanceof List<?> on)
+                    || !on.contains("self-hosted")) {
+                continue;
+            }
+            Set<String> needed = new TreeSet<>();
+            on.forEach(l -> needed.add(String.valueOf(l).toLowerCase(Locale.ROOT)));
+            needed.removeAll(DEFAULT_LABELS);
+            for (KnowledgeBase.Fact<Node> r : runners) {
+                Set<String> has = new TreeSet<>();
+                if (r.fact().attrs().get("labels") instanceof List<?> ls) {
+                    ls.forEach(l -> has.add(String.valueOf(l).toLowerCase(Locale.ROOT)));
+                }
+                if (has.containsAll(needed)) {
+                    out.add(new Derived(new Edge(w.fact().id(), "runs-on", r.fact().id(), null, Map.of(), Provenance.INFERRED, 0.8,
+                            "runner-labels", null, w.fact().evidence()), w));
+                }
+            }
+        }
+    }
+
+    public static String runners(KnowledgeBase kb) {
+        StringBuilder sb = new StringBuilder();
+        List<KnowledgeBase.Fact<Node>> runners = kb.nodes().stream().filter(n -> n.fact().kind().equals("runner-host")).toList();
+        for (KnowledgeBase.Fact<Node> r : runners) {
+            Map<String, Object> a = r.fact().attrs();
+            sb.append("- ").append(r.fact().id().substring("runner-host:".length())).append("  groups ").append(a.get("groups"))
+                    .append(", labels ").append(a.get("labels")).append(a.get("count") == null ? "" : ", " + a.get("count") + " runner(s)")
+                    .append("  (").append(KnowledgeBase.cite(r.fact().evidence(), r.header())).append(")\n");
+            kb.incoming(r.fact().id()).stream().filter(e -> e.fact().kind().equals("runs-on"))
+                    .forEach(e -> sb.append("    runs ").append(e.fact().from()).append('\n'));
+        }
+        List<String> unplaced = new ArrayList<>();
+        for (KnowledgeBase.Fact<Node> w : kb.nodes()) {
+            if (w.fact().kind().equals("workflow") && w.fact().attrs().get("runsOn") instanceof List<?> on && on.contains("self-hosted")
+                    && kb.outgoing(w.fact().id()).stream().noneMatch(e -> e.fact().kind().equals("runs-on"))) {
+                unplaced.add("- " + w.fact().id() + " needs " + on);
+            }
+        }
+        if (runners.isEmpty() && unplaced.isEmpty()) {
+            return "No self-hosted runner in the facts (an Ansible inventory with runner labels) and no workflow asks for one.";
+        }
+        StringBuilder out = new StringBuilder(runners.size() + " runner host(s):\n").append(sb);
+        if (!unplaced.isEmpty()) {
+            out.append("self-hosted workflows no runner's labels fit:\n");
+            unplaced.forEach(l -> out.append(l).append('\n'));
+        }
+        return out.toString();
     }
 
     // ---- lineage ------------------------------------------------------------------------------------------------------

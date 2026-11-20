@@ -170,6 +170,15 @@ these) (#167):
   the repo has).
 - `logast mcp`'s `workflow_refs` lists, per reusable workflow, the refs its callers use.
 
+## Self-hosted runners (Ansible)
+
+A repo with an Ansible inventory (INI or YAML, under `inventory/` or named `hosts`/`inventory`) also gets its runner
+hosts (#173): every host whose variables (inline, `group_vars`, `host_vars`, through parent groups) set runner labels
+(`runner_labels`, `github_runner_labels`, …; a list or a comma string) is `runner-host:<host>`, with its `groups`,
+`labels` and `count` (`runner_count`, `runners_per_host`). When facts load, a workflow on `self-hosted` labels
+`runs-on` the hosts whose labels cover them (GitHub's default labels, OS and architecture, need no match); `logast mcp`'s
+`runners` lists hosts, their workflows, and self-hosted workflows no runner fits.
+
 ## Company-specific facts: `logast facts map`
 
 Some knowledge is your company's own: a scheduler that keeps its job definitions in database rows, a convention for

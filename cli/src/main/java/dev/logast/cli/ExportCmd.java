@@ -61,7 +61,8 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
             return 0;
         }
         if (rendered == null && dev.logast.export.HelmExtractor.helmfile(root) == null && !javaBuild
-                && !dev.logast.export.TerraformExtractor.applies(root) && dev.logast.export.WorkflowExtractor.applies(root)) {   // #167
+                && !dev.logast.export.TerraformExtractor.applies(root)
+                && (dev.logast.export.WorkflowExtractor.applies(root) || dev.logast.export.AnsibleRunners.applies(root))) {   // #167, #173
             Writer w = out == null ? new OutputStreamWriter(System.out, StandardCharsets.UTF_8) : Files.newBufferedWriter(out, StandardCharsets.UTF_8);
             java.util.List<String> problems;
             try {
