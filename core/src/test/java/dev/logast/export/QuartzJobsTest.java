@@ -185,4 +185,80 @@ class QuartzJobsTest {
         assertThat(jobs).filteredOn(l -> l.contains("ReportJob")).singleElement().asString()
                 .contains("\"cron\":\"0 30 6 * * ?\"", "scheduler.report-job.cron-expression");
     }
+
+    /** #190: jobs named through an enum constant that carries their metadata. */
+    @Test
+    void jobsNamedThroughAnEnumConstant() throws IOException {
+        Path root = tmp.resolve("tasks");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        write(root, "JobType", """
+                package com.example.jobs;
+
+                import org.quartz.Job;
+
+                public enum JobType {
+                    CLEANUP("cleanup", CleanupJob.class, "0 0 3 ? * MON-FRI"),
+                    EXPORT("export", ExportJob.class, "0 0 1 * * ?"),
+                    ARCHIVE("archive");
+
+                    JobType(String name, Class<? extends Job> job, String cron) {
+                    }
+
+                    JobType(String name) {
+                    }
+                }
+                """);
+        for (String job : List.of("CleanupJob", "ExportJob")) {
+            write(root, job, """
+                    package com.example.jobs;
+
+                    import org.quartz.Job;
+                    import org.quartz.JobExecutionContext;
+
+                    public class %s implements Job {
+                        @Override
+                        public void execute(JobExecutionContext context) {
+                        }
+                    }
+                    """.formatted(job));
+        }
+        write(root, "ArchiveDataJob", """
+                package com.example.jobs;
+
+                import org.quartz.Job;
+                import org.quartz.JobExecutionContext;
+
+                public class ArchiveDataJob implements Job {
+                    public JobType type() {
+                        return JobType.ARCHIVE;
+                    }
+
+                    @Override
+                    public void execute(JobExecutionContext context) {
+                    }
+                }
+                """);
+        Path res = Files.createDirectories(root.resolve("src/main/resources"));
+        Files.writeString(res.resolve("application.yml"), """
+                tasks:
+                  definitions:
+                    cleanup:
+                      cron: "0 0 5 ? * MON-FRI"
+                    archive:
+                      cron: "0 0 2 * * ?"
+                      enabled: true
+                """);
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "tasks", "test", out);
+        List<String> jobs = out.toString().lines().filter(l -> l.contains("\"kind\":\"job\"")).toList();
+        assertThat(jobs).as(out.toString()).hasSize(3);
+        assertThat(jobs).filteredOn(l -> l.contains("CleanupJob")).singleElement().asString()
+                .as("the configuration's cron wins over the enum's").contains("\"cron\":\"0 0 5 ? * MON-FRI\"",
+                        "\"enumConstant\":\"JobType.CLEANUP\"", "tasks.definitions.cleanup.cron");
+        assertThat(jobs).filteredOn(l -> l.contains("ExportJob")).singleElement().asString()
+                .contains("\"cron\":\"0 0 1 * * ?\"", "\"cronFrom\":\"enum JobType.EXPORT\"");
+        assertThat(jobs).filteredOn(l -> l.contains("ArchiveDataJob")).singleElement().asString()
+                .as("the constant its class refers to").contains("\"cron\":\"0 0 2 * * ?\"", "\"enumConstant\":\"JobType.ARCHIVE\"");
+    }
 }

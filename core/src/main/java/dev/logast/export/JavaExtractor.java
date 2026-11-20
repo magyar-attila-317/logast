@@ -470,6 +470,7 @@ public final class JavaExtractor implements Extractor {
             return;
         }
         Map<String, String> crons = quartzSchedules(jobs);
+        enumJobs = enumJobs(jobs);   // #190: enum constants that carry a job's metadata
         Map<String, Map<String, String>> fromConfig = configSchedules(jobs);   // #189: application.yml, per profile
         for (ClassInfo c : jobs.values()) {
             if (c.decl().hasModifier(J.Modifier.Type.Abstract)) {
@@ -486,8 +487,16 @@ public final class JavaExtractor implements Extractor {
             attrs.put("entrypoint", "quartz");
             attrs.put("handler", c.fqn());
             String cron = crons.get(c.fqn());
+            EnumJob ej = enumJobs.values().stream().filter(e -> e.job().equals(c.fqn())).findFirst().orElse(null);
+            if (ej != null) {
+                attrs.put("enumConstant", ej.constant());
+                if (cron == null && ej.cron() != null) {
+                    cron = ej.cron();
+                    attrs.put("cronFrom", "enum " + ej.constant());
+                }
+            }
             Map<String, String> configured = fromConfig.getOrDefault(c.fqn(), Map.of());
-            if (cron == null && configured.containsKey("")) {
+            if (configured.containsKey("") && (cron == null || ej != null && cron.equals(ej.cron()))) {   // the configuration wins over the enum
                 cron = configured.get("");
                 attrs.put("cronFrom", configured.get("@from"));
             }
@@ -657,7 +666,7 @@ public final class JavaExtractor implements Extractor {
         return out.stream().distinct().toList();
     }
 
-    private static void configSchedules(Map<String, ClassInfo> jobs, Map<String, String> props, String profile,
+    private void configSchedules(Map<String, ClassInfo> jobs, Map<String, String> props, String profile,
                                         Map<String, Map<String, String>> out, Map<String, String> base) {
         Map<String, Map<String, String>> groups = new LinkedHashMap<>();   // entry → its keys
         props.forEach((k, v) -> {
@@ -698,13 +707,99 @@ public final class JavaExtractor implements Extractor {
         });
     }
 
-    /** The job a configuration value names: its class, simple name, bean name, or a key like {@code cleanup-job}. */
-    private static ClassInfo jobNamed(Map<String, ClassInfo> jobs, String value) {
+    /** #190: an enum constant that carries a job's metadata: the job it stands for, and a cron among its arguments. */
+    record EnumJob(String constant, String job, String cron) {
+    }
+
+    private Map<String, EnumJob> enumJobs = Map.of();   // normalized constant name → its job
+
+    private static String norm(String s) {
+        return s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    /**
+     * #190: enum constants naming a job: a constant whose arguments name it ({@code CLEANUP(CleanupJob.class, …)} or the
+     * job's name), or the one constant of an enum that a job's class refers to ({@code JobType.CLEANUP} in CleanupJob).
+     * Keyed by the constant's name without case and separators (Spring binds {@code CLEANUP}, {@code cleanup} and
+     * {@code clean-up} alike); a name two jobs claim is left out.
+     */
+    private Map<String, EnumJob> enumJobs(Map<String, ClassInfo> jobs) {
+        Map<String, EnumJob> out = new LinkedHashMap<>();
+        java.util.Set<String> clashes = new java.util.HashSet<>();
+        java.util.function.Consumer<EnumJob> add = e -> {
+            String k = norm(e.constant().substring(e.constant().lastIndexOf('.') + 1));
+            EnumJob was = out.putIfAbsent(k, e);
+            if (was != null && !was.job().equals(e.job())) {
+                clashes.add(k);
+            }
+        };
+        List<ClassInfo> enums = a.index.classes().stream().filter(c -> c.decl().getKind() == J.ClassDeclaration.Kind.Type.Enum).toList();
+        for (ClassInfo en : enums) {
+            if (en.decl().getBody() == null) {
+                continue;
+            }
+            for (var st : en.decl().getBody().getStatements()) {
+                if (!(st instanceof J.EnumValueSet set)) {
+                    continue;
+                }
+                for (J.EnumValue v : set.getEnums()) {
+                    String text = v.printTrimmed();
+                    ClassInfo job = null;
+                    Matcher cl = CLASS_LITERAL.matcher(text);
+                    while (job == null && cl.find()) {
+                        job = jobNamed(jobs, cl.group(1));
+                    }
+                    String cron = null;
+                    Matcher lit = Pattern.compile("\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(text);
+                    while (lit.find()) {
+                        String l = lit.group(1);
+                        if (job == null) {
+                            job = jobNamed(jobs, l);
+                        }
+                        if (cron == null && CRON_SHAPE.matcher(l.strip()).matches() && l.matches(".*[0-9*?].*")) {
+                            cron = l.strip();
+                        }
+                    }
+                    if (job != null) {
+                        add.accept(new EnumJob(en.simpleName() + "." + v.getName().getSimpleName(), job.fqn(), cron));
+                    }
+                }
+            }
+        }
+        for (ClassInfo job : jobs.values()) {   // a job's class that refers to one constant of an enum of the repo
+            if (job.decl().hasModifier(J.Modifier.Type.Abstract)) {
+                continue;
+            }
+            String text = job.decl().printTrimmed();
+            for (ClassInfo en : enums) {
+                Matcher m = Pattern.compile("\\b" + Pattern.quote(en.simpleName()) + "\\.([A-Z][A-Z0-9_]*)\\b").matcher(text);
+                java.util.Set<String> refs = new java.util.LinkedHashSet<>();
+                while (m.find()) {
+                    refs.add(m.group(1));
+                }
+                if (refs.size() == 1) {
+                    String constant = en.simpleName() + "." + refs.iterator().next();
+                    if (out.values().stream().noneMatch(e -> e.constant().equals(constant))) {
+                        add.accept(new EnumJob(constant, job.fqn(), null));
+                    }
+                }
+            }
+        }
+        clashes.forEach(out::remove);
+        return out;
+    }
+
+    /** The job a configuration value names: its class, simple name, bean name, a key like {@code cleanup-job}, or an enum constant. */
+    private ClassInfo jobNamed(Map<String, ClassInfo> jobs, String value) {
         if (value == null || value.isBlank() || value.length() > 200) {
             return null;
         }
         String v = value.strip();
-        String norm = v.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        String norm = norm(v);
+        EnumJob ej = enumJobs.get(norm);
+        if (ej != null && jobs.containsKey(ej.job())) {
+            return jobs.get(ej.job());
+        }
         for (ClassInfo c : jobs.values()) {
             if (c.decl().hasModifier(J.Modifier.Type.Abstract)) {
                 continue;
