@@ -64,6 +64,17 @@ public final class Export {
         return hx.problems();
     }
 
+    /** #166: a Terragrunt/Terraform repo's resources per environment; returns what could not be read. */
+    public static List<String> terraform(Path root, String repo, String version, Writer out) throws IOException {
+        Path r = root.toAbsolutePath().normalize();
+        TerraformExtractor tx = new TerraformExtractor();
+        try (FactWriter w = new FactWriter(out, Header.of(TerraformExtractor.ID, version, repo != null ? repo : NamedFleet.serviceName(r),
+                NamedFleet.commit(r)))) {
+            tx.extract(r, w);
+        }
+        return tx.problems();
+    }
+
     /** What {@code --flyway} asks for: the tables whose rows become facts, and the PostgreSQL image. */
     public record FlywayOptions(List<String> rows, String image) {
     }

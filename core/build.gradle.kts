@@ -17,6 +17,7 @@ dependencies {
     runtimeOnly(libs.flyway.postgresql)
     implementation(libs.testcontainers.postgresql)
     runtimeOnly(libs.postgresql)
+    implementation(libs.hcl4j)   // #166: Terraform / Terragrunt files, read without the CLIs
     runtimeOnly(libs.slf4j.nop)
 
     testImplementation(platform(libs.junit.bom))

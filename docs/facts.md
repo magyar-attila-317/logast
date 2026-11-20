@@ -140,6 +140,22 @@ logast export ~/src/deploy --rendered out/                              # out/<e
 - **Evidence**: the chart template from the manifest's `# Source:` line, as a path in the repo (subcharts of an
   umbrella chart included).
 
+## A Terraform / Terragrunt repo: what exists underneath
+
+`logast export <repo>` on a repo with Terragrunt units (and no Java build or helmfile) writes its resources per
+environment, without the `terragrunt` or `terraform` CLIs: no state, no credentials (#166).
+
+- **Units**: every `terragrunt.hcl` with a `terraform` block. Its `inputs`, over those of the file it includes
+  (`find_in_parent_folders("root.hcl")`), and the module's variable defaults evaluate the module (HCL parsed with
+  hcl4j), so names built from variables and locals come out as the environment has them. Values Terraform only knows
+  at plan time (functions such as `lookup`, other resources' attributes) stay unknown and are left out.
+- **Layout**: units under `terragrunt/<subscription>/<region>/<env>/…`: the environment is the segment after the
+  region. The module is the folder the unit's `source` names under `terraform/` (`…/terraform//<module>`); one level of
+  local submodules (`module` blocks with a `./` source) is followed with the block's arguments as variables.
+- **Facts** per environment: `resource:<type>:<name>` for every resource (`location`, `sku_name`, `tags`, …); a Key
+  Vault secret is `secret:<vault>/<name>`, the id the Helm facts use, with `content_type`, `expiration_date`, `tags`,
+  and its vault `has` it; `tf-unit:<path>` `defines` them. Evidence: the module file and the line of the block.
+
 ## Company-specific facts: `logast facts map`
 
 Some knowledge is your company's own: a scheduler that keeps its job definitions in database rows, a convention for
