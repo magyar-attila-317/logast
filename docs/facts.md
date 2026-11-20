@@ -115,6 +115,9 @@ migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes w
 - **Facts**: `table:<schema>.<name>` per environment (`env`), with its `columns`, the migration's `create table` line
   as evidence; with `--rows`, each row of those tables as `row:<schema>.<table>:<primary key>` (else `#<position>`),
   its columns as attributes: a scheduler's job definitions, for example.
+- **Migrations from libraries** (#181): a `classpath:` location is looked up on the service's classpath too, as Flyway
+  scans it at runtime: class folders, and jars by their entries under that path, so a library that ships migrations
+  in its jar runs with the service's own; its tables cite `<jar>!/<entry>`.
 - **Migrations the code runs itself** (#179): a `Flyway.configure()…locations(…)` chain in the service's code with a
   constant location Spring Boot does not run (a multi-tenant service migrating each tenant's schema) is run too, into
   its constant schema, or, when the code picks the schema at runtime, into a stand-in named after the location's last
