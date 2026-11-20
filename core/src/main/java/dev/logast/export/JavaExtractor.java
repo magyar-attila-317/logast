@@ -68,6 +68,7 @@ public final class JavaExtractor implements Extractor {
 
     @Override
     public void extract(Path root, FactSink out) {
+        this.root = root;
         Sorted sink = new Sorted();
         ServiceSurface surface = ServiceSurface.of(a, scan);
         String svc = serviceName(root, surface);
@@ -447,6 +448,8 @@ public final class JavaExtractor implements Extractor {
 
     // ---- Quartz -------------------------------------------------------------------------------------------------------
 
+    private Path root;   // the service's folder, while extracting
+
     private static final Set<String> QUARTZ_TYPES = Set.of("org.quartz.Job", "org.quartz.InterruptableJob", "org.quartz.StatefulJob",
             "org.springframework.scheduling.quartz.QuartzJobBean");
     private static final Pattern CLASS_LITERAL = Pattern.compile("\\b([A-Z][A-Za-z0-9_]*)\\.class\\b");
@@ -467,6 +470,7 @@ public final class JavaExtractor implements Extractor {
             return;
         }
         Map<String, String> crons = quartzSchedules(jobs);
+        Map<String, Map<String, String>> fromConfig = configSchedules(jobs);   // #189: application.yml, per profile
         for (ClassInfo c : jobs.values()) {
             if (c.decl().hasModifier(J.Modifier.Type.Abstract)) {
                 continue;   // a base class: its subclasses are the jobs
@@ -482,6 +486,21 @@ public final class JavaExtractor implements Extractor {
             attrs.put("entrypoint", "quartz");
             attrs.put("handler", c.fqn());
             String cron = crons.get(c.fqn());
+            Map<String, String> configured = fromConfig.getOrDefault(c.fqn(), Map.of());
+            if (cron == null && configured.containsKey("")) {
+                cron = configured.get("");
+                attrs.put("cronFrom", configured.get("@from"));
+            }
+            Map<String, String> byProfile = new TreeMap<>();
+            configured.forEach((p, v) -> {
+                if (!p.isEmpty() && !p.startsWith("@")) {
+                    byProfile.put(p, v);
+                }
+            });
+            if (!byProfile.isEmpty()) {
+                attrs.put("cronByProfile", byProfile);
+                attrs.putIfAbsent("cronFrom", configured.get("@from"));
+            }
             if (cron != null) {
                 attrs.put("cron", cron);
                 if (!entry.isEmpty()) {
@@ -595,6 +614,108 @@ public final class JavaExtractor implements Extractor {
             }
         });
         return out;
+    }
+
+    private static final Pattern CRON_SHAPE = Pattern.compile("^[0-9*?/,A-Za-z#-]+(\\s+[0-9*?/,A-Za-z#-]+){4,6}$");
+
+    /**
+     * #189: schedules a service's configuration binds to its jobs ({@code @ConfigurationProperties} over
+     * application.yml): an entry (a list item or a map entry) with a value naming the job (its class, simple name or
+     * bean name, or the entry's own key) and a cron (a key containing "cron", or a value shaped like one). Job → profile
+     * ("" for the base files) → cron, and "@from" → the key it came from; a profile's cron only where it differs.
+     */
+    private Map<String, Map<String, String>> configSchedules(Map<String, ClassInfo> jobs) {
+        Map<String, Map<String, String>> out = new LinkedHashMap<>();
+        if (root == null) {
+            return out;
+        }
+        Map<String, String> base = dev.logast.SpringProperties.read(root);
+        configSchedules(jobs, base, "", out, null);
+        for (String profile : profiles(root)) {
+            configSchedules(jobs, dev.logast.SpringProperties.forProfile(root, profile), profile, out, base);
+        }
+        return out;
+    }
+
+    private static List<String> profiles(Path root) {
+        List<String> out = new ArrayList<>();
+        Path resources = dev.logast.SpringProperties.appResources(root);
+        if (resources == null) {
+            return out;
+        }
+        for (Path dir : List.of(resources, resources.resolve("config"))) {
+            if (Files.isDirectory(dir)) {
+                try (var s = Files.list(dir)) {
+                    s.map(p -> p.getFileName().toString()).map(n -> n.matches("application-([^.]+)\\.(yml|yaml|properties)")
+                            ? n.replaceAll("application-([^.]+)\\..*", "$1") : null).filter(java.util.Objects::nonNull)
+                            .sorted().distinct().forEach(out::add);
+                } catch (java.io.IOException e) {
+                    // unreadable: no profiles
+                }
+            }
+        }
+        return out.stream().distinct().toList();
+    }
+
+    private static void configSchedules(Map<String, ClassInfo> jobs, Map<String, String> props, String profile,
+                                        Map<String, Map<String, String>> out, Map<String, String> base) {
+        Map<String, Map<String, String>> groups = new LinkedHashMap<>();   // entry → its keys
+        props.forEach((k, v) -> {
+            int dot = k.lastIndexOf('.');
+            if (dot > 0) {
+                groups.computeIfAbsent(k.substring(0, dot), x -> new LinkedHashMap<>()).put(k.substring(dot + 1), v);
+            }
+        });
+        groups.forEach((entry, keys) -> {
+            String cronKey = keys.keySet().stream().filter(k -> k.toLowerCase(Locale.ROOT).contains("cron")
+                    && CRON_SHAPE.matcher(keys.get(k).strip()).matches()).findFirst()
+                    .orElse(keys.keySet().stream().filter(k -> CRON_SHAPE.matcher(keys.get(k).strip()).matches()
+                            && keys.get(k).matches(".*[0-9*?].*")).findFirst().orElse(null));
+            if (cronKey == null) {
+                return;
+            }
+            String last = entry.substring(entry.lastIndexOf('.') + 1).replaceAll("\\[\\d+]$", "");
+            List<String> names = new ArrayList<>(keys.values());
+            names.add(last);
+            ClassInfo job = null;
+            for (String n : names) {
+                job = jobNamed(jobs, n);
+                if (job != null) {
+                    break;
+                }
+            }
+            if (job == null) {
+                return;
+            }
+            String key = entry + "." + cronKey;
+            String cron = keys.get(cronKey).strip();
+            if (base != null && cron.equals(base.get(key))) {
+                return;   // as in the base files
+            }
+            Map<String, String> m = out.computeIfAbsent(job.fqn(), x -> new TreeMap<>());
+            m.putIfAbsent(profile, cron);
+            m.putIfAbsent("@from", "application config: " + key);
+        });
+    }
+
+    /** The job a configuration value names: its class, simple name, bean name, or a key like {@code cleanup-job}. */
+    private static ClassInfo jobNamed(Map<String, ClassInfo> jobs, String value) {
+        if (value == null || value.isBlank() || value.length() > 200) {
+            return null;
+        }
+        String v = value.strip();
+        String norm = v.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        for (ClassInfo c : jobs.values()) {
+            if (c.decl().hasModifier(J.Modifier.Type.Abstract)) {
+                continue;
+            }
+            String simple = c.simpleName().toLowerCase(Locale.ROOT);
+            if (v.equals(c.fqn()) || norm.equals(simple) || (simple.endsWith("job") && simple.length() > 3
+                    && norm.equals(simple.substring(0, simple.length() - 3)))) {
+                return c;
+            }
+        }
+        return null;
     }
 
     /** A string constant's value: {@code NAME = "…"} in the class's file (or {@code Other.NAME} in the repo). */
