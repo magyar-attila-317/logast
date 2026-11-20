@@ -122,6 +122,49 @@ class McpServerTest {
         assertThat(log.toString()).as("diagnostics on the log, never on stdout").contains("2 facts files");
     }
 
+    /** #202: a 2026-07-28 client (no initialize; server/discover, _meta on every request) and an older one, same process. */
+    @Test
+    void bothProtocolEras() throws IOException {
+        List<Path> files = files();
+        McpServer server = new McpServer(() -> files, "1.2.3", new PrintStream(new ByteArrayOutputStream()));
+        String meta = "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
+                + "\"io.modelcontextprotocol/clientCapabilities\":{},\"io.modelcontextprotocol/clientInfo\":{\"name\":\"t\",\"version\":\"1\"}}";
+        JsonNode discover = server.handle("{\"jsonrpc\":\"2.0\",\"id\":\"d\",\"method\":\"server/discover\",\"params\":{" + meta + "}}");
+        JsonNode d = discover.get("result");
+        assertThat(d.get("resultType").asText()).isEqualTo("complete");
+        assertThat(d.get("supportedVersions").get(0).asText()).isEqualTo("2026-07-28");
+        assertThat(d.has("capabilities") && d.get("capabilities").has("tools")).isTrue();
+        assertThat(d.get("instructions").asText()).contains("Loaded now: ");
+        assertThat(d.get("ttlMs").asLong()).isPositive();
+        assertThat(d.get("cacheScope").asText()).isEqualTo("private");
+        assertThat(d.at("/_meta/io.modelcontextprotocol~1serverInfo/version").asText()).isEqualTo("1.2.3");
+
+        JsonNode list = server.handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{" + meta + "}}").get("result");
+        assertThat(list.get("resultType").asText()).isEqualTo("complete");
+        assertThat(list.get("tools").size()).isEqualTo(20);
+        assertThat(list.has("ttlMs") && list.has("cacheScope")).isTrue();
+        JsonNode call = server.handle("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{" + meta
+                + ",\"name\":\"writers_of\",\"arguments\":{\"table\":\"audit.event\"}}}").get("result");
+        assertThat(call.get("resultType").asText()).isEqualTo("complete");
+        assertThat(call.at("/content/0/text").asText()).contains("table:audit.event: 2 places writes it");
+
+        JsonNode old = server.handle("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"server/discover\",\"params\":{\"_meta\":{"
+                + "\"io.modelcontextprotocol/protocolVersion\":\"1900-01-01\",\"io.modelcontextprotocol/clientCapabilities\":{}}}}");
+        assertThat(old.at("/error/code").asInt()).as("an unsupported version").isEqualTo(-32022);
+        assertThat(old.at("/error/data/supported/0").asText()).isEqualTo("2026-07-28");
+        assertThat(old.at("/error/data/requested").asText()).isEqualTo("1900-01-01");
+        JsonNode noCaps = server.handle("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/list\",\"params\":{\"_meta\":{"
+                + "\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}");
+        assertThat(noCaps.at("/error/code").asInt()).as("required _meta missing").isEqualTo(-32602);
+
+        // a legacy client in the same process: initialize, then requests without _meta, answered as before
+        JsonNode init = server.handle("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{}}}");
+        assertThat(init.at("/result/protocolVersion").asText()).isEqualTo("2025-11-25");
+        assertThat(init.at("/result/resultType").isMissingNode()).isTrue();
+        JsonNode legacyList = server.handle("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/list\"}").get("result");
+        assertThat(legacyList.has("resultType") || legacyList.has("ttlMs")).isFalse();
+    }
+
     /** #195: a server whose logast was installed again says so (it runs the old code until the client restarts it). */
     @Test
     void aServerRunningAnOldInstallationSaysSo() throws IOException {
