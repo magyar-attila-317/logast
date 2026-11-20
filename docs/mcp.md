@@ -57,6 +57,8 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 | `risks` | database handoffs between scheduled jobs of different services with no pipeline step between them (the reader relies on timing), tables several services write, reads of another service's schema |
 | `secrets` | Key Vault secrets (Terraform, Helm) and who uses them: the workloads that mount or read them, and the services whose code runs there; `expiringDays` for those about to expire |
 | `workflow_refs` | per reusable GitHub Actions workflow, the refs its callers use: who is still on an old one |
+| `flows` | business flows: approved (knowledge.yml) and proposed, with their nodes; stale ones marked |
+| `propose_flow`, `propose_summary` | the LLM proposes a flow (a name for a chain of nodes) or a node's summary, with sources; a person approves |
 | `term` | a glossary term (or an alias, or an abbreviation): its definition and source |
 | `read_name` | a technical name (`ord_inv_ref`, `ordInvRef`) as business words |
 | `writers_of`, `readers_of` | every entrypoint that writes or reads a table (`schema.name`, or a name in any schema) |
@@ -119,6 +121,22 @@ decisions:
   marked, and `summary` lists it to decide again, rather than applying an old decision to new facts.
 - **Names as business words**: `describe` shows how a name reads (`table:billing.ord_inv_ref` → *order invoice
   reference*), through the abbreviations and the glossary's aliases; tools `term` and `read_name` ask directly.
+
+## What the LLM adds: proposals
+
+Facts give chains; what they mean for the business (*month-end settlement*) and what a shell script does are an
+LLM's work. logast holds no LLM: the team's client does it with `propose_flow` (a name, a description, the node ids in
+order, the sources it rests on) and `propose_summary` (a node, a text, sources) (#168). They are written to
+`knowledge.proposed.yml` next to the first `knowledge.yml` under the kb paths (else in the first kb folder): a file
+logast manages, so `knowledge.yml` stays the people's.
+
+- Every proposal records `by: llm`, when, its sources, and the evidence of its nodes then; when that evidence changes,
+  `flows` and `describe` mark it **stale**. A node the facts do not have, or a proposal without sources, is refused.
+- **Approving** is moving the entry to `knowledge.yml`'s `flows:` or `summaries:` (same shape); an approved entry wins
+  over a proposal of the same name.
+- `flows` lists both kinds; `describe` shows a node's summary and the flows it belongs to; `lineage` accepts a flow's
+  name and starts from each of its nodes.
+- Started without a kb path (or from a client that cannot write there), the server is read-only and says so.
 
 The server speaks MCP's stdio transport (JSON-RPC 2.0, one message per line: `initialize`, `tools/list`,
 `tools/call`, `ping`); it writes diagnostics to stderr only.

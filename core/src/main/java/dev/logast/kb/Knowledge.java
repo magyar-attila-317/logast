@@ -40,6 +40,18 @@ public final class Knowledge {
     public record Term(String term, String definition, String source, List<String> aliases) {
     }
 
+    /**
+     * #168: a business flow: the nodes it consists of, what it rests on; {@code proposed} when an LLM wrote it
+     * (knowledge.proposed.yml) and no person moved it to knowledge.yml yet; {@code evidence} what its nodes' evidence was.
+     */
+    public record Flow(String name, String description, List<String> nodes, List<String> sources, boolean proposed, String by,
+                       Map<String, String> evidence) {
+    }
+
+    /** #168: a summary of a node (a script, a job), with its sources; proposed like a flow. */
+    public record Summary(String node, String text, List<String> sources, boolean proposed, String by, Map<String, String> evidence) {
+    }
+
     /** A decision on an inferred link: approve or reject; {@code evidence} is what it was decided on. */
     public record Decision(String link, String env, boolean approve, String by, String evidence, Path file) {
     }
@@ -48,6 +60,8 @@ public final class Knowledge {
     private final Map<String, String> abbreviations = new LinkedHashMap<>();
     private final Map<String, String> serviceNames = new LinkedHashMap<>();   // other name → service
     private final List<Decision> decisions = new ArrayList<>();
+    private final Map<String, Flow> flows = new LinkedHashMap<>();
+    private final Map<String, Summary> summaries = new LinkedHashMap<>();
     private final List<String> problems = new ArrayList<>();
     private final List<Path> files = new ArrayList<>();
 
@@ -76,6 +90,21 @@ public final class Knowledge {
         });
         root.path("abbreviations").fields().forEachRemaining(e -> abbreviations.put(norm(e.getKey()), e.getValue().asText()));
         root.path("services").fields().forEachRemaining(e -> e.getValue().forEach(n -> serviceNames.put(n.asText(), e.getKey())));
+        boolean proposed = file.getFileName().toString().startsWith("knowledge.proposed");
+        root.path("flows").fields().forEachRemaining(e -> {
+            JsonNode f = e.getValue();
+            if (!proposed || !flows.containsKey(e.getKey())) {   // an approved flow wins over a proposal of the same name
+                flows.put(e.getKey(), new Flow(e.getKey(), f.path("description").asText(null), texts(f.path("nodes")),
+                        texts(f.path("sources")), proposed, f.path("by").asText(proposed ? "llm" : null), strings(f.path("evidence"))));
+            }
+        });
+        root.path("summaries").fields().forEachRemaining(e -> {
+            JsonNode f = e.getValue();
+            if (!proposed || !summaries.containsKey(e.getKey())) {
+                summaries.put(e.getKey(), new Summary(e.getKey(), f.path("text").asText(null), texts(f.path("sources")), proposed,
+                        f.path("by").asText(proposed ? "llm" : null), strings(f.path("evidence"))));
+            }
+        });
         for (JsonNode d : root.path("decisions")) {
             String link = d.path("link").asText("");
             String decision = d.path("decision").asText("");
@@ -86,6 +115,26 @@ public final class Knowledge {
             decisions.add(new Decision(link.strip(), d.path("env").asText(null), decision.equals("approve"), d.path("by").asText(null),
                     d.path("evidence").asText(null), file));
         }
+    }
+
+    private static List<String> texts(JsonNode n) {
+        List<String> out = new ArrayList<>();
+        n.forEach(x -> out.add(x.asText()));
+        return out;
+    }
+
+    private static Map<String, String> strings(JsonNode n) {
+        Map<String, String> out = new LinkedHashMap<>();
+        n.fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue().asText()));
+        return out;
+    }
+
+    public Map<String, Flow> flows() {
+        return java.util.Collections.unmodifiableMap(flows);
+    }
+
+    public Map<String, Summary> summaries() {
+        return java.util.Collections.unmodifiableMap(summaries);
     }
 
     public List<Path> files() {

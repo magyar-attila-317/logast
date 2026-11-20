@@ -102,8 +102,8 @@ class McpServerTest {
         assertThat(init.has("capabilities")).isTrue();
         List<String> tools = new ArrayList<>();
         replies.get(1).at("/result/tools").forEach(t -> tools.add(t.get("name").asText()));
-        assertThat(tools).containsExactly("summary", "find", "describe", "neighbors", "path", "runs_on", "next_runs", "lineage", "risks", "secrets", "workflow_refs", "term", "read_name", "writers_of", "readers_of");
-        assertThat(replies.get(1).at("/result/tools/13/inputSchema/required/0").asText()).isEqualTo("table");
+        assertThat(tools).containsExactly("summary", "find", "describe", "neighbors", "path", "runs_on", "next_runs", "lineage", "risks", "secrets", "workflow_refs", "flows", "propose_flow", "propose_summary", "term", "read_name", "writers_of", "readers_of");
+        assertThat(replies.get(1).at("/result/tools/16/inputSchema/required/0").asText()).isEqualTo("table");
         assertThat(replies.get(2).at("/result/isError").asBoolean()).isFalse();
         assertThat(replies.get(2).at("/result/content/0/text").asText()).contains("table:audit.event: 2 places writes it");
         assertThat(replies.get(3).at("/result/isError").asBoolean()).as("a missing argument is the tool's error").isTrue();

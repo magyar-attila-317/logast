@@ -29,6 +29,7 @@ public final class McpServer {
     private final Supplier<List<Path>> files;
     private final String version;
     private final PrintStream log;
+    private final Path proposals;
     private KnowledgeBase kb;
     private String loadedStamp;
 
@@ -38,9 +39,15 @@ public final class McpServer {
      * @param log     where diagnostics go (stderr: stdout carries the protocol only)
      */
     public McpServer(Supplier<List<Path>> files, String version, PrintStream log) {
+        this(files, version, log, null);
+    }
+
+    /** @param proposals where propose_flow and propose_summary write (#168); null: read-only */
+    public McpServer(Supplier<List<Path>> files, String version, PrintStream log, Path proposals) {
         this.files = files;
         this.version = version;
         this.log = log;
+        this.proposals = proposals;
     }
 
     /** Serves until the input ends. */
@@ -144,6 +151,19 @@ public final class McpServer {
                             {"expiringDays", "integer", "only secrets that expire within this many days"}}, new String[0]),
             new Tool("workflow_refs", "Per reusable GitHub Actions workflow, the refs its callers use (who is on an old one).",
                     new String[][]{{"text", "string", "only workflows whose id contains this"}}, new String[0]),
+            new Tool("flows", "Business flows: the approved ones (knowledge.yml) and the ones proposed and not approved yet, with "
+                    + "the nodes they consist of.", new String[][]{{"text", "string", "only flows whose name contains this"}}, new String[0]),
+            new Tool("propose_flow", "Propose a business flow: a name for a chain of nodes (from lineage), what it does, and what that "
+                    + "rests on. Written as a proposal a person approves; cite facts, glossary terms or pages.",
+                    new String[][]{{"name", "string", "the flow's business name, e.g. month-end settlement"},
+                            {"description", "string", "what the flow does, in business terms"},
+                            {"nodes", "string", "comma-separated node ids, in order (from lineage)"},
+                            {"sources", "string", "comma-separated: the fact ids, glossary terms and page URLs it rests on"}},
+                    new String[]{"name", "nodes", "sources"}),
+            new Tool("propose_summary", "Propose a summary of a node (a script, a job, a service): what it does, with what it rests on. "
+                    + "Written as a proposal a person approves.",
+                    new String[][]{{"id", "string", "the node id"}, {"text", "string", "the summary"},
+                            {"sources", "string", "comma-separated: the files, facts or pages it rests on"}}, new String[]{"id", "text", "sources"}),
             new Tool("term", "A business term from the company's glossary (knowledge.yml): its definition and source; an alias "
                     + "or an abbreviation finds its term.", new String[][]{{"name", "string", "the term, alias or abbreviation"}}, new String[]{"name"}),
             new Tool("read_name", "A technical name (a table, column, topic, key: ord_inv_ref, ordInvRef) as business words, through "
@@ -199,12 +219,35 @@ public final class McpServer {
                     java.time.LocalDate.now(java.time.ZoneOffset.UTC));
             case "next_runs" -> Schedules.nextRuns(k, a.path("id").asText(), a.path("env").asText(null), a.path("count").asInt(5),
                     a.path("zone").asText(null), java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC));
-            case "lineage" -> Lineage.lineage(k, a.path("id").asText(), !"upstream".equalsIgnoreCase(a.path("direction").asText("downstream")),
-                    a.path("depth").asInt(6), a.path("limit").asInt(200));
+            case "lineage" -> {
+                boolean down = !"upstream".equalsIgnoreCase(a.path("direction").asText("downstream"));
+                Knowledge.Flow flow = k.knowledge().flows().get(a.path("id").asText());
+                if (flow == null) {
+                    yield Lineage.lineage(k, a.path("id").asText(), down, a.path("depth").asInt(6), a.path("limit").asInt(200));
+                }
+                StringBuilder sb = new StringBuilder("flow \"" + flow.name() + "\"" + (flow.proposed() ? " (proposed)" : "") + ":\n");
+                for (String n : flow.nodes()) {   // #168: a flow's name starts lineage from each of its nodes
+                    sb.append(Lineage.lineage(k, n, down, a.path("depth").asInt(6), a.path("limit").asInt(200)));
+                }
+                yield sb.toString();
+            }
             case "risks" -> Lineage.risks(k, a.path("env").asText(null));
             case "secrets" -> Secrets.list(k, a.path("text").asText(null), a.path("env").asText(null),
                     a.has("expiringDays") ? a.path("expiringDays").asInt() : null, java.time.LocalDate.now(java.time.ZoneOffset.UTC));
             case "workflow_refs" -> Workflows.refs(k, a.path("text").asText(null));
+            case "flows" -> k.flows(a.path("text").asText(null));
+            case "propose_flow", "propose_summary" -> {
+                if (proposals == null) {
+                    yield "This server is read-only: start logast mcp with a kb folder it may write knowledge.proposed.yml to.";
+                }
+                try {
+                    yield name.equals("propose_flow")
+                            ? Proposals.flow(proposals, k, a.path("name").asText(), a.path("description").asText(null), kinds(a.path("nodes")), kinds(a.path("sources")))
+                            : Proposals.summary(proposals, k, a.path("id").asText(), a.path("text").asText(), kinds(a.path("sources")));
+                } catch (IOException e) {
+                    yield "Could not write " + proposals + ": " + e.getMessage();
+                }
+            }
             case "term" -> k.knowledge().term(a.path("name").asText());
             case "read_name" -> {
                 String r = k.knowledge().read(a.path("name").asText());

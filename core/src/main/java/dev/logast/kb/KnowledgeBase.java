@@ -142,6 +142,43 @@ public final class KnowledgeBase {
         return e;
     }
 
+    /** The citation of a node now (its first fact), or of the first edge that names it; null when the facts do not have it. */
+    public String evidenceOf(String id) {
+        List<Fact<Node>> ns = nodes.getOrDefault(id, List.of());
+        if (!ns.isEmpty()) {
+            return cite(ns.getFirst().fact().evidence(), ns.getFirst().header());
+        }
+        List<Fact<Edge>> es = new ArrayList<>(out.getOrDefault(id, List.of()));
+        es.addAll(in.getOrDefault(id, List.of()));
+        return es.isEmpty() ? null : cite(es.getFirst().fact().evidence(), es.getFirst().header());
+    }
+
+    /** Whether the evidence recorded with a proposal differs from what the facts say now. */
+    public boolean stale(Map<String, String> recorded) {
+        return recorded.entrySet().stream().anyMatch(e -> !e.getValue().equals(evidenceOf(e.getKey())));
+    }
+
+    /** #168: the business flows: approved (knowledge.yml) and proposed (knowledge.proposed.yml), with their nodes. */
+    public String flows(String text) {
+        StringBuilder sb = new StringBuilder();
+        for (Knowledge.Flow f : knowledge.flows().values()) {
+            if (text != null && !text.isBlank() && !f.name().toLowerCase(java.util.Locale.ROOT).contains(text.toLowerCase(java.util.Locale.ROOT))) {
+                continue;
+            }
+            sb.append("- ").append(f.name()).append(f.proposed() ? " (proposed by " + f.by() + ", not approved yet)" : "")
+                    .append(stale(f.evidence()) ? " [STALE: the evidence of its nodes changed]" : "").append('\n');
+            if (f.description() != null) {
+                sb.append("  ").append(f.description()).append('\n');
+            }
+            f.nodes().forEach(n -> sb.append("  · ").append(n).append(evidenceOf(n) == null ? " (not in the facts)" : "").append('\n'));
+            if (!f.sources().isEmpty()) {
+                sb.append("  sources: ").append(String.join(", ", f.sources())).append('\n');
+            }
+        }
+        return sb.isEmpty() ? "No business flow" + (text == null || text.isBlank() ? "" : " matching '" + text + "'")
+                + ": name one with propose_flow, or in knowledge.yml's flows:." : sb.toString();
+    }
+
     /** Workloads more than one service claims by the same rule: not linked, for a person to decide. */
     public List<String> ambiguous() {
         return List.copyOf(ambiguous);
@@ -184,7 +221,7 @@ public final class KnowledgeBase {
     /** {@code knowledge.yml} / {@code knowledge.yaml}: what people decided, loaded with the facts (#163). */
     static boolean isKnowledge(Path f) {
         String n = f.getFileName().toString();
-        return n.equals("knowledge.yml") || n.equals("knowledge.yaml");
+        return n.equals("knowledge.yml") || n.equals("knowledge.yaml") || n.equals("knowledge.proposed.yml");
     }
 
     public Knowledge knowledge() {
@@ -279,6 +316,13 @@ public final class KnowledgeBase {
         if (ns.isEmpty()) {
             sb.append("  (no node fact: only edges name it)\n");
         }
+        Knowledge.Summary summary = knowledge.summaries().get(id);   // #168
+        if (summary != null) {
+            sb.append("  summary").append(summary.proposed() ? " (proposed by " + summary.by() + ", not approved yet)" : "").append(": ")
+                    .append(summary.text()).append(stale(summary.evidence()) ? " [STALE: its evidence changed]" : "").append('\n');
+        }
+        knowledge.flows().values().stream().filter(f -> f.nodes().contains(id)).forEach(f -> sb.append("  part of flow \"").append(f.name())
+                .append("\"").append(f.proposed() ? " (proposed)" : "").append('\n'));
         for (Fact<Node> n : ns) {
             sb.append("  ").append(n.fact().env() == null ? "" : "[" + n.fact().env() + "] ")
                     .append(n.fact().attrs().isEmpty() ? "" : n.fact().attrs() + " ")
