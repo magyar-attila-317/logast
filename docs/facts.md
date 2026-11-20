@@ -97,6 +97,22 @@ default, stored procedures (named only by their call).
 
 Facts are sorted and repeats dropped, so the same code gives the same file.
 
+### Tables per environment: `--flyway`
+
+`logast export <service> --flyway [--rows <table>,…] [--postgres-image <image>]` also runs the service's Flyway
+migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes what they create (#157):
+
+- **Environments**: a migration folder (`spring.flyway.locations`, default `db/migration`) with a `common` subfolder
+  and others (`dev`, `ppe`, `prod`, …) is run once per other subfolder, as `common` + its own; otherwise once, for all.
+- **Placeholders** (`${schema}`): `spring.flyway.placeholders.*` of the environment's profile
+  (`application-<env>.yml`) over the base config. A placeholder with no value runs with its own name; a placeholder
+  used as a schema (`${schema}.jobs`) gets that schema created first.
+- **Facts**: `table:<schema>.<name>` per environment (`env`), with its `columns`, the migration's `create table` line
+  as evidence; with `--rows`, each row of those tables as `row:<schema>.<table>:<primary key>` (else `#<position>`),
+  its columns as attributes: a scheduler's job definitions, for example.
+- An environment whose migrations fail is named on stderr, with the placeholders that had no value; the others are
+  still written.
+
 ## Checking a file
 
 ```bash

@@ -21,20 +21,27 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
     Path out;
     @Option(names = "--repo", description = "The repository name the facts are about (default: the folder's name)")
     String repo;
+    @Option(names = "--flyway", description = "Also the tables the Flyway migrations create, per environment: runs them "
+            + "in a throwaway PostgreSQL (needs Docker)")
+    boolean flyway;
+    @Option(names = "--rows", split = ",", description = "With --flyway: tables whose rows become facts (schema.name or name)")
+    java.util.List<String> rows = new java.util.ArrayList<>();
+    @Option(names = "--postgres-image", description = "With --flyway: the PostgreSQL image (default: postgres:16-alpine)")
+    String postgresImage;
 
     @Override
     public Integer call() throws IOException {
         Path root = root();
         if (out == null) {
             Writer w = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
-            Export.java(root, classpath(), policy(), repo, version(), w);
+            Export.java(root, classpath(), policy(), repo, version(), flyway ? new Export.FlywayOptions(rows, postgresImage) : null, w);
             w.flush();
         } else {
             if (out.toAbsolutePath().getParent() != null) {
                 Files.createDirectories(out.toAbsolutePath().getParent());
             }
             try (Writer w = Files.newBufferedWriter(out, StandardCharsets.UTF_8)) {
-                Export.java(root, classpath(), policy(), repo, version(), w);
+                Export.java(root, classpath(), policy(), repo, version(), flyway ? new Export.FlywayOptions(rows, postgresImage) : null, w);
             }
             System.err.println("facts: " + out);
         }
