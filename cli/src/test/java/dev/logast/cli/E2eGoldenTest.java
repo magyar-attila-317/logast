@@ -8947,6 +8947,43 @@ abstract class E2eGoldenTest {
     /** Runs the CLI in-process; stdout with the temp path, timings and colours normalised. */
     /** What the commands run since it was last cleared printed to stderr (progress, warnings: not part of OUTPUT.txt). */
     private static final StringBuilder STDERR = new StringBuilder();
+    /**
+     * #153: {@code logast export} writes the service's facts (docs/facts.md): valid, sorted, the same for the same code.
+     * Snapshot: the facts without the libraries (their versions move with every dependency bump; checked here by kind)
+     * (e2e/expected-export).
+     */
+    @Test
+    void exportWritesTheServicesFacts() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path out = tmp.resolve("facts.jsonl");
+        run(app, "export", app.toString(), "--classpath-file", CLASSPATH, "--out", out.toString(), "--repo", "e2e-shop");
+        assertThat(LAST_EXIT).isZero();
+        String facts = Files.readString(out);
+        dev.logast.facts.FactReader.Result r = dev.logast.facts.FactReader.read(new java.io.StringReader(facts));
+        assertThat(r.problems()).as("valid facts").isEmpty();
+        assertThat(r.header().repo()).isEqualTo("e2e-shop");
+
+        List<String> ids = r.nodes().stream().map(dev.logast.facts.Node::id).toList();
+        assertThat(ids).as("the service, by its folder (no spring.application.name)").contains("service:e2e-shop");
+        assertThat(ids).as("the libraries of the classpath").contains("library:org.springframework.boot:spring-boot");
+        assertThat(ids).as("a scheduled job, a Kafka listener, an endpoint")
+                .contains("job:e2e-shop:PledgeCleanupJob.cleanup", "listener:e2e-shop:kafka orders")
+                .anySatisfy(id -> assertThat(id).startsWith("endpoint:e2e-shop:POST "));
+        assertThat(r.nodes()).filteredOn(n -> n.id().equals("job:e2e-shop:PledgeCleanupJob.cleanup"))
+                .singleElement().satisfies(n -> assertThat(n.attrs()).containsEntry("cron", "0 0 2 * * *"));
+        List<String> edges = r.edges().stream().map(e -> e.from() + " -" + e.kind() + "-> " + e.to()).toList();
+        assertThat(edges).as("profile → bean → the entrypoint that runs it: the chain an orchestrator's job ends in").contains(
+                "bean:e2e-shop:com.example.e2e.job.TallyJob -active-with-> profile:e2e-shop:tally",
+                "listener:e2e-shop:event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent) -runs-> bean:e2e-shop:com.example.e2e.job.TallyJob",
+                "listener:e2e-shop:kafka orders -consumes-> topic:orders");
+
+        String pinned = facts.lines().filter(l -> !l.contains("\"library:"))
+                .map(l -> l.replaceAll("\"(extractorVersion|springBoot)\":\"[^\"]*\"", "\"$1\":\"<version>\""))
+                .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
+        golden(EXPECTED.resolveSibling("expected-export"), Map.of("facts.jsonl", pinned));
+    }
+
     /** The exit code of the last {@link #run}. */
     private static int LAST_EXIT;
 
