@@ -290,7 +290,10 @@ and scheduled by the service's own code) is read from the configuration: an entr
 a value naming the job (its class, simple name, bean name, or the entry's key, e.g. `report-job`) and a cron (a key
 containing `cron`, or a value shaped like one) is the job's `cron`, with `cronFrom` naming the key; a profile's
 `application-<profile>.yml` that sets another cron is in `cronByProfile`, and `runs_on`/`next_runs` in that
-environment use it. A job named through an enum (#190) counts too: an enum constant whose arguments
+environment use it. A job's entry may name it and list its triggers (#197: `jobs.<key>.name: StockEnrichmentJob` with
+`jobs.<key>.triggers[i].cron`, each trigger with its own name and other keys): a cron is matched to the job named in
+its own entry or in the entries above it (three levels at most), and a job with several triggers has them all in
+`triggers` (name, cron, the other keys, where they came from); `runs_on` and `next_runs` list each trigger. A job named through an enum (#190) counts too: an enum constant whose arguments
 name a job (`CLEANUP(CleanupJob.class, …)`, or the job's name), or the one constant a job's class refers to
 (`JobType.ARCHIVE`), stands for that job (`enumConstant`); a configuration entry naming the constant (`CLEANUP`,
 `cleanup`, `clean-up`, as Spring binds them) gives its cron, else a cron among the constant's arguments does. Jobs whose schedule lives in database rows link through a mapping on the row's class name

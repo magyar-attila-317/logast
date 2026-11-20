@@ -261,4 +261,82 @@ class QuartzJobsTest {
         assertThat(jobs).filteredOn(l -> l.contains("ArchiveDataJob")).singleElement().asString()
                 .as("the constant its class refers to").contains("\"cron\":\"0 0 2 * * ?\"", "\"enumConstant\":\"JobType.ARCHIVE\"");
     }
+
+    /**
+     * #197: a job's entry names it ({@code name: StockEnrichmentJob}) and lists its triggers, each with its own cron, as
+     * {@code @ConfigurationProperties} bind them and a configuration class schedules them with CronTriggerFactoryBean.
+     */
+    @Test
+    void triggersListedUnderTheJobsEntry() throws IOException {
+        Path root = tmp.resolve("stock");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        for (String job : List.of("StockEnrichmentJob", "StockImportJob")) {
+            write(root, job, """
+                    package com.example.jobs;
+
+                    import org.quartz.Job;
+                    import org.quartz.JobExecutionContext;
+
+                    public class %s implements Job {
+                        @Override
+                        public void execute(JobExecutionContext context) {
+                        }
+                    }
+                    """.formatted(job));
+        }
+        write(root, "StockJobConfig", """
+                package com.example.jobs;
+
+                import org.springframework.scheduling.quartz.CronTriggerFactoryBean;
+                import org.springframework.scheduling.quartz.JobDetailFactoryBean;
+
+                public class StockJobConfig {
+                    JobDetailFactoryBean enrichmentDetail() {
+                        JobDetailFactoryBean f = new JobDetailFactoryBean();
+                        f.setJobClass(StockEnrichmentJob.class);
+                        return f;
+                    }
+
+                    CronTriggerFactoryBean northTrigger(Trigger jobTrigger) {
+                        CronTriggerFactoryBean t = new CronTriggerFactoryBean();
+                        t.setCronExpression(jobTrigger.getCron());
+                        return t;
+                    }
+
+                    record Trigger(String name, String cron) {
+                        String getCron() {
+                            return cron;
+                        }
+                    }
+                }
+                """);
+        Path res = Files.createDirectories(root.resolve("src/main/resources"));
+        Files.writeString(res.resolve("application.yml"), """
+                shop:
+                  jobs:
+                    stock-enrichment:
+                      name: "StockEnrichmentJob"
+                      group: "StockJobs"
+                      triggers:
+                        - name: "Stock_North_EveryDay"
+                          cron: "0 0 10 ? * * *"
+                          region: "north"
+                        - name: "Stock_South_EveryDay"
+                          cron: "0 10 10 ? * * *"
+                          region: "south"
+                      max-retries: 30
+                    stock-import:
+                      name: "StockImportJob"
+                      batch-size: 10000
+                """);
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "stock", "test", out);
+        List<String> jobs = out.toString().lines().filter(l -> l.contains("\"kind\":\"job\"")).toList();
+        assertThat(jobs).as(out.toString()).hasSize(2);
+        assertThat(jobs).filteredOn(l -> l.contains("StockEnrichmentJob")).singleElement().asString()
+                .contains("\"cron\":\"0 0 10 ? * * *\"", "\"name\":\"Stock_North_EveryDay\"", "\"name\":\"Stock_South_EveryDay\"",
+                        "\"cron\":\"0 10 10 ? * * *\"", "\"region\":\"south\"", "shop.jobs.stock-enrichment.triggers[1].cron");
+        assertThat(jobs).filteredOn(l -> l.contains("StockImportJob")).singleElement().asString().doesNotContain("cron");
+    }
 }

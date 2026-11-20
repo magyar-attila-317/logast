@@ -506,6 +506,10 @@ public final class JavaExtractor implements Extractor {
                     byProfile.put(p, v);
                 }
             });
+            List<Map<String, String>> triggers = configTriggers.getOrDefault(c.fqn(), List.of());
+            if (triggers.size() > 1) {   // #197: a job with several triggers runs at each
+                attrs.put("triggers", triggers);
+            }
             if (!byProfile.isEmpty()) {
                 attrs.put("cronByProfile", byProfile);
                 attrs.putIfAbsent("cronFrom", configured.get("@from"));
@@ -683,21 +687,40 @@ public final class JavaExtractor implements Extractor {
             if (cronKey == null) {
                 return;
             }
-            String last = entry.substring(entry.lastIndexOf('.') + 1).replaceAll("\\[\\d+]$", "");
-            List<String> names = new ArrayList<>(keys.values());
-            names.add(last);
+            // the job: named in the entry itself, else in the entry it is part of (#197: jobs.<key>.triggers[i].cron
+            // under jobs.<key>.name), at most three levels up
             ClassInfo job = null;
-            for (String n : names) {
-                job = jobNamed(jobs, n);
-                if (job != null) {
-                    break;
+            String at = entry;
+            for (int up = 0; up <= 3 && job == null && at != null; up++) {
+                Map<String, String> own = groups.getOrDefault(at, Map.of());
+                List<String> names = new ArrayList<>(own.values());
+                names.add(at.substring(at.lastIndexOf('.') + 1).replaceAll("\\[\\d+]$", ""));
+                for (String n : names) {
+                    job = jobNamed(jobs, n);
+                    if (job != null) {
+                        break;
+                    }
                 }
+                at = parentKey(at);
             }
             if (job == null) {
                 return;
             }
             String key = entry + "." + cronKey;
             String cron = keys.get(cronKey).strip();
+            if (base == null) {   // #197: every trigger of the job, with what else its entry says (its name, a country)
+                Map<String, String> trigger = new TreeMap<>();
+                keys.forEach((k, v) -> {
+                    if (v != null && v.length() <= 120) {
+                        trigger.put(k.equals(cronKey) ? "cron" : k, v.strip());
+                    }
+                });
+                trigger.put("from", key);
+                List<Map<String, String>> list = configTriggers.computeIfAbsent(job.fqn(), x -> new ArrayList<>());
+                if (list.stream().noneMatch(t -> t.get("from").equals(key))) {
+                    list.add(trigger);
+                }
+            }
             if (base != null && cron.equals(base.get(key))) {
                 return;   // as in the base files
             }
@@ -787,6 +810,23 @@ public final class JavaExtractor implements Extractor {
         }
         clashes.forEach(out::remove);
         return out;
+    }
+
+    /** #197: job → the triggers its configuration lists (base files). */
+    private final Map<String, List<Map<String, String>>> configTriggers = new LinkedHashMap<>();
+
+    /** The entry a key is part of: {@code a.b[2]} → {@code a.b}, {@code a.b.c} → {@code a.b}; null at the top. */
+    private static String parentKey(String key) {
+        if (key.endsWith("]")) {
+            int i = key.lastIndexOf('[');
+            return i > 0 ? parentKey2(key.substring(0, i)) : null;
+        }
+        return parentKey2(key);
+    }
+
+    private static String parentKey2(String key) {
+        int dot = key.lastIndexOf('.');
+        return dot > 0 ? key.substring(0, dot) : null;
     }
 
     /** The job a configuration value names: its class, simple name, bean name, a key like {@code cleanup-job}, or an enum constant. */

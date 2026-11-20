@@ -91,6 +91,7 @@ class CronTest {
                 {"node":{"id":"job:billing:cleanup","kind":"job","attrs":{"cron":"${cleanup.cron:0 0 1 * * *}","cronResolved":"0 30 1 * * *"},"evidence":{"file":"Cleanup.java","line":9}}}
                 {"node":{"id":"job:billing:poll","kind":"job","attrs":{"fixedRate":"60000"},"evidence":{"file":"Poll.java","line":5}}}
                 {"node":{"id":"job:billing:invoices","kind":"job","env":"prod","evidence":{"file":"V3__pipeline.sql","line":2}}}
+                {"node":{"id":"job:stock:com.example.StockEnrichmentJob","kind":"job","attrs":{"entrypoint":"quartz","cron":"0 0 10 ? * * *","triggers":[{"name":"Stock_North_EveryDay","cron":"0 0 10 ? * * *"},{"name":"Stock_South_EveryDay","cron":"0 10 10 ? * * *"}]},"evidence":{"file":"StockEnrichmentJob.java","line":5}}}
                 {"node":{"id":"job:batch:com.example.ArchiveJob","kind":"job","attrs":{"entrypoint":"quartz","cron":"0 15 1 * * ?","cronByProfile":{"prod":"0 15 2 ? * MON-FRI"}},"evidence":{"file":"ArchiveJob.java","line":5}}}
                 {"edge":{"from":"job:shipping:nightly-export","kind":"after","to":"job:billing:invoices","env":"prod","provenance":"extracted","evidence":{"file":"V3__pipeline.sql","line":2}}}
                 """);
@@ -110,6 +111,13 @@ class CronTest {
         assertThat(Schedules.nextRuns(kb, "job:shipping:nightly-export", "prod", 2, null, ZonedDateTime.parse("2026-11-20T10:00:00Z")))
                 .contains("- Mon 2026-11-23 02:00:00", "- Tue 2026-11-24 02:00:00");
         assertThat(Schedules.nextRuns(kb, "job:billing:invoices", "prod", 2, null, ZonedDateTime.now(UTC))).contains("no schedule in the facts");
+        // #197: a job with several triggers runs at each, named
+        assertThat(Schedules.runsOn(kb, "monday", "prod", null, LocalDate.parse("2026-11-20")))
+                .contains("- 10:00:00  job:stock:com.example.StockEnrichmentJob · Stock_North_EveryDay  0 0 10 ? * * *",
+                        "- 10:10:00  job:stock:com.example.StockEnrichmentJob · Stock_South_EveryDay  0 10 10 ? * * *");
+        assertThat(Schedules.nextRuns(kb, "job:stock:com.example.StockEnrichmentJob", "prod", 1, null, ZonedDateTime.parse("2026-11-20T10:05:00Z")))
+                .contains("StockEnrichmentJob · Stock_North_EveryDay: 0 0 10 ? * * *\n- Sat 2026-11-21 10:00:00",
+                        "StockEnrichmentJob · Stock_South_EveryDay: 0 10 10 ? * * *\n- Fri 2026-11-20 10:10:00");
         // #189: in prod the profile's cron (Quartz: MON-FRI), elsewhere the base one
         assertThat(Schedules.nextRuns(kb, "job:batch:com.example.ArchiveJob", "prod", 1, null, ZonedDateTime.parse("2026-11-20T10:00:00Z")))
                 .contains("- Mon 2026-11-23 02:15:00");
