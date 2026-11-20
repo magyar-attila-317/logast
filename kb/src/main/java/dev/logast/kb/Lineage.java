@@ -299,7 +299,7 @@ public final class Lineage {
         return serviceOf(id);
     }
 
-    static String risks(KnowledgeBase kb, String env) {
+    public static String risks(KnowledgeBase kb, String env) {
         Map<String, String> canonical = new LinkedHashMap<>();
         kb.allEdges().forEach(e -> {
             if (e.fact().kind().equals("same-as")) {
@@ -382,7 +382,10 @@ public final class Lineage {
                 }
             }
         }
+        List<String> plain = plainSecrets(kb, env);
         StringBuilder sb = new StringBuilder("Risks" + (env == null ? "" : " in " + env) + ":\n");
+        sb.append("secrets written in plain text (").append(plain.size()).append("): values redacted in the facts; they belong in a vault\n");
+        plain.forEach(l -> sb.append(l).append('\n'));
         sb.append("handoffs through a table or a file between scheduled jobs of different services (").append(handoffs.size()).append("):\n");
         handoffs.forEach(l -> sb.append(l).append('\n'));
         sb.append("tables written by more than one service (").append(shared.size()).append("):\n");
@@ -390,6 +393,41 @@ public final class Lineage {
         sb.append("reads of another service's schema (").append(crossSchema.size()).append("):\n");
         crossSchema.forEach(l -> sb.append(l).append('\n'));
         return sb.toString();
+    }
+
+    /** #183: where export found a secret written in plain text (and redacted it): env vars, defaults, attributes, rows. */
+    static List<String> plainSecrets(KnowledgeBase kb, String env) {
+        List<String> out = new ArrayList<>();
+        for (var f : kb.nodes()) {
+            if (env != null && f.fact().env() != null && !env.equals(f.fact().env())) {
+                continue;
+            }
+            List<String> where = new ArrayList<>();
+            collect("", f.fact().attrs(), where);
+            if (!where.isEmpty()) {
+                out.add("- " + f.fact().id() + (f.fact().env() == null ? "" : " [" + f.fact().env() + "]") + ": " + String.join(", ", where)
+                        + "  (" + KnowledgeBase.cite(f.fact().evidence(), f.header()) + ")");
+            }
+        }
+        for (var e : kb.allEdges()) {
+            List<String> where = new ArrayList<>();
+            collect("", e.fact().attrs(), where);
+            if (!where.isEmpty()) {
+                out.add("- " + e.fact().from() + " -" + e.fact().kind() + "-> " + e.fact().to() + ": " + String.join(", ", where)
+                        + "  (" + KnowledgeBase.cite(e.fact().evidence(), e.header()) + ")");
+            }
+        }
+        return out;
+    }
+
+    private static void collect(String prefix, Object value, List<String> where) {
+        if (value instanceof Map<?, ?> m) {
+            m.forEach((k, v) -> collect(prefix.isEmpty() ? String.valueOf(k) : prefix + "." + k, v, where));
+        } else if (value instanceof List<?> l) {
+            l.forEach(v -> collect(prefix, v, where));
+        } else if (dev.logast.facts.Secrets.REDACTED.equals(value)) {
+            where.add(prefix);
+        }
     }
 
     /**

@@ -97,6 +97,10 @@ class HelmExtractorTest {
                           env:
                             - name: SHIPPING_URL
                               value: http://shipping:8080
+                            - name: LEGACY_DB_PASSWORD
+                              value: Pr0d-Pa55-2024
+                            - name: E2E_PASSWORD
+                              value: test
                             - name: SPRING_DATASOURCE_PASSWORD
                               valueFrom:
                                 secretKeyRef:
@@ -252,6 +256,9 @@ class HelmExtractorTest {
                 .as("a Key Vault object synced into a Secret, read as an env var").containsEntry("SPRING_DATASOURCE_PASSWORD", "secret:kv-orders-prod/db-password")
                 .as("through its alias").containsEntry("PARTNER_KEY", "secret:kv-orders-prod/api-key");
         assertThat(prod.evidence().file()).as("the subchart's template in the repo").isEqualTo("charts/platform/charts/orders/templates/deployment.yaml");
+        assertThat(env).as("#183: a password written in a chart never reaches the facts; a test stub stays")
+                .containsEntry("LEGACY_DB_PASSWORD", dev.logast.facts.Secrets.REDACTED).containsEntry("E2E_PASSWORD", "test");
+        assertThat(c.nodes.toString()).doesNotContain("Pr0d-Pa55-2024");
 
         assertThat(c.edges("prod")).contains(
                 "deployment:orders -deploys-> image:registry.example.com/shop/orders",
@@ -278,6 +285,21 @@ class HelmExtractorTest {
         assertThat(topic.evidence().line()).isEqualTo(2);
         assertThat(c.node("dashboard:Orders", "prod").attrs()).containsEntry("folder", "Shop");
         assertThat(c.edges("prod")).noneMatch(e -> e.contains("metric:by") || e.contains("metric:histogram_quantile"));
+    }
+
+    /** #183: a secret written in plain text is listed by risks, where it was found. */
+    @Test
+    void plainSecretsAreListedByRisks() throws IOException {
+        Path root = repo();
+        java.io.StringWriter w = new java.io.StringWriter();
+        try (dev.logast.facts.FactWriter fw = new dev.logast.facts.FactWriter(w, dev.logast.facts.Header.of("helm", null, "deploy", null))) {
+            new HelmExtractor(List.of(), List.of(), root.resolve("rendered")).extract(root, fw);
+        }
+        Path kb = Files.createDirectories(tmp.resolve("kb"));
+        Files.writeString(kb.resolve("deploy.jsonl"), w.toString());
+        String risks = dev.logast.kb.Lineage.risks(dev.logast.kb.KnowledgeBase.load(List.of(kb)), "prod");
+        assertThat(risks).contains("secrets written in plain text (1)", "- deployment:orders [prod]: env.LEGACY_DB_PASSWORD")
+                .doesNotContain("E2E_PASSWORD");
     }
 
     @Test

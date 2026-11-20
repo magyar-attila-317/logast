@@ -171,7 +171,7 @@ public final class HelmManifests {
             for (JsonNode e : c.path("env")) {
                 String n = e.path("name").asText();
                 if (e.has("value")) {
-                    envVars.put(n, e.path("value").asText());
+                    envVars.put(n, dev.logast.facts.Secrets.clean(n, e.path("value").asText()));   // #183: never a secret
                 } else if (e.at("/valueFrom/secretKeyRef").isObject()) {
                     String ref = e.at("/valueFrom/secretKeyRef/name").asText() + "/" + e.at("/valueFrom/secretKeyRef/key").asText();
                     String vault = synced.get(ref);
