@@ -416,7 +416,8 @@ public final class NamedFleet {
     }
 
     /** The short commit of {@code root}'s git checkout; null outside git. */
-    static String commit(Path root) {
+    /** The short HEAD commit of {@code root}, or null outside a git work tree. */
+    public static String commit(Path root) {
         try {
             Process p = new ProcessBuilder("git", "rev-parse", "--short", "HEAD").directory(root.toFile())
                     .redirectError(ProcessBuilder.Redirect.DISCARD).start();

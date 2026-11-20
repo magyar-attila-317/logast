@@ -136,6 +136,9 @@ Vocabulary: 1 conflict between keys nobody decided yet
   `logast.yaml` without changing it: `orders: 2 settings company.yaml already sets (logging.structuredFormat, packs) ·
   1 own override (logging.keyStyle: snake) → logast fleet tidy shop`. No section when every member is tidy.
 
+A member whose git `HEAD` moved since its snapshot is rescanned by every overview (#150), with one line saying so;
+`--refresh` is only needed to rescan everything and to update the clones of `repos.yaml`.
+
 Options: `--refresh` rescans every member first (from the roots in the member list; a member not at its root on this
 machine keeps its snapshot; an added member's scan writes only to the fleet folder); `--service <name>` prints one
 member's findings from its last scan; `--json` prints the overview as JSON.

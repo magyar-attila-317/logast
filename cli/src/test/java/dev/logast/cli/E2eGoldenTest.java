@@ -7547,6 +7547,20 @@ abstract class E2eGoldenTest {
                 assertThat(repo.resolve(".logast")).doesNotExist();
             }
 
+            // #150: a member with new commits is rescanned by the plain overview: no --refresh to remember
+            Files.writeString(stock.resolve("NOTES.md"), "stock notes\n");
+            git(stock, "add", "-A");
+            git(stock, "commit", "--quiet", "-m", "notes");
+            String head = git(stock, "rev-parse", "--short", "HEAD").strip();
+            STDERR.setLength(0);
+            run(tmp, "fleet", "shop");
+            assertThat(STDERR.toString()).contains("fleet: stock has new commits since its snapshot (", " → " + head + "): rescanning it")
+                    .as("orders has no new commit").doesNotContain("fleet: orders has new commits");
+            assertThat(mapper.readTree(fleet.resolve("services/stock.json").toFile()).path("commit").asText()).isEqualTo(head);
+            STDERR.setLength(0);
+            run(tmp, "fleet", "shop");
+            assertThat(STDERR.toString()).as("up to date now: nothing rescanned").doesNotContain("rescanning");
+
             // #136: a member whose scan fails (orders, scanned first) is skipped with the reason; the others are still scanned
             Path ordersPolicy = orders.resolve("logast.yaml");
             Files.writeString(ordersPolicy, "logging: [unclosed\n");
