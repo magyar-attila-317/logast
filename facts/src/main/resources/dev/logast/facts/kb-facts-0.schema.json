@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/magyar-attila-317/logast/docs/facts.md#kb-facts-0",
+  "title": "kb-facts/0: one line of a facts file",
+  "description": "A facts file is JSON Lines: a header line first, then one node or edge per line. This schema checks one line; the rules across lines (the header comes first and once, evidence without a repo takes the header's) are in docs/facts.md and in logast's validator (`logast facts validate`).",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": { "header": { "$ref": "#/$defs/header" } },
+      "required": ["header"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": { "node": { "$ref": "#/$defs/node" } },
+      "required": ["node"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": { "edge": { "$ref": "#/$defs/edge" } },
+      "required": ["edge"],
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "kind": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*:[^\\u0000-\\u001f\\u007f]+$" },
+    "env": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "header": {
+      "type": "object",
+      "properties": {
+        "schema": { "const": "kb-facts/0" },
+        "extractor": { "type": "string", "minLength": 1 },
+        "extractorVersion": { "type": "string" },
+        "repo": { "type": "string", "minLength": 1 },
+        "commit": { "type": "string" },
+        "generatedAt": { "type": "string" }
+      },
+      "required": ["schema", "extractor", "repo"],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "repo": { "type": "string" },
+        "root": { "type": "string" },
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "commit": { "type": "string" }
+      },
+      "required": ["file"],
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/kind" },
+        "env": { "$ref": "#/$defs/env" },
+        "attrs": { "type": "object" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      },
+      "required": ["id", "kind", "evidence"],
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "properties": {
+        "from": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/kind" },
+        "to": { "$ref": "#/$defs/id" },
+        "env": { "$ref": "#/$defs/env" },
+        "attrs": { "type": "object" },
+        "provenance": { "enum": ["extracted", "inferred", "llm"] },
+        "confidence": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "via": { "type": "string", "minLength": 1 },
+        "sources": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      },
+      "required": ["from", "kind", "to", "provenance"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "provenance": { "const": "extracted" } } },
+          "then": { "required": ["evidence"], "not": { "anyOf": [{ "required": ["confidence"] }, { "required": ["via"] }, { "required": ["sources"] }] } }
+        },
+        {
+          "if": { "properties": { "provenance": { "const": "inferred" } } },
+          "then": { "required": ["confidence", "via"] }
+        },
+        {
+          "if": { "properties": { "provenance": { "const": "llm" } } },
+          "then": { "required": ["sources"], "not": { "required": ["via"] } }
+        }
+      ]
+    }
+  }
+}

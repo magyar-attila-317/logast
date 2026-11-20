@@ -10,6 +10,7 @@ dependencies {
     runtimeOnly(libs.rewrite.java25)           // 25+
     api(libs.jackson.databind)
     api(libs.jackson.yaml)
+    api(project(":facts"))   // #152: what `logast export` writes
     runtimeOnly(libs.slf4j.nop)
 
     testImplementation(platform(libs.junit.bom))

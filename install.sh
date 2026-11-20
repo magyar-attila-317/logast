@@ -76,7 +76,7 @@ gradle_state() {   # $1: version, $2: the init script, $3: Maven Local
   if [ "$(head -n 1 "$2" | cut -c1-${#INIT_MARKER})" != "$INIT_MARKER" ]; then echo foreign; return; fi
   local m
   if [ "$(init_version "$2")" != "$1" ]; then echo stale; return; fi
-  for m in gradle-plugin cli core; do   # the plugin and what it runs
+  for m in gradle-plugin cli core facts; do   # the plugin and what it runs
     jar_ok "$3/dev/logast/$m/$1/$m-$1.jar" || { echo stale; return; }
   done
   echo current
@@ -286,7 +286,7 @@ BANNER
       ask)
         if [ -t 0 ]; then
           printf '\n  %sSet up Gradle too?%s Then %s./gradlew logastApply%s works in any Java build on this machine:\n' "$B" "$N" "$C" "$N"
-          info "publishes dev.logast:core, cli and gradle-plugin to Maven Local ($(home "$M2"))"
+          info "publishes dev.logast:facts, core, cli and gradle-plugin to Maven Local ($(home "$M2"))"
           info "writes $(home "$GRADLE_INIT"): adds dev.logast to builds with a logast.yaml"
           info "and wherever a logast task is asked for; -Plogast.disabled opts a build out"
           if yes_no "Proceed?"; then
@@ -389,7 +389,7 @@ BANNER
   tasks=""
   [ -z "$ZIP" ] && [ "$UPTODATE" = 0 ] && tasks=":cli:distZip"
   [ "$STARTER" = 1 ] && tasks="$tasks :logging-support:publishToMavenLocal :test-capture:publishToMavenLocal"
-  [ "$GRADLE" = 1 ] && tasks="$tasks :core:publishToMavenLocal :cli:publishToMavenLocal :gradle-plugin:publishToMavenLocal"
+  [ "$GRADLE" = 1 ] && tasks="$tasks :facts:publishToMavenLocal :core:publishToMavenLocal :cli:publishToMavenLocal :gradle-plugin:publishToMavenLocal"
   if [ -n "$tasks" ]; then
     if [ "$UPTODATE" = 1 ]; then step "Publishing to Maven Local"; else step "Building logast"; fi
     info "Gradle, quietly: the first build downloads dependencies and takes a few minutes"
