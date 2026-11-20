@@ -62,5 +62,11 @@ mapping's jobs, CronJobs; when day-of-month and day-of-week are both set, either
 cron with a `${…}` is resolved from the service's config, else the placeholder's default; Quartz's `L`, `W` and `#`
 are named as not supported.
 
+**Code and deployments joined** (#161): when the facts are loaded, a service (`service:<name>`, with the image its
+build pushes when Jib's `to.image` or `bootBuildImage`'s `imageName` say it) is linked to the workloads that run it
+(`deployment:<name>`, a CronJob's `job:…`) by an inferred `deployed-as` edge, per environment, by the strongest rule
+that holds: the same image repository (confidence 0.95), the same name (0.8), the image's last path segment equal to
+the service's name (0.7). A workload two services claim by the same rule is not linked; `summary` lists it.
+
 The server speaks MCP's stdio transport (JSON-RPC 2.0, one message per line: `initialize`, `tools/list`,
 `tools/call`, `ping`); it writes diagnostics to stderr only.

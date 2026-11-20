@@ -82,6 +82,10 @@ public final class JavaExtractor implements Extractor {
             attrs.put("package", a.appPackage);
         }
         Map<String, String> libraries = libraries();
+        String image = builtImage(root);
+        if (image != null) {
+            attrs.put("image", image);   // #161: what links the code to its deployments
+        }
         String boot = libraries.get("org.springframework.boot:spring-boot");
         if (boot != null) {
             attrs.put("springBoot", boot);
@@ -420,6 +424,34 @@ public final class JavaExtractor implements Extractor {
             }
         }
         return out;
+    }
+
+    private static final Pattern JIB_IMAGE = Pattern.compile("(?s)\\bto\\s*\\{[^}]*?\\bimage\\s*(?:=|\\.set\\()\\s*[\"']([^\"']+)[\"']"
+            + "|jib\\.to\\.image\\s*(?:=|\\.set\\()\\s*[\"']([^\"']+)[\"']");
+    private static final Pattern BOOT_IMAGE = Pattern.compile("(?s)bootBuildImage\\s*(?:\\{|\\([^)]*\\)\\s*\\{)[^}]*?\\bimageName\\s*(?:=|\\.set\\()\\s*[\"']([^\"']+)[\"']");
+
+    /** #161: the image the build pushes, when it says so (Jib's {@code to.image}, {@code bootBuildImage}'s imageName). */
+    public static String builtImage(Path root) {
+        for (String f : List.of("build.gradle.kts", "build.gradle")) {
+            Path p = root.resolve(f);
+            if (!Files.isRegularFile(p)) {
+                continue;
+            }
+            String text;
+            try {
+                text = Files.readString(p);
+            } catch (java.io.IOException e) {
+                return null;
+            }
+            for (Pattern pt : List.of(JIB_IMAGE, BOOT_IMAGE)) {
+                Matcher m = pt.matcher(text);
+                if (m.find()) {
+                    String image = m.group(1) != null ? m.group(1) : m.groupCount() >= 2 ? m.group(2) : null;
+                    return image == null || image.contains("$") ? null : image;
+                }
+            }
+        }
+        return null;
     }
 
     private static String buildFile(Path root) {

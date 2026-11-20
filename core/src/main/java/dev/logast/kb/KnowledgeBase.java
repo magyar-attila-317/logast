@@ -42,6 +42,7 @@ public final class KnowledgeBase {
     private final Map<String, List<Fact<Edge>>> in = new HashMap<>();
     private final List<String> problems = new ArrayList<>();
     private final List<Path> files = new ArrayList<>();
+    private final List<String> ambiguous = new ArrayList<>();
     private final Set<String> repos = new java.util.TreeSet<>();
 
     private KnowledgeBase() {
@@ -73,7 +74,25 @@ public final class KnowledgeBase {
                 kb.in.computeIfAbsent(e.to(), k -> new ArrayList<>()).add(fe);
             }
         }
+        kb.derive();
         return kb;
+    }
+
+    /** #161: links the facts imply but no file states: which deployments run which service. */
+    private void derive() {
+        var r = Identity.links(nodes(), out);
+        for (Identity.Link l : r.getKey()) {
+            Fact<Edge> fe = new Fact<>(Identity.edge(l), l.workloadFact().header(), l.workloadFact().file());
+            edges.add(fe);
+            out.computeIfAbsent(fe.fact().from(), k -> new ArrayList<>()).add(fe);
+            in.computeIfAbsent(fe.fact().to(), k -> new ArrayList<>()).add(fe);
+        }
+        ambiguous.addAll(r.getValue());
+    }
+
+    /** Workloads more than one service claims by the same rule: not linked, for a person to decide. */
+    public List<String> ambiguous() {
+        return List.copyOf(ambiguous);
     }
 
     /** The facts files the paths name: files as given, folders searched for {@code *.jsonl}, sorted. */
@@ -139,6 +158,13 @@ public final class KnowledgeBase {
         sb.append("nodes: ").append(nk).append('\n').append("edges: ").append(ek).append('\n');
         if (!problems.isEmpty()) {
             sb.append(problems.size()).append(" lines left out (not valid facts), e.g. ").append(problems.getFirst()).append('\n');
+        }
+        long linked = edges.stream().filter(e -> e.fact().kind().equals("deployed-as")).count();
+        if (linked > 0) {
+            sb.append(linked).append(" deployments linked to their service's code (inferred: image, name or image name)\n");
+        }
+        if (!ambiguous.isEmpty()) {
+            sb.append("not linked, more than one service fits: ").append(String.join("; ", ambiguous)).append('\n');
         }
         return sb.toString();
     }
