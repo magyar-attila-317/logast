@@ -294,6 +294,41 @@ public final class FlywayExtractor implements Extractor {
         }
     }
 
+    private static final Pattern MISSING = Pattern.compile("(schema|role) \"([^\"]+)\" does not exist");
+
+    /**
+     * #192: migrations that expect a schema or a role made outside Flyway (by a DBA, an init script, another service):
+     * the missing one is created, empty, and the migrations run again (a failed one rolled back: PostgreSQL's DDL is
+     * transactional). Said on stderr; what the migrations create still counts.
+     */
+    private static void migrateCreatingWhatIsMissing(org.flywaydb.core.api.configuration.FluentConfiguration flyway, String url,
+                                                     String user, String password, Run run) throws SQLException {
+        Set<String> created = new LinkedHashSet<>();
+        while (true) {
+            try {
+                flyway.load().migrate();
+                return;
+            } catch (org.flywaydb.core.api.FlywayException e) {
+                Matcher m = null;
+                for (Throwable t = e; t != null && m == null; t = t.getCause()) {
+                    Matcher mm = MISSING.matcher(String.valueOf(t.getMessage()));
+                    if (mm.find()) {
+                        m = mm;
+                    }
+                }
+                if (m == null || created.size() >= 20 || !created.add(m.group(1) + " " + m.group(2))) {
+                    throw e;
+                }
+                String name = m.group(2).replace("\"", "\"\"");
+                try (Connection c = DriverManager.getConnection(url, user, password); Statement st = c.createStatement()) {
+                    st.execute(m.group(1).equals("schema") ? "create schema if not exists \"" + name + "\"" : "create role \"" + name + "\"");
+                }
+                System.err.println("flyway" + (run.env() == null ? "" : " " + run.env()) + ": the migrations expect " + m.group(1) + " "
+                        + m.group(2) + " to exist (made outside Flyway): created it empty and ran them again");
+            }
+        }
+    }
+
     private void migrate(Path root, Run run, String url, String user, String password, FactSink out) throws SQLException {
         Map<String, String> config = run.env() == null ? SpringProperties.read(root) : SpringProperties.forProfile(root, run.env());
         List<Path> files = migrationFiles(run.folders());
@@ -341,7 +376,7 @@ public final class FlywayExtractor implements Extractor {
                 }
             }
         }
-        flyway.load().migrate();
+        migrateCreatingWhatIsMissing(flyway, url, user, password, run);
 
         Map<String, Evidence> createdIn = createdIn(root, files, placeholders);
         try (Connection c = DriverManager.getConnection(url, user, password)) {

@@ -63,7 +63,8 @@ final class Fleet implements Callable<Integer> {
     @Option(names = "--kb", description = "Named fleet: also export every member's facts (any repo layout) into <fleet>/kb/<member>/ "
             + "and apply kb/mappings/*.yaml into kb/mapped/: the fleet's knowledge base for logast mcp (#182)")
     boolean kb;
-    @Option(names = "--kb-full", description = "With --kb: export every member, also those unchanged since their last export (#184)")
+    @Option(names = "--kb-full", description = "Export every member's knowledge base, also those unchanged since their last export, "
+            + "with everything (implies --kb and --flyway)")
     boolean kbFull;
     @Option(names = "--kb-threads", defaultValue = "2", description = "With --kb: members exported at a time (one analysis can "
             + "take a few GB; default: ${DEFAULT-VALUE})")
@@ -106,6 +107,9 @@ final class Fleet implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
+        if (kbFull && !flyway) {
+            flyway = true;   // #191: a full export is everything, the tables the migrations create too (needs Docker for those)
+        }
         if (!kb && (kbFull || flyway || !rows.isEmpty() || postgresImage != null)) {
             kb = true;   // #191: they only mean something for the knowledge base; without --kb they were silently ignored
             System.err.println("fleet: --kb-full/--flyway/--rows/--postgres-image export the knowledge base: --kb is implied");
