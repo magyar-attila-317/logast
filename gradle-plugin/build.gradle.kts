@@ -94,6 +94,18 @@ val installScriptTest = tasks.register<Exec>("installScriptTest") {
     doLast { marker.get().asFile.apply { parentFile.mkdirs(); writeText("passed\n") } }
 }
 tasks.check { dependsOn(installScriptTest) }
+// scripts/release.sh (#155): what it refuses and what a release commits, tags and pushes; temporary git repos only
+val releaseScriptTest = tasks.register<Exec>("releaseScriptTest") {
+    description = "Checks scripts/release.sh with scripts/test-release.sh"
+    group = "verification"
+    val script = rootProject.file("scripts/test-release.sh")
+    val marker = layout.buildDirectory.file("release-script-test/passed")
+    inputs.files(script, rootProject.file("scripts/release.sh"))
+    outputs.file(marker)
+    commandLine("bash", script.absolutePath)
+    doLast { marker.get().asFile.apply { parentFile.mkdirs(); writeText("passed\n") } }
+}
+tasks.check { dependsOn(releaseScriptTest) }
 tasks.named<JavaCompile>(functionalTest.compileJavaTaskName) { options.release = 21 }
 
 if (providers.gradleProperty("e2e").isPresent || providers.environmentVariable("CI").isPresent) {

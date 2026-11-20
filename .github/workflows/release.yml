@@ -1,0 +1,42 @@
+# #155: a GitHub release for every version tag (v1.2.3), made by scripts/release.sh. #24: the tag must name the version
+# in gradle.properties, so the published starter, the CLI and the coordinates the CLI writes all carry the same number.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # creates the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the previous tag, for the release notes
+      - name: Tag equals gradle.properties version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(sed -n 's/^version=//p' gradle.properties)"
+          echo "tag $tag, gradle.properties $version"
+          test "$tag" = "$version"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            21
+            25
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build, unit tests and the release zip
+        run: ./gradlew build :cli:distZip -x :cli:e2e -x :cli:e2eJdk21 --console=plain
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip="cli/build/distributions/logast-${GITHUB_REF_NAME#v}.zip"
+          test -f "$zip" || { ls cli/build/distributions; exit 1; }
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" "$zip" --verify-tag --generate-notes --title "logast ${GITHUB_REF_NAME#v}" $prerelease
