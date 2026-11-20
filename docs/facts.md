@@ -113,6 +113,39 @@ migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes w
 - An environment whose migrations fail is named on stderr, with the placeholders that had no value; the others are
   still written.
 
+## Company-specific facts: `logast facts map`
+
+Some knowledge is your company's own: a scheduler that keeps its job definitions in database rows, a convention for
+naming things. `logast facts map --mapping <file.yaml> <facts files or folders…> [--out file]` turns facts into more
+facts with rules from a mapping file, so that knowledge needs no code in logast and the file stays in your own repo
+(#158). For example, with the rows `export --flyway --rows` wrote:
+
+```yaml
+mappings:
+  - name: jobs
+    match: {kind: row, idPrefix: "row:orchestration.job_definition:", where: {enabled: "true"}}
+    nodes:
+      - {id: "job:{service}:{name}", kind: job, attrs: {schedule: "{cron}", scheduleFormat: unix}}
+    edges:
+      - {from: "service:{service}", kind: has, to: "job:{service}:{name}"}
+      - {from: "job:{service}:{name}", kind: runs, to: "profile:{service}:{profile}"}   # joins the @Profile bean
+  - name: pipeline
+    match: {kind: row, idPrefix: "row:orchestration.pipeline_step:"}
+    lookup:                                   # other nodes by id: their attributes as {as.attribute}
+      - {as: job, id: "row:orchestration.job_definition:{job_id}"}
+      - {as: next, id: "row:orchestration.job_definition:{next_job_id}"}
+    edges:
+      - {from: "job:{job.service}:{job.name}", kind: after, to: "job:{next.service}:{next.name}"}
+```
+
+- **`match`**: a node `kind`, an `idPrefix`, and `where` (attribute equals a value, as text); at least a kind or a
+  prefix.
+- **Templates**: `{attribute}` of the matched node, `{as.attribute}` of a lookup, `{_id}`, `{_env}`, `{_kind}`. A
+  template with a placeholder that has no (non-blank) value is skipped and counted on stderr, never written
+  half-filled; a lookup finds the node of the same environment (or one for all).
+- **Mapped facts** keep the matched fact's environment and evidence (with its repo and commit made explicit), and say
+  which rule made them (`attrs.mappedBy`). Write them next to the other facts files; `logast mcp` loads them all.
+
 ## Checking a file
 
 ```bash

@@ -95,6 +95,16 @@ public final class KnowledgeBase {
         return List.copyOf(out);
     }
 
+    /** Every node fact, in id order (a node in several environments or files once per fact). */
+    public List<Fact<Node>> nodes() {
+        return nodes.values().stream().flatMap(List::stream).toList();
+    }
+
+    /** The repos of the loaded files (their headers). */
+    public Set<String> repos() {
+        return Set.copyOf(repos);
+    }
+
     public List<String> problems() {
         return List.copyOf(problems);
     }

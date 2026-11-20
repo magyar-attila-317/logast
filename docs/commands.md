@@ -509,6 +509,7 @@ Not in `--help`, for the cases they name; `apply`, `init` and `fleet` do the usu
 | `logast shape <svc>` | exports the code with its own names and words replaced, to send a reproduction ([below](#shape)) |
 | `logast export <svc> [--out <file>] [--repo <name>]` | writes the service's facts for a knowledge base across repos: the service, its endpoints, listeners and jobs (with their schedules), the calls it makes and the entrypoints that reach them, topics and queues, `@Profile` beans and the entrypoints that run them, config keys read, Quartz jobs, the tables each entrypoint reads and writes, the libraries on its classpath; `--flyway` adds the tables (and `--rows` the rows) the migrations create per environment, by running them in a throwaway PostgreSQL (Docker); read-only, the same output for the same code ([facts.md](facts.md#what-logast-export-writes)) |
 | `logast mcp [--kb <path>…]` / `logast mcp config` | an MCP server (stdio) answering questions over the facts of many repos, with sources; `config` prints the entry for an MCP client ([mcp.md](mcp.md)) |
+| `logast facts map --mapping <file> <facts…>` | company-specific facts from a mapping file: rules that match facts and write new nodes and edges from templates ([facts.md](facts.md#company-specific-facts-logast-facts-map)) |
 | `logast facts validate <file>…` | checks facts files (the format `logast export` and other extractors write) and names each broken line as `file:line` ([facts.md](facts.md)) |
 
 ### Old names
