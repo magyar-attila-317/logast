@@ -113,6 +113,44 @@ final class Out {
             ticker = live ? Thread.ofPlatform().daemon().start(this::tick) : null;
             if (ticker != null) {
                 active = this;
+                System.setErr(new ClearingStream(err));   // #196: other output first clears the live line
+            }
+        }
+
+        /** #196: stderr while a live line shows: a line someone else prints starts by clearing it (the next tick redraws it). */
+        static final class ClearingStream extends java.io.PrintStream {
+            private final java.io.PrintStream to;
+            private boolean lineStart = true;
+
+            ClearingStream(java.io.PrintStream to) {
+                super(to, true);
+                this.to = to;
+            }
+
+            @Override
+            public void write(int b) {
+                synchronized (to) {
+                    if (lineStart) {
+                        to.print("\r\u001b[2K");
+                    }
+                    to.write(b);
+                    lineStart = b == '\n';
+                }
+            }
+
+            @Override
+            public void write(byte[] buf, int off, int len) {
+                if (len <= 0) {
+                    return;
+                }
+                synchronized (to) {
+                    if (lineStart) {
+                        to.print("\r\u001b[2K");
+                    }
+                    to.write(buf, off, len);
+                    lineStart = buf[off + len - 1] == '\n';
+                    to.flush();
+                }
             }
         }
 
@@ -173,6 +211,9 @@ final class Out {
             }
             if (active == this) {
                 active = null;
+                if (System.err instanceof ClearingStream) {
+                    System.setErr(err);
+                }
             }
             if (ticker != null) {
                 ticker.interrupt();

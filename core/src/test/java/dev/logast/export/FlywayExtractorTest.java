@@ -282,7 +282,7 @@ class FlywayExtractorTest {
         Files.writeString(res.resolve("db/migration/V2__shares.sql"), "create table share (id bigint primary key);\n");
         // a callback Flyway runs after the migrations, outside logast's placeholder scan: Flyway reports it, logast fills it
         Files.writeString(res.resolve("db/migration/afterMigrate.sql"), "comment on schema ${app.owner.schema} is 'owned by the service';\n");
-        Files.writeString(res.resolve("application.yml"), "app:\n  db:\n    schema: allocation\napp:\n  owner:\n    schema: public\n");
+        Files.writeString(res.resolve("application.yml"), "app:\n  db:\n    schema: allocation\n  owner:\n    schema: public\n");
         Path jar = tmp.resolve("jdbc-ext-2.0.0.jar");
         try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar))) {
             zip.putNextEntry(new java.util.zip.ZipEntry("db/migration/V1__bootstrap.sql"));
@@ -323,5 +323,30 @@ class FlywayExtractorTest {
         fx.extract(root, c);
         assertThat(fx.problems()).isEmpty();
         assertThat(c.nodes).extracting(Node::id).contains("table:billing.billing", "table:billing.run_lock");
+    }
+
+    /**
+     * #196: a migration that reads what another service makes (a view on its table, its sequence) is left out; the
+     * migrations after it still run, and what it reads becomes a fact.
+     */
+    @Test
+    void aMigrationNeedingAnotherServicesObjectIsLeftOut() throws IOException {
+        Path root = tmp.resolve("accounting");
+        Path mig = Files.createDirectories(root.resolve("src/main/resources/db/migration"));
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        Files.writeString(mig.resolve("V1__ledger.sql"), "create table ledger (id bigint primary key);\n");
+        Files.writeString(mig.resolve("V2__shared_views.sql"), "create view ledger_items as select * from catalog.items;\n");
+        Files.writeString(mig.resolve("V3__journal.sql"), "create table journal (id bigint primary key);\n");
+        Files.writeString(mig.resolve("V4__seq.sql"), "create table posting (id bigint primary key default nextval('orders_seq'));\n");
+        Files.writeString(mig.resolve("V5__last.sql"), "create table period (id bigint primary key);\n");
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("accounting", List.of(), null);
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.nodes).extracting(Node::id).contains("table:public.ledger", "table:public.journal", "table:public.period")
+                .doesNotContain("table:public.ledger_items", "table:public.posting");
+        assertThat(c.edges).filteredOn(e -> e.kind().equals("reads")).extracting(e -> e.from() + " " + e.to() + " " + e.attrs().get("via"))
+                .containsExactlyInAnyOrder("service:accounting table:catalog.items migration V2__shared_views.sql",
+                        "service:accounting table:public.orders_seq migration V4__seq.sql");
     }
 }
