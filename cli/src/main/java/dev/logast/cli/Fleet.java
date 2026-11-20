@@ -491,11 +491,14 @@ final class Fleet implements Callable<Integer> {
                     continue;
                 }
                 String head = NamedFleet.commit(m.getValue());
-                if (head != null && !head.equals(snap.commit())) {
+                boolean newCommits = head != null && !head.equals(snap.commit());
+                boolean otherLogast = !dev.logast.Build.id().equals(snap.logast());   // #195: findings of another logast
+                if (newCommits || otherLogast) {
                     String svc = m.getKey();
                     Path root = m.getValue();
-                    System.err.println("fleet: " + svc + " has new commits since its snapshot (" + snap.commit() + " → " + head
-                            + "): rescanning it");
+                    System.err.println(newCommits ? "fleet: " + svc + " has new commits since its snapshot (" + snap.commit() + " → " + head
+                            + "): rescanning it" : "fleet: " + svc + "'s snapshot was made by " + (snap.logast() == null ? "an older logast"
+                            : "logast " + snap.logast()) + ", this is " + dev.logast.Build.id() + ": rescanning it");
                     skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc)
                             ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
                 }

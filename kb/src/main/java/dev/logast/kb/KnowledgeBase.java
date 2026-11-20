@@ -70,6 +70,8 @@ public final class KnowledgeBase {
             r.problems().forEach(p -> kb.problems.add(f + ":" + p.line() + ": " + p.message()));
             if (r.header() != null) {
                 kb.repos.add(r.header().repo());
+                String by = r.header().extractorVersion() == null ? "unknown" : r.header().extractorVersion();
+                kb.writtenBy.merge(by, 1, Integer::sum);   // #195: which logast wrote the facts
             }
             for (Node n : r.nodes()) {
                 kb.nodes.computeIfAbsent(n.id(), k -> new ArrayList<>()).add(new Fact<>(n, r.header(), f));
@@ -309,9 +311,16 @@ public final class KnowledgeBase {
     // ---- questions ----------------------------------------------------------------------------------------------------
 
     /** What is loaded: files, repos, nodes and edges by kind. */
+    /** #195: logast build → facts files it wrote. */
+    private final Map<String, Integer> writtenBy = new TreeMap<>();
+
     public String summary() {
         StringBuilder sb = new StringBuilder();
         sb.append(files.size()).append(" facts files, ").append(repos.size()).append(" repos: ").append(String.join(", ", repos)).append('\n');
+        if (!writtenBy.isEmpty()) {
+            sb.append("written by: ").append(String.join(", ", writtenBy.entrySet().stream()
+                    .map(e -> "logast " + e.getKey() + " (" + e.getValue() + " files)").toList())).append('\n');
+        }
         Map<String, Integer> nk = new TreeMap<>();
         nodes.values().forEach(l -> nk.merge(l.getFirst().fact().kind(), 1, Integer::sum));
         Map<String, Integer> ek = new TreeMap<>();

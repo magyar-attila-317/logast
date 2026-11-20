@@ -42,7 +42,7 @@ final class Facts {
                     : Files.newBufferedWriter(out, StandardCharsets.UTF_8);
             dev.logast.kb.FactMapping.Stats stats;
             try (dev.logast.facts.FactWriter fw = new dev.logast.facts.FactWriter(w,
-                    dev.logast.facts.Header.of("mapping", McpCmd.version(), repo, null))) {
+                    dev.logast.facts.Header.of("mapping", McpCmd.build(), repo, null))) {
                 stats = m.apply(kb, fw);
             } finally {
                 if (out != null) {

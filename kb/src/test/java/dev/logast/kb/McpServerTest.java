@@ -120,6 +120,25 @@ class McpServerTest {
         assertThat(log.toString()).as("diagnostics on the log, never on stdout").contains("2 facts files");
     }
 
+    /** #195: a server whose logast was installed again says so (it runs the old code until the client restarts it). */
+    @Test
+    void aServerRunningAnOldInstallationSaysSo() throws IOException {
+        List<Path> files = files();
+        var probe = McpServer.installProbe;
+        try {
+            McpServer.installProbe = () -> "100:1";
+            McpServer server = new McpServer(() -> files, "0.2.0 (old)", new PrintStream(new ByteArrayOutputStream()));
+            String ask = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"summary\",\"arguments\":{}}}";
+            assertThat(server.handle(ask).at("/result/content/0/text").asText()).doesNotContain("logast was updated")
+                    .as("which logast wrote the facts").contains("written by: logast ");
+            McpServer.installProbe = () -> "200:2";
+            assertThat(server.handle(ask).at("/result/content/0/text").asText())
+                    .contains("logast was updated since this MCP server started (it runs logast 0.2.0 (old) still). Restart the MCP client");
+        } finally {
+            McpServer.installProbe = probe;
+        }
+    }
+
     @Test
     void changedFactsAreReloaded() throws IOException {
         List<Path> files = files();

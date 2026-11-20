@@ -43,12 +43,19 @@ public final class NamedFleet {
      * What a member's scan or apply left in the fleet folder: what {@code logast fleet <paths…>} computes per service,
      * plus the vocabulary evidence the worksheet is built from, so the overview needs no rescan.
      */
+    /** @param logast #195: the logast build that made it; a snapshot of another build is made again */
     public record Snapshot(String service, String root, String created, String commit, FleetReport.Service report,
                            List<CentralVocabulary.Use> vocabulary, List<CentralVocabulary.KnownArea> areas,
-                           Settings settings, String appPackage) {
+                           Settings settings, String appPackage, String logast) {
         public Snapshot {
             vocabulary = vocabulary == null ? List.of() : vocabulary;
             areas = areas == null ? List.of() : areas;
+        }
+
+        public Snapshot(String service, String root, String created, String commit, FleetReport.Service report,
+                        List<CentralVocabulary.Use> vocabulary, List<CentralVocabulary.KnownArea> areas, Settings settings,
+                        String appPackage) {
+            this(service, root, created, commit, report, vocabulary, areas, settings, appPackage, null);
         }
 
         /** A snapshot without the application package (#132 added it: {@code fleet --service} shows paths below it). */
@@ -362,7 +369,8 @@ public final class NamedFleet {
         FleetReport.Service service = new FleetReport.Service(s.name(), rr.toString(), s.files(), s.entrypoints(), s.severity(),
                 s.rules(), s.packScore(), s.score(), s.overrides(), s.meters(), s.logCoverage(), s.surface());
         return new Snapshot(name, rr.toString(), Instant.now().toString(), commit(rr), service,
-                CentralVocabulary.uses(rr, name), CentralVocabulary.knownAreas(rr, name), Settings.of(policy), a.appPackage);
+                CentralVocabulary.uses(rr, name), CentralVocabulary.knownAreas(rr, name), Settings.of(policy), a.appPackage,
+                dev.logast.Build.id());
     }
 
     /** Writes the snapshot to {@code <fleet>/services/<service>.json} (whole or not at all). */
