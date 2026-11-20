@@ -37,6 +37,7 @@ public final class HelmExtractor implements Extractor {
     private final List<String> render;
     private final Path rendered;
     private final List<String> problems = new ArrayList<>();
+    private final Map<String, String> namespaces = new LinkedHashMap<>();
 
     /**
      * @param envs     the environments (empty: the helmfile's {@code environments:})
@@ -111,7 +112,7 @@ public final class HelmExtractor implements Extractor {
             }
             try {
                 new HelmManifests(env, source -> sourceEvidence(root, charts, source), name -> valuesLine(root, name, rendered))
-                        .extract(manifests, out);
+                        .withReleaseNamespaces(namespaces).extract(manifests, out);
             } catch (IOException | RuntimeException e) {
                 problems.add(env + ": the manifests could not be read: " + e.getMessage());
             }
@@ -143,6 +144,9 @@ public final class HelmExtractor implements Extractor {
                 Map<String, Object> attrs = new TreeMap<>();
                 attrs.put("chart", chart);
                 attrs.put("rendered", rendered);
+                if (!r.path("namespace").asText("").isBlank()) {
+                    namespaces.put(name, r.path("namespace").asText());
+                }
                 for (String f : List.of("namespace", "version")) {
                     if (!r.path(f).asText("").isBlank()) {
                         attrs.put(f, r.path(f).asText());

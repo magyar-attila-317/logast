@@ -41,6 +41,13 @@ public final class HelmManifests {
     private final String env;
     private final Function<String, Evidence> evidenceOf;
     private final Function<String, Evidence> valuesLine;
+    private java.util.Map<String, String> releaseNamespaces = java.util.Map.of();
+
+    /** #160: the namespace helmfile deploys each release to: helm template leaves it off the objects. */
+    public HelmManifests withReleaseNamespaces(java.util.Map<String, String> namespaces) {
+        this.releaseNamespaces = namespaces;
+        return this;
+    }
 
     /**
      * @param env        the environment the manifests are of
@@ -409,7 +416,16 @@ public final class HelmManifests {
     // ---- helpers ------------------------------------------------------------------------------------------------------
 
     /** namespace, release and chart from the object's metadata and Helm's standard labels. */
-    private static Map<String, Object> meta(JsonNode b) {
+    private Map<String, Object> meta(JsonNode b) {
+        Map<String, Object> attrs = metaOf(b);
+        Object release = attrs.get("release");
+        if (!attrs.containsKey("namespace") && release != null && releaseNamespaces.get(release.toString()) != null) {
+            attrs.put("namespace", releaseNamespaces.get(release.toString()));
+        }
+        return attrs;
+    }
+
+    private static Map<String, Object> metaOf(JsonNode b) {
         Map<String, Object> attrs = new TreeMap<>();
         JsonNode md = b.path("metadata");
         if (!md.path("namespace").asText("").isBlank()) {

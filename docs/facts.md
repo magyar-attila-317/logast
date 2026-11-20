@@ -130,6 +130,8 @@ logast export ~/src/deploy --rendered out/                              # out/<e
 - **Rendered**: the releases whose chart is in the repo, plus `--helm-render` ones (third-party charts that carry your
   topics, users or dashboards). Every release, rendered or not, is a `release:<name>` fact with its chart, version and
   namespace. `helm` and `helmfile` must be on `PATH` (or use `--rendered`).
+- **Namespaces**: `helm template` leaves them off the objects; each object gets its release's namespace from
+  `helmfile list`.
 - **Facts** per environment: `deployment:<name>` (Deployment, StatefulSet, DaemonSet, Job) with `images`, `env` (a
   value, `configmap:<name>/<key>`, or `secret:<vault>/<object>` for a Key Vault object a SecretProviderClass syncs into
   a Secret), `envFrom`, `replicas`, `release`, `chart`; `deploys` `image:<repository>` (`tag`); `uses-secret`
@@ -150,6 +152,11 @@ environment, without the `terragrunt` or `terraform` CLIs: no state, no credenti
   (`find_in_parent_folders("root.hcl")`), and the module's variable defaults evaluate the module (HCL parsed with
   hcl4j), so names built from variables and locals come out as the environment has them. Values Terraform only knows
   at plan time (functions such as `lookup`, other resources' attributes) stay unknown and are left out.
+- **With `terragrunt` on the PATH** (#175), a unit's inputs and source come from `terragrunt render --format json`
+  (1.x), or `render-json` into a temporary file on older versions (checked with 0.67), so Terragrunt's own functions
+  (`get_env`, `get_terragrunt_dir`, `read_terragrunt_config`) are evaluated; nothing is written into the repo. If both
+  fail, the HCL is read as above. The unit says which (`inputsFrom: terragrunt|hcl`). `LOGAST_TERRAGRUNT` picks another
+  terragrunt binary than the PATH's.
 - **Layout**: units under `terragrunt/<subscription>/<region>/<env>/…`: the environment is the segment after the
   region. The module is the folder the unit's `source` names under `terraform/` (`…/terraform//<module>`); one level of
   local submodules (`module` blocks with a `./` source) is followed with the block's arguments as variables.

@@ -34,6 +34,91 @@ public final class TerraformExtractor implements Extractor {
             "account_tier", "storage_account_name", "server_name", "resource_group_name");
 
     private final List<String> problems = new ArrayList<>();
+    private final boolean useTerragrunt;
+    private final String terragrunt;
+
+    /** Inputs from {@code terragrunt render} when terragrunt is on the PATH (#175), else from the HCL alone. */
+    public TerraformExtractor() {
+        this(terragruntAvailable());
+    }
+
+    public TerraformExtractor(boolean useTerragrunt) {
+        this(useTerragrunt, binary());
+    }
+
+    /** @param terragrunt the terragrunt binary to run */
+    TerraformExtractor(boolean useTerragrunt, String terragrunt) {
+        this.useTerragrunt = useTerragrunt;
+        this.terragrunt = terragrunt;
+    }
+
+    /** The terragrunt to run: {@code LOGAST_TERRAGRUNT} (a path, for a version other than the PATH's), else {@code terragrunt}. */
+    static String binary() {
+        String b = System.getenv("LOGAST_TERRAGRUNT");
+        return b == null || b.isBlank() ? "terragrunt" : b;
+    }
+
+    static boolean terragruntAvailable() {
+        try {
+            Process p = new ProcessBuilder(binary(), "--version").redirectErrorStream(true).start();
+            p.getInputStream().readAllBytes();
+            return p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0;
+        } catch (IOException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /**
+     * The unit's resolved config, in the unit's folder: {@code terragrunt render --format json} (1.x and late 0.x), else
+     * {@code terragrunt render-json --terragrunt-json-out <temp file>} (older setups); null when both fail (then the HCL
+     * is read). Neither writes into the repo.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> render(Path unit) {
+        String last = null;
+        try {
+            Run r = run(unit.getParent(), List.of(terragrunt, "render", "--format", "json", "--non-interactive"));
+            if (r.ok() && r.out().indexOf('{') >= 0) {
+                return new com.fasterxml.jackson.databind.ObjectMapper().readValue(r.out().substring(r.out().indexOf('{')), Map.class);
+            }
+            last = r.err();
+            Path json = Files.createTempFile("logast-terragrunt", ".json");
+            Run old = run(unit.getParent(), List.of(terragrunt, "render-json", "--terragrunt-json-out", json.toString(), "--terragrunt-non-interactive"));
+            String text = Files.readString(json);
+            Files.deleteIfExists(json);
+            if (old.ok() && text.indexOf('{') >= 0) {
+                return new com.fasterxml.jackson.databind.ObjectMapper().readValue(text.substring(text.indexOf('{')), Map.class);
+            }
+            last = old.err();
+        } catch (IOException e) {
+            last = e.getMessage();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+        problems.add(unit.getParent().getFileName() + ": terragrunt could not render it, read the HCL instead: "
+                + (last == null ? "" : last.replaceAll("\\u001b\\[[0-9;]*m", "").lines().filter(l -> !l.isBlank()).reduce((a, b) -> b).orElse("")));
+        return null;
+    }
+
+    private record Run(boolean ok, String out, String err) {
+    }
+
+    private static Run run(Path dir, List<String> cmd) throws IOException, InterruptedException {
+        Path err = Files.createTempFile("logast-terragrunt", ".err");
+        Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectError(err.toFile()).start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        boolean done = p.waitFor(2, java.util.concurrent.TimeUnit.MINUTES);
+        if (!done) {
+            p.destroyForcibly();
+        }
+        String stderr = Files.readString(err);
+        Files.deleteIfExists(err);
+        return new Run(done && p.exitValue() == 0, out, done ? stderr : "timeout");
+    }
 
     @Override
     public String id() {
@@ -82,23 +167,36 @@ public final class TerraformExtractor implements Extractor {
 
     @SuppressWarnings("unchecked")
     private void unit(Path root, Path unit, String env, FactSink out) throws IOException {
-        Map<String, Object> tg = parse(read(unit), Map.of());
         Map<String, Object> inputs = new LinkedHashMap<>();
-        Path included = included(unit);
-        if (included != null) {
-            Object in = parse(read(included), Map.of()).get("inputs");
-            if (in instanceof Map<?, ?> m) {
+        String source;
+        String inputsFrom;
+        Map<String, Object> rendered = useTerragrunt ? render(unit) : null;
+        if (rendered != null) {   // #175: Terragrunt evaluates its own functions (get_env, get_terragrunt_dir, …)
+            if (rendered.get("inputs") instanceof Map<?, ?> m) {
                 inputs.putAll((Map<String, Object>) m);
             }
+            source = rendered.get("terraform") instanceof Map<?, ?> t && t.get("source") != null ? String.valueOf(t.get("source")) : null;
+            inputsFrom = "terragrunt";
+        } else {
+            Map<String, Object> tg = parse(read(unit), Map.of());
+            Path included = included(unit);
+            if (included != null) {
+                Object in = parse(read(included), Map.of()).get("inputs");
+                if (in instanceof Map<?, ?> m) {
+                    inputs.putAll((Map<String, Object>) m);
+                }
+            }
+            if (tg.get("inputs") instanceof Map<?, ?> m) {
+                inputs.putAll((Map<String, Object>) m);
+            }
+            source = tg.get("terraform") instanceof Map<?, ?> t ? String.valueOf(t.get("source")) : null;
+            inputsFrom = "hcl";
         }
-        if (tg.get("inputs") instanceof Map<?, ?> m) {
-            inputs.putAll((Map<String, Object>) m);
-        }
-        String source = tg.get("terraform") instanceof Map<?, ?> t ? String.valueOf(t.get("source")) : null;
         Path module = module(root, unit, source);
         String unitId = "tf-unit:" + rel(root, unit.getParent());
         Map<String, Object> ua = new TreeMap<>();
         ua.put("env", env);
+        ua.put("inputsFrom", inputsFrom);
         if (module != null) {
             ua.put("module", rel(root, module));
         }
