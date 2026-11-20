@@ -140,6 +140,13 @@ Options: `--refresh` rescans every member first (from the roots in the member li
 machine keeps its snapshot; an added member's scan writes only to the fleet folder); `--service <name>` prints one
 member's findings from its last scan; `--json` prints the overview as JSON.
 
+**Next steps** (#149) end the overview and top the report page: what to do next, most basic first, each with the
+exact command or file: members without a snapshot (`--refresh`), settings every member uses that company.yaml does not
+set yet (uncomment them), settings the members disagree on (decide), members that repeat company settings
+(`logast fleet tidy <name>`), vocabulary conflicts (the worksheet), calls that drop the trace (`logast apply .` in the
+service that breaks it), high findings (`logast apply .`, lowest score first). The overview's `report:` line is a
+`file://` URL (clickable in most terminals); `--open` opens the page in the browser. `--json` has the steps as `next`.
+
 **The report page** `<fleet>/report/fleet.html` is rewritten by every `logast fleet <name>` and by every member's scan or
 apply (#141), so it is never older than the newest snapshot (`--out <dir>` writes it elsewhere; `--html` is still
 accepted). Its history keeps one `fleet-<date>.json` per day; the trend compares with the last earlier day. On the page:
