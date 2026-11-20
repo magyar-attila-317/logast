@@ -26,7 +26,7 @@ import java.util.concurrent.Callable;
 /** #156: an MCP server over the facts of many repos (docs/mcp.md). */
 @Command(name = "mcp", hidden = true, description = "MCP server (stdio) that answers questions over facts files of many "
         + "repos: who writes a table, what an endpoint calls, which entrypoints run a profile (docs/mcp.md)",
-        subcommands = {McpCmd.Config.class, McpCmd.ReviewPage.class})
+        subcommands = {McpCmd.Config.class, McpCmd.ReviewPage.class, McpCmd.Vocabulary.class})
 final class McpCmd implements Callable<Integer> {
     @Option(names = "--kb", description = "A facts file or a folder of them (repeatable; default: LOGAST_KB, else kb.paths "
             + "in ~/.config/logast/config.yaml)")
@@ -101,6 +101,34 @@ final class McpCmd implements Callable<Integer> {
                 }
             }
             Thread.currentThread().join();
+            return 0;
+        }
+    }
+
+    @Command(name = "vocabulary", description = "Print the knowledge.yml glossary as a vocabulary: block for logast's "
+            + "company.yaml (with --company, only what that file does not have yet)")
+    static final class Vocabulary implements Callable<Integer> {
+        @Option(names = "--kb", description = "Facts files or folders (default: LOGAST_KB, else kb.paths)")
+        List<Path> kb = new ArrayList<>();
+        @Option(names = "--company", description = "logast's company.yaml: leave out the terms and aliases it has")
+        Path company;
+
+        @Override
+        public Integer call() throws IOException {
+            KbPaths.Resolved r = KbPaths.resolve(kb, FleetHome.Env.current());
+            KnowledgeBase k = KnowledgeBase.load(KnowledgeBase.factFiles(r.paths()));
+            java.util.Map<String, java.util.Set<String>> existing = new java.util.LinkedHashMap<>();
+            if (company != null) {
+                var root = new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory()).readTree(company.toFile());
+                if (root != null) {
+                    root.path("vocabulary").fields().forEachRemaining(e -> {
+                        java.util.Set<String> aliases = new java.util.LinkedHashSet<>();
+                        e.getValue().path("aliases").forEach(a -> aliases.add(a.asText()));
+                        existing.put(e.getKey(), aliases);
+                    });
+                }
+            }
+            System.out.print(k.knowledge().vocabularyYaml(existing));
             return 0;
         }
     }

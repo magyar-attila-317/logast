@@ -59,6 +59,7 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 | `workflow_refs` | per reusable GitHub Actions workflow, the refs its callers use: who is still on an old one |
 | `flows` | business flows: approved (knowledge.yml) and proposed, with their nodes; stale ones marked |
 | `propose_flow`, `propose_summary` | the LLM proposes a flow (a name for a chain of nodes) or a node's summary, with sources; a person approves |
+| `unknown_terms` | words in the names of tables, columns, topics and properties the glossary does not know yet, most frequent first |
 | `term` | a glossary term (or an alias, or an abbreviation): its definition and source |
 | `read_name` | a technical name (`ord_inv_ref`, `ordInvRef`) as business words |
 | `writers_of`, `readers_of` | every entrypoint that writes or reads a table (`schema.name`, or a name in any schema) |
@@ -148,6 +149,17 @@ claim, and the LLM's proposals. Approve or reject each:
   `knowledge.yml`, so the people's file keeps its comments and layout. Each records who (`--by`, else the user name),
   when, and the evidence it was decided on, so it goes stale like any other.
 - Approving a proposal copies it there as approved and removes it from `knowledge.proposed.yml`; rejecting removes it.
+
+## One vocabulary for logs and the knowledge base
+
+`knowledge.yml`'s glossary and logast's `company.yaml` `vocabulary:` say the same thing: a business word and the
+other words for it (#170).
+
+- `logast mcp vocabulary [--company <company.yaml>]` prints the glossary as a `vocabulary:` block for logast's
+  company.yaml: each term with its aliases, the words logs must not use. With `--company`, only the terms and aliases
+  that file does not have yet, ready to paste.
+- `unknown_terms` lists the words in the names of tables, columns, topics and properties that neither the glossary,
+  its aliases nor the abbreviations know, most frequent first, with examples: what to define next.
 
 The server speaks MCP's stdio transport (JSON-RPC 2.0, one message per line: `initialize`, `tools/list`,
 `tools/call`, `ping`); it writes diagnostics to stderr only.

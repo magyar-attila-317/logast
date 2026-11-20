@@ -158,6 +158,68 @@ public final class KnowledgeBase {
         return recorded.entrySet().stream().anyMatch(e -> !e.getValue().equals(evidenceOf(e.getKey())));
     }
 
+    private static final Set<String> COMMON = Set.of("id", "ids", "by", "at", "of", "on", "in", "to", "the", "and", "or", "for", "is",
+            "get", "set", "api", "v1", "v2", "v3", "dto", "impl", "url", "uri", "http", "https", "name", "type", "key", "value", "date",
+            "time", "created", "updated", "deleted", "status", "count", "total", "list", "data", "info", "code", "public", "char",
+            "varchar", "character", "varying", "integer", "bigint", "text", "boolean", "timestamp", "numeric", "uuid", "jsonb", "with",
+            "without", "zone", "double", "precision", "smallint", "real", "bytea", "enabled", "version", "flag", "max", "min");
+
+    /**
+     * #170: words in the facts' names (tables, columns, topics, properties, entities) that neither the glossary, its
+     * aliases nor the abbreviations know, most frequent first, with examples: what to define next.
+     */
+    public String unknownTerms(int limit) {
+        Map<String, Integer> count = new TreeMap<>();
+        Map<String, Set<String>> examples = new TreeMap<>();
+        java.util.function.BiConsumer<String, String> add = (name, example) -> {
+            for (String t : Knowledge.tokens(name)) {
+                String w = t.toLowerCase(java.util.Locale.ROOT);
+                if (w.length() < 3 || w.matches("\\d+") || COMMON.contains(w) || knowledge.knows(w)) {
+                    continue;
+                }
+                count.merge(w, 1, Integer::sum);
+                Set<String> ex = examples.computeIfAbsent(w, k -> new java.util.LinkedHashSet<>());
+                if (ex.size() < 3) {
+                    ex.add(example);
+                }
+            }
+        };
+        Set<String> seen = new java.util.HashSet<>();
+        for (Fact<Node> f : nodes()) {
+            Node n = f.fact();
+            if (!seen.add(n.id())) {
+                continue;
+            }
+            String name = n.id().substring(n.id().lastIndexOf(':') + 1);
+            switch (n.kind()) {
+                case "table", "topic", "entity", "property" -> add.accept(name.contains(".") && n.kind().equals("table") ? name.substring(name.indexOf('.') + 1) : name, n.id());
+                default -> {
+                }
+            }
+            if (n.kind().equals("table") && n.attrs().get("columns") instanceof List<?> cols) {
+                cols.forEach(c -> add.accept(String.valueOf(c).split(" ")[0], n.id() + " column " + String.valueOf(c).split(" ")[0]));
+            }
+        }
+        allEdges().forEach(e -> {
+            String to = e.fact().to();
+            if ((to.startsWith("table:") || to.startsWith("topic:") || to.startsWith("property:")) && seen.add(to)) {
+                String name = to.substring(to.lastIndexOf(':') + 1);
+                add.accept(to.startsWith("table:") && name.contains(".") ? name.substring(name.indexOf('.') + 1) : name, to);
+            }
+        });
+        if (count.isEmpty()) {
+            return "Every word in the names of tables, columns, topics and properties is in the glossary, its aliases or the abbreviations.";
+        }
+        StringBuilder sb = new StringBuilder("Words the glossary does not know yet (most frequent first):\n");
+        count.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                .limit(limit).forEach(e -> sb.append("- ").append(e.getKey()).append(" (").append(e.getValue()).append("): ")
+                        .append(String.join(", ", examples.get(e.getKey()))).append('\n'));
+        if (count.size() > limit) {
+            sb.append("… ").append(count.size() - limit).append(" more\n");
+        }
+        return sb.toString();
+    }
+
     /** #168: the business flows: approved (knowledge.yml) and proposed (knowledge.proposed.yml), with their nodes. */
     public String flows(String text) {
         StringBuilder sb = new StringBuilder();

@@ -164,6 +164,9 @@ public final class McpServer {
                     + "Written as a proposal a person approves.",
                     new String[][]{{"id", "string", "the node id"}, {"text", "string", "the summary"},
                             {"sources", "string", "comma-separated: the files, facts or pages it rests on"}}, new String[]{"id", "text", "sources"}),
+            new Tool("unknown_terms", "Words in the names of tables, columns, topics and properties that the glossary does not know "
+                    + "yet, most frequent first, with examples: what to define next.",
+                    new String[][]{{"limit", "integer", "default 40"}}, new String[0]),
             new Tool("term", "A business term from the company's glossary (knowledge.yml): its definition and source; an alias "
                     + "or an abbreviation finds its term.", new String[][]{{"name", "string", "the term, alias or abbreviation"}}, new String[]{"name"}),
             new Tool("read_name", "A technical name (a table, column, topic, key: ord_inv_ref, ordInvRef) as business words, through "
@@ -248,6 +251,7 @@ public final class McpServer {
                     yield "Could not write " + proposals + ": " + e.getMessage();
                 }
             }
+            case "unknown_terms" -> k.unknownTerms(a.path("limit").asInt(40));
             case "term" -> k.knowledge().term(a.path("name").asText());
             case "read_name" -> {
                 String r = k.knowledge().read(a.path("name").asText());
