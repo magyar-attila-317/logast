@@ -244,6 +244,14 @@ added member and scans it read-only. A folder with `repos.yaml` is a fleet even 
 - Service developers register a clone of the fleet repo (`logast fleet create <name> --dir <clone>`) and join it; the
   README says how. Extending the fleet by its git URL, listing a GitHub org and rollout PRs: #146.
 
+## What a run shows
+
+`--refresh` and `--kb` runs say what they will do (the phases: update, scan, knowledge base, report), then per phase
+one line per repo as it finishes: `[3/32] ✓ name  46s  what happened`, with the time left once it is worth saying,
+problems indented below it, and on a terminal a live line with the repo being worked on and its step (#193). A
+summary closes the run: per phase how many repos were ok, unchanged, with problems, failed or skipped, how long it
+took and the slowest repos, and what to run next. The overview itself still goes to stdout.
+
 ## The fleet's knowledge base (`kb/`)
 
 `logast fleet <name|path> --kb` (with `--refresh`, after updating the clones) exports every member, whatever its

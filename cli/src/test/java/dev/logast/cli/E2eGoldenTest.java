@@ -775,6 +775,11 @@ abstract class E2eGoldenTest {
                 + "intended, then review `git diff e2e`)").isEmpty();
     }
 
+    /** #193: a fleet run's line for a repo, "[k/n] <icon> <name>  <time>  <what happened>". */
+    private static java.util.regex.Pattern line(String name, String text) {
+        return java.util.regex.Pattern.compile("\\] \\S " + java.util.regex.Pattern.quote(name) + " .*" + java.util.regex.Pattern.quote(text));
+    }
+
     /**
      * The result must not depend on what else sits on the classpath: class folders switched on an incremental re-parse
      * once, which lost calls through interfaces and base classes in later rounds (scopes in every validator). The
@@ -7442,8 +7447,7 @@ abstract class E2eGoldenTest {
                     """);
             String kbRun = run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file",
                     fleetRepo.resolve(".cache/classpath.txt").toString());
-            assertThat(STDERR.toString()).as(kbRun + STDERR).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: 1 facts file(s)",
-                    "fleet --kb: mapping owners: ", "logast mcp config --kb");
+            assertThat(STDERR.toString()).as(kbRun + STDERR).containsPattern(line("orders", "knowledge base: 1 facts file(s)")).containsPattern(line("stock", "knowledge base: 1 facts file(s)")).contains("mapping owners: ", "logast mcp config --kb");
             assertThat(Files.readString(fleetRepo.resolve("kb/orders/repo.jsonl"))).contains("call:orders:http POST http://stock/reservations/{id}");
             assertThat(Files.readString(fleetRepo.resolve("kb/stock/repo.jsonl"))).contains("endpoint:stock:POST /holds/{id}");
             assertThat(Files.readString(fleetRepo.resolve("kb/mapped/owners.jsonl"))).contains("\"from\":\"team:platform\",\"kind\":\"owns\",\"to\":\"endpoint:stock:POST /holds/{id}\"");
@@ -7458,26 +7462,26 @@ abstract class E2eGoldenTest {
             String cpFile = fleetRepo.resolve(".cache/classpath.txt").toString();
             STDERR.setLength(0);
             run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file", cpFile);
-            assertThat(STDERR.toString()).contains("fleet --kb: orders: unchanged since its last export", "fleet --kb: stock: unchanged since its last export")
+            assertThat(STDERR.toString()).containsPattern(line("orders", "knowledge base unchanged since its last export")).containsPattern(line("stock", "knowledge base unchanged since its last export"))
                     .doesNotContain("facts file(s)");
             writeSource(stock, "com/example/stock/StockController.java", Files.readString(
                     stock.resolve("src/main/java/com/example/stock/StockController.java")).replace("/holds/{id}", "/blocks/{id}"));
             git(stock, "commit", "--quiet", "-am", "renamed again");
             STDERR.setLength(0);
             run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--kb", "--no-builds", "--classpath-file", cpFile);
-            assertThat(STDERR.toString()).as(STDERR.toString()).contains("fleet --kb: orders: unchanged since its last export", "fleet --kb: stock: 1 facts file(s)")
-                    .doesNotContain("fleet --kb: exporting stock");   // exported right after its scan, with that analysis
+            assertThat(STDERR.toString()).as(STDERR.toString()).containsPattern(line("orders", "knowledge base unchanged since its last export")).containsPattern(line("stock", "knowledge base: 1 facts file(s)"));
+            assertThat(STDERR.toString()).containsPattern(line("stock", "scanned · knowledge base: 1 facts file(s)"));   // exported right after its scan, with that analysis
             assertThat(Files.readString(fleetRepo.resolve("kb/stock/repo.jsonl"))).contains("endpoint:stock:POST /blocks/{id}");
             STDERR.setLength(0);
             run(tmp, "fleet", fleetRepo.toString(), "--kb-full", "--no-builds", "--classpath-file", cpFile);   // #191: --kb and --flyway implied
             assertThat(Files.readString(fleetRepo.resolve("kb/orders/.export.json"))).as("the options of a full export").contains("flyway");
-            assertThat(STDERR.toString()).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: 1 facts file(s)");
+            assertThat(STDERR.toString()).containsPattern(line("orders", "knowledge base: 1 facts file(s)")).containsPattern(line("stock", "knowledge base: 1 facts file(s)"));
             // #187: a new logast build (same version until a release) re-exports, the members' code unchanged
             Path stamp = fleetRepo.resolve("kb/orders/.export.json");
             Files.writeString(stamp, Files.readString(stamp).replaceFirst("\\(([^)]*)\\)", "(an-older-build)"));
             STDERR.setLength(0);
             run(tmp, "fleet", fleetRepo.toString(), "--kb", "--flyway", "--no-builds", "--classpath-file", cpFile);   // the full export's options
-            assertThat(STDERR.toString()).contains("fleet --kb: orders: 1 facts file(s)", "fleet --kb: stock: unchanged since its last export");
+            assertThat(STDERR.toString()).containsPattern(line("orders", "knowledge base: 1 facts file(s)")).containsPattern(line("stock", "knowledge base unchanged since its last export"));
             // #187: an export with problems is not recorded as done: the next run exports it again
             Files.createDirectories(stock.resolve(".github/workflows"));
             Files.writeString(stock.resolve(".github/workflows/broken.yml"), "on: [push\njobs: {\n");
@@ -7485,11 +7489,11 @@ abstract class E2eGoldenTest {
             git(stock, "commit", "--quiet", "-m", "a broken workflow");
             STDERR.setLength(0);
             run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--kb", "--no-builds", "--classpath-file", cpFile);
-            assertThat(STDERR.toString()).as(STDERR.toString()).contains("fleet --kb: stock: 1 problem(s), so it is exported again next run");
+            assertThat(STDERR.toString()).as(STDERR.toString()).containsPattern(line("stock", "1 problem(s), so it is exported again next run"));
             assertThat(fleetRepo.resolve("kb/stock/.export.json")).doesNotExist();
             STDERR.setLength(0);
             run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file", cpFile);
-            assertThat(STDERR.toString()).contains("fleet --kb: orders: unchanged since its last export", "fleet --kb: stock: 1 facts file(s)");
+            assertThat(STDERR.toString()).containsPattern(line("orders", "knowledge base unchanged since its last export")).containsPattern(line("stock", "knowledge base: 1 facts file(s)"));
         } finally {
             System.clearProperty(dev.logast.fleet.FleetHome.HOME_PROPERTY);
         }
@@ -7627,7 +7631,7 @@ abstract class E2eGoldenTest {
             Files.delete(fleet.resolve("services/stock.json"));
             STDERR.setLength(0);
             String failing = run(tmp, "fleet", "shop", "--refresh");
-            assertThat(failing + STDERR).as(failing + STDERR).contains("fleet: orders skipped, its scan failed: ");
+            assertThat(failing + STDERR).as(failing + STDERR).containsPattern(line("orders", "scan failed: "));
             assertThat(fleet.resolve("services/stock.json")).as("stock still scanned after orders failed").isRegularFile();
             assertThat(fleet.resolve("services/orders.json")).as("orders' snapshot stays").isRegularFile();
             Files.delete(ordersPolicy);
