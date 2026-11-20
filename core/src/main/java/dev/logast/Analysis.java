@@ -66,7 +66,7 @@ public final class Analysis {
         this.httpFilterKeys = filterKeys(index);
         this.appPackage = appPackage(index);
         this.supportPackage = policy.support().vendor()
-                ? Optional.ofNullable(policy.support().vendorPackage()).orElse(appPackage == null ? "logging" : appPackage + ".logging")
+                ? Optional.ofNullable(policy.support().vendorPackage()).orElse(vendorBase(appPackage, index) + "logging")
                 : policy.support().packageName();
         this.supportStarterPresent = policy.support().vendor()
                 ? index.clazz(supportPackage + ".ObservedContext") != null
@@ -165,6 +165,27 @@ public final class Analysis {
         }
         return raw.stream().flatMap(v -> Arrays.stream(v.split(","))).map(String::trim)
                 .filter(v -> !v.isEmpty() && !v.startsWith("${")).toList();
+    }
+
+    /**
+     * #123: where vendored classes go: below the application class's package, else below the package all classes share
+     * (component scan of a service without a {@code @SpringBootApplication} here starts above it), else at the top.
+     */
+    private static String vendorBase(String appPackage, CodeIndex index) {
+        if (appPackage != null) {
+            return appPackage + ".";
+        }
+        String common = null;
+        for (ClassInfo c : index.classes()) {
+            String pkg = c.fqn().contains(".") ? c.fqn().substring(0, c.fqn().lastIndexOf('.')) : "";
+            if (common == null) {
+                common = pkg;
+            }
+            while (!common.isEmpty() && !(pkg.equals(common) || pkg.startsWith(common + "."))) {
+                common = common.contains(".") ? common.substring(0, common.lastIndexOf('.')) : "";
+            }
+        }
+        return common == null || common.isEmpty() ? "" : common + ".";
     }
 
     private static String appPackage(CodeIndex index) {

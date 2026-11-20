@@ -1,6 +1,6 @@
 package com.example.shipping;
 
-import dev.logast.support.MdcScope;
+import com.example.shipping.logging.MdcScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

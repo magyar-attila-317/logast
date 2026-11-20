@@ -58,6 +58,8 @@ public final class SetupRules {
         Path buildFile = findBuildFile(start);
         if (buildFile != null) {
             dependencies(buildFile);
+        } else {
+            ctx.noBuildFile = true;   // #123: vendor mode copies the support classes once a fix needs them (dependOnStarter)
         }
         Path resources = app.map(c -> resourcesDir(c.file().absPath())).orElse(root.resolve("src/main/resources"));
         logback(resources);
@@ -340,6 +342,15 @@ public final class SetupRules {
         return src;
     }
 
+    /**
+     * #123: a service without a build file in vendor mode: the support classes are copied when the first fix that
+     * imports them is planned, so the fix compiles; without such a fix nothing is copied.
+     */
+    static void vendorWithoutBuildFile(RuleContext ctx) {
+        new SetupRules(ctx).vendor(null);
+    }
+
+    /** @param scripts null when the service has no build file (#123): the classes are copied, dependencies only named */
     private void vendor(BuildScripts scripts) {
         String pkg = ctx.a.supportPackage;
         String epp = epp();
@@ -384,7 +395,11 @@ public final class SetupRules {
         // the copied code needs these; Spring Boot's BOM manages the versions
         for (var dep : Map.of("io.micrometer.observation.Observation", "io.micrometer:micrometer-observation",
                 "io.micrometer.context.ContextSnapshotFactory", "io.micrometer:context-propagation").entrySet()) {
-            if (!ctx.a.project.probe().hasClass(dep.getKey()) && !scripts.text().contains(dep.getValue())) {
+            if (!ctx.a.project.probe().hasClass(dep.getKey()) && (scripts == null || !scripts.text().contains(dep.getValue()))) {
+                if (scripts == null) {
+                    b.suggestion(b.suggestion + " No build file found: add " + dep.getValue() + " to the build by hand.");
+                    continue;
+                }
                 BuildScripts.Insert e = scripts.insert(dep.getValue());
                 b.edit(e == null ? null : e.edit());
             }

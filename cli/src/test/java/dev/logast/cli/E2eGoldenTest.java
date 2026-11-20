@@ -6523,7 +6523,6 @@ abstract class E2eGoldenTest {
         Files.writeString(shipping.resolve("logast.yaml"), """
                 extends: [../central/company.yaml]
                 packs: [logging]
-                support: { mode: dependency }   # the starter brings MdcScope (no build file here to vendor it into)
                 vocabulary:
                   orderId:                 # harvested before company.yaml had it
                     mdc: { key: orderId }
@@ -7521,7 +7520,7 @@ abstract class E2eGoldenTest {
             String ordersFindings = run(tmp, "fleet", "shop", "--service", "orders");
             assertThat(ordersFindings).as("what `logast scan` printed in orders, from the stored results")
                     .startsWith("orders  <app>/repos/orders  added, snapshot just now, ")
-                    .contains("logast · 1 files · 1 entrypoint", "5 findings: 3 logast fixes", "MDC.put never removed 1",
+                    .contains("logast · 1 files · 1 entrypoint", "6 findings: 4 logast fixes", "logging support library 1", "MDC.put never removed 1",
                             "error responses not ProblemDetail  PROBLEM_DETAILS_DISABLED")
                     .contains("reports: <app>/home/.local/share/logast/fleets/shop/services/orders/reports/");
             run(tmp, "fleet", "shop", "--service", "nope");
