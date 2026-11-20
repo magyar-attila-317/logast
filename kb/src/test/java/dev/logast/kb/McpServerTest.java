@@ -102,7 +102,14 @@ class McpServerTest {
         assertThat(init.has("capabilities")).isTrue();
         List<String> tools = new ArrayList<>();
         replies.get(1).at("/result/tools").forEach(t -> tools.add(t.get("name").asText()));
-        assertThat(tools).containsExactly("summary", "find", "describe", "neighbors", "path", "runs_on", "next_runs", "lineage", "risks", "secrets", "workflow_refs", "flows", "propose_flow", "propose_summary", "unknown_terms", "runners", "term", "read_name", "writers_of", "readers_of");
+        assertThat(tools).as("#186: prefixed, so they do not clash with a client's own tools").containsExactly("kb_summary", "kb_find",
+                "kb_describe", "kb_neighbors", "kb_path", "kb_runs_on", "kb_next_runs", "kb_lineage", "kb_risks", "kb_secrets",
+                "kb_workflow_refs", "kb_flows", "kb_propose_flow", "kb_propose_summary", "kb_unknown_terms", "kb_runners", "kb_term",
+                "kb_read_name", "kb_writers_of", "kb_readers_of");
+        replies.get(1).at("/result/tools").forEach(t -> assertThat(t.at("/inputSchema/properties").size())
+                .as("#186: model APIs that refuse an object schema without properties: " + t.get("name")).isPositive());
+        replies.get(1).at("/result/tools").forEach(t -> assertThat(t.at("/inputSchema/required").isMissingNode() || !t.at("/inputSchema/required").isEmpty())
+                .as("#186: no empty required list: " + t.get("name")).isTrue());
         assertThat(replies.get(1).at("/result/tools/18/inputSchema/required/0").asText()).isEqualTo("table");
         assertThat(replies.get(2).at("/result/isError").asBoolean()).isFalse();
         assertThat(replies.get(2).at("/result/content/0/text").asText()).contains("table:audit.event: 2 places writes it");

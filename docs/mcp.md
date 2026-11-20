@@ -44,6 +44,11 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 
 ## What it can answer
 
+Clients see each tool with the prefix `kb_` (`kb_summary`, `kb_find`, …), so the names do not clash with a client's own
+tools; every tool takes at least one parameter (`summary` and `runners` an optional `text` filter) and no tool lists an
+empty `required`, as some model APIs refuse those schemas (#186: an agent CLI failed every prompt once the server was
+added). Calls by the bare name still work.
+
 | tool | asks |
 |---|---|
 | `summary` | what is loaded: files, repos, nodes and edges by kind |

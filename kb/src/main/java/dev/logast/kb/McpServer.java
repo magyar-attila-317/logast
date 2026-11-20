@@ -102,7 +102,7 @@ public final class McpServer {
         r.putObject("serverInfo").put("name", "logast-kb").put("version", version);
         r.put("instructions", "Facts about code and deployment of many repos (docs/facts.md in logast). Node ids are "
                 + "<kind>:<name>, e.g. service:shipping, endpoint:shipping:GET /shipments/{id}, table:billing.invoice, "
-                + "job:shipping:ExportJob.run. Start with summary or find; cite the (repo/file:line) of each fact you use.");
+                + "job:shipping:ExportJob.run. Start with kb_summary or kb_find; cite the (repo/file:line) of each fact you use.");
         return r;
     }
 
@@ -111,8 +111,16 @@ public final class McpServer {
     private record Tool(String name, String description, String[][] params, String[] required) {
     }
 
+    /**
+     * #186: tool names as clients see them: prefixed, so they do not clash with a client's own tools (find, path,
+     * describe, summary); calls by the bare name still work.
+     */
+    static final String PREFIX = "kb_";
+    /** #186: a parameter for tools that need none: some model APIs refuse an object schema without properties. */
+    private static final String[] FILTER = {"text", "string", "only lines containing this text (case-insensitive)"};
+
     private static final List<Tool> TOOLS = List.of(
-            new Tool("summary", "What is loaded: facts files, repos, and nodes and edges by kind.", new String[0][], new String[0]),
+            new Tool("summary", "What is loaded: facts files, repos, and nodes and edges by kind.", new String[][]{FILTER}, new String[0]),
             new Tool("find", "Nodes whose id or attributes contain a text (case-insensitive), optionally of one kind "
                     + "(service, endpoint, listener, job, call, bean, profile, property, table, entity, topic, library, …).",
                     new String[][]{{"text", "string", "the text to look for"}, {"kind", "string", "only nodes of this kind"},
@@ -168,7 +176,7 @@ public final class McpServer {
                     + "yet, most frequent first, with examples: what to define next.",
                     new String[][]{{"limit", "integer", "default 40"}}, new String[0]),
             new Tool("runners", "Self-hosted runner hosts (from Ansible): groups, labels, count, the workflows that run on them, and "
-                    + "self-hosted workflows no runner fits.", new String[0][], new String[0]),
+                    + "self-hosted workflows no runner fits.", new String[][]{FILTER}, new String[0]),
             new Tool("term", "A business term from the company's glossary (knowledge.yml): its definition and source; an alias "
                     + "or an abbreviation finds its term.", new String[][]{{"name", "string", "the term, alias or abbreviation"}}, new String[]{"name"}),
             new Tool("read_name", "A technical name (a table, column, topic, key: ord_inv_ref, ordInvRef) as business words, through "
@@ -180,26 +188,39 @@ public final class McpServer {
                     new String[][]{{"table", "string", "schema.name, or a name (any schema)"}, {"limit", "integer", "default 100"}},
                     new String[]{"table"}));
 
+    /** The lines of {@code answer} that contain {@code text}; all of them when it is blank. */
+    static String filter(String answer, String text) {
+        if (text == null || text.isBlank()) {
+            return answer;
+        }
+        String t = text.toLowerCase(java.util.Locale.ROOT);
+        return answer.lines().filter(l -> l.toLowerCase(java.util.Locale.ROOT).contains(t))
+                .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
+    }
+
     private static ObjectNode tools() {
         ObjectNode r = JSON.createObjectNode();
         ArrayNode list = r.putArray("tools");
         for (Tool t : TOOLS) {
-            ObjectNode o = list.addObject().put("name", t.name()).put("description", t.description());
+            ObjectNode o = list.addObject().put("name", PREFIX + t.name()).put("description", t.description());
             ObjectNode schema = o.putObject("inputSchema").put("type", "object");
             ObjectNode props = schema.putObject("properties");
             for (String[] p : t.params()) {
                 props.putObject(p[0]).put("type", p[1]).put("description", p[2]);
             }
-            ArrayNode req = schema.putArray("required");
-            for (String q : t.required()) {
-                req.add(q);
+            if (t.required().length > 0) {   // #186: no empty list (strict schema checkers refuse it)
+                ArrayNode req = schema.putArray("required");
+                for (String q : t.required()) {
+                    req.add(q);
+                }
             }
         }
         return r;
     }
 
     private ObjectNode call(JsonNode params) {
-        String name = params.path("name").asText("");
+        String called = params.path("name").asText("");
+        String name = called.startsWith(PREFIX) ? called.substring(PREFIX.length()) : called;
         JsonNode a = params.path("arguments");
         Tool tool = TOOLS.stream().filter(t -> t.name().equals(name)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("unknown tool: " + name));
@@ -214,7 +235,7 @@ public final class McpServer {
                     + "~/.config/logast/config.yaml; `logast export` writes them.", true);
         }
         String answer = switch (name) {
-            case "summary" -> k.summary();
+            case "summary" -> filter(k.summary(), a.path("text").asText(null));
             case "find" -> k.find(a.path("text").asText(), a.path("kind").asText(null), a.path("limit").asInt(30));
             case "describe" -> k.describe(a.path("id").asText(), a.path("limit").asInt(50));
             case "neighbors" -> k.neighbors(a.path("id").asText(), a.path("direction").asText(null), kinds(a.path("kinds")),
@@ -254,7 +275,7 @@ public final class McpServer {
                 }
             }
             case "unknown_terms" -> k.unknownTerms(a.path("limit").asInt(40));
-            case "runners" -> Lineage.runners(k);
+            case "runners" -> filter(Lineage.runners(k), a.path("text").asText(null));
             case "term" -> k.knowledge().term(a.path("name").asText());
             case "read_name" -> {
                 String r = k.knowledge().read(a.path("name").asText());
