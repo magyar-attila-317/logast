@@ -44,10 +44,14 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 
 ## What it can answer
 
-Clients see each tool with the prefix `kb_` (`kb_summary`, `kb_find`, …), so the names do not clash with a client's own
-tools; every tool takes at least one parameter (`summary` and `runners` an optional `text` filter) and no tool lists an
-empty `required`, as some model APIs refuse those schemas (#186: an agent CLI failed every prompt once the server was
-added). Calls by the bare name still work.
+Every tool takes at least one parameter (`summary` and `runners` an optional `text` filter) and no tool lists an empty
+`required`, as some model APIs refuse those schemas.
+
+**Too many tools**: OpenAI's API refuses a request with more than 128 tools, and a client counts its own tools and every
+MCP server's together. When adding `logast mcp` makes every prompt fail (an agent CLI showed only *An unknown error
+occurred*), the session is over the limit (#186): leave out tools you don't use, e.g. a server's debugger tools, with
+the client's per-server `excludeTools`/`includeTools` (Gemini CLI and clients built on it), or keep logast's core tools:
+`"includeTools": ["summary", "find", "describe", "lineage", "writers_of", "readers_of", "runs_on"]`.
 
 | tool | asks |
 |---|---|
