@@ -123,7 +123,7 @@ public final class Main {
     @Command(name = "scan", description = "Analyse the project and write work orders to <root>/.logast/reports/orders.json")
     static class Scan extends Common implements Callable<Integer> {
         @Option(names = "--format", description = "human (default in a terminal: grouped, one line per finding) | compact "
-                + "(default otherwise: every order in full, for an LLM) | json | summary | sarif | fills-template")
+                + "(default otherwise: every order in full, for an LLM) | json | summary | sarif | github (GitHub Actions annotations) | fills-template")
         String format;
         @Option(names = "--rule", split = ",", description = "Only orders fixing these rules (comma-separated or repeated)")
         List<String> rules = new ArrayList<>();
@@ -243,6 +243,14 @@ public final class Main {
             switch (format) {
                 case "json" -> System.out.println(OrderJson.MAPPER.writeValueAsString(shown));
                 case "sarif" -> System.out.println(OrderJson.MAPPER.writeValueAsString(dev.logast.orders.Sarif.of(shown, gaps)));
+                case "github" -> {   // #148: annotations on every plan; the summary when the runner asks for one
+                    System.out.print(dev.logast.orders.GithubAnnotations.of(shown, gaps));
+                    String summary = System.getenv("GITHUB_STEP_SUMMARY");
+                    if (summary != null && !summary.isBlank()) {
+                        Files.writeString(Path.of(summary), dev.logast.orders.GithubAnnotations.summary(shown, gaps),
+                                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+                    }
+                }
                 case "fills-template" -> System.out.print(dev.logast.apply.DecisionYaml.MAPPER.writeValueAsString(FillsTemplate.of(shown)));
                 case "summary" -> {
                     if (!r.stats().coverageComplete()) {

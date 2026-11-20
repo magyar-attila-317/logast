@@ -144,6 +144,22 @@ This publishes `dev.logast:core`, `dev.logast:cli`, `dev.logast:gradle-plugin` a
 `dev.logast:dev.logast.gradle.plugin`, which `plugins { id("dev.logast") version "…" }` looks up. The plugin's
 other dependencies (OpenRewrite, Jackson, picocli) come from Maven Central, so the repository must proxy it.
 
+## PR annotations without code scanning
+
+`logast scan . --format github` prints one GitHub Actions workflow command per finding (`::error` for high, `::warning`
+for medium, `::notice` for low, with the file, line and the rule in words); the runner shows them as annotations on the
+pull request's diff, on every plan and for private repositories, without code scanning (#148). When the runner sets
+`GITHUB_STEP_SUMMARY`, the same scan appends a summary to the run's page: the findings by severity and by rule. An
+incomplete analysis is a warning annotation. GitHub shows at most 10 error and 10 warning annotations per step, so
+limit the scan to the lines the pull request changed:
+
+```yaml
+      - run: logast scan . --since origin/${{ github.base_ref }} --format github
+```
+
+(`actions/checkout` with `fetch-depth: 0`, so the base branch is there.) Paths are relative to the scanned folder: scan
+the repository root.
+
 ## GitHub code scanning (PR annotations)
 
 GitHub shows SARIF findings as annotations on the pull request's diff and in the repository's Security tab. logast
