@@ -8984,6 +8984,172 @@ abstract class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-export"), Map.of("facts.jsonl", pinned));
     }
 
+    /**
+     * #154: which entrypoint reads and writes which table, for each way code reaches a database: a JPA repository's CRUD
+     * and derived methods, {@code @Query} native and JPQL ({@code @Modifying}), {@code JdbcTemplate} with constant and
+     * cross-schema SQL, {@code JdbcClient}, and SQL built at runtime (where it runs, not which table). Snapshot: the
+     * table facts (e2e/expected-export-tables).
+     */
+    @Test
+    void exportListsWhichEntrypointReadsAndWritesWhichTable() throws IOException {
+        Path svc = tmp.resolve("billing");
+        writeSource(svc, "com/example/billing/Invoice.java", """
+                package com.example.billing;
+
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Id;
+                import jakarta.persistence.Table;
+
+                @Entity
+                @Table(name = "invoice", schema = "billing")
+                public class Invoice {
+                    @Id
+                    Long id;
+                    boolean paid;
+                }
+                """);
+        writeSource(svc, "com/example/billing/OrderLine.java", """
+                package com.example.billing;
+
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Id;
+
+                @Entity
+                public class OrderLine {
+                    @Id
+                    Long id;
+                }
+                """);
+        writeSource(svc, "com/example/billing/InvoiceRepository.java", """
+                package com.example.billing;
+
+                import java.util.List;
+                import org.springframework.data.jpa.repository.JpaRepository;
+                import org.springframework.data.jpa.repository.Modifying;
+                import org.springframework.data.jpa.repository.Query;
+
+                public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+                    @Query(value = "select * from billing.invoice where paid = false", nativeQuery = true)
+                    List<Invoice> unpaid();
+
+                    @Modifying
+                    @Query("update Invoice i set i.paid = true where i.id = :id")
+                    int markPaid(Long id);
+                }
+                """);
+        writeSource(svc, "com/example/billing/OrderLineRepository.java", """
+                package com.example.billing;
+
+                import org.springframework.data.repository.CrudRepository;
+
+                public interface OrderLineRepository extends CrudRepository<OrderLine, Long> {
+                    long countByIdGreaterThan(Long id);
+                }
+                """);
+        writeSource(svc, "com/example/billing/InvoiceController.java", """
+                package com.example.billing;
+
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                class InvoiceController {
+                    private final InvoiceRepository invoices;
+                    private final OrderLineRepository lines;
+
+                    InvoiceController(InvoiceRepository invoices, OrderLineRepository lines) {
+                        this.invoices = invoices;
+                        this.lines = lines;
+                    }
+
+                    @PostMapping("/invoices")
+                    void create(Invoice invoice) {
+                        invoices.save(invoice);
+                    }
+
+                    @GetMapping("/invoices/{id}")
+                    Object get(@PathVariable Long id) {
+                        lines.countByIdGreaterThan(id);
+                        return invoices.findById(id);
+                    }
+
+                    @PostMapping("/invoices/{id}/paid")
+                    void paid(@PathVariable Long id) {
+                        invoices.markPaid(id);
+                    }
+
+                    @GetMapping("/invoices/unpaid")
+                    Object unpaid() {
+                        return invoices.unpaid();
+                    }
+                }
+                """);
+        writeSource(svc, "com/example/billing/LedgerSync.java", """
+                package com.example.billing;
+
+                import java.util.List;
+                import java.util.Map;
+                import org.springframework.jdbc.core.JdbcTemplate;
+                import org.springframework.jdbc.core.simple.JdbcClient;
+                import org.springframework.scheduling.annotation.Scheduled;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                class LedgerSync {
+                    private static final String OPEN_ENTRIES = "select id, amount from ledger.entry where open = true";
+
+                    private final JdbcTemplate jdbc;
+                    private final JdbcClient client;
+
+                    LedgerSync(JdbcTemplate jdbc, JdbcClient client) {
+                        this.jdbc = jdbc;
+                        this.client = client;
+                    }
+
+                    @Scheduled(cron = "${ledger.sync.cron:0 0 5 * * *}")
+                    void sync() {
+                        List<Map<String, Object>> open = jdbc.queryForList(OPEN_ENTRIES);
+                        jdbc.update("insert into audit.event (kind, ref) select 'synced', id from ledger.entry where open = true");
+                        client.sql("select count(*) from shipment").query(Long.class).single();
+                    }
+
+                    List<Map<String, Object>> any(String table) {
+                        return jdbc.queryForList("select * from " + table);
+                    }
+                }
+                """);
+        Path out = tmp.resolve("facts.jsonl");
+        run(svc, "export", svc.toString(), "--classpath-file", CLASSPATH, "--out", out.toString(), "--repo", "billing");
+        assertThat(LAST_EXIT).isZero();
+        String facts = Files.readString(out);
+        dev.logast.facts.FactReader.Result r = dev.logast.facts.FactReader.read(new java.io.StringReader(facts));
+        assertThat(r.problems()).as("valid facts").isEmpty();
+        List<String> edges = r.edges().stream().filter(e -> Set.of("reads", "writes", "uses-sql", "maps").contains(e.kind()))
+                .map(e -> e.from() + " -" + e.kind() + "-> " + e.to()).toList();
+        assertThat(edges).contains(
+                "entity:billing:com.example.billing.Invoice -maps-> table:billing.invoice",
+                "entity:billing:com.example.billing.OrderLine -maps-> table:order_line",
+                "endpoint:billing:POST /invoices -writes-> table:billing.invoice",
+                "endpoint:billing:GET /invoices/{id} -reads-> table:billing.invoice",
+                "endpoint:billing:GET /invoices/{id} -reads-> table:order_line",
+                "endpoint:billing:POST /invoices/{id}/paid -writes-> table:billing.invoice",
+                "endpoint:billing:GET /invoices/unpaid -reads-> table:billing.invoice",
+                "job:billing:LedgerSync.sync -reads-> table:ledger.entry",
+                "job:billing:LedgerSync.sync -writes-> table:audit.event",
+                "job:billing:LedgerSync.sync -reads-> table:shipment");
+        assertThat(edges).as("SQL built at runtime: where it runs, not which table")
+                .anySatisfy(e -> assertThat(e).startsWith("service:billing -uses-sql-> sql:billing:src/main/java/com/example/billing/LedgerSync.java:"));
+        assertThat(edges).as("a read is not a write").doesNotContain("endpoint:billing:GET /invoices/{id} -writes-> table:billing.invoice");
+
+        String pinned = facts.lines().filter(l -> l.contains("\"kind\":\"reads\"") || l.contains("\"kind\":\"writes\"")
+                        || l.contains("\"kind\":\"uses-sql\"") || l.contains("\"kind\":\"maps\"") || l.contains("\"kind\":\"entity\"")
+                        || l.contains("\"kind\":\"sql\""))
+                .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
+        golden(EXPECTED.resolveSibling("expected-export-tables"), Map.of("facts.jsonl", pinned));
+    }
+
     /** The exit code of the last {@link #run}. */
     private static int LAST_EXIT;
 

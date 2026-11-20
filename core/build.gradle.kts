@@ -11,6 +11,7 @@ dependencies {
     api(libs.jackson.databind)
     api(libs.jackson.yaml)
     api(project(":facts"))   // #152: what `logast export` writes
+    implementation(libs.jsqlparser)   // #154: which tables SQL in the code reads and writes
     runtimeOnly(libs.slf4j.nop)
 
     testImplementation(platform(libs.junit.bom))

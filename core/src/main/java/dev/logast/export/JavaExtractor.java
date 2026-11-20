@@ -92,6 +92,7 @@ public final class JavaExtractor implements Extractor {
         calls(svc, service, surface, entryIds, sink);
         beans(svc, entryIds, sink);
         quartz(svc, service, sink);
+        tables(svc, service, entryIds, sink);
         libraries.forEach((ga, version) -> {
             sink.node(Node.of("library", ga, Map.of("version", version), Evidence.at(buildFile, null)));
             sink.edge(Edge.extracted(service, "depends-on", "library:" + ga, Map.of("version", version), Evidence.at(buildFile, null)));
@@ -316,6 +317,49 @@ public final class JavaExtractor implements Extractor {
                     sink.edge(Edge.extracted(bean, "uses-property", "property:" + svc + ":" + prefix + ".*",
                             Map.of("prefix", true), Evidence.at(file, line(Pos.line(an)))));
                 }
+            }
+        }
+    }
+
+    // ---- tables (#154) ----------------------------------------------------------------------------------------------
+
+    private void tables(String svc, String service, Map<MethodInfo, List<String>> entryIds, Sorted sink) {
+        DataAccess data = new DataAccess(a.index);
+        for (DataAccess.Entity e : data.entities()) {
+            ClassInfo c = e.clazz();
+            Evidence at = Evidence.at(c.file().relPath(), line(Pos.line(c.decl().getName())));
+            Node n = Node.of("entity", svc + ":" + c.fqn(), Map.of("name", e.name(), "table", e.table()), at);
+            sink.node(n);
+            sink.edge(Edge.extracted(n.id(), "maps", "table:" + e.table(), null, at));
+        }
+        for (DataAccess.Access x : data.accesses()) {
+            Evidence at = Evidence.at(x.file(), line(x.line()));
+            Map<String, Object> attrs = new TreeMap<>();
+            attrs.put("via", x.via());
+            if (!x.parsed() && x.table() != null) {
+                attrs.put("parsed", false);   // read from the statement's keywords: JSqlParser could not parse it
+            }
+            String kind;
+            String to;
+            if (x.table() != null) {
+                kind = x.write() ? "writes" : "reads";
+                to = "table:" + x.table();
+            } else {   // SQL built at runtime: where it runs is known, not which table
+                kind = "uses-sql";
+                Node sql = Node.of("sql", svc + ":" + x.file() + ":" + x.line(), Map.of("via", x.via(), "resolved", false), at);
+                sink.node(sql);
+                to = sql.id();
+            }
+            Set<String> from = new LinkedHashSet<>(entryIds.getOrDefault(x.method(), List.of()));
+            for (Entrypoint ep : a.paths.entrypointsReaching(x.method())) {
+                from.addAll(entryIds.getOrDefault(ep.method(), List.of()));
+            }
+            if (from.isEmpty()) {
+                attrs.put("reached", false);
+                sink.edge(Edge.extracted(service, kind, to, attrs, at));
+            }
+            for (String f : from) {
+                sink.edge(Edge.extracted(f, kind, to, attrs, at));
             }
         }
     }

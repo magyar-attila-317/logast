@@ -83,6 +83,16 @@ Edge kinds: `has`, `calls`, `reads`, `writes`, `publishes`, `consumes`, `runs`, 
 | an outgoing call | `call:<svc>:<transport> <METHOD> <base><path>` or `call:<svc>:<transport> <topic>` | `client`, `base`, `target`; `calls` from each entrypoint that reaches it (or from the service, `reached: false`), `traceBreaks` when the trace stops there; `publishes` the topic or queue |
 | a bean with a `@Profile`, `@Value` or `@ConfigurationProperties` | `bean:<svc>:<class>` | `profiles`; `active-with` `profile:<svc>:<name>` (`negated` for `!name`); `runs` from each entrypoint that reaches it; `uses-property` `property:<svc>:<key>` (`default`), `<prefix>.*` for configuration properties |
 | a library | `library:<group>:<artifact>` | `version` (from the classpath's jar paths) |
+| an entity | `entity:<svc>:<class>` | `name` (for JPQL), `table`; `maps` `table:<schema.>name>` (`@Table`, else Spring Boot's default naming: `OrderLine` → `order_line`) |
+| a table read or written (#154) | `table:<schema>.<name>`, or `table:<name>` when the code names no schema | `reads` / `writes` from each entrypoint that reaches the access (or from the service, `reached: false`), `via` (`InvoiceRepository.save`, `JdbcTemplate.update`); `parsed: false` when the SQL was read from its keywords |
+| SQL built at runtime | `sql:<svc>:<file>:<line>` | `uses-sql` from the entrypoints that reach it: where it runs is known, not which table |
+
+Tables come from Spring Data repositories (CRUD and derived methods by name: `save…`, `delete…` write, the rest
+read; `@Query` native SQL and JPQL, `@Modifying` writes), `EntityManager`, and `JdbcTemplate`,
+`NamedParameterJdbcTemplate` and `JdbcClient` with SQL the code states as constants (literals, text blocks, constants,
+concatenations of them), parsed with JSqlParser. Unquoted names are lower case, as PostgreSQL folds them; a schema in
+the SQL or in `@Table` is kept, so cross-schema reads show as such. Not yet: a naming strategy other than Spring Boot's
+default, stored procedures (named only by their call).
 
 Facts are sorted and repeats dropped, so the same code gives the same file.
 
