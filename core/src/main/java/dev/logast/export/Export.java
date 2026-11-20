@@ -91,6 +91,9 @@ public final class Export {
 
     /** #167: the repo's GitHub Actions workflows, named {@code owner/repo} as other repos' {@code uses:} lines name it. */
     static List<String> workflows(Path root, String repo, dev.logast.facts.FactSink out) {
+        if (AnsibleRunners.applies(root)) {   // #173: self-hosted runners an Ansible inventory sets up
+            AnsibleRunners.extract(root, out);
+        }
         if (!WorkflowExtractor.applies(root)) {
             return List.of();
         }
