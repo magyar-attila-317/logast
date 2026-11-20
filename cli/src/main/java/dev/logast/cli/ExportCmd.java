@@ -26,12 +26,38 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
     boolean flyway;
     @Option(names = "--rows", split = ",", description = "With --flyway: tables whose rows become facts (schema.name or name)")
     java.util.List<String> rows = new java.util.ArrayList<>();
+    @Option(names = "--env", split = ",", description = "A Helm repo: the environments (default: the helmfile's)")
+    java.util.List<String> envs = new java.util.ArrayList<>();
+    @Option(names = "--helm-render", split = ",", description = "A Helm repo: third-party releases to render too (their "
+            + "charts carry topics, users, dashboards); releases with a chart in the repo are always rendered")
+    java.util.List<String> helmRender = new java.util.ArrayList<>();
+    @Option(names = "--rendered", description = "A Helm repo: a folder of <env>.yaml manifests rendered elsewhere, instead of "
+            + "running helmfile")
+    Path rendered;
     @Option(names = "--postgres-image", description = "With --flyway: the PostgreSQL image (default: postgres:16-alpine)")
     String postgresImage;
 
     @Override
     public Integer call() throws IOException {
         Path root = root();
+        if (rendered != null || dev.logast.export.HelmExtractor.helmfile(root) != null) {   // #160: a Helm repo
+            java.util.List<String> problems;
+            if (out == null) {
+                Writer w = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
+                problems = Export.helm(root, repo, version(), envs, helmRender, rendered, w);
+                w.flush();
+            } else {
+                if (out.toAbsolutePath().getParent() != null) {
+                    Files.createDirectories(out.toAbsolutePath().getParent());
+                }
+                try (Writer w = Files.newBufferedWriter(out, StandardCharsets.UTF_8)) {
+                    problems = Export.helm(root, repo, version(), envs, helmRender, rendered, w);
+                }
+                System.err.println("facts: " + out);
+            }
+            problems.forEach(p -> System.err.println("helm: " + p));
+            return 0;
+        }
         if (out == null) {
             Writer w = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
             Export.java(root, classpath(), policy(), repo, version(), flyway ? new Export.FlywayOptions(rows, postgresImage) : null, w);

@@ -45,6 +45,23 @@ public final class Export {
         }
     }
 
+    /**
+     * #160: a Helm repo's facts per environment.
+     *
+     * @param rendered a folder of {@code <env>.yaml} manifests rendered elsewhere, instead of running helmfile; or null
+     * @return what went wrong per environment (the others are still written)
+     */
+    public static List<String> helm(Path root, String repo, String version, List<String> envs, List<String> render, Path rendered,
+                                    Writer out) throws IOException {
+        Path r = root.toAbsolutePath().normalize();
+        HelmExtractor hx = new HelmExtractor(envs, render, rendered);
+        try (FactWriter w = new FactWriter(out, Header.of(HelmExtractor.ID, version, repo != null ? repo : NamedFleet.serviceName(r),
+                NamedFleet.commit(r)))) {
+            hx.extract(r, w);
+        }
+        return hx.problems();
+    }
+
     /** What {@code --flyway} asks for: the tables whose rows become facts, and the PostgreSQL image. */
     public record FlywayOptions(List<String> rows, String image) {
     }
