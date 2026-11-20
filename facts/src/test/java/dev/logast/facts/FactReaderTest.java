@@ -43,7 +43,12 @@ class FactReaderTest {
 
         StringWriter out = new StringWriter();
         try (FactWriter w = new FactWriter(out, Header.of("java", "0.1.0", "shipping", "abc1234"))) {
-            w.node(service).node(endpoint).edge(has).edge(writes).edge(inferred).edge(llm);
+            w.node(service);
+            w.node(endpoint);
+            w.edge(has);
+            w.edge(writes);
+            w.edge(inferred);
+            w.edge(llm);
         }
         FactReader.Result r = read(out.toString());
 

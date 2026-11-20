@@ -12,7 +12,7 @@ import java.util.Map;
  * Writes a facts file (#152): the header, then one node or edge per line. Attributes are sorted and empty fields left
  * out, so the same facts always give the same bytes (diffable, golden-testable).
  */
-public final class FactWriter implements AutoCloseable {
+public final class FactWriter implements FactSink, AutoCloseable {
     static final ObjectMapper JSON = JsonMapper.builder().build();
 
     private final Writer out;
@@ -22,14 +22,14 @@ public final class FactWriter implements AutoCloseable {
         line("header", header);
     }
 
-    public FactWriter node(Node n) {
+    @Override
+    public void node(Node n) {
         line("node", n);
-        return this;
     }
 
-    public FactWriter edge(Edge e) {
+    @Override
+    public void edge(Edge e) {
         line("edge", e);
-        return this;
     }
 
     private void line(String key, Object value) {
