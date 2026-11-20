@@ -126,4 +126,61 @@ class FlywayExtractorTest {
         assertThat(c.node("table:orchestration.job_definition", "dev")).isNull();
         assertThat(c.nodes).allSatisfy(n -> assertThat(n.attrs()).doesNotContainKey("placeholdersWithoutValue"));
     }
+
+    /** #179: migrations the service's code runs itself, into each tenant's schema, beside Spring Boot's. */
+    @Test
+    void migrationsTheCodeRunsPerTenant() throws IOException {
+        Path root = tmp.resolve("multitenant");
+        Path res = root.resolve("src/main/resources");
+        Files.createDirectories(res.resolve("db/migration/global"));
+        Files.createDirectories(res.resolve("db/migration/tenant"));
+        Files.writeString(res.resolve("application.yaml"), "spring:\n  flyway:\n    locations: classpath:db/migration/global\n");
+        Files.writeString(res.resolve("db/migration/global/V1__tenants.sql"), "create table tenants (id bigint primary key, schema_name text);\n");
+        Files.writeString(res.resolve("db/migration/tenant/V1__orders.sql"), "create table orders (id bigint primary key);\n");
+        Files.writeString(res.resolve("db/migration/tenant/V2__items.sql"), "create table order_items (id bigint primary key, order_id bigint);\n");
+        Path pkg = Files.createDirectories(root.resolve("src/main/java/com/example/tenancy"));
+        Files.writeString(pkg.resolve("App.java"), "package com.example.tenancy;\n\n@org.springframework.boot.autoconfigure.SpringBootApplication\npublic class App {\n}\n");
+        Files.writeString(pkg.resolve("TenantMigrations.java"), """
+                package com.example.tenancy;
+
+                import javax.sql.DataSource;
+                import org.flywaydb.core.Flyway;
+
+                class TenantMigrations {
+                    static final String LOCATION = "classpath:db/migration/tenant";
+
+                    void migrate(DataSource dataSource, String schemaName) {
+                        Flyway.configure()
+                                .dataSource(dataSource)
+                                .defaultSchema(schemaName)
+                                .schemas(schemaName)
+                                .locations(LOCATION)
+                                .load()
+                                .migrate();
+                    }
+                }
+                """);
+        List<Path> cp = new ArrayList<>(dev.logast.Fixtures.classpath());
+        for (String e : System.getProperty("java.class.path").split(java.io.File.pathSeparator)) {
+            if (e.contains("flyway-core")) {
+                cp.add(Path.of(e));
+            }
+        }
+        dev.logast.Analysis a = dev.logast.Logast.analyse(root, cp, dev.logast.policy.Policy.defaults());
+        List<ProgrammaticFlyway.CodeRun> code = ProgrammaticFlyway.find(a.index);
+        assertThat(code).singleElement().satisfies(r -> {
+            assertThat(r.location()).isEqualTo("classpath:db/migration/tenant");
+            assertThat(r.schema()).as("chosen at runtime").isNull();
+            assertThat(r.file()).endsWith("TenantMigrations.java");
+        });
+
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("tenancy", List.of(), null).withCodeRuns(code);
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.nodes).extracting(Node::id).contains("table:public.tenants", "table:tenant.orders", "table:tenant.order_items");
+        Node orders = c.node("table:tenant.orders", null);
+        assertThat(orders.attrs()).containsEntry("perTenant", true).hasEntrySatisfying("migratedBy", v -> assertThat(v.toString()).contains("TenantMigrations.java"));
+        assertThat(c.node("table:public.tenants", null).attrs()).doesNotContainKey("perTenant");
+    }
 }

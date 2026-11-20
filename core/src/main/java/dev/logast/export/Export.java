@@ -41,7 +41,8 @@ public final class Export {
             GradleProjects.extract(r, repoName, service, w);   // #162: the repo, and the libraries it publishes
             workflows(r, repoName, w);
             if (flyway != null) {
-                FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image());
+                FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image())
+                        .withCodeRuns(ProgrammaticFlyway.find(a.index));   // #179: the runs the code makes (per tenant)
                 fx.extract(r, w);
                 fx.problems().forEach(p -> System.err.println("flyway: " + p));
             }

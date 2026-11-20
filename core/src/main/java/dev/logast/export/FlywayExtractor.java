@@ -89,18 +89,35 @@ public final class FlywayExtractor implements Extractor {
     }
 
     /** One run of the migrations: the environment (null: all) and its folders, in Flyway's order. */
-    record Run(String env, List<Path> folders) {
+    /**
+     * @param schema    the schema to migrate into (null: as the service's config says)
+     * @param perTenant the code chooses the schema at runtime (#179): {@code schema} is a stand-in
+     * @param origin    the code that runs it, for runs the code makes; null for Spring Boot's
+     */
+    record Run(String env, List<Path> folders, String schema, boolean perTenant, String origin) {
+        Run(String env, List<Path> folders) {
+            this(env, folders, null, false, null);
+        }
     }
 
     /** The runs of a service's migrations: per environment when the folder has {@code common} and others. */
     static List<Run> runs(Path root) {
         List<Run> out = new ArrayList<>();
         for (Path base : locations(root)) {
+            out.addAll(split(base));
+        }
+        return out;
+    }
+
+    /** A migration folder's runs: one per environment subfolder (with {@code common}), else one. */
+    static List<Run> split(Path base) {
+        List<Run> out = new ArrayList<>();
+        {
             List<Path> subs;
             try (Stream<Path> s = Files.list(base)) {
                 subs = s.filter(Files::isDirectory).sorted().toList();
             } catch (IOException e) {
-                continue;
+                return out;
             }
             Path common = base.resolve("common");
             List<Path> envs = subs.stream().filter(d -> !d.equals(common)).toList();
@@ -134,9 +151,40 @@ public final class FlywayExtractor implements Extractor {
         return out;
     }
 
+    private List<ProgrammaticFlyway.CodeRun> codeRuns = List.of();
+
+    /** #179: the Flyway runs the service's code makes (per tenant schema, for instance). */
+    public FlywayExtractor withCodeRuns(List<ProgrammaticFlyway.CodeRun> runs) {
+        this.codeRuns = runs;
+        return this;
+    }
+
+    /** The code's runs whose location is not one Spring Boot already runs, as runs (split by environment like those). */
+    List<Run> codeRuns(Path root) {
+        List<Path> configured = locations(root);
+        Path resources = SpringProperties.appResources(root);
+        List<Run> out = new ArrayList<>();
+        java.util.Set<Path> done = new java.util.HashSet<>(configured);
+        for (ProgrammaticFlyway.CodeRun c : codeRuns) {
+            String l = c.location().strip();
+            Path p = l.startsWith("filesystem:") ? root.resolve(l.substring("filesystem:".length()))
+                    : resources == null ? null : resources.resolve(l.startsWith("classpath:") ? l.substring("classpath:".length()) : l);
+            if (p == null || !Files.isDirectory(p) || !done.add(p.normalize())) {
+                continue;
+            }
+            String schema = c.schema() != null ? c.schema() : p.getFileName().toString();
+            String origin = c.file() + (c.line() > 0 ? ":" + c.line() : "");
+            for (Run r : split(p.normalize())) {
+                out.add(new Run(r.env(), r.folders(), schema, c.schema() == null, origin));
+            }
+        }
+        return out;
+    }
+
     @Override
     public void extract(Path root, FactSink out) {
-        List<Run> runs = runs(root);
+        List<Run> runs = new ArrayList<>(runs(root));
+        runs.addAll(codeRuns(root));
         if (runs.isEmpty()) {
             return;
         }
@@ -192,6 +240,9 @@ public final class FlywayExtractor implements Extractor {
         if (defaultSchema != null && !defaultSchema.isBlank()) {
             flyway.defaultSchema(defaultSchema);
         }
+        if (run.schema() != null) {   // #179: a run the code makes names its own schema (or a stand-in, per tenant)
+            flyway.defaultSchema(run.schema()).schemas(run.schema());
+        }
         // a placeholder used as a schema ("${schema}.jobs") names a schema the migrations may expect to exist
         Set<String> schemaNames = new LinkedHashSet<>();
         for (Path f : files) {
@@ -221,6 +272,12 @@ public final class FlywayExtractor implements Extractor {
                 attrs.put("columns", t.getValue());
                 if (!defaulted.isEmpty()) {
                     attrs.put("placeholdersWithoutValue", List.copyOf(defaulted));
+                }
+                if (run.origin() != null) {
+                    attrs.put("migratedBy", run.origin());   // the service's own code runs these migrations
+                    if (run.perTenant() && table.startsWith(run.schema() + ".")) {
+                        attrs.put("perTenant", true);   // the schema is each tenant's: this one is a stand-in
+                    }
                 }
                 Evidence at = createdIn.getOrDefault(table, createdIn.getOrDefault(table.substring(table.indexOf('.') + 1),
                         Evidence.at(rel(root, run.folders().getLast()), null)));

@@ -113,6 +113,11 @@ migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes w
 - **Facts**: `table:<schema>.<name>` per environment (`env`), with its `columns`, the migration's `create table` line
   as evidence; with `--rows`, each row of those tables as `row:<schema>.<table>:<primary key>` (else `#<position>`),
   its columns as attributes: a scheduler's job definitions, for example.
+- **Migrations the code runs itself** (#179): a `Flyway.configure()…locations(…)` chain in the service's code with a
+  constant location Spring Boot does not run (a multi-tenant service migrating each tenant's schema) is run too, into
+  its constant schema, or, when the code picks the schema at runtime, into a stand-in named after the location's last
+  folder (`tenant`); those tables say `migratedBy` (the code) and `perTenant: true`. The code's schema-less table
+  names join them through `same-as`.
 - An environment whose migrations fail is named on stderr, with the placeholders that had no value; the others are
   still written.
 
