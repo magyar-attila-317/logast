@@ -40,6 +40,26 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
     @Override
     public Integer call() throws IOException {
         Path root = root();
+        boolean javaBuild = java.util.stream.Stream.of("build.gradle.kts", "build.gradle", "pom.xml").anyMatch(f -> Files.isRegularFile(root.resolve(f)));
+        if (rendered == null && dev.logast.export.HelmExtractor.helmfile(root) == null && !javaBuild
+                && dev.logast.export.TerraformExtractor.applies(root)) {   // #166: an infrastructure repo
+            java.util.List<String> problems;
+            Writer w = out == null ? new OutputStreamWriter(System.out, StandardCharsets.UTF_8) : Files.newBufferedWriter(out, StandardCharsets.UTF_8);
+            try {
+                problems = Export.terraform(root, repo, version(), w);
+            } finally {
+                if (out != null) {
+                    w.close();
+                } else {
+                    w.flush();
+                }
+            }
+            if (out != null) {
+                System.err.println("facts: " + out);
+            }
+            problems.forEach(p -> System.err.println("terraform: " + p));
+            return 0;
+        }
         if (rendered != null || dev.logast.export.HelmExtractor.helmfile(root) != null) {   // #160: a Helm repo
             java.util.List<String> problems;
             if (out == null) {

@@ -10,8 +10,10 @@ jsqlparser = "5.3"
 flyway = "13.12.1"
 testcontainers = "2.0.4"
 postgresql = "42.7.13"
+hcl4j = "0.9.8"
 
 [libraries]
+hcl4j = { module = "com.bertramlabs.plugins:hcl4j", version.ref = "hcl4j" }
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }

@@ -138,6 +138,10 @@ public final class McpServer {
             new Tool("risks", "What lineage shows as risky: database handoffs between scheduled jobs of different services with "
                     + "no pipeline step between them (the reader relies on timing), tables several services write, reads of "
                     + "another service's schema.", new String[][]{{"env", "string", "the environment; default: every one"}}, new String[0]),
+            new Tool("secrets", "Key Vault secrets (Terraform, Helm) with who uses them: the workloads that mount or read them and "
+                    + "the services whose code runs there; optionally only those expiring within some days.",
+                    new String[][]{{"text", "string", "only secrets whose id contains this"}, {"env", "string", "the environment"},
+                            {"expiringDays", "integer", "only secrets that expire within this many days"}}, new String[0]),
             new Tool("term", "A business term from the company's glossary (knowledge.yml): its definition and source; an alias "
                     + "or an abbreviation finds its term.", new String[][]{{"name", "string", "the term, alias or abbreviation"}}, new String[]{"name"}),
             new Tool("read_name", "A technical name (a table, column, topic, key: ord_inv_ref, ordInvRef) as business words, through "
@@ -196,6 +200,8 @@ public final class McpServer {
             case "lineage" -> Lineage.lineage(k, a.path("id").asText(), !"upstream".equalsIgnoreCase(a.path("direction").asText("downstream")),
                     a.path("depth").asInt(6), a.path("limit").asInt(200));
             case "risks" -> Lineage.risks(k, a.path("env").asText(null));
+            case "secrets" -> Secrets.list(k, a.path("text").asText(null), a.path("env").asText(null),
+                    a.has("expiringDays") ? a.path("expiringDays").asInt() : null, java.time.LocalDate.now(java.time.ZoneOffset.UTC));
             case "term" -> k.knowledge().term(a.path("name").asText());
             case "read_name" -> {
                 String r = k.knowledge().read(a.path("name").asText());
