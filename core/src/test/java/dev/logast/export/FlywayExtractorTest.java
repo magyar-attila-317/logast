@@ -279,8 +279,10 @@ class FlywayExtractorTest {
         Files.createDirectories(root.resolve("src/main/java/com/example"));
         Files.writeString(root.resolve("src/main/java/com/example/App.java"),
                 "package com.example;\n\n@org.springframework.boot.autoconfigure.SpringBootApplication\npublic class App {\n}\n");
-        Files.writeString(res.resolve("application.yml"), "app:\n  db:\n    schema: allocation\n");
         Files.writeString(res.resolve("db/migration/V2__shares.sql"), "create table share (id bigint primary key);\n");
+        // a callback Flyway runs after the migrations, outside logast's placeholder scan: Flyway reports it, logast fills it
+        Files.writeString(res.resolve("db/migration/afterMigrate.sql"), "comment on schema ${app.owner.schema} is 'owned by the service';\n");
+        Files.writeString(res.resolve("application.yml"), "app:\n  db:\n    schema: allocation\napp:\n  owner:\n    schema: public\n");
         Path jar = tmp.resolve("jdbc-ext-2.0.0.jar");
         try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar))) {
             zip.putNextEntry(new java.util.zip.ZipEntry("db/migration/V1__bootstrap.sql"));
