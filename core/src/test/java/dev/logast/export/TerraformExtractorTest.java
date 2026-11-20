@@ -107,7 +107,7 @@ class TerraformExtractorTest {
         assertThat(TerraformExtractor.applies(root)).isTrue();
         List<Node> nodes = new ArrayList<>();
         List<Edge> edges = new ArrayList<>();
-        TerraformExtractor tx = new TerraformExtractor();
+        TerraformExtractor tx = new TerraformExtractor(false);
         tx.extract(root, new FactSink() {
             @Override
             public void node(Node n) {
@@ -139,13 +139,98 @@ class TerraformExtractorTest {
                         "tf-unit:terragrunt/sub-shop/weu/prod/orders -defines-> resource:azurerm_storage_account:stordersprod");
     }
 
+    /** #175: with terragrunt installed, its own functions are evaluated: names built from them come out right. */
+    @Test
+    void terragruntRenderEvaluatesItsFunctions() throws IOException, InterruptedException {
+        org.junit.jupiter.api.Assumptions.assumeTrue(TerraformExtractor.terragruntAvailable(), "needs terragrunt on the PATH");
+        Path root = tmp.resolve("infra2");
+        Path unit = Files.createDirectories(root.resolve("terragrunt/sub/weu/prod/orders"));
+        Files.createDirectories(root.resolve("terraform/orders"));
+        new ProcessBuilder("git", "init", "-q", root.toString()).start().waitFor();   // get_repo_root()
+        Files.writeString(root.resolve("terragrunt/root.hcl"), "inputs = {\n  owner = get_env(\"LOGAST_TEST_UNSET_VAR\", \"team-orders\")\n}\n");
+        Files.writeString(unit.resolve("terragrunt.hcl"), """
+                include "root" {
+                  path = find_in_parent_folders("root.hcl")
+                }
+                terraform {
+                  source = "${get_repo_root()}/terraform//orders"
+                }
+                inputs = {
+                  env = "prod"
+                  app = basename(get_terragrunt_dir())
+                }
+                """);
+        Files.writeString(root.resolve("terraform/orders/main.tf"), """
+                variable "env" {}
+                variable "app" {}
+                variable "owner" {}
+                resource "azurerm_key_vault" "main" {
+                  name = "kv-${var.app}-${var.env}"
+                  tags = {
+                    owner = var.owner
+                  }
+                }
+                """);
+        List<Node> nodes = new ArrayList<>();
+        TerraformExtractor tx = new TerraformExtractor(true);
+        tx.extract(root, new FactSink() {
+            @Override
+            public void node(Node n) {
+                nodes.add(n);
+            }
+
+            @Override
+            public void edge(Edge e) {
+            }
+        });
+        assertThat(tx.problems()).isEmpty();
+        assertThat(nodes).extracting(Node::id).contains("resource:azurerm_key_vault:kv-orders-prod");
+        assertThat(nodes).filteredOn(n -> n.kind().equals("tf-unit")).singleElement()
+                .satisfies(n -> assertThat(n.attrs()).containsEntry("inputsFrom", "terragrunt"));
+        assertThat(nodes).filteredOn(n -> n.id().startsWith("resource:")).singleElement()
+                .satisfies(n -> assertThat(n.attrs()).containsEntry("tags", Map.of("owner", "team-orders")));
+    }
+
+    /** #175: an older terragrunt has no render, only render-json writing to a file: its inputs still count. */
+    @Test
+    void anOlderTerragruntRendersWithRenderJson() throws IOException {
+        Path root = repo();
+        Path fake = tmp.resolve("old-terragrunt");
+        Files.writeString(fake, """
+                #!/bin/sh
+                # like terragrunt 0.6x: render goes to terraform and fails; render-json writes the resolved config
+                if [ "$1" = render ]; then echo 'Terraform has no command named "render"' >&2; exit 1; fi
+                if [ "$1" = render-json ]; then
+                  printf '{"inputs":{"env":"prod","app":"billing","location":"northeurope"},"terraform":{"source":"x/terraform//orders"}}' > "$3"
+                  exit 0
+                fi
+                exit 1
+                """);
+        fake.toFile().setExecutable(true);
+        List<Node> nodes = new ArrayList<>();
+        TerraformExtractor tx = new TerraformExtractor(true, fake.toString());
+        tx.extract(root, new FactSink() {
+            @Override
+            public void node(Node n) {
+                nodes.add(n);
+            }
+
+            @Override
+            public void edge(Edge e) {
+            }
+        });
+        assertThat(tx.problems()).isEmpty();
+        assertThat(nodes).extracting(Node::id).as("the rendered inputs, not the files'").contains("resource:azurerm_key_vault:kv-billing-prod");
+        assertThat(nodes).filteredOn(n -> n.kind().equals("tf-unit")).allSatisfy(n -> assertThat(n.attrs()).containsEntry("inputsFrom", "terragrunt"));
+    }
+
     @Test
     void aSecretsConsumersFromTerraformToTheCode() throws IOException {
         Path root = repo();
         Path kb = Files.createDirectories(tmp.resolve("kb"));
         StringWriter tf = new StringWriter();
         try (FactWriter w = new FactWriter(tf, Header.of("terraform", null, "infra", null))) {
-            new TerraformExtractor().extract(root, w);
+            new TerraformExtractor(false).extract(root, w);
         }
         Files.writeString(kb.resolve("infra.jsonl"), tf.toString());
         Files.writeString(kb.resolve("deploy.jsonl"), """
