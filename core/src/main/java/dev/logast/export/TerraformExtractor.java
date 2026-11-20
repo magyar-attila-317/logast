@@ -136,18 +136,34 @@ public final class TerraformExtractor implements Extractor {
 
     /** Every {@code terragrunt.hcl} with a {@code terraform} block (a unit, not a file others include). */
     static List<Path> units(Path root) {
+        List<Path> all;
         try (Stream<Path> s = Files.walk(root)) {
-            return s.filter(p -> p.getFileName().toString().equals("terragrunt.hcl") && !p.toString().contains("/.terragrunt-cache/")
-                    && !p.toString().contains("/.git/") && read(p).matches("(?s).*\\bterraform\\s*\\{.*")).sorted().toList();
+            all = s.filter(p -> p.getFileName().toString().equals("terragrunt.hcl") && !p.toString().contains("/.terragrunt-cache/")
+                    && !p.toString().contains("/.git/")).sorted().toList();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        // a leaf: no other terragrunt.hcl below it (the classic root terragrunt.hcl, with remote_state and shared
+        // extra_arguments, has the units below it and is only included); and it, or what it includes, names a source
+        return all.stream().filter(p -> all.stream().noneMatch(q -> !q.equals(p) && q.getParent().startsWith(p.getParent())))
+                .filter(p -> SOURCE.matcher(read(p)).find() || included(p) != null && SOURCE.matcher(read(included(p))).find())
+                .toList();
     }
+
+    private static final Pattern SOURCE = Pattern.compile("(?s)\\bterraform\\s*\\{[^}]*\\bsource\\s*=");
+    /** Folder names that are an environment, whatever the layout puts around them. */
+    private static final Pattern ENV_NAME = Pattern.compile("(?i)dev|develop|development|test|tst|qa|int|integration|ppe|uat|acc|"
+            + "acceptance|stage|staging|stg|preprod|pre-prod|prod|production|prd|rtl|sandbox|sbx");
 
     /** {@code terragrunt/<subscription>/<region>/<env>/…}: the segment after the region; else the unit's parent folder. */
     static String env(Path root, Path unit) {
         List<String> segs = new ArrayList<>();
         root.toAbsolutePath().normalize().relativize(unit.getParent().toAbsolutePath().normalize()).forEach(p -> segs.add(p.toString()));
+        for (String seg : segs) {   // a folder named like an environment, in any layout
+            if (ENV_NAME.matcher(seg).matches()) {
+                return seg;
+            }
+        }
         int tg = segs.indexOf("terragrunt");
         List<String> rest = tg >= 0 ? segs.subList(tg + 1, segs.size()) : segs;
         return rest.size() >= 3 ? rest.get(2) : rest.isEmpty() ? "default" : rest.getLast();
@@ -202,7 +218,9 @@ public final class TerraformExtractor implements Extractor {
         }
         out.node(new Node(unitId, "tf-unit", env, ua, Evidence.at(rel(root, unit), null)));
         if (module == null) {
-            problems.add(rel(root, unit) + ": no module folder for source " + source);
+            problems.add(rel(root, unit) + (source != null && source.matches("^(git::|github\\.com|https?://|s3::|gcs::|tfr://).*")
+                    ? ": the module is in another repo (" + source + "): its resources are not read"
+                    : ": no module folder for source " + source));
             return;
         }
         module(root, module, inputs, env, unitId, 0, out);
@@ -347,6 +365,19 @@ public final class TerraformExtractor implements Extractor {
     static Path module(Path root, Path unit, String source) {
         if (source == null || source.equals("null")) {
             return null;
+        }
+        String plain = source.replaceAll("\\?.*$", "").replace("//", "/");
+        if (plain.startsWith("/") && Files.isDirectory(Path.of(plain))) {   // terragrunt render resolves the path
+            return Path.of(plain).normalize();
+        }
+        java.util.regex.Matcher parent = Pattern.compile("\\$\\{get_(?:parent_terragrunt_dir|repo_root)\\([^)]*\\)}/?(.*)").matcher(plain);
+        if (parent.find()) {   // the HCL alone: the repo root and the included root file's folder are where the modules are
+            for (Path base : List.of(root, included(unit) == null ? root : included(unit).getParent())) {
+                Path p = base.resolve(parent.group(1)).normalize();
+                if (Files.isDirectory(p)) {
+                    return p;
+                }
+            }
         }
         if (!source.contains("${") && (source.startsWith("./") || source.startsWith("../"))) {
             Path p = unit.getParent().resolve(source.replace("//", "/")).normalize();

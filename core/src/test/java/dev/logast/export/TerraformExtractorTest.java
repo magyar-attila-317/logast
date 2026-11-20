@@ -224,6 +224,79 @@ class TerraformExtractorTest {
         assertThat(nodes).filteredOn(n -> n.kind().equals("tf-unit")).allSatisfy(n -> assertThat(n.attrs()).containsEntry("inputsFrom", "terragrunt"));
     }
 
+    /** The classic layout: a root terragrunt.hcl (remote state, shared arguments) the folders below include, relative sources. */
+    @Test
+    void theClassicLayoutWithARootTerragruntFile() throws IOException {
+        Path root = tmp.resolve("live-repo");
+        Files.createDirectories(root.resolve("modules/orders"));
+        Files.writeString(root.resolve("terragrunt.hcl"), """
+                remote_state {
+                  backend = "azurerm"
+                  config = {
+                    key = "${path_relative_to_include()}/terraform.tfstate"
+                  }
+                }
+                terraform {
+                  extra_arguments "common" {
+                    commands = ["plan", "apply"]
+                  }
+                }
+                inputs = {
+                  location = "westeurope"
+                }
+                """);
+        for (String env : List.of("rtl", "prod")) {
+            Path unit = Files.createDirectories(root.resolve("live/" + env + "/orders"));
+            Files.writeString(unit.resolve("terragrunt.hcl"), """
+                    include {
+                      path = find_in_parent_folders()
+                    }
+                    terraform {
+                      source = "../../../modules/orders"
+                    }
+                    inputs = {
+                      env = "ENV"
+                    }
+                    """.replace("ENV", env));
+        }
+        Path remote = Files.createDirectories(root.resolve("live/prod/network"));
+        Files.writeString(remote.resolve("terragrunt.hcl"), """
+                include {
+                  path = find_in_parent_folders()
+                }
+                terraform {
+                  source = "git::https://git.example.com/infra-modules.git//network?ref=v1.2.0"
+                }
+                """);
+        Files.writeString(root.resolve("modules/orders/main.tf"), """
+                variable "env" {}
+                variable "location" {}
+                resource "azurerm_resource_group" "main" {
+                  name     = "rg-orders-${var.env}"
+                  location = var.location
+                }
+                """);
+        assertThat(TerraformExtractor.units(root)).as("the root file is no unit").extracting(p -> root.relativize(p).toString())
+                .containsExactly("live/prod/network/terragrunt.hcl", "live/prod/orders/terragrunt.hcl", "live/rtl/orders/terragrunt.hcl");
+        List<Node> nodes = new ArrayList<>();
+        TerraformExtractor tx = new TerraformExtractor(false);
+        tx.extract(root, new FactSink() {
+            @Override
+            public void node(Node n) {
+                nodes.add(n);
+            }
+
+            @Override
+            public void edge(Edge e) {
+            }
+        });
+        assertThat(nodes).extracting(n -> n.id() + " [" + n.env() + "]").contains(
+                "resource:azurerm_resource_group:rg-orders-rtl [rtl]", "resource:azurerm_resource_group:rg-orders-prod [prod]");
+        assertThat(nodes).filteredOn(n -> n.id().equals("resource:azurerm_resource_group:rg-orders-prod")).singleElement()
+                .satisfies(n -> assertThat(n.attrs()).as("from the root file's inputs").containsEntry("location", "westeurope"));
+        assertThat(tx.problems()).singleElement().asString().contains("live/prod/network", "the module is in another repo");
+    }
+
     @Test
     void aSecretsConsumersFromTerraformToTheCode() throws IOException {
         Path root = repo();
