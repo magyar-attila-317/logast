@@ -44,5 +44,23 @@ check "the tag is pushed, on the release commit" "$(git -C "$T/origin.git" rev-p
 expect "the same version again" 1 "v0.2.0 exists already" 0.2.0
 expect "a release candidate" 0 "released v0.3.0-rc.1" 0.3.0-rc.1
 
+# release-notes.sh: the commits since the previous tag, grouped by type, with the issues they close
+(cd "$T/work" && git pull --quiet origin main --tags \
+  && git commit --quiet --allow-empty -m "feat(export): tables per entrypoint" -m "Fixes #154" \
+  && git commit --quiet --allow-empty -m "fix: a crash on SQL without a schema" -m "Closes #160, fixes #161" \
+  && git commit --quiet --allow-empty -m "docs: releasing" \
+  && git commit --quiet --allow-empty -m "tidy the build" \
+  && git tag v0.4.0)
+notes="$(cd "$T/work" && bash "$ROOT/scripts/release-notes.sh" v0.4.0)"
+has() { case "$notes" in *"$2"*) PASSED=$((PASSED + 1)) ;; *) FAILED=$((FAILED + 1)); printf 'FAIL %s\n  no [%s] in:\n%s\n' "$1" "$2" "$notes" ;; esac; }
+hasnt() { case "$notes" in *"$2"*) FAILED=$((FAILED + 1)); printf 'FAIL %s\n  [%s] in:\n%s\n' "$1" "$2" "$notes" ;; *) PASSED=$((PASSED + 1)) ;; esac; }
+has "a feature, with its scope and issue" "- **export**: tables per entrypoint (#154)"
+has "a fix, with every issue it closes" "- a crash on SQL without a schema (#160 #161)"
+has "docs in their own section" "## Documentation"
+has "a commit without a type under Other" "- tidy the build"
+has "the compare link to the previous tag" "compare/v0.3.0-rc.1...v0.4.0"
+hasnt "commits of earlier releases are left out" "init"
+hasnt "the release commits are left out" "release: v"
+
 printf 'release.sh: %d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ]

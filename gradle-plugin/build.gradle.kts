@@ -100,7 +100,7 @@ val releaseScriptTest = tasks.register<Exec>("releaseScriptTest") {
     group = "verification"
     val script = rootProject.file("scripts/test-release.sh")
     val marker = layout.buildDirectory.file("release-script-test/passed")
-    inputs.files(script, rootProject.file("scripts/release.sh"))
+    inputs.files(script, rootProject.file("scripts/release.sh"), rootProject.file("scripts/release-notes.sh"))
     outputs.file(marker)
     commandLine("bash", script.absolutePath)
     doLast { marker.get().asFile.apply { parentFile.mkdirs(); writeText("passed\n") } }

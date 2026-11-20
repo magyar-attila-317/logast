@@ -39,4 +39,7 @@ jobs:
           test -f "$zip" || { ls cli/build/distributions; exit 1; }
           prerelease=""
           case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" "$zip" --verify-tag --generate-notes --title "logast ${GITHUB_REF_NAME#v}" $prerelease
+          # notes from the commits since the previous tag: changes go to main without pull requests, which GitHub's
+          # generated notes are made from
+          scripts/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" "$zip" --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --title "logast ${GITHUB_REF_NAME#v}" $prerelease
