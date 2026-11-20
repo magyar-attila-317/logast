@@ -60,6 +60,9 @@ final class Fleet implements Callable<Integer> {
     @Option(names = "--no-builds", description = "Named fleet: scan added members without running their Gradle (source only; "
             + "for CI, where a member's build script must not run next to a token for every repo)")
     boolean noBuilds;
+    @Option(names = "--kb", description = "Named fleet: also export every member's facts (any repo layout) into <fleet>/kb/<member>/ "
+            + "and apply kb/mappings/*.yaml into kb/mapped/: the fleet's knowledge base for logast mcp (#182)")
+    boolean kb;
     @Option(names = "--refresh", description = "Named fleet: rescan every member first, and update the clones of repos.yaml "
             + "(default: the snapshots their last scan or apply left; a member with new commits since its snapshot is rescanned anyway); "
             + "an added member's scan writes only to the fleet folder")
@@ -245,6 +248,28 @@ final class Fleet implements Callable<Integer> {
         return 0;
     }
 
+    /** #182: every member's facts into {@code <fleet>/kb/<member>/}, then the fleet's mappings into {@code kb/mapped/}. */
+    private void knowledgeBase(Path dir, Map<String, Path> members) throws IOException {
+        Path kbDir = dir.resolve("kb");
+        Files.createDirectories(kbDir);
+        for (var m : members.entrySet()) {
+            if (!Files.isDirectory(m.getValue())) {
+                Out.warn("fleet --kb: " + m.getKey() + " is not at " + m.getValue() + " on this machine; its facts stay as they were");
+                continue;
+            }
+            try (Out.Progress p = new Out.Progress("exporting the facts of " + m.getKey())) {
+                dev.logast.export.RepoExport.Result r = KbExport.repo(m.getValue(), m.getKey(), kbDir.resolve(m.getKey()),
+                        dir.resolve(".cache/kb-classpath").resolve(m.getKey()), classpathFile, noBuilds, null, List.of(), List.of());
+                System.err.println("fleet --kb: " + m.getKey() + ": " + r.files().size() + " facts file(s) in " + kbDir.resolve(m.getKey()));
+                r.problems().forEach(p2 -> System.err.println("fleet --kb: " + m.getKey() + ": " + p2));
+            } catch (IOException | RuntimeException e) {
+                Out.warn("fleet --kb: " + m.getKey() + " not exported (" + e.getMessage() + ")");
+            }
+        }
+        KbExport.mappings(kbDir).forEach(l -> System.err.println("fleet --kb: " + l));
+        System.err.println("fleet --kb: knowledge base in " + kbDir + "; `logast mcp config --kb " + kbDir + "` connects an MCP client");
+    }
+
     // ---- logast fleet <name> -----------------------------------------------------------------------------------------
 
     private int named(String name, Path dir) throws IOException {
@@ -294,6 +319,9 @@ final class Fleet implements Callable<Integer> {
                             ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
                 }
             }
+        }
+        if (kb) {
+            knowledgeBase(dir, members);
         }
         if (service != null) {
             return service(name, dir, service, members, added);

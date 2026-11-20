@@ -29,17 +29,29 @@ public final class Export {
     /** @param flyway null: code facts only; else also the tables (and rows) the migrations create, per environment (#157) */
     public static void java(Path root, List<Path> classpath, Policy policy, String repo, String version, FlywayOptions flyway,
                             Writer out) throws IOException {
+        java(root, classpath, policy, repo, version, flyway, out, null, true);
+    }
+
+    /**
+     * @param rootPrefix the root's folder in the repo (#182), written into every fact's evidence; null at the repo's top
+     * @param repoFacts  also the repo node, its libraries and its workflows (at the repo's top; once per repo)
+     */
+    public static void java(Path root, List<Path> classpath, Policy policy, String repo, String version, FlywayOptions flyway,
+                            Writer out, String rootPrefix, boolean repoFacts) throws IOException {
         Path r = root.toAbsolutePath().normalize();
         ScanResult scan = Logast.scan(r, classpath, policy);
         Analysis a = Logast.lastAnalysis;
         String commit = NamedFleet.commit(r);
         String extractor = flyway == null ? JavaExtractor.ID : JavaExtractor.ID + "+" + FlywayExtractor.ID;
         String repoName = repo != null ? repo : NamedFleet.serviceName(r);
-        try (FactWriter w = new FactWriter(out, Header.of(extractor, version, repoName, commit))) {
+        try (FactWriter fw = new FactWriter(out, Header.of(extractor, version, repoName, commit))) {
+            dev.logast.facts.FactSink w = dev.logast.facts.FactSinks.rooted(fw, rootPrefix);
             new JavaExtractor(a, scan, classpath).extract(r, w);
             String service = JavaExtractor.serviceName(r, dev.logast.fleet.ServiceSurface.of(a, scan));
             GradleProjects.extract(r, repoName, service, w);   // #162: the repo, and the libraries it publishes
-            workflows(r, repoName, w);
+            if (repoFacts) {
+                workflows(r, repoName, w);
+            }
             if (flyway != null) {
                 FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image())
                         .withCodeRuns(ProgrammaticFlyway.find(a.index))   // #179: the runs the code makes (per tenant)
@@ -58,26 +70,42 @@ public final class Export {
      */
     public static List<String> helm(Path root, String repo, String version, List<String> envs, List<String> render, Path rendered,
                                     Writer out) throws IOException {
+        return helm(root, repo, version, envs, render, rendered, out, null, true);
+    }
+
+    /** #182: {@code rootPrefix} the helmfile's folder in the repo; {@code repoFacts} also the repo's workflows. */
+    public static List<String> helm(Path root, String repo, String version, List<String> envs, List<String> render, Path rendered,
+                                    Writer out, String rootPrefix, boolean repoFacts) throws IOException {
         Path r = root.toAbsolutePath().normalize();
         HelmExtractor hx = new HelmExtractor(envs, render, rendered);
-        try (FactWriter w = new FactWriter(out, Header.of(HelmExtractor.ID, version, repo != null ? repo : NamedFleet.serviceName(r),
+        try (FactWriter fw = new FactWriter(out, Header.of(HelmExtractor.ID, version, repo != null ? repo : NamedFleet.serviceName(r),
                 NamedFleet.commit(r)))) {
+            dev.logast.facts.FactSink w = dev.logast.facts.FactSinks.rooted(fw, rootPrefix);
             hx.extract(r, w);
             List<String> p = new java.util.ArrayList<>(hx.problems());
-            p.addAll(workflows(r, repo != null ? repo : NamedFleet.serviceName(r), w));
+            if (repoFacts) {
+                p.addAll(workflows(r, repo != null ? repo : NamedFleet.serviceName(r), w));
+            }
             return p;
         }
     }
 
     /** #166: a Terragrunt/Terraform repo's resources per environment; returns what could not be read. */
     public static List<String> terraform(Path root, String repo, String version, Writer out) throws IOException {
+        return terraform(root, repo, version, out, true);
+    }
+
+    /** #182: {@code repoFacts} also the repo's workflows. */
+    public static List<String> terraform(Path root, String repo, String version, Writer out, boolean repoFacts) throws IOException {
         Path r = root.toAbsolutePath().normalize();
         TerraformExtractor tx = new TerraformExtractor();
         try (FactWriter w = new FactWriter(out, Header.of(TerraformExtractor.ID, version, repo != null ? repo : NamedFleet.serviceName(r),
                 NamedFleet.commit(r)))) {
             tx.extract(r, w);
             List<String> p = new java.util.ArrayList<>(tx.problems());
-            p.addAll(workflows(r, repo != null ? repo : NamedFleet.serviceName(r), w));
+            if (repoFacts) {
+                p.addAll(workflows(r, repo != null ? repo : NamedFleet.serviceName(r), w));
+            }
             return p;
         }
     }

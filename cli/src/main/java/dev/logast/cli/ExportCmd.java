@@ -34,12 +34,26 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
     @Option(names = "--rendered", description = "A Helm repo: a folder of <env>.yaml manifests rendered elsewhere, instead of "
             + "running helmfile")
     Path rendered;
+    @Option(names = "--out-dir", description = "Export the whole repo, any layout: every Gradle build, helmfile folder, the "
+            + "Terragrunt units, the workflows; one facts file per root in this folder (#182)")
+    Path outDir;
+    @Option(names = "--no-builds", description = "With --out-dir: never run a build's Gradle for its classpath (the one it has, or none)")
+    boolean noBuilds;
     @Option(names = "--postgres-image", description = "With --flyway: the PostgreSQL image (default: postgres:16-alpine)")
     String postgresImage;
 
     @Override
     public Integer call() throws IOException {
         Path root = root();
+        if (outDir != null) {   // #182: the whole repo, one file per root
+            Path out = outDir.toAbsolutePath().normalize();
+            dev.logast.export.RepoExport.Result r = KbExport.repo(root, repo != null ? repo : dev.logast.fleet.NamedFleet.serviceName(root),
+                    out, out.resolve(".classpath"), classpathFile, noBuilds,
+                    flyway ? new Export.FlywayOptions(rows, postgresImage) : null, envs, helmRender);
+            r.files().forEach(f -> System.err.println("facts: " + f));
+            r.problems().forEach(p -> System.err.println("export: " + p));
+            return 0;
+        }
         boolean javaBuild = java.util.stream.Stream.of("build.gradle.kts", "build.gradle", "pom.xml").anyMatch(f -> Files.isRegularFile(root.resolve(f)));
         if (rendered == null && dev.logast.export.HelmExtractor.helmfile(root) == null && !javaBuild
                 && dev.logast.export.TerraformExtractor.applies(root)) {   // #166: an infrastructure repo
