@@ -248,7 +248,8 @@ final class Lineage {
         Map<String, List<KnowledgeBase.Fact<Edge>>> writers = new TreeMap<>();
         Map<String, List<KnowledgeBase.Fact<Edge>>> readers = new TreeMap<>();
         for (var e : kb.allEdges()) {
-            if (!e.fact().to().startsWith("table:") || env != null && e.fact().env() != null && !e.fact().env().equals(env)) {
+            if (!(e.fact().to().startsWith("table:") || e.fact().to().startsWith("file-location:"))   // #172: files hand over too
+                    || env != null && e.fact().env() != null && !e.fact().env().equals(env)) {
                 continue;
             }
             String t = canonical.getOrDefault(e.fact().to(), e.fact().to());
@@ -262,6 +263,9 @@ final class Lineage {
         List<String> shared = new ArrayList<>();
         Map<String, Set<String>> writtenSchemas = new TreeMap<>();
         writers.forEach((t, ws) -> {   // a service's own schemas: where it writes tables no other service writes
+            if (!t.startsWith("table:")) {
+                return;
+            }
             String name = t.substring("table:".length());
             Set<String> services = new TreeSet<>();
             ws.forEach(w -> services.add(serviceOf(kb, w.fact().from())));
@@ -300,6 +304,9 @@ final class Lineage {
         }
         List<String> crossSchema = new ArrayList<>();
         for (var t : readers.entrySet()) {
+            if (!t.getKey().startsWith("table:")) {
+                continue;
+            }
             String name = t.getKey().substring("table:".length());
             if (!name.contains(".")) {
                 continue;
@@ -315,7 +322,7 @@ final class Lineage {
             }
         }
         StringBuilder sb = new StringBuilder("Risks" + (env == null ? "" : " in " + env) + ":\n");
-        sb.append("database handoffs between scheduled jobs of different services (").append(handoffs.size()).append("):\n");
+        sb.append("handoffs through a table or a file between scheduled jobs of different services (").append(handoffs.size()).append("):\n");
         handoffs.forEach(l -> sb.append(l).append('\n'));
         sb.append("tables written by more than one service (").append(shared.size()).append("):\n");
         shared.forEach(l -> sb.append(l).append('\n'));

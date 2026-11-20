@@ -34,6 +34,15 @@ dependencies {
     testLombok("org.slf4j:slf4j-api")   // the type of the logger @Slf4j generates
 }
 
+// #172: the libraries services read and write files with, on the test classpath only (FileAccessTest resolves their types)
+val fileLibs by configurations.creating
+dependencies {
+    fileLibs("com.azure:azure-storage-blob:12.36.1")
+    fileLibs("com.github.mwiede:jsch:2.28.6")
+    fileLibs("com.hierynomus:sshj:0.41.0")
+    fileLibs("org.springframework.integration:spring-integration-sftp:7.1.2")
+}
+
 val fixture = project(":fixtures:sample-app")
 
 tasks.test {
@@ -42,6 +51,8 @@ tasks.test {
     systemProperty("logast.support.classes", project(":logging-support").layout.buildDirectory.dir("classes/java/main").get().asFile.absolutePath)
     inputs.files(testLombok)
     systemProperty("logast.test.lombok", testLombok.asPath)
+    inputs.files(fileLibs)
+    systemProperty("logast.test.filelibs", fileLibs.asPath)
     systemProperty("logast.fixture.root", fixture.projectDir.absolutePath)
     systemProperty("logast.fixture.classpath", fixture.layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
     // RuleLedgerTest reads e2e/before and the e2e snapshots, and the fixture's sources

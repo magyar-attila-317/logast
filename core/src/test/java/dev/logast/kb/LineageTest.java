@@ -71,6 +71,11 @@ class LineageTest {
                 + edge("listener:ledger:ready", "runs", "bean:ledger:PostJob")
                 + edge("listener:ledger:ready", "reads", "table:billing.settlement")
                 + edge("job:billing:settle", "after", "job:ledger:post")
+                // a file handoff: billing's job writes an SFTP folder shipping's job reads (#172)
+                + node("job:billing:Outbound.push", "job", "{\"cron\":\"0 30 2 * * *\"}")
+                + edge("job:billing:Outbound.push", "writes", "file-location:sftp:/outbound/invoices/{?}.csv")
+                + node("job:shipping:Inbound.pull", "job", "{\"cron\":\"0 0 3 * * *\"}")
+                + edge("job:shipping:Inbound.pull", "reads", "file-location:sftp:/outbound/invoices/{?}.csv")
                 // ledger writes its own schema, and billing's invoice table too
                 + edge("listener:ledger:ready", "writes", "table:ledger.entry")
                 + edge("endpoint:ledger:POST /corrections", "writes", "table:billing.invoice");
@@ -121,6 +126,8 @@ class LineageTest {
                 + "job:shipping:Import.run reads (0 0 3 * * *) — NO pipeline step between them: the reader relies on timing");
         assertThat(r).contains("table:billing.settlement: listener:billing:settleReady writes", "— a pipeline step runs the reader after the writer");
         assertThat(r).contains("- table:billing.invoice: written by billing, ledger");
+        assertThat(r).as("through a file too").contains("- file-location:sftp:/outbound/invoices/{?}.csv: job:billing:Outbound.push writes (0 0 2 * * *".replace("0 0 2", "0 30 2"),
+                "job:shipping:Inbound.pull reads (0 0 3 * * *) — NO pipeline step");
         assertThat(r).contains("- listener:ledger:ready reads table:billing.settlement (ledger writes ledger)");
         assertThat(r).as("audit_event: writer and reader are not both scheduled jobs").doesNotContain("audit_event:");
     }
