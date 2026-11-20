@@ -42,7 +42,8 @@ public final class Export {
             workflows(r, repoName, w);
             if (flyway != null) {
                 FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image())
-                        .withCodeRuns(ProgrammaticFlyway.find(a.index));   // #179: the runs the code makes (per tenant)
+                        .withCodeRuns(ProgrammaticFlyway.find(a.index))   // #179: the runs the code makes (per tenant)
+                        .withClasspath(classpath);   // #181: migrations a library ships in its jar
                 fx.extract(r, w);
                 fx.problems().forEach(p -> System.err.println("flyway: " + p));
             }

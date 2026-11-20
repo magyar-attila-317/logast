@@ -102,13 +102,17 @@ public final class FlywayExtractor implements Extractor {
 
     /** The runs of a service's migrations: per environment when the folder has {@code common} and others. */
     static List<Run> runs(Path root) {
+        return runs(root, ClasspathMigrations.NONE);
+    }
+
+    static List<Run> runs(Path root, ClasspathMigrations cp) {
         // #180: profiles that set their own locations (application-prod.yml: common + prod) are the environments
         String base = SpringProperties.read(root).get("spring.flyway.locations");
         List<Run> perProfile = new ArrayList<>();
         for (String profile : profiles(root)) {
             String own = SpringProperties.forProfile(root, profile).get("spring.flyway.locations");
             if (own != null && !own.equals(base)) {
-                List<Path> folders = locations(root, own);
+                List<Path> folders = locations(root, own, cp);
                 if (!folders.isEmpty()) {
                     perProfile.add(new Run(profile, folders));
                 }
@@ -116,14 +120,14 @@ public final class FlywayExtractor implements Extractor {
         }
         List<Run> out = new ArrayList<>();
         if (!perProfile.isEmpty()) {   // the base locations still run when no such profile is active
-            List<Path> baseFolders = locations(root);
+            List<Path> baseFolders = locations(root, SpringProperties.read(root).get("spring.flyway.locations"), cp);
             if (!baseFolders.isEmpty()) {
                 out.add(new Run(null, baseFolders));
             }
             out.addAll(perProfile);
             return out;
         }
-        for (Path b : locations(root)) {
+        for (Path b : locations(root, SpringProperties.read(root).get("spring.flyway.locations"), cp)) {
             out.addAll(split(b));
         }
         return out;
@@ -187,8 +191,15 @@ public final class FlywayExtractor implements Extractor {
         return locations(root, SpringProperties.read(root).get("spring.flyway.locations"));
     }
 
-    /** The folders a {@code spring.flyway.locations} value names ({@code classpath:}, {@code filesystem:}, {@code {vendor}}). */
     static List<Path> locations(Path root, String configured) {
+        return locations(root, configured, ClasspathMigrations.NONE);
+    }
+
+    /**
+     * The folders a {@code spring.flyway.locations} value names ({@code classpath:}, {@code filesystem:}, {@code {vendor}}):
+     * a {@code classpath:} one in the service's resources and, as Flyway scans it at runtime, on its classpath (#181).
+     */
+    static List<Path> locations(Path root, String configured, ClasspathMigrations cp) {
         Path resources = SpringProperties.appResources(root);
         List<Path> out = new ArrayList<>();
         for (String loc : (configured == null || configured.isBlank() ? "classpath:db/migration" : configured).split(",")) {
@@ -201,11 +212,23 @@ public final class FlywayExtractor implements Extractor {
             if (p != null && Files.isDirectory(p)) {
                 out.add(p.normalize());
             }
+            if (!l.startsWith("filesystem:")) {   // #181: a library's jar (or a module's class folder) may hold it too
+                out.addAll(cp.folders(l.startsWith("classpath:") ? l.substring("classpath:".length()) : l,
+                        resources == null ? null : resources.toAbsolutePath().normalize()));
+            }
         }
         return out;
     }
 
     private List<ProgrammaticFlyway.CodeRun> codeRuns = List.of();
+    private List<Path> classpath = List.of();
+    private ClasspathMigrations cp = ClasspathMigrations.NONE;
+
+    /** #181: the service's classpath, where a {@code classpath:} location may also be (a library's jar). */
+    public FlywayExtractor withClasspath(List<Path> classpath) {
+        this.classpath = classpath == null ? List.of() : classpath;
+        return this;
+    }
 
     /** #179: the Flyway runs the service's code makes (per tenant schema, for instance). */
     public FlywayExtractor withCodeRuns(List<ProgrammaticFlyway.CodeRun> runs) {
@@ -215,21 +238,18 @@ public final class FlywayExtractor implements Extractor {
 
     /** The code's runs whose location is not one Spring Boot already runs, as runs (split by environment like those). */
     List<Run> codeRuns(Path root) {
-        List<Path> configured = locations(root);
-        Path resources = SpringProperties.appResources(root);
         List<Run> out = new ArrayList<>();
-        java.util.Set<Path> done = new java.util.HashSet<>(configured);
+        java.util.Set<Path> done = new java.util.HashSet<>(locations(root, SpringProperties.read(root).get("spring.flyway.locations"), cp));
         for (ProgrammaticFlyway.CodeRun c : codeRuns) {
-            String l = c.location().strip();
-            Path p = l.startsWith("filesystem:") ? root.resolve(l.substring("filesystem:".length()))
-                    : resources == null ? null : resources.resolve(l.startsWith("classpath:") ? l.substring("classpath:".length()) : l);
-            if (p == null || !Files.isDirectory(p) || !done.add(p.normalize())) {
-                continue;
-            }
-            String schema = c.schema() != null ? c.schema() : p.getFileName().toString();
             String origin = c.file() + (c.line() > 0 ? ":" + c.line() : "");
-            for (Run r : split(p.normalize())) {
-                out.add(new Run(r.env(), r.folders(), schema, c.schema() == null, origin));
+            for (Path p : locations(root, c.location().strip(), cp)) {   // the service's own folder, and a library's (#181)
+                if (!done.add(p.normalize())) {
+                    continue;
+                }
+                String schema = c.schema() != null ? c.schema() : p.getFileName().toString();
+                for (Run r : split(p.normalize())) {
+                    out.add(new Run(r.env(), r.folders(), schema, c.schema() == null, origin));
+                }
             }
         }
         return out;
@@ -237,7 +257,16 @@ public final class FlywayExtractor implements Extractor {
 
     @Override
     public void extract(Path root, FactSink out) {
-        List<Run> runs = new ArrayList<>(runs(root));
+        try (ClasspathMigrations lookup = new ClasspathMigrations(classpath)) {
+            cp = lookup;
+            extractRuns(root, out);
+        } finally {
+            cp = ClasspathMigrations.NONE;
+        }
+    }
+
+    private void extractRuns(Path root, FactSink out) {
+        List<Run> runs = new ArrayList<>(runs(root, cp));
         runs.addAll(codeRuns(root));
         if (runs.isEmpty()) {
             return;
@@ -334,7 +363,7 @@ public final class FlywayExtractor implements Extractor {
                     }
                 }
                 Evidence at = createdIn.getOrDefault(table, createdIn.getOrDefault(table.substring(table.indexOf('.') + 1),
-                        Evidence.at(rel(root, run.folders().getLast()), null)));
+                        Evidence.at(name(root, run.folders().getLast()), null)));
                 Node n = new Node("table:" + table, "table", run.env(), attrs, at);
                 out.node(n);
                 out.edge(Edge.extracted("service:" + service, "has", n.id(), null, at).inEnv(run.env()));
@@ -403,7 +432,7 @@ public final class FlywayExtractor implements Extractor {
     }
 
     /** The table each migration file creates (by its create statement), with placeholders replaced: the evidence. */
-    private static Map<String, Evidence> createdIn(Path root, List<Path> files, Map<String, String> placeholders) {
+    private Map<String, Evidence> createdIn(Path root, List<Path> files, Map<String, String> placeholders) {
         Map<String, Evidence> out = new LinkedHashMap<>();
         for (Path f : files) {
             String text = read(f);
@@ -415,7 +444,7 @@ public final class FlywayExtractor implements Extractor {
                 }
                 name = DataAccess.tableName(name.replace("\"", ""));
                 int line = (int) text.substring(0, m.start()).chars().filter(ch -> ch == '\n').count() + 1;
-                out.putIfAbsent(name, Evidence.at(rel(root, f), line));
+                out.putIfAbsent(name, Evidence.at(name(root, f), line));
             }
         }
         return out;
@@ -439,6 +468,12 @@ public final class FlywayExtractor implements Extractor {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** A file's evidence name: {@code <jar>!/<entry>} for a library's migration, else its path in the repo. */
+    private String name(Path root, Path p) {
+        String jar = cp.name(p);
+        return jar != null ? jar : rel(root, p);
     }
 
     private static String rel(Path root, Path p) {

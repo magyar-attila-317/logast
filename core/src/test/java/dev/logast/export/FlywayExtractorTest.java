@@ -220,4 +220,32 @@ class FlywayExtractorTest {
         assertThat(c.nodes).noneMatch(n -> n.id().equals("row:public.job_definition:month-end") && "dev".equals(n.env()));
         assertThat(c.node("row:public.job_definition:export", null).attrs()).as("common alone, as without a profile").containsEntry("cron", "0 2 * * *");
     }
+
+    /** #181: a library that ships migrations in its jar: Flyway scans the classpath, so they run beside the service's. */
+    @Test
+    void migrationsALibraryShipsInItsJar() throws IOException {
+        Path root = tmp.resolve("with-lib");
+        Path res = root.resolve("src/main/resources");
+        Files.createDirectories(res.resolve("db/migration"));
+        Files.createDirectories(root.resolve("src/main/java/com/example"));
+        Files.writeString(root.resolve("src/main/java/com/example/App.java"),
+                "package com.example;\n\n@org.springframework.boot.autoconfigure.SpringBootApplication\npublic class App {\n}\n");
+        Files.writeString(res.resolve("db/migration/V2__orders.sql"), "create table orders (id bigint primary key, outbox_id bigint);\n");
+        Path jar = tmp.resolve("outbox-lib-1.4.0.jar");
+        try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar))) {
+            zip.putNextEntry(new java.util.zip.ZipEntry("db/migration/V1__outbox.sql"));
+            zip.write("create table outbox_event (id bigint primary key, payload text);\n".getBytes());
+            zip.closeEntry();
+            zip.putNextEntry(new java.util.zip.ZipEntry("com/example/outbox/Outbox.class"));
+            zip.write(new byte[]{1});
+            zip.closeEntry();
+        }
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("orders", List.of(), null).withClasspath(List.of(jar));
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.nodes).extracting(Node::id).contains("table:public.orders", "table:public.outbox_event");
+        assertThat(c.node("table:public.outbox_event", null).evidence().file()).isEqualTo("outbox-lib-1.4.0.jar!/db/migration/V1__outbox.sql");
+        assertThat(c.node("table:public.orders", null).evidence().file()).isEqualTo("src/main/resources/db/migration/V2__orders.sql");
+    }
 }
