@@ -294,7 +294,25 @@ public final class FlywayExtractor implements Extractor {
         }
     }
 
-    private static final Pattern MISSING = Pattern.compile("(schema|role) \"([^\"]+)\" does not exist");
+    private static final Pattern MISSING = Pattern.compile("(schema|role) \"([^\"]+)\" does not exist"
+            + "|No value provided for placeholder: \\$\\{([^}]+)}");
+
+    /**
+     * A placeholder's value: {@code spring.flyway.placeholders.<name>}, else the Spring property of that name (#194: a
+     * migration using {@code ${app.db.schema}} gets {@code app.db.schema} of the configuration, as the service or
+     * a starter of it supplies it), else the name itself (noted in {@code defaulted}).
+     */
+    private static String placeholderValue(Map<String, String> config, String name, Set<String> defaulted) {
+        String value = config.get("spring.flyway.placeholders." + name);
+        if (value == null) {
+            value = config.get(name);
+        }
+        if (value == null || value.contains("${")) {
+            defaulted.add(name);
+            return name;
+        }
+        return value;
+    }
 
     /**
      * #192: migrations that expect a schema or a role made outside Flyway (by a DBA, an init script, another service):
@@ -302,7 +320,8 @@ public final class FlywayExtractor implements Extractor {
      * transactional). Said on stderr; what the migrations create still counts.
      */
     private static void migrateCreatingWhatIsMissing(org.flywaydb.core.api.configuration.FluentConfiguration flyway, String url,
-                                                     String user, String password, Run run) throws SQLException {
+                                                     String user, String password, Run run, Map<String, String> placeholders,
+                                                     Map<String, String> config, Set<String> defaulted) throws SQLException {
         Set<String> created = new LinkedHashSet<>();
         while (true) {
             try {
@@ -316,8 +335,13 @@ public final class FlywayExtractor implements Extractor {
                         m = mm;
                     }
                 }
-                if (m == null || created.size() >= 20 || !created.add(m.group(1) + " " + m.group(2))) {
+                if (m == null || created.size() >= 20 || !created.add(m.group(0))) {
                     throw e;
+                }
+                if (m.group(3) != null) {   // #194: a placeholder in a migration logast did not read (a library's jar)
+                    placeholders.put(m.group(3), placeholderValue(config, m.group(3), defaulted));
+                    flyway.placeholders(placeholders);
+                    continue;
                 }
                 String name = m.group(2).replace("\"", "\"\"");
                 try (Connection c = DriverManager.getConnection(url, user, password); Statement st = c.createStatement()) {
@@ -339,12 +363,7 @@ public final class FlywayExtractor implements Extractor {
             Matcher m = PLACEHOLDER.matcher(read(f));
             while (m.find()) {
                 String name = m.group(1);
-                String value = config.get("spring.flyway.placeholders." + name);
-                if (value == null) {
-                    value = name;
-                    defaulted.add(name);
-                }
-                placeholders.put(name, value);
+                placeholders.put(name, placeholderValue(config, name, defaulted));
             }
         }
         var flyway = Flyway.configure().dataSource(url, user, password)
@@ -376,7 +395,7 @@ public final class FlywayExtractor implements Extractor {
                 }
             }
         }
-        migrateCreatingWhatIsMissing(flyway, url, user, password, run);
+        migrateCreatingWhatIsMissing(flyway, url, user, password, run, placeholders, config, defaulted);
 
         Map<String, Evidence> createdIn = createdIn(root, files, placeholders);
         try (Connection c = DriverManager.getConnection(url, user, password)) {
