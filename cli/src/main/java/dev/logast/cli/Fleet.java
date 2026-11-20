@@ -164,6 +164,19 @@ final class Fleet implements Callable<Integer> {
      * #136: one member that fails to scan (a repo that is no Java service, a crash on its code) is reported and skipped;
      * the other members are still scanned, and the failed one's snapshot stays as it was. True when it was scanned.
      */
+    /** #193: a member's scan; null when it was scanned, else why not (the whole error with LOGAST_DEBUG). */
+    static String scanError(MemberScan scan) {
+        try {
+            scan.run();
+            return null;
+        } catch (IOException | RuntimeException e) {
+            if (System.getenv("LOGAST_DEBUG") != null) {
+                e.printStackTrace();
+            }
+            return String.valueOf(e);
+        }
+    }
+
     static boolean skipOnFailure(String service, MemberScan scan) {
         try {
             scan.run();
@@ -183,7 +196,9 @@ final class Fleet implements Callable<Integer> {
         Main.migrate(r);
         Policy policy = Logast.policy(r, null);
         Main.warnOnce(policy);
-        System.err.println("scanning " + r);
+        if (!Out.Progress.quiet) {
+            System.err.println("scanning " + r);
+        }
         List<Path> cp = Logast.classpath(r, classpathFile);
         ScanResult scan = Logast.scan(r, cp, policy);
         lastScanned = new dev.logast.export.Export.Analysed(Logast.lastAnalysis, scan, cp);   // #184: the export reuses it
@@ -215,7 +230,9 @@ final class Fleet implements Callable<Integer> {
         Main.warnOnce(policy);
         List<Path> cp = classpathFile != null ? Logast.classpath(r, classpathFile)
                 : noBuilds ? Logast.classpathIn(out) : addedClasspath(service, r, out);
-        System.err.println("scanning " + r + " (read-only; results in " + out + ")");
+        if (!Out.Progress.quiet) {
+            System.err.println("scanning " + r + " (read-only; results in " + out + ")");
+        }
         ScanResult scan = Logast.scan(r, cp, policy);
         Analysis a = Logast.lastAnalysis;
         lastScanned = new dev.logast.export.Export.Analysed(a, scan, cp);   // #184: the export reuses it
@@ -290,64 +307,96 @@ final class Fleet implements Callable<Integer> {
     }
 
     /** One member's facts into {@code kb/<member>/}, unless its commit and the options are those of its last export. */
-    private void exportMember(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot) {
+    /** #193: what a member's export did, for its line. */
+    record KbOutcome(FleetLog.Status status, String detail, List<String> notes) {
+    }
+
+    private KbOutcome exportMember(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot) {
         Path out = dir.resolve("kb").resolve(name);
         try {
             String commit = dev.logast.fleet.NamedFleet.commit(root);
             String options = kbOptions();
             if (!kbFull && KbExport.upToDate(out, commit, options)) {
-                System.err.println("fleet --kb: " + name + ": unchanged since its last export (" + commit + "), kept");
-                return;
+                return new KbOutcome(FleetLog.Status.SAME, "knowledge base unchanged since its last export (" + commit + "), kept", List.of());
             }
             Path ar = analysedRoot == null ? null : analysedRoot.toAbsolutePath().normalize();
             dev.logast.export.RepoExport.Result r = KbExport.repo(root, name, out, dir.resolve(".cache/kb-classpath").resolve(name),
                     classpathFile, noBuilds, flywayOptions(), List.of(), List.of(),
                     rootDir -> analysed != null && rootDir.toAbsolutePath().normalize().equals(ar) ? analysed : null);
-            System.err.println("fleet --kb: " + name + ": " + r.files().size() + " facts file(s) in " + out);
-            r.problems().forEach(p2 -> System.err.println("fleet --kb: " + name + ": " + p2));
+            String files = "knowledge base: " + r.files().size() + " facts file(s)";
             if (r.problems().isEmpty()) {
                 KbExport.stamp(out, commit, options);
-            } else {   // #187: a partial export is not done: the next run exports it again, once its cause is fixed
-                Files.deleteIfExists(out.resolve(KbExport.STAMP));
-                System.err.println("fleet --kb: " + name + ": " + r.problems().size() + " problem(s), so it is exported again next run");
+                return new KbOutcome(FleetLog.Status.OK, files, List.of());
             }
+            // #187: a partial export is not done: the next run exports it again, once its cause is fixed
+            Files.deleteIfExists(out.resolve(KbExport.STAMP));
+            List<String> notes = new java.util.ArrayList<>(r.problems().stream().limit(5)
+                    .map(p -> p.length() > 220 ? p.substring(0, 219) + "…" : p).toList());
+            if (r.problems().size() > 5) {
+                notes.add("… and " + (r.problems().size() - 5) + " more");
+            }
+            return new KbOutcome(FleetLog.Status.PROBLEM, files + ", " + r.problems().size() + " problem(s), so it is exported again next run",
+                    notes);
         } catch (IOException | RuntimeException e) {
-            Out.warn("fleet --kb: " + name + " not exported (" + e.getMessage() + ")");
+            return new KbOutcome(FleetLog.Status.FAILED, "knowledge base not exported: " + e.getMessage(), List.of());
         }
     }
 
-    private void knowledgeBase(Path dir, Map<String, Path> members) throws IOException {
+    private void knowledgeBase(Path dir, Map<String, Path> members, FleetLog log) throws IOException {
         Path kbDir = dir.resolve("kb");
         Files.createDirectories(kbDir);
-        List<java.util.concurrent.Callable<Void>> work = new java.util.ArrayList<>();
+        Map<String, Path> todo = new java.util.LinkedHashMap<>();
+        List<String> away = new java.util.ArrayList<>();
         for (var m : members.entrySet()) {
             if (kbDone.contains(m.getKey())) {
                 continue;
             }
             if (!Files.isDirectory(m.getValue())) {
-                Out.warn("fleet --kb: " + m.getKey() + " is not at " + m.getValue() + " on this machine; its facts stay as they were");
+                away.add(m.getKey());
                 continue;
             }
-            work.add(() -> {
-                System.err.println("fleet --kb: exporting " + m.getKey());
-                exportMember(dir, m.getKey(), m.getValue(), null, null);
-                return null;
-            });
+            todo.put(m.getKey(), m.getValue());
         }
-        var pool = java.util.concurrent.Executors.newFixedThreadPool(Math.max(1, kbThreads));
-        try {
-            for (var f : pool.invokeAll(work)) {
-                f.get();
+        FleetLog.Phase phase = log.phase("knowledge base", todo.isEmpty() && away.isEmpty() ? "every repo was exported with its scan"
+                : "the repos not exported with a scan (infra, charts, workflows, unchanged ones kept), " + Math.max(1, kbThreads)
+                + " at a time" + (flyway ? "; each environment's migrations run in a throwaway PostgreSQL" : ""), todo.size() + away.size());
+        for (String a : away) {
+            phase.done(a, FleetLog.Status.SKIPPED, 0, "not on this machine (" + members.get(a) + "); its facts stay as they were", List.of());
+        }
+        java.util.Set<String> running = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        List<java.util.concurrent.Callable<Void>> work = new java.util.ArrayList<>();
+        try (Out.Progress live = new Out.Progress("~exporting")) {
+            for (var m : todo.entrySet()) {
+                work.add(() -> {
+                    running.add(m.getKey());
+                    live.update("~exporting " + String.join(", ", running));
+                    long t0 = System.nanoTime();
+                    KbOutcome o = exportMember(dir, m.getKey(), m.getValue(), null, null);
+                    running.remove(m.getKey());
+                    live.update("~exporting " + String.join(", ", running));
+                    phase.done(m.getKey(), o.status(), System.nanoTime() - t0, o.detail(), o.notes());
+                    return null;
+                });
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } catch (java.util.concurrent.ExecutionException e) {
-            Out.warn("fleet --kb: " + e.getCause());
-        } finally {
-            pool.shutdown();
+            var pool = java.util.concurrent.Executors.newFixedThreadPool(Math.max(1, kbThreads));
+            try {
+                for (var f : pool.invokeAll(work)) {
+                    f.get();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException e) {
+                Out.warn("fleet --kb: " + e.getCause());
+            } finally {
+                pool.shutdown();
+            }
         }
-        KbExport.mappings(kbDir).forEach(l -> System.err.println("fleet --kb: " + l));
-        System.err.println("fleet --kb: knowledge base in " + kbDir + "; `logast mcp config --kb " + kbDir + "` connects an MCP client");
+        List<String> mapped = KbExport.mappings(kbDir);
+        if (!mapped.isEmpty()) {
+            System.err.println("   " + Ansi.dim("kb/mappings:"));
+            mapped.forEach(l -> System.err.println("     " + l));
+        }
+        phase.end();
     }
 
     // ---- logast fleet <name> -----------------------------------------------------------------------------------------
@@ -357,35 +406,81 @@ final class Fleet implements Callable<Integer> {
             Out.warn("fleet: --no-builds: added members are scanned from their source only (survey quality: calls through "
                     + "library types may stay unresolved)");
         }
+        // #193: what the run does, a header per phase, a line per repo, a summary
+        FleetLog log = refresh || kb ? new FleetLog() : null;
+        List<FleetRepos.Repo> repos = refresh ? FleetRepos.list(dir) : List.of();
+        if (log != null) {
+            java.util.Set<String> names = new java.util.TreeSet<>(NamedFleet.members(dir).keySet());
+            repos.forEach(r -> names.add(r.name()));
+            List<String[]> plan = new java.util.ArrayList<>();
+            if (refresh) {
+                plan.add(new String[]{"update", "fetch each repo of repos.yaml (read-only clones)"});
+                plan.add(new String[]{"scan", "analyse each Java repo: findings and score" + (kb ? ", then its knowledge base" : "")
+                        + (noBuilds ? " (source only)" : "")});
+            }
+            if (kb) {
+                plan.add(new String[]{"knowledge base", "facts of the other repos into kb/" + (kbFull ? ", all of them"
+                        : ", unchanged ones kept") + (flyway ? ", tables from the migrations (Docker)" : "")});
+            }
+            plan.add(new String[]{"report", "the overview, report/fleet.html"});
+            log.intro("logast fleet " + name + " · " + names.size() + " repos", plan, names.stream().mapToInt(String::length).max().orElse(20));
+        }
         if (refresh) {
             // #147: the members repos.yaml lists by URL: cloned or updated, then added (read-only) like `fleet add`
-            for (FleetRepos.Repo repo : FleetRepos.list(dir)) {
-                try (Out.Progress p = new Out.Progress("updating " + repo.name() + " from " + repo.url())) {
+            FleetLog.Phase phase = log.phase("update", null, repos.size());
+            for (FleetRepos.Repo repo : repos) {
+                long t0 = System.nanoTime();
+                try (Out.Progress p = phase.working(repo.name(), "fetching " + repo.url())) {
                     NamedFleet.add(dir, FleetRepos.sync(dir, repo));
+                    phase.done(repo.name(), FleetLog.Status.OK, System.nanoTime() - t0, "updated", List.of());
                 } catch (RuntimeException e) {
-                    Out.warn("fleet: " + repo.name() + " not updated (" + e.getMessage() + "); its snapshot stays as it was");
+                    phase.done(repo.name(), FleetLog.Status.FAILED, System.nanoTime() - t0, "not updated: "
+                            + FleetLog.oneLine(e.getMessage()) + "; its snapshot stays as it was", List.of());
                 }
             }
+            phase.end();
         }
         Map<String, Path> members = NamedFleet.members(dir);
         Map<String, Path> added = NamedFleet.added(dir);
         if (refresh) {
+            FleetLog.Phase phase = log.phase("scan", null, members.size());
             for (var m : members.entrySet()) {
-                if (!Files.isDirectory(m.getValue())) {
-                    Out.warn("fleet: " + m.getKey() + " is not at " + m.getValue() + " on this machine; its snapshot stays as it was");
-                    continue;
-                }
                 String svc = m.getKey();
                 Path root = m.getValue();
+                if (!Files.isDirectory(root)) {
+                    phase.done(svc, FleetLog.Status.SKIPPED, 0, "not on this machine (" + root + "); its snapshot stays as it was", List.of());
+                    continue;
+                }
+                if (dev.logast.export.RepoExport.roots(root).stream().noneMatch(r -> r.kind().equals("java"))) {
+                    phase.done(svc, FleetLog.Status.SKIPPED, 0, "no Java build to scan" + (kb ? ": its facts come with the knowledge base" : ""),
+                            List.of());
+                    continue;
+                }
+                long t0 = System.nanoTime();
                 lastScanned = null;
-                skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc) ? scanAdded(dir, svc, root, classpathFile, noBuilds)
-                        : scan(root)));
-                if (kb && lastScanned != null) {   // #184: exported now, with the analysis the scan just made
-                    exportMember(dir, svc, root, lastScanned, lastScannedRoot);
-                    kbDone.add(svc);
+                String error;
+                KbOutcome o = null;
+                try (Out.Progress p = phase.working(svc, "scanning")) {
+                    error = scanError(() -> NamedFleet.write(dir, added.containsKey(svc) ? scanAdded(dir, svc, root, classpathFile, noBuilds)
+                            : scan(root)));
+                    if (kb && lastScanned != null) {   // #184: exported now, with the analysis the scan just made
+                        p.update("~exporting its knowledge base");
+                        o = exportMember(dir, svc, root, lastScanned, lastScannedRoot);
+                        kbDone.add(svc);
+                    }
                 }
                 lastScanned = null;
+                long took = System.nanoTime() - t0;
+                if (error != null) {
+                    phase.done(svc, FleetLog.Status.FAILED, took, "scan failed: " + FleetLog.oneLine(error) + " (its snapshot stays as it was; "
+                            + "`logast scan` in the repo shows the whole error)", List.of());
+                } else if (o == null) {
+                    phase.done(svc, FleetLog.Status.OK, took, "scanned", List.of());
+                } else {
+                    phase.done(svc, o.status() == FleetLog.Status.SAME ? FleetLog.Status.OK : o.status(), took, "scanned · " + o.detail(), o.notes());
+                }
             }
+            phase.end();
         }
         if (!refresh) {
             // #150: a member with commits since its snapshot is rescanned, so the overview never shows an old state of it
@@ -407,7 +502,18 @@ final class Fleet implements Callable<Integer> {
             }
         }
         if (kb) {
-            knowledgeBase(dir, members);
+            knowledgeBase(dir, members, log);
+        }
+        if (log != null) {
+            List<String[]> next = new java.util.ArrayList<>();
+            if (kb) {
+                Path kbDir = dir.resolve("kb").toAbsolutePath().normalize();
+                Path cwd = Path.of("").toAbsolutePath();
+                String shown = kbDir.startsWith(cwd) ? (cwd.relativize(kbDir).toString().isEmpty() ? "." : cwd.relativize(kbDir).toString())
+                        : kbDir.toString();
+                next.add(new String[]{"logast mcp config --kb " + shown, "connects an MCP client to the knowledge base"});
+            }
+            log.summary(next);
         }
         if (service != null) {
             return service(name, dir, service, members, added);

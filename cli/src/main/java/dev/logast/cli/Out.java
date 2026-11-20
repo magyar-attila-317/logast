@@ -88,21 +88,48 @@ final class Out {
      */
     static final class Progress implements AutoCloseable {
         private static final String[] FRAMES = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+        /** #193: while a fleet run shows its own lines, other progress only shows on the live line. */
+        static volatile boolean quiet;
+        private static volatile Progress active;
         private final long start = System.nanoTime();
         private final boolean live = Ansi.enabled();
         private final java.io.PrintStream err = System.err;
         private volatile String step = "";
+        private volatile String label = "";   // a fixed first part of the live line (a fleet member's [3/32] name)
         private final Thread ticker;
+        private final Progress outer;   // #193: progress inside another one is a detail of the outer line
+        private final String outerStep;
 
         Progress(String first) {
+            Progress o = active;
+            outer = o != null && o.ticker != null && o.ticker.isAlive() ? o : null;
+            outerStep = outer == null ? null : outer.step;
+            if (outer != null) {
+                ticker = null;
+                update(first);
+                return;
+            }
             update(first);
             ticker = live ? Thread.ofPlatform().daemon().start(this::tick) : null;
+            if (ticker != null) {
+                active = this;
+            }
+        }
+
+        /** The live line's fixed first part. */
+        Progress label(String l) {
+            label = l;
+            return this;
         }
 
         /** "~detail" lines only show on the live line; the others also get a line of their own when not live. */
         void update(String s) {
-            boolean detail = s.startsWith("~");
-            String text = detail ? s.substring(1) : s;
+            if (outer != null) {
+                outer.update("~" + (s.startsWith("~") ? s.substring(1) : s));
+                return;
+            }
+            boolean detail = s.startsWith("~") || quiet && live;   // the spinner shows it; logs (CI) keep their lines
+            String text = s.startsWith("~") ? s.substring(1) : s;
             if (text.equals(step)) {
                 return;
             }
@@ -122,7 +149,12 @@ final class Out {
             int i = 0;
             while (!Thread.currentThread().isInterrupted()) {
                 synchronized (err) {
-                    err.print("\r\u001b[2K" + Ansi.cyan(FRAMES[i++ % FRAMES.length]) + " " + step + Ansi.dim("  " + seconds(start)));
+                    String line = (label.isEmpty() ? "" : label + "  ") + step;
+                    int max = width() - 12;
+                    if (line.length() > max && max > 20) {
+                        line = line.substring(0, max - 1) + "…";
+                    }
+                    err.print("\r\u001b[2K" + Ansi.cyan(FRAMES[i++ % FRAMES.length]) + " " + line + Ansi.dim("  " + seconds(start)));
                     err.flush();
                 }
                 try {
@@ -135,6 +167,13 @@ final class Out {
 
         @Override
         public void close() {
+            if (outer != null) {
+                outer.update("~" + outerStep);
+                return;
+            }
+            if (active == this) {
+                active = null;
+            }
             if (ticker != null) {
                 ticker.interrupt();
                 try {
@@ -152,6 +191,22 @@ final class Out {
 
     static String seconds(long startNanos) {
         return String.format("%.1fs", (System.nanoTime() - startNanos) / 1e9);
+    }
+
+    /** #193: a duration as people read it: 0.8s, 46s, 2m 05s, 1h 02m. */
+    static String duration(long nanos) {
+        double s = nanos / 1e9;
+        if (s < 10) {
+            return String.format("%.1fs", s);
+        }
+        long t = Math.round(s);
+        if (t < 60) {
+            return t + "s";
+        }
+        if (t < 3600) {
+            return String.format("%dm %02ds", t / 60, t % 60);
+        }
+        return String.format("%dh %02dm", t / 3600, (t % 3600) / 60);
     }
 
     private static String pad(String label) {
