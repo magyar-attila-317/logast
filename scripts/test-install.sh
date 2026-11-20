@@ -72,6 +72,8 @@ check "an empty core jar" stale "$(gradle_state 1.0 "$INIT" "$M2")"
 pk "$M2/dev/logast/core/1.0/core-1.0.jar"
 check "the plugin without facts (#152)" stale "$(gradle_state 1.0 "$INIT" "$M2")"
 pk "$M2/dev/logast/facts/1.0/facts-1.0.jar"
+check "the plugin without kb (#174)" stale "$(gradle_state 1.0 "$INIT" "$M2")"
+pk "$M2/dev/logast/kb/1.0/kb-1.0.jar"
 check "set up for this version" current "$(gradle_state 1.0 "$INIT" "$M2")"
 check "set up for an older version" stale "$(gradle_state 1.1 "$INIT" "$M2")"
 

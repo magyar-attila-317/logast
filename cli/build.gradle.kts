@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":kb"))   // #174: logast mcp
     implementation(libs.picocli)
     runtimeOnly(project(":test-capture"))   // shipped in lib/; `logast verify` adds it to a service's test runtime
 }

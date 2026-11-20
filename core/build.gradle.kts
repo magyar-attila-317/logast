@@ -20,6 +20,7 @@ dependencies {
     implementation(libs.hcl4j)   // #166: Terraform / Terragrunt files, read without the CLIs
     runtimeOnly(libs.slf4j.nop)
 
+    testImplementation(project(":kb"))   // the extractors' tests load what they write (#174)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj)

@@ -44,7 +44,9 @@ the build ([gradle-plugin.md](gradle-plugin.md)).
 
 | module | contents |
 |---|---|
-| `core` | parsing, call graph and path context, policy loader, rules, work orders, apply, verify, fleet, review |
+| `facts` | the facts format: model, reader, writer, validator, JSON Schema ([facts.md](facts.md)) |
+| `kb` | facts of many repos in memory, the questions over them, the MCP server, the review page ([mcp.md](mcp.md)); no OpenRewrite |
+| `core` | parsing, call graph and path context, policy loader, rules, work orders, apply, verify, fleet, review |; the extractors behind `logast export`
 | `cli` | the `logast` command |
 | `gradle-plugin` | the `dev.logast` Gradle plugin; TestKit tests: `./gradlew :gradle-plugin:functionalTest` |
 | `logging-support` | the runtime starter used by generated code |

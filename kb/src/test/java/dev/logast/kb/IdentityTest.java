@@ -1,6 +1,5 @@
 package dev.logast.kb;
 
-import dev.logast.export.JavaExtractor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -50,24 +49,5 @@ class IdentityTest {
         assertThat(kb.ambiguous()).singleElement().asString().contains("deployment:ledger [prod]", "service:ledger", "service:ledger-batch");
         assertThat(kb.summary()).contains("4 deployments linked", "not linked, more than one service fits");
         assertThat(kb.path("service:orders", "image:registry.example.com/shop/orders-api", 4)).contains("-deployed-as->", "-deploys->");
-    }
-
-    @Test
-    void theImageABuildPushes() throws IOException {
-        Files.writeString(tmp.resolve("build.gradle.kts"), """
-                plugins { id("com.google.cloud.tools.jib") version "3.4.5" }
-                jib {
-                    from { image = "eclipse-temurin:21-jre" }
-                    to {
-                        image = "registry.example.com/shop/orders"
-                        tags = setOf("latest")
-                    }
-                }
-                """);
-        assertThat(JavaExtractor.builtImage(tmp)).as("to, not from").isEqualTo("registry.example.com/shop/orders");
-        Files.writeString(tmp.resolve("build.gradle.kts"), "tasks.bootBuildImage {\n    imageName.set(\"registry.example.com/shop/billing:1\")\n}\n");
-        assertThat(JavaExtractor.builtImage(tmp)).isEqualTo("registry.example.com/shop/billing:1");
-        Files.writeString(tmp.resolve("build.gradle.kts"), "jib { to { image = \"registry/${project.name}\" } }\n");
-        assertThat(JavaExtractor.builtImage(tmp)).as("a computed name is not guessed").isNull();
     }
 }

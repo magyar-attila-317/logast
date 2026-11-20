@@ -3,7 +3,7 @@ package dev.logast.kb;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import dev.logast.fleet.FleetHome;
+import java.util.Map;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,7 +25,25 @@ public final class KbPaths {
     public record Resolved(List<Path> paths, String source) {
     }
 
-    public static Resolved resolve(List<Path> options, FleetHome.Env env) {
+    /**
+     * What resolution reads: the environment and the home folder. {@code logast.home} (a system property) isolates
+     * tests from the real home, as logast's fleet commands do.
+     */
+    public record Env(Map<String, String> env, Path home) {
+        public static Env current() {
+            String isolated = System.getProperty("logast.home");
+            return isolated != null ? new Env(Map.of(), Path.of(isolated)) : new Env(System.getenv(), Path.of(System.getProperty("user.home")));
+        }
+
+        /** The user config: {@code $XDG_CONFIG_HOME/logast/config.yaml}, else {@code ~/.config/logast/config.yaml}. */
+        public Path configFile() {
+            String xdg = env.get("XDG_CONFIG_HOME");
+            Path base = xdg != null && !xdg.isBlank() ? Path.of(xdg) : home.resolve(".config");
+            return base.resolve("logast").resolve("config.yaml");
+        }
+    }
+
+    public static Resolved resolve(List<Path> options, Env env) {
         if (options != null && !options.isEmpty()) {
             return new Resolved(options.stream().map(p -> expand(env, p.toString())).toList(), "--kb");
         }
@@ -59,7 +77,7 @@ public final class KbPaths {
         return new Resolved(List.of(), "none");
     }
 
-    private static Path expand(FleetHome.Env env, String path) {
+    private static Path expand(Env env, String path) {
         String p = path.strip();
         return (p.equals("~") || p.startsWith("~/") ? env.home().resolve(p.equals("~") ? "" : p.substring(2)) : Path.of(p))
                 .toAbsolutePath().normalize();
