@@ -373,6 +373,7 @@ class QuartzJobsTest {
 
                 public class ParcelJobConfig {
                     private static final String NIGHT_TRIGGER = "Sync_Night";
+                    private static final java.util.TimeZone HOME_ZONE = java.util.TimeZone.getTimeZone("Europe/London");
                     private final SyncProperties syncProperties;
 
                     ParcelJobConfig(SyncProperties syncProperties) {
@@ -391,6 +392,7 @@ class QuartzJobsTest {
                         CronTriggerFactoryBean t = new CronTriggerFactoryBean();
                         t.setJobDetail(syncJobDetail);
                         t.setCronExpression(jobTrigger.getCron());
+                        t.setTimeZone(HOME_ZONE);
                         return t;
                     }
 
@@ -433,6 +435,6 @@ class QuartzJobsTest {
         List<String> jobs = out.toString().lines().filter(l -> l.contains("\"kind\":\"job\"")).toList();
         assertThat(jobs).as(out.toString()).singleElement().asString()
                 .as("the trigger the code picks by name, not the first one").contains("\"cron\":\"0 30 1 ? * *\"",
-                        "\"cronFrom\":\"logistics.scheduling.sync.triggers[1].cron\"").doesNotContain("0 0 12");
+                        "\"cronFrom\":\"logistics.scheduling.sync.triggers[1].cron\"", "\"zone\":\"Europe/London\"").doesNotContain("0 0 12");
     }
 }

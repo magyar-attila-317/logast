@@ -294,7 +294,9 @@ environment use it. First, the cron is followed back from the code that schedule
 `cronSchedule(x)` whose job is set beside it (`setJobDetail(bean)` → that bean's `setJobClass(X.class)`, or
 `newJob(X.class)`), with `x` a literal or constant, a `@Value` key, or getters on a `@ConfigurationProperties` object,
 also through a list filtered by a name (`props.getTriggers().stream().filter(t -> t.getName().equals(NAME))` →
-`<prefix>.triggers[i].cron` where `name` is NAME's value); `cronFrom` names the key. When the code does not say,
+`<prefix>.triggers[i].cron` where `name` is NAME's value); `cronFrom` names the key. A time zone the trigger sets (`setTimeZone(X)`, `inTimeZone(X)`, a constant such as
+`TimeZone.getTimeZone("Europe/London")`) is followed the same way into `zone` (#199): `runs_on` and `next_runs` read
+the cron in that zone and show the times in the one asked for. When the code does not say,
 names in the configuration are matched: A job's entry may name it and list its triggers (#197: `jobs.<key>.name: StockEnrichmentJob` with
 `jobs.<key>.triggers[i].cron`, each trigger with its own name and other keys): a cron is matched to the job named in
 its own entry or in the entries above it (three levels at most), and a job with several triggers has them all in

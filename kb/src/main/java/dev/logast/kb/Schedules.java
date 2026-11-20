@@ -28,9 +28,13 @@ public final class Schedules {
     }
 
     /** A job's schedule: a cron, an interval, or why there is none usable. */
-    record Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem, String trigger) {
+    record Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem, String trigger, String zoneOfTrigger) {
         Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem) {
-            this(job, cron, every, problem, null);
+            this(job, cron, every, problem, null, null);
+        }
+
+        Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem, String trigger) {
+            this(job, cron, every, problem, trigger, null);
         }
 
         /** " · <trigger>" when the job has several. */
@@ -39,7 +43,7 @@ public final class Schedules {
         }
 
         ZoneId zone(ZoneId fallback) {
-            Object z = job.fact().attrs().get("zone");
+            Object z = zoneOfTrigger != null ? zoneOfTrigger : job.fact().attrs().get("zone");
             try {
                 return z == null || z.toString().isBlank() ? fallback : ZoneId.of(z.toString());
             } catch (RuntimeException e) {
@@ -61,7 +65,7 @@ public final class Schedules {
                 String expr = String.valueOf(m.get("cron"));
                 String label = m.get("name") != null ? String.valueOf(m.get("name")) : expr;
                 try {
-                    out.add(new Schedule(job, Cron.parse(expr, format), null, null, label));
+                    out.add(new Schedule(job, Cron.parse(expr, format), null, null, label, m.get("zone") == null ? null : String.valueOf(m.get("zone"))));
                 } catch (IllegalArgumentException e) {
                     out.add(new Schedule(job, null, null, e.getMessage(), label));
                 }
