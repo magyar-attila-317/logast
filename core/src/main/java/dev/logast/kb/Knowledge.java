@@ -129,6 +129,39 @@ public final class Knowledge {
         return out;
     }
 
+    /**
+     * #170: the glossary as a {@code vocabulary:} block for logast's company.yaml: each term with its aliases (the words
+     * logs must not use). Terms and aliases {@code existing} (term → aliases) already has are left out.
+     */
+    public String vocabularyYaml(Map<String, java.util.Set<String>> existing) {
+        StringBuilder sb = new StringBuilder("vocabulary:\n");
+        int n = 0;
+        for (Term t : terms.values()) {
+            java.util.Set<String> have = existing.get(t.term());
+            List<String> aliases = t.aliases().stream().filter(a -> have == null || !have.contains(a)).toList();
+            if (have != null && aliases.isEmpty()) {
+                continue;
+            }
+            n++;
+            sb.append("  ").append(t.term()).append(":");
+            if (t.definition() != null) {
+                sb.append("   # ").append(t.definition().lines().findFirst().orElse(""));
+            }
+            sb.append('\n');
+            if (!aliases.isEmpty()) {
+                sb.append("    aliases: [").append(String.join(", ", aliases)).append("]\n");
+            }
+        }
+        return n == 0 ? "# every glossary term is in the vocabulary already\n" : sb.toString();
+    }
+
+    /** Whether a word is a term, an alias or an abbreviation. */
+    boolean knows(String word) {
+        String w = norm(word);
+        return terms.containsKey(w) || abbreviations.containsKey(w)
+                || terms.values().stream().anyMatch(t -> t.aliases().stream().anyMatch(a -> norm(a).equals(w)));
+    }
+
     public Map<String, Flow> flows() {
         return java.util.Collections.unmodifiableMap(flows);
     }
