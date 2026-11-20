@@ -102,11 +102,61 @@ public final class FlywayExtractor implements Extractor {
 
     /** The runs of a service's migrations: per environment when the folder has {@code common} and others. */
     static List<Run> runs(Path root) {
+        // #180: profiles that set their own locations (application-prod.yml: common + prod) are the environments
+        String base = SpringProperties.read(root).get("spring.flyway.locations");
+        List<Run> perProfile = new ArrayList<>();
+        for (String profile : profiles(root)) {
+            String own = SpringProperties.forProfile(root, profile).get("spring.flyway.locations");
+            if (own != null && !own.equals(base)) {
+                List<Path> folders = locations(root, own);
+                if (!folders.isEmpty()) {
+                    perProfile.add(new Run(profile, folders));
+                }
+            }
+        }
         List<Run> out = new ArrayList<>();
-        for (Path base : locations(root)) {
-            out.addAll(split(base));
+        if (!perProfile.isEmpty()) {   // the base locations still run when no such profile is active
+            List<Path> baseFolders = locations(root);
+            if (!baseFolders.isEmpty()) {
+                out.add(new Run(null, baseFolders));
+            }
+            out.addAll(perProfile);
+            return out;
+        }
+        for (Path b : locations(root)) {
+            out.addAll(split(b));
         }
         return out;
+    }
+
+    /** The profiles the service has config for: {@code application-<profile>.*} files and documents activated for one. */
+    static List<String> profiles(Path root) {
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        Path resources = SpringProperties.appResources(root);
+        if (resources == null) {
+            return List.of();
+        }
+        for (Path dir : List.of(resources, resources.resolve("config"))) {
+            if (!Files.isDirectory(dir)) {
+                continue;
+            }
+            try (Stream<Path> st = Files.list(dir)) {
+                st.forEach(f -> {
+                    Matcher m = Pattern.compile("application-([^.]+)\\.(ya?ml|properties)").matcher(f.getFileName().toString());
+                    if (m.matches()) {
+                        out.add(m.group(1));
+                    } else if (f.getFileName().toString().matches("application\\.(ya?ml|properties)")) {
+                        Matcher on = Pattern.compile("on-profile\\s*[:=]\\s*['\"]?([\\w.-]+)").matcher(read(f));
+                        while (on.find()) {
+                            out.add(on.group(1));
+                        }
+                    }
+                });
+            } catch (IOException e) {
+                // no profiles from an unreadable folder
+            }
+        }
+        return List.copyOf(out);
     }
 
     /** A migration folder's runs: one per environment subfolder (with {@code common}), else one. */
@@ -134,8 +184,12 @@ public final class FlywayExtractor implements Extractor {
 
     /** {@code spring.flyway.locations} ({@code classpath:} and {@code filesystem:}), default {@code db/migration}. */
     static List<Path> locations(Path root) {
+        return locations(root, SpringProperties.read(root).get("spring.flyway.locations"));
+    }
+
+    /** The folders a {@code spring.flyway.locations} value names ({@code classpath:}, {@code filesystem:}, {@code {vendor}}). */
+    static List<Path> locations(Path root, String configured) {
         Path resources = SpringProperties.appResources(root);
-        String configured = SpringProperties.read(root).get("spring.flyway.locations");
         List<Path> out = new ArrayList<>();
         for (String loc : (configured == null || configured.isBlank() ? "classpath:db/migration" : configured).split(",")) {
             String l = loc.strip();

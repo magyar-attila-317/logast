@@ -107,6 +107,8 @@ migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes w
 
 - **Environments**: a migration folder (`spring.flyway.locations`, default `db/migration`) with a `common` subfolder
   and others (`dev`, `ppe`, `prod`, …) is run once per other subfolder, as `common` + its own; otherwise once, for all.
+  A profile whose config sets its own `spring.flyway.locations` (`application-prod.yml`: `common` and `prod`) is an
+  environment of its own, run with those locations, besides the base config's locations run once (#180).
 - **Placeholders** (`${schema}`): `spring.flyway.placeholders.*` of the environment's profile
   (`application-<env>.yml`) over the base config. A placeholder with no value runs with its own name; a placeholder
   used as a schema (`${schema}.jobs`) gets that schema created first.
