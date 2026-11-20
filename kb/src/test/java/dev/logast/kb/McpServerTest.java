@@ -100,6 +100,8 @@ class McpServerTest {
         assertThat(init.get("protocolVersion").asText()).as("the client's version").isEqualTo("2025-03-26");
         assertThat(init.at("/serverInfo/version").asText()).isEqualTo("1.2.3");
         assertThat(init.has("capabilities")).isTrue();
+        assertThat(init.get("instructions").asText()).as("#200: what is loaded and where to look, before the client guesses")
+                .contains("Loaded now: 2 repos; ", "Where to look:", "- job (1): scheduled work", "- endpoint (1): ");
         List<String> tools = new ArrayList<>();
         replies.get(1).at("/result/tools").forEach(t -> tools.add(t.get("name").asText()));
         assertThat(tools).containsExactly("summary", "find", "describe", "neighbors", "path", "runs_on", "next_runs", "lineage", "risks",

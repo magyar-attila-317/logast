@@ -136,8 +136,52 @@ public final class McpServer {
         r.putObject("serverInfo").put("name", "logast-kb").put("version", version);
         r.put("instructions", "Facts about code and deployment of many repos (docs/facts.md in logast). Node ids are "
                 + "<kind>:<name>, e.g. service:shipping, endpoint:shipping:GET /shipments/{id}, table:billing.invoice, "
-                + "job:shipping:ExportJob.run. Start with summary or find; cite the (repo/file:line) of each fact you use.");
+                + "job:shipping:ExportJob.run. Start with summary or find; cite the (repo/file:line) of each fact you use."
+                + loaded());
         return r;
+    }
+
+    /** What to look for in them per kind of question (#200): which kinds answer it, which tool asks. */
+    private static final String[][] GUIDE = {
+            {"release", "what is deployed where (helmfile releases per environment: chart, version, namespace, values): "
+                    + "find kind=release, describe"},
+            {"deployment", "how a service runs per environment (from the rendered charts: image, replicas, env vars, mounted "
+                    + "secrets): find kind=deployment, describe; a service's workloads: neighbors (deployed-as)"},
+            {"cronjob", "Kubernetes CronJobs per environment: runs_on, next_runs"},
+            {"secret", "Key Vault secrets and who mounts or reads them: secrets"},
+            {"resource", "cloud resources (Terraform/Terragrunt per environment): find kind=resource; secrets"},
+            {"job", "scheduled work (@Scheduled, Quartz with triggers and time zones, Kubernetes cron): runs_on, next_runs"},
+            {"table", "who reads and writes data: writers_of, readers_of; what follows from a write: lineage"},
+            {"endpoint", "HTTP entrypoints and who calls them: find kind=endpoint, neighbors, lineage"},
+            {"topic", "messages: find kind=topic, neighbors (publishes, consumes)"},
+            {"workflow", "CI (GitHub Actions) and the runners: workflow_refs, runners"},
+    };
+
+    /** #200: what is loaded, so a client knows what it can ask before guessing (an empty string when nothing is). */
+    private String loaded() {
+        KnowledgeBase k;
+        try {
+            k = kb();
+        } catch (RuntimeException e) {
+            return "";
+        }
+        if (k.files().isEmpty()) {
+            return "";
+        }
+        java.util.Map<String, Integer> kinds = k.kindCounts();
+        StringBuilder sb = new StringBuilder("\n\nLoaded now: " + k.repoCount() + " repos; ");
+        sb.append(String.join(", ", kinds.entrySet().stream().sorted((x, y) -> y.getValue() - x.getValue())
+                .map(e -> e.getValue() + " " + e.getKey()).toList()));
+        if (!k.environments().isEmpty()) {
+            sb.append("; environments: ").append(String.join(", ", k.environments()));
+        }
+        sb.append(".\nWhere to look:");
+        for (String[] g : GUIDE) {
+            if (kinds.containsKey(g[0])) {
+                sb.append("\n- ").append(g[0]).append(" (").append(kinds.get(g[0])).append("): ").append(g[1]);
+            }
+        }
+        return sb.toString();
     }
 
     // ---- tools --------------------------------------------------------------------------------------------------------

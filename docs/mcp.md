@@ -42,6 +42,13 @@ logast mcp config --kb ~/src/my-company-logast/kb
 prints the server entry in the `mcpServers` shape most clients read (`command` + `args`, stdio); paste it into your
 client's MCP configuration. `logast` must be on the `PATH` the client starts it with (else use its full path).
 
+## What the client is told first
+
+`initialize` tells the client what is loaded and where to look (#200): the repos, the facts by kind, the
+environments, and per kind of fact the tools that answer about it (Helm releases and deployments, Terraform
+resources, jobs, tables, endpoints, topics, workflows), so a first question about deployments goes to them instead of
+a guess.
+
 ## What it can answer
 
 Every tool takes at least one parameter (`summary` and `runners` an optional `text` filter) and no tool lists an empty

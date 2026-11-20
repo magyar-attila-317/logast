@@ -311,6 +311,27 @@ public final class KnowledgeBase {
     // ---- questions ----------------------------------------------------------------------------------------------------
 
     /** What is loaded: files, repos, nodes and edges by kind. */
+    /** #200: node kind → how many, and the environments the facts name: what a client is told it can ask about. */
+    public Map<String, Integer> kindCounts() {
+        Map<String, Integer> nk = new TreeMap<>();
+        nodes.values().forEach(l -> nk.merge(l.getFirst().fact().kind(), 1, Integer::sum));
+        return nk;
+    }
+
+    public java.util.Set<String> environments() {
+        java.util.Set<String> envs = new java.util.TreeSet<>();
+        nodes.values().forEach(l -> l.forEach(f -> {
+            if (f.fact().env() != null) {
+                envs.add(f.fact().env());
+            }
+        }));
+        return envs;
+    }
+
+    public int repoCount() {
+        return repos.size();
+    }
+
     /** #195: logast build → facts files it wrote. */
     private final Map<String, Integer> writtenBy = new TreeMap<>();
 
