@@ -100,6 +100,17 @@ class ScanGateTest {
         assertThat(inv.path("toolExecutionNotifications").toString()).contains("Broken.java");
     }
 
+    /** #148: annotations for the runner; an incomplete analysis is a warning annotation, not silence. */
+    @Test
+    void githubFormatPrintsWorkflowCommands() throws IOException {
+        Path app = project(true);
+        Run r = run("scan", app.toString(), "--format", "github", "--classpath-file", classpathFile().toString());
+        assertThat(r.exit()).as(r.err()).isZero();
+        assertThat(r.out().lines()).isNotEmpty().allMatch(l -> l.startsWith("::error ") || l.startsWith("::warning ")
+                || l.startsWith("::notice "));
+        assertThat(r.out()).contains("::warning title=logast::analysis incomplete").contains("Broken.java");
+    }
+
     @Test
     void missingClasspathFailsTheGate() throws IOException {
         Path app = project(false);
