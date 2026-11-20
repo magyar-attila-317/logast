@@ -27,7 +27,15 @@ fi
 
 if [ "$current" != "$version" ]; then
   sed -i.bak "s/^version=.*/version=$version/" gradle.properties && rm -f gradle.properties.bak
-  git commit --quiet -m "release: $tag" -- gradle.properties
+  # snapshots that name the starter's version (the dependency-mode scenarios) follow it, or the release's CI fails
+  snapshots=()
+  if [ -d e2e ]; then
+    while IFS= read -r f; do snapshots+=("$f"); done < <(grep -rl "dev.logast:logging-support:$current" e2e || true)
+  fi
+  for f in "${snapshots[@]}"; do
+    sed -i.bak "s/dev\.logast:logging-support:$current/dev.logast:logging-support:$version/g" "$f" && rm -f "$f.bak"
+  done
+  git commit --quiet -m "release: $tag" -- gradle.properties "${snapshots[@]}"
 fi
 git tag -a "$tag" -m "logast $version"
 git push --quiet origin main "$tag"

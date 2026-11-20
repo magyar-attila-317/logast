@@ -24,7 +24,9 @@ expect() {   # $1: what, $2: 0 = must succeed / 1 = must fail, $3: text the outp
 
 git init --quiet --bare "$T/origin.git"
 git clone --quiet "$T/origin.git" "$T/work" 2>/dev/null
-(cd "$T/work" && printf 'group=dev.logast\nversion=0.1.0\n' > gradle.properties && git add . && git commit --quiet -m init && git push --quiet origin main)
+(cd "$T/work" && printf 'group=dev.logast\nversion=0.1.0\n' > gradle.properties && mkdir -p e2e/expected-x \
+  && printf 'dependencies {\n    implementation("dev.logast:logging-support:0.1.0")\n}\n' > e2e/expected-x/build.gradle.kts \
+  && git add . && git commit --quiet -m init && git push --quiet origin main)
 
 expect "a version that is not x.y.z" 1 "give the version as x.y.z" 1.2
 expect "no version" 1 "give the version as x.y.z"
@@ -40,6 +42,8 @@ expect "not on main" 1 "not on main" 0.2.0
 expect "a release" 0 "released v0.2.0" 0.2.0
 check() { if [ "$2" = "$3" ]; then PASSED=$((PASSED + 1)); else FAILED=$((FAILED + 1)); printf 'FAIL %s\n  expected: [%s]\n  actual:   [%s]\n' "$1" "$2" "$3"; fi; }
 check "the version is committed" "version=0.2.0" "$(git -C "$T/origin.git" show main:gradle.properties | grep '^version=')"
+check "a snapshot naming the starter's version follows it" 'implementation("dev.logast:logging-support:0.2.0")' \
+  "$(git -C "$T/origin.git" show main:e2e/expected-x/build.gradle.kts | grep logging-support | sed "s/^ *//")"
 check "the tag is pushed, on the release commit" "$(git -C "$T/origin.git" rev-parse main)" "$(git -C "$T/origin.git" rev-parse 'v0.2.0^{commit}')"
 expect "the same version again" 1 "v0.2.0 exists already" 0.2.0
 expect "a release candidate" 0 "released v0.3.0-rc.1" 0.3.0-rc.1
