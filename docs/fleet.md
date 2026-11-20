@@ -244,6 +244,15 @@ added member and scans it read-only. A folder with `repos.yaml` is a fleet even 
 - Service developers register a clone of the fleet repo (`logast fleet create <name> --dir <clone>`) and join it; the
   README says how. Extending the fleet by its git URL, listing a GitHub org and rollout PRs: #146.
 
+## Which logast made it
+
+A member's snapshot (`services/<member>.json`, its findings) records the logast build that made it (#195): a plain
+`logast fleet <name>` rescans a member with new commits, and also one whose snapshot another logast made, so the
+overview never shows findings of older rules. The knowledge base's facts carry the build in their header,
+`kb/<member>/.export.json` too (a new build exports again), and `logast mcp`'s `summary` lists which builds wrote the
+loaded facts. A running `logast mcp` notices when logast was installed again under it and says in every answer to
+restart the MCP client: until then it answers with the old code.
+
 ## What a run shows
 
 `--refresh` and `--kb` runs say what they will do (the phases: update, scan, knowledge base, report), then per phase

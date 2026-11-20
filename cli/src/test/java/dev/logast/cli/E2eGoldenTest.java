@@ -7624,6 +7624,15 @@ abstract class E2eGoldenTest {
             STDERR.setLength(0);
             run(tmp, "fleet", "shop");
             assertThat(STDERR.toString()).as("up to date now: nothing rescanned").doesNotContain("rescanning");
+            // #195: a snapshot another logast made is rescanned (its findings come from that logast's rules)
+            assertThat(mapper.readTree(fleet.resolve("services/orders.json").toFile()).path("logast").asText()).isNotBlank();
+            Path ordersSnap = fleet.resolve("services/orders.json");
+            Files.writeString(ordersSnap, Files.readString(ordersSnap).replaceFirst("\"logast\"\\s*:\\s*\"[^\"]*\"", "\"logast\":\"0.0.1 (old)\""));
+            STDERR.setLength(0);
+            run(tmp, "fleet", "shop");
+            assertThat(STDERR.toString()).contains("fleet: orders's snapshot was made by logast 0.0.1 (old), this is ")
+                    .doesNotContain("fleet: stock's snapshot");
+            assertThat(mapper.readTree(ordersSnap.toFile()).path("logast").asText()).isNotEqualTo("0.0.1 (old)");
 
             // #136: a member whose scan fails (orders, scanned first) is skipped with the reason; the others are still scanned
             Path ordersPolicy = orders.resolve("logast.yaml");

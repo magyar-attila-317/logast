@@ -60,7 +60,7 @@ final class KbExport {
         Path r = repo.toAbsolutePath().normalize();
         RepoExport.Options opts = new RepoExport.Options(root -> classpath(root, cacheDir.resolve(slug(r, root)), classpathFile, noBuilds),
                 flyway, envs, helmRender, analysed);
-        return RepoExport.export(r, name, McpCmd.version(), opts, outDir);
+        return RepoExport.export(r, name, McpCmd.build(), opts, outDir);
     }
 
     static final String STAMP = ".export.json";
@@ -126,7 +126,7 @@ final class KbExport {
             try {
                 FactMapping m = FactMapping.load(f);
                 try (Writer w = Files.newBufferedWriter(mapped.resolve(name + ".jsonl"), StandardCharsets.UTF_8);
-                     FactWriter fw = new FactWriter(w, Header.of("mapping", McpCmd.version(), "mapped", null))) {
+                     FactWriter fw = new FactWriter(w, Header.of("mapping", McpCmd.build(), "mapped", null))) {
                     FactMapping.Stats st = m.apply(base, fw);
                     int n = st.written().values().stream().mapToInt(Integer::intValue).sum();
                     lines.add("mapping " + name + ": " + n + " facts" + (st.skipped().isEmpty() ? "" : ", " + st.skipped() + " skipped for a missing value"));

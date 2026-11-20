@@ -35,7 +35,7 @@ final class McpCmd implements Callable<Integer> {
     public Integer call() throws IOException {
         KbPaths.Resolved r = KbPaths.resolve(kb, KbPaths.Env.current());
         System.err.println("logast mcp: facts from " + r.source() + ": " + r.paths());
-        McpServer server = new McpServer(() -> KnowledgeBase.factFiles(r.paths()), version(), System.err,
+        McpServer server = new McpServer(() -> KnowledgeBase.factFiles(r.paths()), build(), System.err,
                 r.paths().isEmpty() ? null : dev.logast.kb.Proposals.file(r.paths()));
         Writer out = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
         server.run(new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)), out);

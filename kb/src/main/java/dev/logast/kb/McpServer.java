@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -48,6 +49,39 @@ public final class McpServer {
         this.version = version;
         this.log = log;
         this.proposals = proposals;
+        this.installed = installStamp();
+    }
+
+    /** #195: the installation this server runs from, when it started (the jar holding this class: its time and size). */
+    private final String installed;
+    static volatile java.util.function.Supplier<String> installProbe = McpServer::jarStamp;
+
+    private static String installStamp() {
+        try {
+            return installProbe.get();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static String jarStamp() {
+        try {
+            var src = McpServer.class.getProtectionDomain().getCodeSource();
+            Path p = src == null ? null : Path.of(src.getLocation().toURI());
+            return p == null || !Files.exists(p) ? null : Files.getLastModifiedTime(p).toMillis() + ":" + Files.size(p);
+        } catch (Exception e) {
+            return "gone";
+        }
+    }
+
+    /** #195: logast was installed again since this server started: it still runs the old code until the client restarts it. */
+    String staleNote() {
+        String now = installStamp();
+        if (installed == null || Objects.equals(installed, now)) {
+            return null;
+        }
+        return "Note: logast was updated since this MCP server started (it runs logast " + version + " still). Restart the MCP "
+                + "client (or reconnect the server) to answer with the new version.";
     }
 
     /** Serves until the input ends. */
@@ -285,7 +319,8 @@ public final class McpServer {
             case "readers_of" -> k.tableAccess(a.path("table").asText(), false, a.path("limit").asInt(100));
             default -> throw new IllegalArgumentException("unknown tool: " + name);
         };
-        return text(answer, false);
+        String stale = staleNote();
+        return text(stale == null ? answer : answer + "\n\n" + stale, false);
     }
 
     private static List<String> kinds(JsonNode n) {
