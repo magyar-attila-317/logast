@@ -224,6 +224,37 @@ class TerraformExtractorTest {
         assertThat(nodes).filteredOn(n -> n.kind().equals("tf-unit")).allSatisfy(n -> assertThat(n.attrs()).containsEntry("inputsFrom", "terragrunt"));
     }
 
+    /** #185: a terragrunt that hangs (holding its output open) costs the timeout, not the export; the unit is read from its HCL. */
+    @Test
+    void aHangingTerragruntFallsBackToTheHclWithinTheTimeout() throws IOException {
+        Path root = repo();
+        Path fake = tmp.resolve("hanging-terragrunt");
+        Files.writeString(fake, "#!/bin/sh\necho '{\"inputs\":' \nsleep 30\n");
+        fake.toFile().setExecutable(true);
+        List<Node> nodes = new ArrayList<>();
+        TerraformExtractor.timeoutForTests = 2L;
+        long start = System.nanoTime();
+        TerraformExtractor tx = new TerraformExtractor(true, fake.toString());
+        try {
+            tx.extract(root, new FactSink() {
+                @Override
+                public void node(Node n) {
+                    nodes.add(n);
+                }
+
+                @Override
+                public void edge(Edge e) {
+                }
+            });
+        } finally {
+            TerraformExtractor.timeoutForTests = null;
+        }
+        assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofSeconds(15));
+        assertThat(tx.problems()).anyMatch(p -> p.contains("terragrunt did not finish within 2 s"));
+        assertThat(nodes).filteredOn(n -> n.kind().equals("tf-unit")).isNotEmpty()
+                .allSatisfy(n -> assertThat(n.attrs()).containsEntry("inputsFrom", "hcl"));
+    }
+
     /** The classic layout: a root terragrunt.hcl (remote state, shared arguments) the folders below include, relative sources. */
     @Test
     void theClassicLayoutWithARootTerragruntFile() throws IOException {

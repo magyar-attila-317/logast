@@ -33,7 +33,7 @@ public final class TerraformExtractor implements Extractor {
     private static final List<String> KEEP = List.of("location", "sku_name", "version", "content_type", "expiration_date",
             "account_tier", "storage_account_name", "server_name", "resource_group_name");
 
-    private final List<String> problems = new ArrayList<>();
+    private final List<String> problems = java.util.Collections.synchronizedList(new ArrayList<>());
     private final boolean useTerragrunt;
     private final String terragrunt;
 
@@ -59,6 +59,9 @@ public final class TerraformExtractor implements Extractor {
     }
 
     static boolean terragruntAvailable() {
+        if ("off".equalsIgnoreCase(System.getenv("LOGAST_TERRAGRUNT"))) {
+            return false;   // #185: the HCL alone
+        }
         try {
             Process p = new ProcessBuilder(binary(), "--version").redirectErrorStream(true).start();
             p.getInputStream().readAllBytes();
@@ -79,12 +82,19 @@ public final class TerraformExtractor implements Extractor {
     @SuppressWarnings("unchecked")
     private Map<String, Object> render(Path unit) {
         String last = null;
+        if (timeouts.get() >= MAX_TIMEOUTS) {
+            return null;   // #185: terragrunt hung on several units already; the rest are read from their HCL
+        }
         try {
             Run r = run(unit.getParent(), List.of(terragrunt, "render", "--format", "json", "--non-interactive"));
             if (r.ok() && r.out().indexOf('{') >= 0) {
                 return new com.fasterxml.jackson.databind.ObjectMapper().readValue(r.out().substring(r.out().indexOf('{')), Map.class);
             }
             last = r.err();
+            if (r.timedOut()) {
+                timedOut(unit);
+                return null;
+            }
             Path json = Files.createTempFile("logast-terragrunt", ".json");
             Run old = run(unit.getParent(), List.of(terragrunt, "render-json", "--terragrunt-json-out", json.toString(), "--terragrunt-non-interactive"));
             String text = Files.readString(json);
@@ -93,6 +103,10 @@ public final class TerraformExtractor implements Extractor {
                 return new com.fasterxml.jackson.databind.ObjectMapper().readValue(text.substring(text.indexOf('{')), Map.class);
             }
             last = old.err();
+            if (old.timedOut()) {
+                timedOut(unit);
+                return null;
+            }
         } catch (IOException e) {
             last = e.getMessage();
         } catch (InterruptedException e) {
@@ -104,20 +118,55 @@ public final class TerraformExtractor implements Extractor {
         return null;
     }
 
-    private record Run(boolean ok, String out, String err) {
+    private record Run(boolean ok, String out, String err, boolean timedOut) {
     }
 
-    private static Run run(Path dir, List<String> cmd) throws IOException, InterruptedException {
-        Path err = Files.createTempFile("logast-terragrunt", ".err");
-        Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectError(err.toFile()).start();
-        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        boolean done = p.waitFor(2, java.util.concurrent.TimeUnit.MINUTES);
-        if (!done) {
-            p.destroyForcibly();
+    static final int MAX_TIMEOUTS = 3;
+    static volatile Long timeoutForTests;
+    private final java.util.concurrent.atomic.AtomicInteger timeouts = new java.util.concurrent.atomic.AtomicInteger();
+
+    private void timedOut(Path unit) {
+        int n = timeouts.incrementAndGet();
+        problems.add(unit.getParent().getFileName() + ": terragrunt did not finish within " + timeout() + " s (a dependency's remote "
+                + "state, credentials?), read the HCL instead");
+        if (n == MAX_TIMEOUTS) {
+            problems.add("terragrunt timed out on " + n + " units: the remaining units are read from their HCL "
+                    + "(LOGAST_TERRAGRUNT_TIMEOUT=<seconds> waits longer, LOGAST_TERRAGRUNT=off never runs it)");
         }
-        String stderr = Files.readString(err);
-        Files.deleteIfExists(err);
-        return new Run(done && p.exitValue() == 0, out, done ? stderr : "timeout");
+    }
+
+    /** #185: seconds a unit's render may take ({@code LOGAST_TERRAGRUNT_TIMEOUT}, default 60). */
+    static long timeout() {
+        if (timeoutForTests != null) {
+            return timeoutForTests;
+        }
+        try {
+            return Long.parseLong(System.getenv().getOrDefault("LOGAST_TERRAGRUNT_TIMEOUT", "60").strip());
+        } catch (NumberFormatException e) {
+            return 60;
+        }
+    }
+
+    /** #185: output goes to files, so the timeout applies to the process, whatever it does with its output. */
+    private static Run run(Path dir, List<String> cmd) throws IOException, InterruptedException {
+        Path out = Files.createTempFile("logast-terragrunt", ".out");
+        Path err = Files.createTempFile("logast-terragrunt", ".err");
+        try {
+            Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectOutput(out.toFile()).redirectError(err.toFile())
+                    .redirectInput(ProcessBuilder.Redirect.from(new java.io.File(System.getProperty("os.name").startsWith("Windows") ? "NUL" : "/dev/null")))
+                    .start();
+            boolean done = p.waitFor(timeout(), java.util.concurrent.TimeUnit.SECONDS);
+            if (!done) {
+                p.descendants().forEach(ProcessHandle::destroyForcibly);
+                p.destroyForcibly();
+                p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                return new Run(false, "", "timeout", true);
+            }
+            return new Run(p.exitValue() == 0, Files.readString(out), Files.readString(err), false);
+        } finally {
+            Files.deleteIfExists(out);
+            Files.deleteIfExists(err);
+        }
     }
 
     @Override
@@ -127,6 +176,15 @@ public final class TerraformExtractor implements Extractor {
 
     public List<String> problems() {
         return List.copyOf(problems);
+    }
+
+    /** #185: units rendered at a time ({@code LOGAST_TERRAGRUNT_THREADS}, default 4). */
+    static int threads() {
+        try {
+            return Math.max(1, Integer.parseInt(System.getenv().getOrDefault("LOGAST_TERRAGRUNT_THREADS", "4").strip()));
+        } catch (NumberFormatException e) {
+            return 4;
+        }
     }
 
     /** Whether the repo has Terragrunt units. */
@@ -171,10 +229,34 @@ public final class TerraformExtractor implements Extractor {
 
     @Override
     public void extract(Path root, FactSink out) {
-        for (Path unit : units(root)) {
+        List<Path> units = units(root);
+        // #185: the renders (each a terragrunt process) run side by side, with progress; the facts are written in order
+        Map<Path, java.util.concurrent.Future<Map<String, Object>>> renders = new LinkedHashMap<>();
+        var pool = useTerragrunt ? java.util.concurrent.Executors.newFixedThreadPool(threads()) : null;
+        if (pool != null) {
+            var started = new java.util.concurrent.atomic.AtomicInteger();
+            for (Path unit : units) {
+                renders.put(unit, pool.submit(() -> {
+                    System.err.println("… terragrunt render " + rel(root, unit) + " (" + started.incrementAndGet() + "/" + units.size() + ")");
+                    return render(unit);
+                }));
+            }
+            pool.shutdown();
+        }
+        for (Path unit : units) {
             String env = env(root, unit);
             try {
-                unit(root, unit, env, out);
+                Map<String, Object> rendered = null;
+                if (pool != null) {
+                    try {
+                        rendered = renders.get(unit).get();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    } catch (java.util.concurrent.ExecutionException e) {
+                        problems.add(rel(root, unit) + ": " + e.getCause());
+                    }
+                }
+                unit(root, unit, env, rendered, out);
             } catch (IOException | RuntimeException e) {
                 problems.add(rel(root, unit) + ": " + e.getMessage());
             }
@@ -182,11 +264,10 @@ public final class TerraformExtractor implements Extractor {
     }
 
     @SuppressWarnings("unchecked")
-    private void unit(Path root, Path unit, String env, FactSink out) throws IOException {
+    private void unit(Path root, Path unit, String env, Map<String, Object> rendered, FactSink out) throws IOException {
         Map<String, Object> inputs = new LinkedHashMap<>();
         String source;
         String inputsFrom;
-        Map<String, Object> rendered = useTerragrunt ? render(unit) : null;
         if (rendered != null) {   // #175: Terragrunt evaluates its own functions (get_env, get_terragrunt_dir, …)
             if (rendered.get("inputs") instanceof Map<?, ?> m) {
                 inputs.putAll((Map<String, Object>) m);
