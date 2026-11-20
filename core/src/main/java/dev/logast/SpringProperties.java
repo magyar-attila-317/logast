@@ -147,6 +147,60 @@ public final class SpringProperties {
         return out;
     }
 
+    /**
+     * #157: the configuration as one profile sees it: the base ({@link #read}), then {@code application-<profile>.*} (also
+     * in {@code config/}) and the base files' documents activated for that profile ({@code spring.config.activate.on-profile}),
+     * which override it.
+     */
+    public static Map<String, String> forProfile(Path root, String profile) {
+        Map<String, String> out = new TreeMap<>(read(root));
+        Path resources = appResources(root);
+        if (resources == null || profile == null) {
+            return out;
+        }
+        List<Path> files = new ArrayList<>();
+        for (Path dir : List.of(resources, resources.resolve("config"))) {
+            for (String f : List.of("application.yml", "application.yaml", "application.properties",
+                    "application-" + profile + ".yml", "application-" + profile + ".yaml", "application-" + profile + ".properties")) {
+                if (Files.isRegularFile(dir.resolve(f))) {
+                    files.add(dir.resolve(f));
+                }
+            }
+        }
+        for (Path p : files) {
+            boolean profileFile = p.getFileName().toString().startsWith("application-");
+            try {
+                String text = dev.logast.parse.SourceText.read(p);
+                List<Map<String, String>> docs = new ArrayList<>();
+                if (p.toString().endsWith(".properties")) {
+                    for (String doc : text.split("(?m)^[#!]---\\s*$")) {
+                        Properties props = new Properties();
+                        props.load(new StringReader(doc));
+                        Map<String, String> flat = new TreeMap<>();
+                        props.forEach((k, v) -> flat.put(String.valueOf(k), String.valueOf(v).trim()));
+                        docs.add(flat);
+                    }
+                } else {
+                    for (JsonNode doc : new ObjectMapper(new YAMLFactory()).readerFor(JsonNode.class).<JsonNode>readValues(text).readAll()) {
+                        Map<String, String> flat = new TreeMap<>();
+                        flatten("", doc, flat);
+                        docs.add(flat);
+                    }
+                }
+                for (Map<String, String> doc : docs) {
+                    String on = doc.get("spring.config.activate.on-profile");
+                    boolean activated = on != null && java.util.Arrays.stream(on.split(",")).map(String::strip).anyMatch(profile::equals);
+                    if (profileFile && doc.keySet().stream().noneMatch(k -> k.startsWith("spring.config.activate.")) || activated) {
+                        out.putAll(doc);
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                // unreadable config: treat as absent
+            }
+        }
+        return out;
+    }
+
     /** A document that applies always (no spring.config.activate.*) overrides what came before. */
     private static void putBase(Map<String, String> doc, Map<String, String> out) {
         if (doc.keySet().stream().noneMatch(k -> k.startsWith("spring.config.activate."))) {

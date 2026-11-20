@@ -12,6 +12,11 @@ dependencies {
     api(libs.jackson.yaml)
     api(project(":facts"))   // #152: what `logast export` writes
     implementation(libs.jsqlparser)   // #154: which tables SQL in the code reads and writes
+    // #157: logast export --flyway runs a service's migrations in a throwaway PostgreSQL
+    implementation(libs.flyway.core)
+    runtimeOnly(libs.flyway.postgresql)
+    implementation(libs.testcontainers.postgresql)
+    runtimeOnly(libs.postgresql)
     runtimeOnly(libs.slf4j.nop)
 
     testImplementation(platform(libs.junit.bom))

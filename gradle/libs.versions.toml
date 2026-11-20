@@ -7,8 +7,15 @@ assertj = "3.27.7"
 springBoot = "4.1.2"
 slf4j = "2.0.20"
 jsqlparser = "5.3"
+flyway = "13.12.1"
+testcontainers = "2.0.4"
+postgresql = "42.7.13"
 
 [libraries]
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 jsqlparser = { module = "com.github.jsqlparser:jsqlparser", version.ref = "jsqlparser" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 rewrite-bom = { module = "org.openrewrite:rewrite-bom", version.ref = "rewrite" }
