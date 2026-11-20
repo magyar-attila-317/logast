@@ -113,13 +113,43 @@ public final class McpServer {
             return null;   // a notification (notifications/initialized, cancelled, …): nothing to answer
         }
         try {
-            return switch (method) {
-                case "initialize" -> result(id, initialize(msg.path("params")));
-                case "ping" -> result(id, JSON.createObjectNode());
-                case "tools/list" -> result(id, tools());
-                case "tools/call" -> result(id, call(msg.path("params")));
-                default -> error(id, -32601, "method not found: " + method);
+            // #202: a request carrying the 2026-07-28 per-request _meta is served statelessly by that revision; one
+            // without it (after initialize) the legacy way. Both in one process (a dual-era server).
+            JsonNode meta = msg.path("params").path("_meta");
+            String version = meta.path(META + "protocolVersion").asText("");
+            boolean modern = !version.isEmpty() || method.equals("server/discover");
+            if (!version.isEmpty() && !MODERN.contains(version)) {
+                ObjectNode e = error(id, -32022, "Unsupported protocol version");
+                ObjectNode data = ((ObjectNode) e.get("error")).putObject("data");
+                MODERN.forEach(data.putArray("supported")::add);
+                data.put("requested", version);
+                return e;
+            }
+            if (!version.isEmpty() && !meta.has(META + "clientCapabilities")) {
+                return error(id, -32602, "_meta is missing " + META + "clientCapabilities");
+            }
+            ObjectNode out = switch (method) {
+                case "initialize" -> initialize(msg.path("params"));
+                case "server/discover" -> discover();
+                case "ping" -> JSON.createObjectNode();
+                case "tools/list" -> {
+                    ObjectNode t = tools();
+                    if (modern) {   // 2026-07-28: how long the list holds, for whom
+                        t.put("ttlMs", 300_000).put("cacheScope", "private");
+                    }
+                    yield t;
+                }
+                case "tools/call" -> call(msg.path("params"));
+                default -> null;
             };
+            if (out == null) {
+                return error(id, -32601, "method not found: " + method);
+            }
+            if (modern) {
+                out.put("resultType", "complete");
+                out.putObject("_meta").putObject(META + "serverInfo").put("name", "logast-kb").put("version", this.version);
+            }
+            return result(id, out);
         } catch (IllegalArgumentException e) {
             return error(id, -32602, e.getMessage());
         } catch (RuntimeException e) {
@@ -128,16 +158,34 @@ public final class McpServer {
         }
     }
 
+    static final String META = "io.modelcontextprotocol/";
+    /** #202: the stateless revisions this server speaks (per request); older clients use initialize. */
+    static final List<String> MODERN = List.of("2026-07-28");
+
+    /** #202: 2026-07-28's replacement of initialize's discovery: versions, capabilities, instructions. */
+    private ObjectNode discover() {
+        ObjectNode r = JSON.createObjectNode();
+        MODERN.forEach(r.putArray("supportedVersions")::add);
+        r.putObject("capabilities").putObject("tools");
+        r.put("instructions", instructions());
+        r.put("ttlMs", 300_000).put("cacheScope", "private");   // the facts are the team's, not public
+        return r;
+    }
+
+    private String instructions() {
+        return "Facts about code and deployment of many repos (docs/facts.md in logast). Node ids are "
+                + "<kind>:<name>, e.g. service:shipping, endpoint:shipping:GET /shipments/{id}, table:billing.invoice, "
+                + "job:shipping:ExportJob.run. Start with summary or find; cite the (repo/file:line) of each fact you use."
+                + loaded();
+    }
+
     private ObjectNode initialize(JsonNode params) {
         ObjectNode r = JSON.createObjectNode();
         String asked = params.path("protocolVersion").asText("");
         r.put("protocolVersion", asked.isBlank() ? PROTOCOL : asked);
         r.putObject("capabilities").putObject("tools");
         r.putObject("serverInfo").put("name", "logast-kb").put("version", version);
-        r.put("instructions", "Facts about code and deployment of many repos (docs/facts.md in logast). Node ids are "
-                + "<kind>:<name>, e.g. service:shipping, endpoint:shipping:GET /shipments/{id}, table:billing.invoice, "
-                + "job:shipping:ExportJob.run. Start with summary or find; cite the (repo/file:line) of each fact you use."
-                + loaded());
+        r.put("instructions", instructions());
         return r;
     }
 

@@ -42,6 +42,13 @@ logast mcp config --kb ~/src/my-company-logast/kb
 prints the server entry in the `mcpServers` shape most clients read (`command` + `args`, stdio); paste it into your
 client's MCP configuration. `logast` must be on the `PATH` the client starts it with (else use its full path).
 
+## Protocol versions
+
+`logast mcp` speaks both eras of MCP over stdio in one process (#202): a client of the 2026-07-28 revision (stateless:
+it probes with `server/discover` and sends its version and capabilities in `_meta` with every request) gets results with
+`resultType`, the tool list with `ttlMs`/`cacheScope` (`private`: the facts are the team's), and an unsupported version
+the `-32022` error naming `2026-07-28`; an older client (`initialize` first, no `_meta`) is answered as before.
+
 ## What the client is told first
 
 `initialize` tells the client what is loaded and where to look (#200): the repos, the facts by kind, the
