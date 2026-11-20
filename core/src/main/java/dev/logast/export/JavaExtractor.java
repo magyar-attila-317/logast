@@ -178,12 +178,34 @@ public final class JavaExtractor implements Extractor {
     }
 
     /** {@code @Scheduled}'s trigger as written: the cron (placeholders kept: each environment resolves them), rate, delay, zone. */
-    private static void schedule(MethodInfo m, Map<String, Object> attrs) {
+    private void schedule(MethodInfo m, Map<String, Object> attrs) {
         for (J.Annotation an : m.decl().getLeadingAnnotations()) {
             if (Annotations.is(an, "org.springframework.scheduling.annotation.Scheduled")) {
                 for (String name : List.of("cron", "fixedRate", "fixedDelay", "fixedRateString", "fixedDelayString", "initialDelay", "zone")) {
                     Annotations.rawAttribute(an, name).ifPresent(v -> attrs.put(name.replace("String", ""), unquote(v)));
                 }
+            }
+        }
+        // #159: a ${…} in the cron from the service's base config, else the placeholder's default; as written stays in cron
+        Object cron = attrs.get("cron");
+        if (cron instanceof String c && c.contains("${")) {
+            Matcher pm = PLACEHOLDER.matcher(c);
+            StringBuilder sb = new StringBuilder();
+            boolean resolved = true;
+            while (pm.find()) {
+                String v = a.springProperties.get(pm.group(1).strip());
+                if (v == null) {
+                    v = pm.group(2);
+                }
+                if (v == null || v.contains("${")) {
+                    resolved = false;
+                    break;
+                }
+                pm.appendReplacement(sb, Matcher.quoteReplacement(v));
+            }
+            if (resolved) {
+                pm.appendTail(sb);
+                attrs.put("cronResolved", sb.toString());
             }
         }
     }

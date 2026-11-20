@@ -121,6 +121,15 @@ public final class McpServer {
             new Tool("path", "The shortest chain of edges from one node to another, e.g. from a profile to the tables its job writes.",
                     new String[][]{{"from", "string", "the start node id"}, {"to", "string", "the end node id"},
                             {"maxDepth", "integer", "at most this many edges (default 8)"}}, new String[]{"from", "to"}),
+            new Tool("runs_on", "Which jobs run on a day (in an environment), at which times, and the jobs that run after "
+                    + "them in a pipeline; computed from the jobs' cron schedules.",
+                    new String[][]{{"day", "string", "a weekday (monday) for the next such date, today, tomorrow, or an ISO date"},
+                            {"env", "string", "the environment (dev, prod, …); default: every one"},
+                            {"zone", "string", "the time zone of the times shown (default UTC)"}}, new String[]{"day"}),
+            new Tool("next_runs", "When a job runs next, from its cron schedule.",
+                    new String[][]{{"id", "string", "the job id, e.g. job:shipping:nightly-export"},
+                            {"env", "string", "the environment; default: every one"}, {"count", "integer", "how many (default 5)"},
+                            {"zone", "string", "the time zone of the times shown (default UTC)"}}, new String[]{"id"}),
             new Tool("writers_of", "Who writes a table: every entrypoint (endpoint, listener, job) and service that writes it.",
                     new String[][]{{"table", "string", "schema.name, or a name (any schema)"}, {"limit", "integer", "default 100"}},
                     new String[]{"table"}),
@@ -168,6 +177,10 @@ public final class McpServer {
             case "neighbors" -> k.neighbors(a.path("id").asText(), a.path("direction").asText(null), kinds(a.path("kinds")),
                     a.path("limit").asInt(50));
             case "path" -> k.path(a.path("from").asText(), a.path("to").asText(), a.path("maxDepth").asInt(8));
+            case "runs_on" -> Schedules.runsOn(k, a.path("day").asText(), a.path("env").asText(null), a.path("zone").asText(null),
+                    java.time.LocalDate.now(java.time.ZoneOffset.UTC));
+            case "next_runs" -> Schedules.nextRuns(k, a.path("id").asText(), a.path("env").asText(null), a.path("count").asInt(5),
+                    a.path("zone").asText(null), java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC));
             case "writers_of" -> k.tableAccess(a.path("table").asText(), true, a.path("limit").asInt(100));
             case "readers_of" -> k.tableAccess(a.path("table").asText(), false, a.path("limit").asInt(100));
             default -> throw new IllegalArgumentException("unknown tool: " + name);
