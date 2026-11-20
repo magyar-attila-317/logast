@@ -183,4 +183,41 @@ class FlywayExtractorTest {
         assertThat(orders.attrs()).containsEntry("perTenant", true).hasEntrySatisfying("migratedBy", v -> assertThat(v.toString()).contains("TenantMigrations.java"));
         assertThat(c.node("table:public.tenants", null).attrs()).doesNotContainKey("perTenant");
     }
+
+    /** #180: the locations set per profile (common, plus the environment's folder) give a run per environment. */
+    @Test
+    void locationsSetPerProfileGiveARunPerEnvironment() throws IOException {
+        Path root = tmp.resolve("scheduler2");
+        Path res = root.resolve("src/main/resources");
+        for (String d : List.of("common", "dev", "prod")) {
+            Files.createDirectories(res.resolve("db/migration/" + d));
+        }
+        Files.createDirectories(root.resolve("src/main/java/com/example"));
+        Files.writeString(root.resolve("src/main/java/com/example/App.java"),
+                "package com.example;\n\n@org.springframework.boot.autoconfigure.SpringBootApplication\npublic class App {\n}\n");
+        Files.writeString(res.resolve("application.yml"), "spring:\n  flyway:\n    locations: classpath:db/migration/common\n");
+        Files.writeString(res.resolve("application-dev.yml"),
+                "spring:\n  flyway:\n    locations: classpath:db/migration/common,classpath:db/migration/dev\n");
+        Files.writeString(res.resolve("application-prod.yml"),
+                "spring:\n  flyway:\n    locations: classpath:db/migration/common, classpath:db/migration/prod\n");
+        Files.writeString(res.resolve("application-local.yml"), "server:\n  port: 8081\n");
+        Files.writeString(res.resolve("db/migration/common/V1__jobs.sql"),
+                "create table job_definition (name varchar(100) primary key, cron varchar(50));\n"
+                        + "insert into job_definition values ('export', '0 2 * * *');\n");
+        Files.writeString(res.resolve("db/migration/dev/V2__dev.sql"), "update job_definition set cron = '*/5 * * * *';\n");
+        Files.writeString(res.resolve("db/migration/prod/V2__prod.sql"), "insert into job_definition values ('month-end', '0 3 1 * *');\n");
+
+        assertThat(FlywayExtractor.runs(root)).extracting(r -> String.valueOf(r.env()))
+                .as("the base locations (no profile), then each profile with its own; a profile without its own locations is none")
+                .containsExactly("null", "dev", "prod");
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("scheduler", List.of("job_definition"), null);
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.node("row:public.job_definition:export", "dev").attrs()).containsEntry("cron", "*/5 * * * *");
+        assertThat(c.node("row:public.job_definition:export", "prod").attrs()).containsEntry("cron", "0 2 * * *");
+        assertThat(c.node("row:public.job_definition:month-end", "prod")).isNotNull();
+        assertThat(c.nodes).noneMatch(n -> n.id().equals("row:public.job_definition:month-end") && "dev".equals(n.env()));
+        assertThat(c.node("row:public.job_definition:export", null).attrs()).as("common alone, as without a profile").containsEntry("cron", "0 2 * * *");
+    }
 }
