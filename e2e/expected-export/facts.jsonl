@@ -69,3 +69,5 @@
 {"edge":{"from":"service:e2e-shop","kind":"has","to":"listener:e2e-shop:kafka pledge-batches","provenance":"extracted","evidence":{"file":"src/main/java/com/example/e2e/messaging/PledgeMessages.java","line":17}}}
 {"edge":{"from":"service:e2e-shop","kind":"has","to":"listener:e2e-shop:kafka orders","provenance":"extracted","evidence":{"file":"src/main/java/com/example/e2e/order/OrderEvents.java","line":14}}}
 {"edge":{"from":"service:e2e-shop","kind":"has","to":"listener:e2e-shop:rabbit pledge-returns","provenance":"extracted","evidence":{"file":"src/main/java/com/example/e2e/messaging/PledgeMessages.java","line":22}}}
+{"node":{"id":"repo:e2e-shop","kind":"repo","evidence":{"file":"build.gradle.kts"}}}
+{"edge":{"from":"repo:e2e-shop","kind":"has","to":"service:e2e-shop","provenance":"extracted","evidence":{"file":"build.gradle.kts"}}}
