@@ -100,6 +100,11 @@ public final class KnowledgeBase {
         return nodes.values().stream().flatMap(List::stream).toList();
     }
 
+    /** The edges leaving a node. */
+    public List<Fact<Edge>> outgoing(String id) {
+        return out.getOrDefault(id, List.of());
+    }
+
     /** The repos of the loaded files (their headers). */
     public Set<String> repos() {
         return Set.copyOf(repos);

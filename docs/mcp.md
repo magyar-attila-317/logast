@@ -51,9 +51,16 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 | `describe` | one node: attributes, evidence, edges in and out |
 | `neighbors` | a node's edges by direction (out: what it does, in: what points at it) and kind (`calls`, `reads`, `writes`, `runs`, …) |
 | `path` | the shortest chain from one node to another, e.g. from a profile to the job that runs it |
+| `runs_on` | which jobs run on a day (a weekday, `today`, an ISO date), in an environment and time zone, at which times; the jobs that run after them in a pipeline; jobs whose schedule is not known, and why |
+| `next_runs` | when a job runs next |
 | `writers_of`, `readers_of` | every entrypoint that writes or reads a table (`schema.name`, or a name in any schema) |
 
 For example: *who writes `audit.event`?* → every endpoint, listener and job that does, each with `repo/file:line@commit`.
+*What runs on Monday in prod?* → computed from the jobs' cron schedules (#159): Unix five-field crons (a
+mapping's jobs, CronJobs; when day-of-month and day-of-week are both set, either day fires) and Spring's six fields
+(`@Scheduled`, seconds first; both must match), with names, ranges, steps and the `@daily` macros. A `@Scheduled`
+cron with a `${…}` is resolved from the service's config, else the placeholder's default; Quartz's `L`, `W` and `#`
+are named as not supported.
 
 The server speaks MCP's stdio transport (JSON-RPC 2.0, one message per line: `initialize`, `tools/list`,
 `tools/call`, `ping`); it writes diagnostics to stderr only.
