@@ -295,4 +295,33 @@ class FlywayExtractorTest {
         assertThat(fx.problems()).isEmpty();
         assertThat(c.nodes).extracting(Node::id).contains("table:allocation.lock", "table:public.share");
     }
+
+    /** #194: Flyway's settings refer to another property ({@code ${app.db.schema}}), as Spring resolves them. */
+    @Test
+    void flywaySettingsReferringToAnotherPropertyAreResolved() throws IOException {
+        Path root = tmp.resolve("billing");
+        Path res = root.resolve("src/main/resources");
+        Files.createDirectories(res.resolve("db/migration"));
+        Files.writeString(res.resolve("application.yaml"), """
+                app:
+                  db:
+                    schema: billing
+                spring:
+                  flyway:
+                    default-schema: ${app.db.schema}
+                    schemas: ${app.db.schema}
+                    placeholders:
+                      schema: ${app.db.schema}
+                      batch: ${billing.batch:500}
+                """);
+        Files.writeString(res.resolve("db/migration/V1__billing.sql"), """
+                create table ${schema}.billing (id bigint primary key, amount numeric);
+                create table run_lock (id bigint primary key, batch int default ${batch});
+                """);
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("billing", List.of(), null);
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.nodes).extracting(Node::id).contains("table:billing.billing", "table:billing.run_lock");
+    }
 }

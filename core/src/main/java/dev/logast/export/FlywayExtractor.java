@@ -107,10 +107,10 @@ public final class FlywayExtractor implements Extractor {
 
     static List<Run> runs(Path root, ClasspathMigrations cp) {
         // #180: profiles that set their own locations (application-prod.yml: common + prod) are the environments
-        String base = SpringProperties.read(root).get("spring.flyway.locations");
+        String base = config(root, null).get("spring.flyway.locations");
         List<Run> perProfile = new ArrayList<>();
         for (String profile : profiles(root)) {
-            String own = SpringProperties.forProfile(root, profile).get("spring.flyway.locations");
+            String own = config(root, profile).get("spring.flyway.locations");
             if (own != null && !own.equals(base)) {
                 List<Path> folders = locations(root, own, cp);
                 if (!folders.isEmpty()) {
@@ -120,14 +120,14 @@ public final class FlywayExtractor implements Extractor {
         }
         List<Run> out = new ArrayList<>();
         if (!perProfile.isEmpty()) {   // the base locations still run when no such profile is active
-            List<Path> baseFolders = locations(root, SpringProperties.read(root).get("spring.flyway.locations"), cp);
+            List<Path> baseFolders = locations(root, config(root, null).get("spring.flyway.locations"), cp);
             if (!baseFolders.isEmpty()) {
                 out.add(new Run(null, baseFolders));
             }
             out.addAll(perProfile);
             return out;
         }
-        for (Path b : locations(root, SpringProperties.read(root).get("spring.flyway.locations"), cp)) {
+        for (Path b : locations(root, config(root, null).get("spring.flyway.locations"), cp)) {
             out.addAll(split(b));
         }
         return out;
@@ -188,7 +188,7 @@ public final class FlywayExtractor implements Extractor {
 
     /** {@code spring.flyway.locations} ({@code classpath:} and {@code filesystem:}), default {@code db/migration}. */
     static List<Path> locations(Path root) {
-        return locations(root, SpringProperties.read(root).get("spring.flyway.locations"));
+        return locations(root, config(root, null).get("spring.flyway.locations"));
     }
 
     static List<Path> locations(Path root, String configured) {
@@ -239,7 +239,7 @@ public final class FlywayExtractor implements Extractor {
     /** The code's runs whose location is not one Spring Boot already runs, as runs (split by environment like those). */
     List<Run> codeRuns(Path root) {
         List<Run> out = new ArrayList<>();
-        java.util.Set<Path> done = new java.util.HashSet<>(locations(root, SpringProperties.read(root).get("spring.flyway.locations"), cp));
+        java.util.Set<Path> done = new java.util.HashSet<>(locations(root, config(root, null).get("spring.flyway.locations"), cp));
         for (ProgrammaticFlyway.CodeRun c : codeRuns) {
             String origin = c.file() + (c.line() > 0 ? ":" + c.line() : "");
             for (Path p : locations(root, c.location().strip(), cp)) {   // the service's own folder, and a library's (#181)
@@ -292,6 +292,50 @@ public final class FlywayExtractor implements Extractor {
         } catch (SQLException e) {
             throw new IllegalStateException("flyway: " + e.getMessage(), e);
         }
+    }
+
+    private static final Pattern SPRING_REF = Pattern.compile("\\$\\{([^${}:]+)(?::([^${}]*))?}");
+
+    /**
+     * #194: the service's configuration as Spring sees it: a value referring to another property
+     * ({@code spring.flyway.default-schema: ${app.db.schema}}, {@code ${x:default}}, nested) is resolved; a reference
+     * nothing resolves stays as written.
+     */
+    static Map<String, String> config(Path root, String profile) {
+        Map<String, String> raw = profile == null ? SpringProperties.read(root) : SpringProperties.forProfile(root, profile);
+        Map<String, String> out = new TreeMap<>();
+        raw.forEach((k, v) -> out.put(k, resolveRefs(v, raw)));
+        return out;
+    }
+
+    static String resolveRefs(String value, Map<String, String> config) {
+        if (value == null || !value.contains("${")) {
+            return value;
+        }
+        String v = value;
+        for (int round = 0; round < 10 && v.contains("${"); round++) {
+            Matcher m = SPRING_REF.matcher(v);
+            StringBuilder sb = new StringBuilder();
+            boolean changed = false;
+            while (m.find()) {
+                String r = config.get(m.group(1).strip());
+                if (r == null) {
+                    r = m.group(2);
+                }
+                if (r == null) {
+                    m.appendReplacement(sb, Matcher.quoteReplacement(m.group()));
+                } else {
+                    m.appendReplacement(sb, Matcher.quoteReplacement(r));
+                    changed = true;
+                }
+            }
+            m.appendTail(sb);
+            v = sb.toString();
+            if (!changed) {
+                break;
+            }
+        }
+        return v;
     }
 
     private static final Pattern MISSING = Pattern.compile("(schema|role) \"([^\"]+)\" does not exist"
@@ -354,7 +398,7 @@ public final class FlywayExtractor implements Extractor {
     }
 
     private void migrate(Path root, Run run, String url, String user, String password, FactSink out) throws SQLException {
-        Map<String, String> config = run.env() == null ? SpringProperties.read(root) : SpringProperties.forProfile(root, run.env());
+        Map<String, String> config = config(root, run.env());
         List<Path> files = migrationFiles(run.folders());
         Map<String, String> placeholders = new TreeMap<>();
         Set<String> defaulted = new LinkedHashSet<>();
