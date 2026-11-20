@@ -60,7 +60,8 @@ final class Fleet implements Callable<Integer> {
     @Option(names = "--no-builds", description = "Named fleet: scan added members without running their Gradle (source only; "
             + "for CI, where a member's build script must not run next to a token for every repo)")
     boolean noBuilds;
-    @Option(names = "--refresh", description = "Named fleet: rescan every member first (default: the snapshots their last scan or apply left); "
+    @Option(names = "--refresh", description = "Named fleet: rescan every member first, and update the clones of repos.yaml "
+            + "(default: the snapshots their last scan or apply left; a member with new commits since its snapshot is rescanned anyway); "
             + "an added member's scan writes only to the fleet folder")
     boolean refresh;
     @Option(names = "--service", description = "Named fleet: what `logast scan` printed for this member, from its stored results")
@@ -273,6 +274,25 @@ final class Fleet implements Callable<Integer> {
                 Path root = m.getValue();
                 skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc) ? scanAdded(dir, svc, root, classpathFile, noBuilds)
                         : scan(root)));
+            }
+        }
+        if (!refresh) {
+            // #150: a member with commits since its snapshot is rescanned, so the overview never shows an old state of it
+            Map<String, NamedFleet.Snapshot> before = NamedFleet.snapshots(dir);
+            for (var m : members.entrySet()) {
+                NamedFleet.Snapshot snap = before.get(m.getKey());
+                if (snap == null || snap.commit() == null || !Files.isDirectory(m.getValue())) {
+                    continue;
+                }
+                String head = NamedFleet.commit(m.getValue());
+                if (head != null && !head.equals(snap.commit())) {
+                    String svc = m.getKey();
+                    Path root = m.getValue();
+                    System.err.println("fleet: " + svc + " has new commits since its snapshot (" + snap.commit() + " → " + head
+                            + "): rescanning it");
+                    skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc)
+                            ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
+                }
             }
         }
         if (service != null) {
