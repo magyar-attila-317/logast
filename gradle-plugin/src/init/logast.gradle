@@ -33,7 +33,7 @@ initscript {
         // an empty or broken jar of the plugin or of what it needs (an interrupted install) is like a missing plugin:
         // Gradle would fail builds on it ("zip file is empty")
         def readable = { File f -> f.isFile() && f.length() > 0 && f.withInputStream { it.read() == 0x50 && it.read() == 0x4B } }
-        def broken = !jar.isFile() ? null : ['gradle-plugin', 'cli', 'core', 'facts']
+        def broken = !jar.isFile() ? null : ['gradle-plugin', 'cli', 'core', 'facts', 'kb']
                 .collect { new File(m2, "dev/logast/${it}/${version}/${it}-${version}.jar") }
                 .find { it.exists() && !readable(it) }
         if (jar.isFile() && broken == null) {

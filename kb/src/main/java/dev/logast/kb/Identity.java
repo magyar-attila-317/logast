@@ -1,6 +1,5 @@
 package dev.logast.kb;
 
-import dev.logast.export.HelmManifests;
 import dev.logast.facts.Edge;
 import dev.logast.facts.Header;
 import dev.logast.facts.Node;
@@ -53,7 +52,7 @@ final class Identity {
             Map<String, List<String>> byRule = new LinkedHashMap<>();
             for (Node s : services.values()) {
                 String svc = s.id().substring("service:".length());
-                String built = s.attrs().get("image") == null ? null : HelmManifests.splitImage(String.valueOf(s.attrs().get("image")))[0];
+                String built = s.attrs().get("image") == null ? null : dev.logast.facts.Images.split(String.valueOf(s.attrs().get("image")))[0];
                 String rule = null;
                 if (built != null && images.contains(built)) {
                     rule = "image";

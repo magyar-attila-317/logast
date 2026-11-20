@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import dev.logast.fleet.FleetHome;
 import dev.logast.kb.KbPaths;
 import dev.logast.kb.KnowledgeBase;
 import dev.logast.kb.McpServer;
@@ -34,7 +33,7 @@ final class McpCmd implements Callable<Integer> {
 
     @Override
     public Integer call() throws IOException {
-        KbPaths.Resolved r = KbPaths.resolve(kb, FleetHome.Env.current());
+        KbPaths.Resolved r = KbPaths.resolve(kb, KbPaths.Env.current());
         System.err.println("logast mcp: facts from " + r.source() + ": " + r.paths());
         McpServer server = new McpServer(() -> KnowledgeBase.factFiles(r.paths()), version(), System.err,
                 r.paths().isEmpty() ? null : dev.logast.kb.Proposals.file(r.paths()));
@@ -81,7 +80,7 @@ final class McpCmd implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
-            KbPaths.Resolved r = KbPaths.resolve(kb, FleetHome.Env.current());
+            KbPaths.Resolved r = KbPaths.resolve(kb, KbPaths.Env.current());
             if (r.paths().isEmpty()) {
                 Out.warn("no facts: give --kb <folder>, or set LOGAST_KB or kb.paths");
                 return 2;
@@ -115,7 +114,7 @@ final class McpCmd implements Callable<Integer> {
 
         @Override
         public Integer call() throws IOException {
-            KbPaths.Resolved r = KbPaths.resolve(kb, FleetHome.Env.current());
+            KbPaths.Resolved r = KbPaths.resolve(kb, KbPaths.Env.current());
             KnowledgeBase k = KnowledgeBase.load(KnowledgeBase.factFiles(r.paths()));
             java.util.Map<String, java.util.Set<String>> existing = new java.util.LinkedHashMap<>();
             if (company != null) {

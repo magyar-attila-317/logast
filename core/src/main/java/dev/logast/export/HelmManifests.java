@@ -207,16 +207,9 @@ public final class HelmManifests {
         }
     }
 
-    /** {@code registry/repo:tag} → [registry/repo, tag]; a digest stays with the repository. */
+    /** {@code registry/repo:tag} → [registry/repo, tag] ({@link dev.logast.facts.Images}). */
     public static String[] splitImage(String image) {
-        int at = image.indexOf('@');
-        String base = at >= 0 ? image.substring(0, at) : image;
-        int slash = base.lastIndexOf('/');
-        int colon = base.lastIndexOf(':');
-        if (colon > slash) {
-            return new String[]{base.substring(0, colon), base.substring(colon + 1)};
-        }
-        return new String[]{base, at >= 0 ? image.substring(at + 1) : null};
+        return dev.logast.facts.Images.split(image);
     }
 
     // ---- secrets ------------------------------------------------------------------------------------------------------
