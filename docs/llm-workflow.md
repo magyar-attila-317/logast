@@ -10,12 +10,13 @@ logging code by hand and do not read source files unless an order is REPORT-ONLY
 
 ## Loop
 
-1. `logast init <root>` once per project if it has no `logast.yaml` yet (it also writes the classpath);
-   `logast classpath <root>` again after dependency changes. It runs Gradle
-   and writes `.logast/classpath-*.txt`. If `scan` warns about a missing classpath or unresolved
-   calls, run it first.
-2. `logast scan <root> --format compact` prints every work order (the default when the output is not a terminal). The full JSON goes to `<root>/.logast/reports/orders.json`.
-   - **AUTO**: no input needed.
+1. `logast apply <root>` on a clean git working tree (commit or stash first). It sets itself up (logast.yaml, the
+   classpath, the support classes), makes every fix it can make by itself, writes default wording where a message is
+   needed (marked `// logast:wording`), and ends with **Done** and **Optional (N)**. The result compiles. Don't run
+   `init` or `classpath` first: apply does both.
+2. `logast scan <root> --format compact` prints the work orders that are left (the default when the output is not a
+   terminal; the full JSON is `<root>/.logast/reports/orders.json`).
+   - **AUTO**: no input needed; the next apply makes it.
    - **NEEDS TEXT**: write the message for each slot (usually `MSG`).
    - **REPORT-ONLY**: needs a human decision. Read its `note` and mention it in your summary;
      don't fix it by hand unless asked.
@@ -47,18 +48,26 @@ logging code by hand and do not read source files unless an order is REPORT-ONLY
    - Don't repeat values that are in `mdc:`; they are already on every log line.
    - `args` (optional) adds variables from `vars:` to the suffix. Use it only for values that
      help diagnose the problem. Never add PII.
-4. Dry run: `logast apply <root> --dry-run` (it uses `.logast/decisions/messages.yaml` automatically). Check the diff and the
-   `REJECTED` lines, fix the texts in the file, and repeat.
+4. Dry run: `logast apply <root> --dry-run` (it reads `.logast/decisions/messages.yaml`). Check the diff and the
+   `REJECTED` lines, fix the texts in the file, and repeat. logast's own uncommitted changes from step 1 don't block it.
 5. `logast apply <root>`
-6. If `apply` lists `logast classpath .` under next steps (it does after adding the logging-support
-   dependency), run it. Otherwise the new `ObservedContext`/`MdcScope` calls show up as unresolved.
-7. `logast scan <root>` again. Only REPORT-ONLY orders should remain. New NEEDS TEXT orders can
-   appear after structural changes: repeat from step 3.
+6. `logast scan <root>` again. Only REPORT-ONLY orders should remain. New NEEDS TEXT orders can appear after
+   structural changes: repeat from step 3.
 
 `apply` works on a scratch copy. It applies structural fixes first, rescans and applies the rest.
 Order ids are stable across rescans, so a fill stays valid. A fix can create a *new* follow-up order (e.g. logging
 a swallowed exception turns an upstream log-and-rethrow into EXCEPTION_LOGGED_TWICE); the order's `note` says so.
 Handle follow-ups in the next round.
+
+## Every member of a fleet
+
+Asked to bring a whole fleet up to the standard ("fix every service of fleet X"):
+
+1. `logast fleet <name> --json` lists the members; each has a `root` (a fleet kept in a git repo has the clones under
+   `.cache/repos/`, which are logast's: work in the team's own checkout or a fresh clone instead).
+2. Per member, on its own branch (`logast/migrate`): the loop above, then commit with the apply summary as the message.
+3. One pull request per repository, its description the apply summary plus the REPORT-ONLY items as a checklist. Do a
+   few repositories first and let the user review them before the rest.
 
 ## Helpful shortcuts
 
