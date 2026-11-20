@@ -3,7 +3,8 @@
 A **fact** is a small, citable statement about code or deployment: *endpoint `GET /shipments/{id}` exists in
 shipping, `ShipmentController.java:23`*; *this endpoint writes table `shipping.shipment`*. `logast export` writes the
 facts its analysis finds; other extractors (Helm, Terraform, CI, or private ones) write the same format, so a tool
-that loads them can join facts from many repos without knowing who produced them (#152).
+that loads them can join facts from many repos without knowing who produced them (#152). `logast mcp` serves them to
+an LLM client ([mcp.md](mcp.md)).
 
 ## The file
 

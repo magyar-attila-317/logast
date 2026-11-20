@@ -34,6 +34,17 @@ class FactsCliTest {
         return new Run(rc, o.toString(StandardCharsets.UTF_8));
     }
 
+    /** #156: the server entry for any MCP client's configuration. */
+    @Test
+    void mcpConfigPrintsTheServerEntry() throws IOException {
+        Run r = run("mcp", "config", "--kb", tmp.toString());
+        assertThat(r.exit()).isZero();
+        var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(r.out());
+        assertThat(json.at("/mcpServers/logast-kb/command").asText()).isEqualTo("logast");
+        assertThat(json.at("/mcpServers/logast-kb/args").toString())
+                .isEqualTo("[\"mcp\",\"--kb\",\"" + tmp.toAbsolutePath().normalize() + "\"]");
+    }
+
     @Test
     void validFilesPassAndBrokenLinesAreNamed() throws IOException {
         String header = "{\"header\":{\"schema\":\"kb-facts/0\",\"extractor\":\"java\",\"repo\":\"shipping\"}}\n";
