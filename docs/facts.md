@@ -202,6 +202,25 @@ mappings:
 - **Mapped facts** keep the matched fact's environment and evidence (with its repo and commit made explicit), and say
   which rule made them (`attrs.mappedBy`). Write them next to the other facts files; `logast mcp` loads them all.
 
+## Your own facts
+
+Knowledge no extractor or mapping covers (an internal API, a custom file format, a spreadsheet of owners) can be
+written by any program, in any language, as a facts file next to logast's: `logast mcp` loads every `*.jsonl` under
+its paths (#171).
+
+- **One header line**, then nodes and edges (above). Name the producer in `extractor`, the repo the facts are about in
+  `repo`.
+- **Use the ids logast uses** where your facts are about the same things, so they join: `service:<name>`,
+  `endpoint:<service>:<METHOD> <path>`, `job:<service>:<name>`, `table:<schema>.<name>`, `topic:<name>`,
+  `secret:<vault>/<object>`, `deployment:<name>`. New kinds of your own are fine (`team:payments`, `owner-of`).
+- **Evidence** names where a person can check the fact: a file in a repo, or (for an API) the source as `file`
+  (`https://cmdb.example.com/services/42`).
+- **Provenance**: `extracted` for what a source states, `inferred` (with `via` and a `confidence`) for what your program
+  concludes.
+- **Check before loading**: `logast facts validate <file>` in the job that writes it; a broken line names its number.
+  The [JSON Schema](../facts/src/main/resources/dev/logast/facts/kb-facts-0.schema.json) checks single lines in any
+  language.
+
 ## Checking a file
 
 ```bash
