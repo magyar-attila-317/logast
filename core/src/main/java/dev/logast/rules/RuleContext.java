@@ -52,6 +52,8 @@ public final class RuleContext {
     /** Methods this scan wraps in ObservedContext (a subset of wrappedMethods: those also get an MdcScope only). */
     final Set<String> observedWrapped = new HashSet<>();
     String supportOrderId;
+    /** #123: SetupRules found no build file (vendor mode then copies the support classes on first use). */
+    boolean noBuildFile;
     /** TracingRules will switch on Kafka listener observation, so listeners count as observed. */
     boolean kafkaListenerObservationPlanned;
     boolean rabbitListenerObservationPlanned;
@@ -275,6 +277,10 @@ public final class RuleContext {
         if (!Rules.SUPPORT_USERS.contains(b.rule)) {
             // its packs would not bring the support set-up: selected alone, the fix would not compile (#87)
             throw new IllegalStateException("rule " + b.rule + " uses the support classes but is not in Rules.SUPPORT_USERS");
+        }
+        if (!a.supportStarterPresent && supportOrderId == null && noBuildFile && policy.support().vendor()
+                && enabled(Rules.SETUP_SUPPORT_STARTER)) {
+            SetupRules.vendorWithoutBuildFile(this);   // #123: the fix imports the classes: copy them in first
         }
         if (!a.supportStarterPresent || supportUpdateOrderId != null) {
             b.dependsOn(supportUpdateOrderId != null ? supportUpdateOrderId : supportOrderId);

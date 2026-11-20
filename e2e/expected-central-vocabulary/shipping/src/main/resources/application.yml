@@ -2,3 +2,10 @@ logging:
   structured:
     format:
       console: logstash
+logging-support:
+  log-defaults:
+    enabled: true
+  mdc-hygiene:
+    enabled: true
+  context-propagation:
+    enabled: true

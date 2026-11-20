@@ -1,6 +1,5 @@
 extends: [../central/company.yaml]
 packs: [logging]
-support: { mode: dependency }   # the starter brings MdcScope (no build file here to vendor it into)
 vocabulary:
   customerId:
     mdc: { key: customerId, sources: { params: [customerId] } }
