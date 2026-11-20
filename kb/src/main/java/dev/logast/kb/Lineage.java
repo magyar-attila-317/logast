@@ -117,6 +117,10 @@ public final class Lineage {
             return null;
         }
         String h = base.replaceFirst("^[a-z][a-z0-9+.-]*://", "");
+        h = h.replaceFirst("^[^@/]*@", "");
+        if (h.matches("(?i)(localhost|127\\.[0-9.]+|0\\.0\\.0\\.0|\\[::1]|::1)([:/].*)?")) {
+            return null;   // #178: a loopback host (a local default) says nothing about the target: match by path
+        }
         h = h.replaceFirst("[/:].*$", "");
         h = h.replaceFirst("\\..*$", "");   // shipping.finance.svc.cluster.local → shipping
         return h.isBlank() ? null : h.toLowerCase(Locale.ROOT);

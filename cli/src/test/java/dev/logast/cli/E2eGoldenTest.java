@@ -9122,6 +9122,11 @@ abstract class E2eGoldenTest {
                         jdbc.update("delete from " + schema + ".ledger_cache where day = ?", day);
                     }
 
+                    @Scheduled(fixedDelayString = "${ledger.poll-seconds:30}", timeUnit = java.util.concurrent.TimeUnit.SECONDS)
+                    void poll() {
+                        jdbc.queryForList(OPEN_ENTRIES);
+                    }
+
                     List<Map<String, Object>> any(String table) {
                         return jdbc.queryForList("select * from " + table);
                     }
@@ -9148,6 +9153,8 @@ abstract class E2eGoldenTest {
                 "job:billing:LedgerSync.sync -reads-> table:shipment",
                 "job:billing:LedgerSync.sync -reads-> table:ledger.archive",
                 "job:billing:LedgerSync.sync -writes-> table:ledger_cache");
+        assertThat(r.nodes()).filteredOn(n -> n.id().equals("job:billing:LedgerSync.poll")).singleElement().satisfies(n -> assertThat(n.attrs())
+                .as("#178: the placeholder resolved, the unit kept").containsEntry("fixedDelayResolved", "30").containsEntry("timeUnit", "SECONDS"));
         assertThat(edges).as("#177: a lock, nextval and SET touch no table, and are not SQL logast could not read")
                 .filteredOn(e -> e.startsWith("job:billing:LedgerSync.sync -uses-sql->")).isEmpty();
         assertThat(edges).as("SQL built at runtime: where it runs, not which table")

@@ -191,6 +191,19 @@ public final class JavaExtractor implements Extractor {
                 }
             }
         }
+        for (J.Annotation an : m.decl().getLeadingAnnotations()) {   // #178: the unit fixedRate and fixedDelay are in
+            if (Annotations.is(an, "org.springframework.scheduling.annotation.Scheduled")) {
+                Annotations.rawAttribute(an, "timeUnit").ifPresent(v -> attrs.put("timeUnit", v.substring(v.lastIndexOf('.') + 1)));
+            }
+        }
+        for (String key : List.of("fixedRate", "fixedDelay", "initialDelay")) {   // #178: placeholders resolved, as for cron
+            if (attrs.get(key) instanceof String v && v.contains("${")) {
+                String r = resolve(v);
+                if (r != null) {
+                    attrs.put(key + "Resolved", r);
+                }
+            }
+        }
         // #159: a ${…} in the cron from the service's base config, else the placeholder's default; as written stays in cron
         Object cron = attrs.get("cron");
         if (cron instanceof String c && c.contains("${")) {
@@ -213,6 +226,24 @@ public final class JavaExtractor implements Extractor {
                 attrs.put("cronResolved", sb.toString());
             }
         }
+    }
+
+    /** Placeholders from the base config, else their default; null when one has neither. */
+    private String resolve(String text) {
+        Matcher pm = PLACEHOLDER.matcher(text);
+        StringBuilder sb = new StringBuilder();
+        while (pm.find()) {
+            String v = a.springProperties.get(pm.group(1).strip());
+            if (v == null) {
+                v = pm.group(2);
+            }
+            if (v == null || v.contains("${")) {
+                return null;
+            }
+            pm.appendReplacement(sb, Matcher.quoteReplacement(v));
+        }
+        pm.appendTail(sb);
+        return sb.toString();
     }
 
     private static String destination(String kind, String target) {
