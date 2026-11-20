@@ -102,7 +102,7 @@ public final class McpServer {
         r.putObject("serverInfo").put("name", "logast-kb").put("version", version);
         r.put("instructions", "Facts about code and deployment of many repos (docs/facts.md in logast). Node ids are "
                 + "<kind>:<name>, e.g. service:shipping, endpoint:shipping:GET /shipments/{id}, table:billing.invoice, "
-                + "job:shipping:ExportJob.run. Start with kb_summary or kb_find; cite the (repo/file:line) of each fact you use.");
+                + "job:shipping:ExportJob.run. Start with summary or find; cite the (repo/file:line) of each fact you use.");
         return r;
     }
 
@@ -112,8 +112,8 @@ public final class McpServer {
     }
 
     /**
-     * #186: tool names as clients see them: prefixed, so they do not clash with a client's own tools (find, path,
-     * describe, summary); calls by the bare name still work.
+     * #186: no prefix of our own (clients already prefix MCP tools with the server's name: mcp_logast-kb_find);
+     * calls by the briefly used {@code kb_<name>} still work.
      */
     static final String PREFIX = "kb_";
     /** #186: a parameter for tools that need none: some model APIs refuse an object schema without properties. */
@@ -202,7 +202,7 @@ public final class McpServer {
         ObjectNode r = JSON.createObjectNode();
         ArrayNode list = r.putArray("tools");
         for (Tool t : TOOLS) {
-            ObjectNode o = list.addObject().put("name", PREFIX + t.name()).put("description", t.description());
+            ObjectNode o = list.addObject().put("name", t.name()).put("description", t.description());
             ObjectNode schema = o.putObject("inputSchema").put("type", "object");
             ObjectNode props = schema.putObject("properties");
             for (String[] p : t.params()) {
