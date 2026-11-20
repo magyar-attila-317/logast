@@ -106,6 +106,10 @@ final class Fleet implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
+        if (!kb && (kbFull || flyway || !rows.isEmpty() || postgresImage != null)) {
+            kb = true;   // #191: they only mean something for the knowledge base; without --kb they were silently ignored
+            System.err.println("fleet: --kb-full/--flyway/--rows/--postgres-image export the knowledge base: --kb is implied");
+        }
         FleetHome.Env env = fleetsDir.env();
         if (services.size() == 1 && !services.getFirst().startsWith("@") && FleetHome.validName(services.getFirst())) {
             String name = services.getFirst();
