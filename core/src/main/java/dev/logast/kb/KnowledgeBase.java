@@ -43,6 +43,8 @@ public final class KnowledgeBase {
     private final List<String> problems = new ArrayList<>();
     private final List<Path> files = new ArrayList<>();
     private final List<String> ambiguous = new ArrayList<>();
+    private final Knowledge knowledge = Knowledge.empty();
+    private final List<String> decisionNotes = new ArrayList<>();
     private final Set<String> repos = new java.util.TreeSet<>();
 
     private KnowledgeBase() {
@@ -52,6 +54,11 @@ public final class KnowledgeBase {
     public static KnowledgeBase load(Collection<Path> paths) {
         KnowledgeBase kb = new KnowledgeBase();
         for (Path f : factFiles(paths)) {
+            if (isKnowledge(f)) {   // #163: the company's glossary, names and decisions
+                kb.knowledge.load(f);
+                kb.problems.addAll(kb.knowledge.problems().stream().filter(p -> !kb.problems.contains(p)).toList());
+                continue;
+            }
             kb.files.add(f);
             FactReader.Result r;
             try (Reader in = Files.newBufferedReader(f, StandardCharsets.UTF_8)) {
@@ -80,14 +87,43 @@ public final class KnowledgeBase {
 
     /** #161: links the facts imply but no file states: which deployments run which service. */
     private void derive() {
-        var r = Identity.links(nodes(), out);
+        var r = Identity.links(nodes(), out, knowledge);
         for (Identity.Link l : r.getKey()) {
-            Fact<Edge> fe = new Fact<>(Identity.edge(l), l.workloadFact().header(), l.workloadFact().file());
+            Edge edge = decide(Identity.edge(l), l.workloadFact().header());
+            if (edge == null) {
+                continue;   // rejected in knowledge.yml
+            }
+            Fact<Edge> fe = new Fact<>(edge, l.workloadFact().header(), l.workloadFact().file());
             edges.add(fe);
             out.computeIfAbsent(fe.fact().from(), k -> new ArrayList<>()).add(fe);
             in.computeIfAbsent(fe.fact().to(), k -> new ArrayList<>()).add(fe);
         }
         ambiguous.addAll(r.getValue());
+    }
+
+    /**
+     * An inferred edge after knowledge.yml's decisions: null when rejected; marked approved (with who) when approved on
+     * the evidence it has now; marked stale when the evidence changed since, so it is decided again rather than applied.
+     */
+    private Edge decide(Edge e, Header h) {
+        String link = e.from() + " -" + e.kind() + "-> " + e.to();
+        String now = cite(e.evidence(), h);
+        for (Knowledge.Decision d : knowledge.decisions()) {
+            if (!d.link().equals(link) || d.env() != null && !d.env().equals(e.env())) {
+                continue;
+            }
+            Map<String, Object> attrs = new TreeMap<>(e.attrs());
+            if (d.evidence() != null && !now.startsWith(d.evidence())) {
+                attrs.put("decision", "stale: " + (d.approve() ? "approved" : "rejected") + " on " + d.evidence() + ", the evidence is now " + now);
+                decisionNotes.add(link + (e.env() == null ? "" : " [" + e.env() + "]") + ": decided on " + d.evidence() + ", now " + now);
+            } else if (!d.approve()) {
+                return null;
+            } else {
+                attrs.put("decision", "approved" + (d.by() == null ? "" : " by " + d.by()));
+            }
+            return new Edge(e.from(), e.kind(), e.to(), e.env(), attrs, e.provenance(), e.confidence(), e.via(), e.sources(), e.evidence());
+        }
+        return e;
     }
 
     /** Workloads more than one service claims by the same rule: not linked, for a person to decide. */
@@ -103,7 +139,7 @@ public final class KnowledgeBase {
                 out.add(p.toAbsolutePath().normalize());
             } else if (Files.isDirectory(p)) {
                 try (Stream<Path> s = Files.walk(p)) {
-                    s.filter(f -> Files.isRegularFile(f) && f.getFileName().toString().endsWith(".jsonl")
+                    s.filter(f -> Files.isRegularFile(f) && (f.getFileName().toString().endsWith(".jsonl") || isKnowledge(f))
                                     && !f.toString().contains("/.git/"))
                             .forEach(f -> out.add(f.toAbsolutePath().normalize()));
                 } catch (IOException e) {
@@ -127,6 +163,16 @@ public final class KnowledgeBase {
     /** The repos of the loaded files (their headers). */
     public Set<String> repos() {
         return Set.copyOf(repos);
+    }
+
+    /** {@code knowledge.yml} / {@code knowledge.yaml}: what people decided, loaded with the facts (#163). */
+    static boolean isKnowledge(Path f) {
+        String n = f.getFileName().toString();
+        return n.equals("knowledge.yml") || n.equals("knowledge.yaml");
+    }
+
+    public Knowledge knowledge() {
+        return knowledge;
     }
 
     public List<String> problems() {
@@ -162,6 +208,12 @@ public final class KnowledgeBase {
         long linked = edges.stream().filter(e -> e.fact().kind().equals("deployed-as")).count();
         if (linked > 0) {
             sb.append(linked).append(" deployments linked to their service's code (inferred: image, name or image name)\n");
+        }
+        if (!knowledge.files().isEmpty()) {
+            sb.append("knowledge: ").append(knowledge.files().size()).append(" file(s)").append('\n');
+        }
+        if (!decisionNotes.isEmpty()) {
+            sb.append("decisions to take again (their evidence changed): ").append(String.join("; ", decisionNotes)).append('\n');
         }
         if (!ambiguous.isEmpty()) {
             sb.append("not linked, more than one service fits: ").append(String.join("; ", ambiguous)).append('\n');
@@ -203,6 +255,11 @@ public final class KnowledgeBase {
             return "No node " + id + ". " + find(id.contains(":") ? id.substring(id.lastIndexOf(':') + 1) : id, null, 5);
         }
         StringBuilder sb = new StringBuilder(id).append('\n');
+        String name = id.substring(id.lastIndexOf(':') + 1);
+        String reads = knowledge.read(name.contains(".") && id.startsWith("table:") ? name.substring(name.lastIndexOf('.') + 1) : name);
+        if (reads != null) {
+            sb.append("  reads as: ").append(reads).append('\n');
+        }
         if (ns.isEmpty()) {
             sb.append("  (no node fact: only edges name it)\n");
         }

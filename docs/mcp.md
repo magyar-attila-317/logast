@@ -53,6 +53,8 @@ client's MCP configuration. `logast` must be on the `PATH` the client starts it 
 | `path` | the shortest chain from one node to another, e.g. from a profile to the job that runs it |
 | `runs_on` | which jobs run on a day (a weekday, `today`, an ISO date), in an environment and time zone, at which times; the jobs that run after them in a pipeline; jobs whose schedule is not known, and why |
 | `next_runs` | when a job runs next |
+| `term` | a glossary term (or an alias, or an abbreviation): its definition and source |
+| `read_name` | a technical name (`ord_inv_ref`, `ordInvRef`) as business words |
 | `writers_of`, `readers_of` | every entrypoint that writes or reads a table (`schema.name`, or a name in any schema) |
 
 For example: *who writes `audit.event`?* → every endpoint, listener and job that does, each with `repo/file:line@commit`.
@@ -67,6 +69,40 @@ build pushes when Jib's `to.image` or `bootBuildImage`'s `imageName` say it) is 
 (`deployment:<name>`, a CronJob's `job:…`) by an inferred `deployed-as` edge, per environment, by the strongest rule
 that holds: the same image repository (confidence 0.95), the same name (0.8), the image's last path segment equal to
 the service's name (0.7). A workload two services claim by the same rule is not linked; `summary` lists it.
+
+## What people know: `knowledge.yml`
+
+Facts say what code and deployments contain. What no file proves (what *ord* stands for, that *order-service* is
+what others call *orders*, whether an inferred link is right) goes into a `knowledge.yml` (or `.yaml`) anywhere under
+the kb paths, written by people and applied when the facts load (#163). It is named so it is not confused with
+logast's `company.yaml` policy in the same fleet repo.
+
+```yaml
+glossary:
+  order:
+    definition: A customer's request to buy, from checkout to delivery.
+    source: https://wiki.example.com/glossary#order
+    aliases: [purchase]
+  invoice: The bill sent for an order.            # a definition alone
+abbreviations:
+  ord: order
+  inv: invoice
+services:
+  orders: [order-service, ord-svc]                # other names of a service: linked to workloads of those names
+decisions:
+  - link: "service:billing -deployed-as-> deployment:billing-worker"
+    env: prod                                     # optional: every environment when left out
+    decision: reject                              # or approve
+    by: jane
+    evidence: deploy/charts/billing/templates/deployment.yaml   # what it was decided on (optional)
+```
+
+- **`services`**: a workload named like another name of a service is linked to it (`identity:alias`, 0.9).
+- **`decisions`**: a rejected link is dropped, an approved one is marked (`decision=approved by …`). When the link's
+  evidence no longer starts with the `evidence` it was decided on, the decision is **stale**: the link stays inferred,
+  marked, and `summary` lists it to decide again, rather than applying an old decision to new facts.
+- **Names as business words**: `describe` shows how a name reads (`table:billing.ord_inv_ref` → *order invoice
+  reference*), through the abbreviations and the glossary's aliases; tools `term` and `read_name` ask directly.
 
 The server speaks MCP's stdio transport (JSON-RPC 2.0, one message per line: `initialize`, `tools/list`,
 `tools/call`, `ping`); it writes diagnostics to stderr only.
