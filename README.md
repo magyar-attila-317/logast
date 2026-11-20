@@ -1,34 +1,129 @@
 # logast
 
-**Make every Spring Boot service log, trace, measure, fail and audit the same way, in your business's language,
-without asking each team to remember the rules.**
+**Every Spring Boot service logs, traces, measures, fails and audits the same way, in your business's language, and
+nobody has to remember the rules.**
 
-logast reads a service's source with full type resolution, follows the call graph from every entrypoint (HTTP
-endpoints, schedulers, listeners, batch runners) and finds where logging, MDC context, tracing and metrics fall short
-of your standard. Each finding is a **work order**: a concrete, pre-decided code change. Most apply automatically.
-Where a message has to be worded, a person or an LLM writes **one line of text**, and logast checks it against your
-vocabulary and phrasing rules before writing anything.
+[![build](https://github.com/magyar-attila-317/logast/actions/workflows/build.yml/badge.svg)](https://github.com/magyar-attila-317/logast/actions/workflows/build.yml)
+[![license](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+![Spring Boot 3 and 4](https://img.shields.io/badge/Spring%20Boot-3%20%7C%204-6db33f)
+![Java 17+](https://img.shields.io/badge/Java-17%2B-orange)
 
-What a service gets out of it:
+logast reads your service's code with full type resolution, follows every path from the entrypoints (HTTP, Kafka,
+schedulers, batch jobs) and rewrites what falls short: business ids in MDC, traces across threads and services, timeouts,
+metrics and log lines in one format. It changes the code itself, and the result compiles.
 
-- structured JSON logs in the format you choose (`logging.structuredFormat`: Logstash by default, ECS, GELF or your own
-  formatter) with the service name and version, and no hand-rolled `logback-spring.xml`;
-- the business ids (`order.id`, `tenant.id`, …) in MDC from the entrypoint down, scoped with try-with-resources, and
-  never leaking into the next request on a pooled thread;
-- traces that survive `@Async`, executors, HTTP calls between services, messaging, and orchestrator → batch-pod launches;
-- log lines in one format and one vocabulary: `Payment charge failed [order.id=…]`, never
-  `"Error while charging " + id`;
-- exceptions logged once, where they are handled, and never swallowed silently;
-- meter names and tags that don't explode your metrics backend, and business events that are measured;
-- timeouts on every outgoing call, bounded thread pools, messages that are not silently dropped;
-- error responses that don't leak internals, and business exceptions that don't turn into 500s;
-- an audit record for every action that must have one;
-- a compliance score per service, and CI that fails only on *new* problems.
+<table>
+<tr><th>Before</th><th>After <code>logast apply .</code></th></tr>
+<tr>
+<td>
 
-**Works with** Spring Boot 3 and 4 services on Java 17+, built with Gradle, logging through SLF4J + Logback, tracing
-with Micrometer Tracing / OpenTelemetry. logast itself runs on Java 21+ (25 recommended).
+```java
+log.info("Coupon redemption started [couponId={}]",
+        request.code());
+sender.send(request.code());
+log.info("Coupon redemption completed [couponId={}, tableId={}]",
+        request.code(), request.tableId());
+```
 
-**See it in code:** [docs/examples.md](docs/examples.md) shows before/after snippets for each pack.
+</td>
+<td>
+
+```java
+try (var mdc = MdcScope.of("couponId", request.code())) {
+    log.info("Coupon redemption started");
+    sender.send(request.code());
+    log.info("Coupon redemption completed [tableId={}]",
+            request.tableId());
+}
+```
+
+</td>
+</tr>
+</table>
+
+Every line of the operation now carries `couponId`, including the lines logged by the code it calls.
+[More before/after examples](docs/examples.md), one per pack.
+
+---
+
+## One command
+
+```bash
+logast apply .     # or ./gradlew logastApply
+git diff           # review, commit
+```
+
+Nothing has to be set up or published first. The first `apply` reads the classpath, writes a `logast.yaml` that
+explains itself, copies the few support classes the new code needs into your service, and leaves a migration that
+compiles. What it cannot decide alone (the wording of a message, whether to count an outcome) has a safe default and
+waits in `logast review` for when you get to it.
+
+[Install](docs/install.md): `git clone … && ./install.sh` (Java 21+).
+
+---
+
+## What it fixes
+
+| pack | in one line |
+|---|---|
+| [logging](docs/packs/logging.md) | one message format and vocabulary; exceptions logged once and never swallowed; business ids in MDC from the entrypoint down; silent flows get a line |
+| [tracing](docs/packs/tracing.md) | the trace survives `@Async`, executors, HTTP, messaging and launched jobs; trace ids in every log line |
+| [metrics](docs/packs/metrics.md) | business outcomes are counted; meter names and tags stay bounded |
+| [resilience](docs/packs/resilience.md) | timeouts on every outgoing call, bounded pools and waits, retries that actually run, graceful shutdown |
+| [errors](docs/packs/errors.md) | error responses that don't leak internals, the right status codes, the trace id in the body |
+| [audit](docs/packs/audit.md) | an audit record for every action that needs one: who, what, outcome, written after commit |
+
+All six packs are on by default. Each finding is either fixed (**AUTO**), waits for one line of text (**NEEDS TEXT**),
+or is reported with what to decide (**REPORT-ONLY**). [Every rule](docs/rules.md).
+
+---
+
+## Four ways in
+
+### 1. A service team: `apply`, review, done
+
+`logast apply .` makes the changes; `logast review . --open` opens a local page with the open choices: the code, the
+path from the entrypoint and one input per message, metric or retry. Apply again and it is finished.
+[Commands](docs/commands.md).
+
+### 2. An LLM writes the messages
+
+logast decides *where* to log, at what level, with which values and MDC scope. The LLM only writes the text, and logast
+checks it against your vocabulary and phrasing rules before writing anything. With `./install.sh --skill`, ask Claude
+Code *"bring this service's logging to the standard"*. It also works across every service of a fleet.
+[The loop it follows](docs/llm-workflow.md).
+
+### 3. CI: annotations on the pull request, a gate on new findings
+
+```yaml
+- run: logast scan . --since origin/${{ github.base_ref }} --format github --fail-on high
+```
+
+Findings on the lines a PR changed show up on its diff, on any GitHub plan (no code scanning needed), with a summary on
+the run's page. With a committed baseline, CI fails only on *new* problems. Or use `./gradlew logastCheck`.
+[CI and the Gradle plugin](docs/gradle-plugin.md).
+
+### 4. A platform team: the whole fleet on one page
+
+List your repos in a git repo of their own, and logast scans them all, without touching them:
+
+```bash
+logast fleet init my-company        # in a new repo: repos.yaml, README, GitHub workflow
+$EDITOR repos.yaml                  # the repo URLs
+git push                            # the workflow scans every repo; the report goes to Pages when you switch it on
+```
+
+<img src="docs/img/fleet-drawer.png" alt="The fleet report: services by score, next steps, and a side drawer with one service's findings and calls" width="100%">
+
+- **Next steps** at the top: what to do first, each step with its exact command.
+- **Scores per service and pack**, a daily trend, and the most frequent rules in plain words.
+- **Trace breaks between services**: which call loses the trace id, and which side has to fix it.
+- **One company policy**: the settings all members already agree on, ready to make official in `company.yaml`.
+- **One vocabulary**: the same business id under different keys in different services, to decide once.
+- **A drawer per service**: its findings, its calls, where each call goes.
+
+[Fleets](docs/fleet.md) · [For platform teams](docs/platform.md) (company policy, central vocabulary, publishing the
+support library).
 
 ---
 
@@ -46,197 +141,15 @@ flowchart LR
   T[existing tests] --> V[logast verify:<br/>what really got logged]
 ```
 
-- **The tool decides, the writer only writes.** Where to log, at what level, which values, which MDC scope, which
-  import: all of it is decided by logast. The LLM, or a person in `logast review`, only supplies message text, so the
-  result is repeatable, cheap and safe to run in CI.
-- **Paths, not single files.** "Is `order.id` in MDC here?" is answered for every path that reaches the line, across
-  interfaces, lambdas, async hops and filters. A value already in MDC is never repeated in a message.
-- **A runtime starter does the plumbing.** Generated code calls a small library, `logging-support`, instead of
-  repeating boilerplate ([below](#the-runtime-starter)).
+- **The tool decides, the writer only writes.** Placement, level, values, MDC scope and imports are decided by logast,
+  so the result is repeatable, cheap and safe to run in CI.
+- **Paths, not single files.** "Is `order.id` in MDC here?" is answered for every path that reaches the line: across
+  interfaces, lambdas, async hops and filters.
+- **A small runtime library does the plumbing.** Each behaviour is off until a property switches it on, and logast
+  writes the ones it uses. [The starter](docs/starter.md).
 
----
-
-## Install
-
-**From source** (needs a JDK 21+ on `PATH`):
-
-```bash
-git clone https://github.com/magyar-attila-317/logast.git && cd logast
-./install.sh          # asks what is not set up yet: Gradle? the support library to Maven Local? to a repository? (-y: yes to the first two)
-logast --version
-```
-
-**From a release zip:** `./install.sh --zip logast-<version>.zip`, or unzip it anywhere and put its `bin/` on `PATH`.
-
-**With Gradle:** once `install.sh` has set up Gradle, `./gradlew logastApply` works in any Java build, with no edit to
-the build ([docs/gradle-plugin.md](docs/gradle-plugin.md)).
-
-| `install.sh` option | what it does |
-|---|---|
-| *(none)* | builds the CLI, installs it to `~/.local/share/logast` and links `~/.local/bin/logast` |
-| `--skill` | installs the Claude Code skill to `~/.claude/skills/logast/SKILL.md`, so Claude Code knows the workflow |
-| `--starter` | puts `dev.logast:logging-support` and `dev.logast:test-capture` into Maven Local (`~/.m2`) without asking; `apply` then adds the jar where a build resolves it |
-| `--publish-to <name\|url>` | publishes them to a repository your Gradle knows (by name, with its credentials) or a URL, without asking ([docs/starter.md](docs/starter.md#publishing-it)) |
-| `--zip <file>` | installs a release zip instead of building |
-| `-y` / `--no-gradle` | `-y`: yes to the Gradle setup and to Maven Local without asking; `--no-gradle`: skips the Gradle setup (the plugin in Maven Local and an init script, so `./gradlew logastApply` works in any Java build, [docs/gradle-plugin.md](docs/gradle-plugin.md)) |
-| `--ask` / `--force` | `--ask`: asks again what an earlier "no" skips; `--force`: rebuilds and reinstalls even when this commit is installed |
-
-- `LOGAST_HOME` / `LOGAST_BIN` override the install locations.
-- **Update:** pull and run `./install.sh` again. It replaces the installed copy, refreshes an installed skill and what
-  it set up before (Gradle, the support library in Maven Local), and asks only about what is not set up. A "no" is
-  remembered (`~/.config/logast/config.yaml`; `--ask` asks again). When the installed `logast --version` names this
-  commit and the checkout has no changes, it builds nothing: `already installed — nothing to do`.
-- **macOS:** install a JDK first (`brew install openjdk@21`, SDKMAN or Temurin); the `/usr/bin/java` stub alone is not
-  a JDK. `~/.local/bin` is not on the macOS `PATH` by default: add `export PATH="$HOME/.local/bin:$PATH"` to
-  `~/.zshrc`, or install elsewhere with `LOGAST_BIN=/opt/homebrew/bin ./install.sh`.
-
----
-
-## Quick start
-
-In the service's root folder:
-
-```bash
-logast apply .          # or ./gradlew logastApply: sets itself up and changes the code; the result compiles
-git diff                # review, commit
-logast review           # optional: message texts, metrics, retries; each has a default
-logast apply .          # optional: again, on the migrated code, for what you decided
-```
-
-- That is the whole path: nothing has to be set up or published first. `apply` writes `logast.yaml` (every pack, the
-  log format the service uses or Logstash), reads the classpath, and copies the support classes in.
-- `apply` writes on a clean git working tree (commit first; `--force` writes anyway); `--dry-run` previews the diff.
-- It ends with **Done** (what changed) and **Optional (N)**: what you may decide, each with its default, in
-  `logast review` or `.logast/decisions/*.yaml` ([what happens next](docs/commands.md#what-happens-next)). Don't
-  revert the code before applying again: the entries point at the migrated code.
-- `logast init .` first only if you want to choose before the first apply (packs, key style, log format).
-
-Running logast for many services (a published starter, a company policy, one vocabulary, a CI gate):
-[docs/platform.md](docs/platform.md), for platform teams.
-
----
-
-## The workflow
-
-### What a finding asks of you
-
-| kind | who acts | how |
-|---|---|---|
-| **AUTO** | logast | `apply` makes the change |
-| **NEEDS TEXT** | optional: a person or an LLM | write one message in `.logast/decisions/messages.yaml` (or in `logast review . --open`); the next `apply` validates and writes it. Left blank, the line keeps its current text |
-| **REPORT-ONLY** | a person | a decision logast does not make; the finding says what to decide and when it counts as done |
-
-Metric decisions (count an outcome, tag it, or skip it; blank: no metric) go into `.logast/decisions/metrics.yaml`
-the same way, retry candidates (blank: no retry) into `retry.yaml`; `logast review` shows all three.
-
-### Who writes the text
-
-- **A person:** `logast review . --open` opens a local page with one input per message (the code, the path from the
-  entrypoint, the required phrasing) and the metric and retry decisions.
-- **An LLM:** with the skill installed, ask Claude Code *"bring this service's logging to the standard"*; it follows
-  [docs/llm-workflow.md](docs/llm-workflow.md).
-
-### The files it writes
-
-`.logast/decisions/` holds what you decide (YAML, you edit it, it goes into git); `.logast/reports/` holds what logast
-writes for you to read. `init` adds `.logast/*` to `.gitignore`, keeping the decisions, the baseline and the README in
-git. A `.logast` from an earlier logast version is moved into this layout by the next command (one line says what moved).
-
-| file | what it is | written by | in git? |
-|---|---|---|---|
-| `logast.yaml` | your settings; every option is explained in comments inside the file | the first `apply`, or `init` | yes |
-| `.logast/README.md` | what each file in the folder is for | `init` | yes |
-| `.logast/decisions/messages.yaml` | optional message texts; kept in step with the code (entries kept, added, removed when done) | `scan`, `apply` | yes |
-| `.logast/decisions/metrics.yaml` | optional metric decisions, kept in step the same way | `scan`, `apply` | yes |
-| `.logast/decisions/traffic.yaml` | every entrypoint, with calls/day if you fill them in (judges log volume) | `init`, `traffic`, `apply` | yes |
-| `.logast/decisions/retry.yaml` | every `@Retryable` usage, to mark the ones that need settings of their own (resilience pack) | `scan`, `apply` | yes |
-| `.logast/baseline.json` | the findings CI accepts as known | `init --baseline`, `scan --update-baseline` | yes |
-| `.logast/classpath-*.txt` | the service's compile classpath, so logast understands types (Gradle runs once, nothing is compiled) | `init`, `classpath`; `apply` after a build-file change | no (machine-specific) |
-| `.logast/reports/orders.json` | the last scan's work orders, in full | `scan` | no |
-| `.logast/reports/coverage.txt` | every log call and what logast did with it: fixed, reported, ignored, skipped (with the reason) or checked ([details](docs/commands.md#every-log-call-is-accounted-for)) | `scan`, `apply` (logging pack) | no |
-| `.logast/reports/steps/*.diff` | one diff per apply step, to review or drop a kind of change | `apply` | no |
-| `.logast/reports/apply-trace.txt` | what each apply round did and what its rescan found | `apply` | no |
-| `.logast/reports/queries.md` | dashboard and alert queries for the service | `queries` | no |
-| `.logast/reports/verify.json` | the last `verify` result | `verify` | no |
-
-Details of every command, with example output: [docs/commands.md](docs/commands.md).
-
----
-
-## Packs
-
-Rules come in six packs, all on by default (`packs:` in `logast.yaml` switches one off; `--pack` runs one alone).
-
-| pack | what it covers |
-|---|---|
-| [logging](docs/packs/logging.md) | message format and vocabulary, exceptions logged once, business ids in MDC, what goes into a line, log lines where flows are silent, levels and volume |
-| [tracing](docs/packs/tracing.md) | the trace across threads, HTTP calls, messaging and launched jobs; spans that end and carry errors; traces that reach a backend; trace ids in logs |
-| [metrics](docs/packs/metrics.md) | business events and outcomes that are measured; meter names and tags that stay bounded; service and version on every meter |
-| [resilience](docs/packs/resilience.md) | timeouts, bounded pools and waits, retries that run, scheduled-job locks, graceful shutdown, health probes |
-| [errors](docs/packs/errors.md) | error responses that don't leak internals, exceptions mapped to the right status, the trace id in error bodies, causes kept |
-| [audit](docs/packs/audit.md) | audit records that exist, say who, what and with which outcome, are written after commit and routed apart |
-
-Every rule, its severity and how it is fixed: [docs/rules.md](docs/rules.md) (`logast explain rules` lists them from the code).
-Silence one finding with `// logast:ignore RULE` on the line or the line above.
-
----
-
-## Configuration
-
-The first `apply` (or `logast init`) writes a `logast.yaml` that explains itself. You only write what differs from the
-defaults:
-
-```yaml
-logging:
-  rewriteExistingMessages: false   # legacy service: fix structure, keep the wording
-
-vocabulary:
-  order:
-    aliases: [ordr]                # an old key logast renames to the term's key
-```
-
-- Every setting, with its default: [docs/configuration.md](docs/configuration.md).
-- Vocabulary, phrasing and levels: [docs/vocabulary.md](docs/vocabulary.md). The vocabulary starts from your code:
-  the keys the service already uses, one term each, for you to organise.
-- `logast explain policy .` prints the merged result and every override.
-
----
-
-## CI
-
-```bash
-logast scan . --baseline --fail-on high --format summary         # only findings that aren't in the baseline
-logast scan . --since origin/main --format sarif > logast.sarif  # changed lines only, as PR annotations
-```
-
-| exit code | meaning |
-|---|---|
-| 0 | nothing at or above `--fail-on` |
-| 2 | findings at or above `--fail-on` (also: an unknown `--rule`) |
-| 3 | `--baseline` given, but no baseline file |
-| 4 | `--fail-on` with an incomplete analysis (files that did not parse, no classpath): a broken analysis finds less and must not pass |
-
-- Record the baseline once with `logast init --baseline` or `logast scan . --update-baseline`, and commit
-  `.logast/baseline.json`.
-- Against a baseline, a known finding that covers more places than when it was recorded (a second unlocked
-  `@Scheduled` job) counts as new.
-- A complete GitHub Actions job: [examples/github-actions.yml](examples/github-actions.yml).
-- With the Gradle plugin the gate is `./gradlew logastCheck`, and `./gradlew logastSarif` writes the SARIF file for
-  PR annotations ([docs/gradle-plugin.md](docs/gradle-plugin.md)).
-
----
-
-## The runtime starter
-
-`logging-support` is a small Spring Boot starter the generated code calls: `ObservedContext`, `MdcScope`,
-`ContextExecutors`, `TraceContextEnv`, a context-propagating `TaskDecorator`, and more.
-
-- **It switches nothing on by itself.** Each behaviour has a `logging-support.*.enabled` property, off unless
-  `true`; logast writes the ones a pack uses into `application.yml`.
-- A service gets its classes copied in (`support.mode: vendor`): nothing to publish. Once the service's build resolves
-  the starter (published with `install.sh`), `apply` adds the jar instead.
-
-Properties and modes: [docs/starter.md](docs/starter.md).
+**Works with** Spring Boot 3 and 4 on Java 17+, Gradle, SLF4J + Logback, Micrometer Tracing / OpenTelemetry. logast
+itself runs on Java 21+ (25 recommended).
 
 ---
 
@@ -244,50 +157,21 @@ Properties and modes: [docs/starter.md](docs/starter.md).
 
 | page | what is in it |
 |---|---|
-| [docs/examples.md](docs/examples.md) | before/after code: what `logast apply` changes, per pack |
-| [docs/platform.md](docs/platform.md) | for platform teams: publishing the starter, company policy, central vocabulary, fleet, CI gate |
-| [docs/commands.md](docs/commands.md) | every command, its options and example output |
-| [docs/rules.md](docs/rules.md) | packs and rules: severity, what each finds, how it is fixed |
-| [docs/configuration.md](docs/configuration.md) | every `logast.yaml` setting |
-| [docs/gradle-plugin.md](docs/gradle-plugin.md) | the `dev.logast` Gradle plugin, the CI gate and PR annotations (SARIF) |
-| [docs/vocabulary.md](docs/vocabulary.md) | vocabulary, policy layers, phrasing, levels, log volume |
-| [docs/starter.md](docs/starter.md) | the runtime starter |
-| [docs/llm-workflow.md](docs/llm-workflow.md) | the loop an LLM follows (installed as the Claude Code skill) |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | symptoms and fixes, known limitations |
-| [docs/pipeline-plan.md](docs/pipeline-plan.md) | design: the ordered apply steps |
+| [install](docs/install.md) | install options, updating, macOS, building from source |
+| [examples](docs/examples.md) | before/after code per pack |
+| [commands](docs/commands.md) | every command, its options, example output, the `.logast` folder, exit codes |
+| [rules](docs/rules.md) | every rule: severity, what it finds, how it is fixed |
+| [configuration](docs/configuration.md) | every `logast.yaml` setting |
+| [vocabulary](docs/vocabulary.md) | vocabulary, policy layers, phrasing, levels, log volume |
+| [gradle-plugin](docs/gradle-plugin.md) | `logastApply`, `logastCheck`, SARIF and PR annotations |
+| [fleet](docs/fleet.md) | many services: the overview, the report page, the fleet repo |
+| [platform](docs/platform.md) | company policy, central vocabulary, publishing the support library |
+| [starter](docs/starter.md) | the runtime library and its properties |
+| [llm-workflow](docs/llm-workflow.md) | the loop an LLM follows (installed as the Claude Code skill) |
+| [troubleshooting](docs/troubleshooting.md) | symptoms, fixes, known limitations |
 
----
-
-## Development
-
-```bash
-./gradlew build              # all modules and unit tests
-./gradlew :cli:installDist   # cli/build/install/logast/bin/logast
-./gradlew :cli:distZip       # release zip with docs, examples and the Claude Code skill
-```
-
-| module | contents |
-|---|---|
-| `core` | parsing, call graph and path context, policy loader, rules, work orders, apply, verify, fleet, review |
-| `cli` | the `logast` command |
-| `gradle-plugin` | the `dev.logast` Gradle plugin; TestKit tests: `./gradlew :gradle-plugin:functionalTest` |
-| `logging-support` | the runtime starter used by generated code |
-| `test-capture` | log capture added to test runs by `logast verify` |
-| `fixtures/sample-app` | a shop app with planted gaps; `// expect: RULE` markers are checked exactly by the tests |
-
-**End-to-end tests.** `e2e/before` is a small service with the code shapes real services showed. Each scenario runs
-`logast apply` on a copy, compiles the result and compares every file and the printed output with a
-snapshot in `e2e/expected*`.
-
-```bash
-./gradlew :cli:e2e --tests "*Name*"   # the scenarios a change touches (JDK 25)
-./gradlew :cli:e2eJdk21               # the same on Java 21
-./gradlew build -Pe2e                 # build plus both e2e tasks (CI runs them on Linux and macOS)
-./gradlew :cli:e2e -Pe2e.update       # rewrite the snapshots after an intended change; review git diff e2e/
-```
-
-Rules for changes (every change comes with a test that fails without it, issues, the e2e matrix):
-[AGENTS.md](AGENTS.md).
+Contributing: [AGENTS.md](AGENTS.md) (issues, a failing test per change, the e2e matrix) and
+[building from source](docs/install.md#development).
 
 ## License
 

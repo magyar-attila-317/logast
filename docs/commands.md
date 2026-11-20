@@ -33,6 +33,25 @@ Options most analysing commands share: `--policy <file>`, `--classpath-file <fil
 | `.logast/reports/` | what logast writes for you to read: `orders.json`, `coverage.txt`, `metrics.md`, `queries.md`, `lifecycle.txt` ([written automatically](#reports-written-automatically)), `steps/`, `apply-trace.txt`, `last-apply.txt`, `verify.json` | no |
 | `.logast/` | `classpath-*.txt` and `applied-state.txt` (machine input), `baseline.json` (CI), `README.md`, `shape/` | baseline and README |
 
+File by file:
+
+| file | what it is | written by | in git? |
+|---|---|---|---|
+| `logast.yaml` | your settings; every option is explained in comments inside the file | the first `apply`, or `init` | yes |
+| `.logast/README.md` | what each file in the folder is for | `init` | yes |
+| `.logast/decisions/messages.yaml` | optional message texts; kept in step with the code (entries kept, added, removed when done) | `scan`, `apply` | yes |
+| `.logast/decisions/metrics.yaml` | optional metric decisions, kept in step the same way | `scan`, `apply` | yes |
+| `.logast/decisions/traffic.yaml` | every entrypoint, with calls/day if you fill them in (judges log volume) | `init`, `traffic`, `apply` | yes |
+| `.logast/decisions/retry.yaml` | every `@Retryable` usage, to mark the ones that need settings of their own (resilience pack) | `scan`, `apply` | yes |
+| `.logast/baseline.json` | the findings CI accepts as known | `init --baseline`, `scan --update-baseline` | yes |
+| `.logast/classpath-*.txt` | the service's compile classpath, so logast understands types (Gradle runs once, nothing is compiled) | `init`, `classpath`; `apply` after a build-file change | no (machine-specific) |
+| `.logast/reports/orders.json` | the last scan's work orders, in full | `scan` | no |
+| `.logast/reports/coverage.txt` | every log call and what logast did with it: fixed, reported, ignored, skipped (with the reason) or checked ([details](#every-log-call-is-accounted-for)) | `scan`, `apply` (logging pack) | no |
+| `.logast/reports/steps/*.diff` | one diff per apply step, to review or drop a kind of change | `apply` | no |
+| `.logast/reports/apply-trace.txt` | what each apply round did and what its rescan found | `apply` | no |
+| `.logast/reports/queries.md` | dashboard and alert queries for the service | `queries` | no |
+| `.logast/reports/verify.json` | the last `verify` result | `verify` | no |
+
 A `.logast` from an earlier logast version (`fills.json`, `metrics.json`, `traffic.yaml`, `retry.yaml` and the reports
 at its top) is moved into this layout by the next command that reads it: `fills.json` and `metrics.json` become
 `decisions/messages.yaml` and `decisions/metrics.yaml` with the same entries, the rest moves as it is. One line says
@@ -106,8 +125,20 @@ SWA-d5b58b  low  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/shop
 ```
 
 - Narrow the list: `--rule`, `--pack`, `--severity high`, `--entrypoint "POST /orders"`, `--limit`.
-- Change the output: `--format human` (default in a terminal) `| compact` (default otherwise) `| summary | json | sarif | fills-template`.
-- CI: `--baseline`, `--update-baseline`, `--since <git ref>`, `--fail-on <severity>` (see the README's CI section).
+- Change the output: `--format human` (default in a terminal) `| compact` (default otherwise) `| summary | json | sarif | github | fills-template`.
+- CI: `--baseline`, `--update-baseline`, `--since <git ref>`, `--fail-on <severity>`, `--format github` (PR
+  annotations on any GitHub plan, [gradle-plugin.md](gradle-plugin.md#pr-annotations-without-code-scanning)).
+  Record the baseline once (`logast init --baseline` or `scan . --update-baseline`) and commit `.logast/baseline.json`;
+  against a baseline, a known finding that covers more places than when it was recorded (a second unlocked
+  `@Scheduled` job) counts as new. Exit codes:
+
+  | exit code | meaning |
+  |---|---|
+  | 0 | nothing at or above `--fail-on` |
+  | 2 | findings at or above `--fail-on` (also: an unknown `--rule`) |
+  | 3 | `--baseline` given, but no baseline file |
+  | 4 | `--fail-on` with an incomplete analysis (files that did not parse, no classpath): a broken analysis finds less and must not pass |
+
   The Gradle plugin runs the same scan and gate as `./gradlew logastScan` / `logastCheck`, and writes SARIF for PR
   annotations with `logastSarif` ([gradle-plugin.md](gradle-plugin.md)).
 - `scan` also creates and updates `.logast/decisions/messages.yaml` and `.logast/decisions/metrics.yaml`: it keeps every entry you already
