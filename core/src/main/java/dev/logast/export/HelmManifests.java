@@ -208,7 +208,7 @@ public final class HelmManifests {
     }
 
     /** {@code registry/repo:tag} → [registry/repo, tag]; a digest stays with the repository. */
-    static String[] splitImage(String image) {
+    public static String[] splitImage(String image) {
         int at = image.indexOf('@');
         String base = at >= 0 ? image.substring(0, at) : image;
         int slash = base.lastIndexOf('/');
