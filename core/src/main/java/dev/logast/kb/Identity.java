@@ -30,7 +30,8 @@ final class Identity {
     static final Header HEADER = Header.of("logast-identity", null, "derived", null);
 
     /** The links, and (as text) the workloads more than one service claims. */
-    static Map.Entry<List<Link>, List<String>> links(List<KnowledgeBase.Fact<Node>> nodes, Map<String, List<KnowledgeBase.Fact<Edge>>> out) {
+    static Map.Entry<List<Link>, List<String>> links(List<KnowledgeBase.Fact<Node>> nodes, Map<String, List<KnowledgeBase.Fact<Edge>>> out,
+                                                     Knowledge knowledge) {
         Map<String, Node> services = new LinkedHashMap<>();
         for (KnowledgeBase.Fact<Node> n : nodes) {
             if (n.fact().kind().equals("service")) {
@@ -56,6 +57,8 @@ final class Identity {
                 String rule = null;
                 if (built != null && images.contains(built)) {
                     rule = "image";
+                } else if (svc.equals(knowledge.serviceFor(name))) {
+                    rule = "alias";   // #163: knowledge.yml says the workload's name is another name of the service
                 } else if (name.equals(svc) || name.equals(s.attrs().get("application"))) {
                     rule = "name";
                 } else if (images.stream().anyMatch(i -> i.substring(i.lastIndexOf('/') + 1).equals(svc))) {
@@ -65,7 +68,7 @@ final class Identity {
                     byRule.computeIfAbsent(rule, k -> new ArrayList<>()).add(s.id());
                 }
             }
-            for (String rule : List.of("image", "name", "image-name")) {
+            for (String rule : List.of("image", "alias", "name", "image-name")) {
                 List<String> claim = byRule.get(rule);
                 if (claim == null) {
                     continue;
@@ -73,6 +76,7 @@ final class Identity {
                 if (claim.size() == 1) {
                     double confidence = switch (rule) {
                         case "image" -> 0.95;
+                        case "alias" -> 0.9;
                         case "name" -> 0.8;
                         default -> 0.7;
                     };

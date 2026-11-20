@@ -130,6 +130,10 @@ public final class McpServer {
                     new String[][]{{"id", "string", "the job id, e.g. job:shipping:nightly-export"},
                             {"env", "string", "the environment; default: every one"}, {"count", "integer", "how many (default 5)"},
                             {"zone", "string", "the time zone of the times shown (default UTC)"}}, new String[]{"id"}),
+            new Tool("term", "A business term from the company's glossary (knowledge.yml): its definition and source; an alias "
+                    + "or an abbreviation finds its term.", new String[][]{{"name", "string", "the term, alias or abbreviation"}}, new String[]{"name"}),
+            new Tool("read_name", "A technical name (a table, column, topic, key: ord_inv_ref, ordInvRef) as business words, through "
+                    + "the company's abbreviations and aliases.", new String[][]{{"name", "string", "the name"}}, new String[]{"name"}),
             new Tool("writers_of", "Who writes a table: every entrypoint (endpoint, listener, job) and service that writes it.",
                     new String[][]{{"table", "string", "schema.name, or a name (any schema)"}, {"limit", "integer", "default 100"}},
                     new String[]{"table"}),
@@ -181,6 +185,11 @@ public final class McpServer {
                     java.time.LocalDate.now(java.time.ZoneOffset.UTC));
             case "next_runs" -> Schedules.nextRuns(k, a.path("id").asText(), a.path("env").asText(null), a.path("count").asInt(5),
                     a.path("zone").asText(null), java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC));
+            case "term" -> k.knowledge().term(a.path("name").asText());
+            case "read_name" -> {
+                String r = k.knowledge().read(a.path("name").asText());
+                yield r == null ? "\"" + a.path("name").asText() + "\": no abbreviation or alias in it is known" : r;
+            }
             case "writers_of" -> k.tableAccess(a.path("table").asText(), true, a.path("limit").asInt(100));
             case "readers_of" -> k.tableAccess(a.path("table").asText(), false, a.path("limit").asInt(100));
             default -> throw new IllegalArgumentException("unknown tool: " + name);
