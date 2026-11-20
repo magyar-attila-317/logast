@@ -8,7 +8,9 @@ git clone https://github.com/magyar-attila-317/logast.git && cd logast
 logast --version
 ```
 
-**From a release zip:** `./install.sh --zip logast-<version>.zip`, or unzip it anywhere and put its `bin/` on `PATH`.
+**From a release:** download `logast-<version>.zip` from the [releases page](https://github.com/magyar-attila-317/logast/releases),
+unzip it anywhere and put its `bin/` on `PATH` (or, from a checkout, `./install.sh --zip logast-<version>.zip`). How
+releases are made: [releasing.md](releasing.md).
 
 **With Gradle:** once `install.sh` has set up Gradle, `./gradlew logastApply` works in any Java build, with no edit to
 the build ([gradle-plugin.md](gradle-plugin.md)).

@@ -49,6 +49,10 @@ on real services; the background is in issue #7.
   pushing (`gh run watch`) and fix a red build first.
 - Don't filter build output so much that compile errors disappear.
 
+## Releases
+- Release at the end of a milestone, not after every change: `scripts/release.sh <x.y.z>` on a clean, pushed, green
+  main ([docs/releasing.md](docs/releasing.md)).
+
 ## How to investigate
 - Measure before redesigning: `.logast/apply-trace.txt` shows what each apply round did and what its rescan brought up;
   `LOGAST_TIMING=1` prints scan times; `logast explain mdc <key>` explains MDC placement.
