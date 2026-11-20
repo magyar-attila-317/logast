@@ -66,7 +66,7 @@ val functionalTestTask = tasks.register<Test>("functionalTest") {
     useJUnitPlatform()
     dependsOn(":fixtures:sample-app:writeClasspath", initScript)
     // the init-script tests resolve the plugin from a repository, as a machine with install.sh does from Maven Local
-    dependsOn(":core:publishAllPublicationsToLogastTestRepository", ":cli:publishAllPublicationsToLogastTestRepository",
+    dependsOn(":facts:publishAllPublicationsToLogastTestRepository", ":core:publishAllPublicationsToLogastTestRepository", ":cli:publishAllPublicationsToLogastTestRepository",
         "publishAllPublicationsToLogastTestRepository")
     systemProperty("logast.initScript", layout.buildDirectory.file("init-script/logast.gradle").get().asFile.absolutePath)
     inputs.files(initScript)   // a changed init script reruns the tests (the path above is only a string)

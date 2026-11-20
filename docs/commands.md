@@ -507,6 +507,7 @@ Not in `--help`, for the cases they name; `apply`, `init` and `fleet` do the usu
 | `logast vocabulary --central <dir> <svc>…` | one vocabulary across services: every key with its evidence in `<dir>/vocabulary-worksheet.yaml` (decide there: `term`, `same_as`, `local`), your decisions kept, decided terms published to `<dir>/company.yaml` ([vocabulary.md](vocabulary.md#one-vocabulary-across-services)). In a named fleet, `logast fleet <name> --vocabulary` does the same without paths ([fleet.md](fleet.md#the-fleets-vocabulary)) |
 | `logast vocabulary --prune <svc>…` | removes from logast.yaml the vocabulary entries an extended company.yaml now defines in full; `scan` names them (a named fleet: [fleet.md](fleet.md)) |
 | `logast shape <svc>` | exports the code with its own names and words replaced, to send a reproduction ([below](#shape)) |
+| `logast facts validate <file>…` | checks facts files (the format `logast export` and other extractors write) and names each broken line as `file:line` ([facts.md](facts.md)) |
 
 ### Old names
 
