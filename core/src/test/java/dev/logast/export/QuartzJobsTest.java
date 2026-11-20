@@ -339,4 +339,100 @@ class QuartzJobsTest {
                         "\"cron\":\"0 10 10 ? * * *\"", "\"region\":\"south\"", "shop.jobs.stock-enrichment.triggers[1].cron");
         assertThat(jobs).filteredOn(l -> l.contains("StockImportJob")).singleElement().asString().doesNotContain("cron");
     }
+
+    /**
+     * #198: the cron followed back from the code that sets it: a CronTriggerFactoryBean's {@code setCronExpression} of a
+     * trigger chosen by name from a {@code @ConfigurationProperties} list, its job from the {@code setJobDetail} bean's
+     * {@code setJobClass}; the configuration names the job nowhere.
+     */
+    @Test
+    void theCronIsFollowedBackFromTheCodeThatSetsIt() throws IOException {
+        Path root = tmp.resolve("parcels");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        write(root, "ParcelSyncJob", """
+                package com.example.jobs;
+
+                import org.quartz.Job;
+                import org.quartz.JobExecutionContext;
+
+                public class ParcelSyncJob implements Job {
+                    @Override
+                    public void execute(JobExecutionContext context) {
+                    }
+                }
+                """);
+        write(root, "ParcelJobConfig", """
+                package com.example.jobs;
+
+                import java.util.List;
+                import org.quartz.JobDetail;
+                import org.springframework.boot.context.properties.ConfigurationProperties;
+                import org.springframework.scheduling.quartz.CronTriggerFactoryBean;
+                import org.springframework.scheduling.quartz.JobDetailFactoryBean;
+
+                public class ParcelJobConfig {
+                    private static final String NIGHT_TRIGGER = "Sync_Night";
+                    private final SyncProperties syncProperties;
+
+                    ParcelJobConfig(SyncProperties syncProperties) {
+                        this.syncProperties = syncProperties;
+                    }
+
+                    public JobDetailFactoryBean syncJobDetail() {
+                        JobDetailFactoryBean f = new JobDetailFactoryBean();
+                        f.setJobClass(ParcelSyncJob.class);
+                        return f;
+                    }
+
+                    public CronTriggerFactoryBean nightTrigger(final JobDetail syncJobDetail) {
+                        JobTrigger jobTrigger = syncProperties.getTriggers().stream().filter(t -> t.getName().equals(NIGHT_TRIGGER))
+                                .findAny().orElseThrow();
+                        CronTriggerFactoryBean t = new CronTriggerFactoryBean();
+                        t.setJobDetail(syncJobDetail);
+                        t.setCronExpression(jobTrigger.getCron());
+                        return t;
+                    }
+
+                    @ConfigurationProperties("logistics.scheduling.sync")
+                    public static class SyncProperties {
+                        private List<JobTrigger> triggers;
+
+                        public List<JobTrigger> getTriggers() {
+                            return triggers;
+                        }
+                    }
+
+                    public static class JobTrigger {
+                        private String name;
+                        private String cron;
+
+                        public String getName() {
+                            return name;
+                        }
+
+                        public String getCron() {
+                            return cron;
+                        }
+                    }
+                }
+                """);
+        Path res = Files.createDirectories(root.resolve("src/main/resources"));
+        Files.writeString(res.resolve("application.yml"), """
+                logistics:
+                  scheduling:
+                    sync:
+                      triggers:
+                        - name: "Sync_Day"
+                          cron: "0 0 12 ? * MON-FRI"
+                        - name: "Sync_Night"
+                          cron: "0 30 1 ? * *"
+                """);
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "parcels", "test", out);
+        List<String> jobs = out.toString().lines().filter(l -> l.contains("\"kind\":\"job\"")).toList();
+        assertThat(jobs).as(out.toString()).singleElement().asString()
+                .as("the trigger the code picks by name, not the first one").contains("\"cron\":\"0 30 1 ? * *\"",
+                        "\"cronFrom\":\"logistics.scheduling.sync.triggers[1].cron\"").doesNotContain("0 0 12");
+    }
 }

@@ -471,6 +471,8 @@ public final class JavaExtractor implements Extractor {
         }
         Map<String, String> crons = quartzSchedules(jobs);
         enumJobs = enumJobs(jobs);   // #190: enum constants that carry a job's metadata
+        Map<String, List<Map<String, String>>> traced = tracedSchedules(jobs, root == null ? Map.of()
+                : dev.logast.SpringProperties.read(root));   // #198: from setCronExpression back to the configuration
         Map<String, Map<String, String>> fromConfig = configSchedules(jobs);   // #189: application.yml, per profile
         for (ClassInfo c : jobs.values()) {
             if (c.decl().hasModifier(J.Modifier.Type.Abstract)) {
@@ -487,6 +489,13 @@ public final class JavaExtractor implements Extractor {
             attrs.put("entrypoint", "quartz");
             attrs.put("handler", c.fqn());
             String cron = crons.get(c.fqn());
+            List<Map<String, String>> fromCode = traced.getOrDefault(c.fqn(), List.of());
+            if (!fromCode.isEmpty()) {   // #198: what the code schedules it with wins over names in the configuration
+                configTriggers.put(c.fqn(), new ArrayList<>(fromCode));
+                cron = fromCode.getFirst().get("cron");
+                attrs.put("cronFrom", fromCode.getFirst().get("from"));
+                crons.put(c.fqn(), cron);
+            }
             EnumJob ej = enumJobs.values().stream().filter(e -> e.job().equals(c.fqn())).findFirst().orElse(null);
             if (ej != null) {
                 attrs.put("enumConstant", ej.constant());
@@ -810,6 +819,230 @@ public final class JavaExtractor implements Extractor {
         }
         clashes.forEach(out::remove);
         return out;
+    }
+
+    // ---- #198: from what sets a job's cron back to where the cron comes from --------------------------------------
+
+    private static final Pattern SET_CRON = Pattern.compile("(?:setCronExpression|cronSchedule|cronScheduleNonvalidatedExpression)"
+            + "\\(\\s*((?:[^()]|\\([^()]*\\))+?)\\s*\\)");
+    private static final Pattern JOB_CLASS = Pattern.compile("(?:setJobClass|newJob|ofType)\\(\\s*([A-Z]\\w*)\\.class\\s*\\)");
+    private static final Pattern JOB_DETAIL = Pattern.compile("(?:setJobDetail|forJob)\\(\\s*([a-z]\\w*)\\s*\\)");
+    private static final Pattern GETTER_CHAIN = Pattern.compile("^([a-z]\\w*)((?:\\.(?:get)?\\w+\\(\\))+)$");
+    private static final Pattern CONFIG_PREFIX = Pattern.compile("@ConfigurationProperties\\(\\s*(?:(?:prefix|value)\\s*=\\s*)?\"([^\"]+)\"");
+
+    /**
+     * #198: job → its triggers, found from the code that schedules it: a {@code setCronExpression(x)} (or
+     * {@code cronSchedule(x)}) whose job is set beside it ({@code setJobDetail(bean)} → that bean's
+     * {@code setJobClass(X.class)}, or {@code newJob(X.class)}), with {@code x} followed back: a literal or constant, a
+     * {@code @Value} key, or getters on a {@code @ConfigurationProperties} object, through a list filtered by a name
+     * ({@code props.getTriggers().stream().filter(t -> t.getName().equals(NAME))}) to the configuration key and its value.
+     */
+    private Map<String, List<Map<String, String>>> tracedSchedules(Map<String, ClassInfo> jobs, Map<String, String> props) {
+        Map<String, List<Map<String, String>>> out = new LinkedHashMap<>();
+        Map<String, String> prefixes = new LinkedHashMap<>();   // a properties class's simple name → its prefix
+        for (ClassInfo c : a.index.classes()) {
+            String head = c.decl().getLeadingAnnotations().stream().map(an -> an.printTrimmed()).reduce("", (x, y) -> x + " " + y);
+            Matcher pm = CONFIG_PREFIX.matcher(head);
+            if (pm.find()) {
+                prefixes.put(c.simpleName(), pm.group(1));
+            }
+        }
+        Map<String, String> byNorm = new LinkedHashMap<>();
+        props.keySet().forEach(k -> byNorm.putIfAbsent(normKey(k), k));
+        for (MethodInfo m : a.index.methods()) {
+            String body = m.decl().getBody() == null ? "" : m.decl().getBody().printTrimmed();
+            if (!body.contains("setCronExpression") && !body.contains("cronSchedule")) {
+                continue;
+            }
+            ClassInfo job = triggerJob(body, jobs);
+            if (job == null) {
+                continue;
+            }
+            Matcher cm = SET_CRON.matcher(body);
+            while (cm.find()) {
+                for (Map<String, String> t : cronOrigin(m, body, cm.group(1).strip(), prefixes, props, byNorm)) {
+                    List<Map<String, String>> list = out.computeIfAbsent(job.fqn(), x -> new ArrayList<>());
+                    if (list.stream().noneMatch(o -> java.util.Objects.equals(o.get("from"), t.get("from")) && java.util.Objects.equals(o.get("cron"), t.get("cron")))) {
+                        list.add(t);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /** The job a trigger is for: a class literal in the method, or the bean its JobDetail parameter names. */
+    private ClassInfo triggerJob(String body, Map<String, ClassInfo> jobs) {
+        Matcher jc = JOB_CLASS.matcher(body);
+        while (jc.find()) {
+            ClassInfo j = jobBySimpleName(jobs, jc.group(1));
+            if (j != null) {
+                return j;
+            }
+        }
+        Matcher jd = JOB_DETAIL.matcher(body);
+        while (jd.find()) {
+            String bean = jd.group(1);
+            for (MethodInfo other : a.index.methods()) {
+                if (other.name().equals(bean) && other.decl().getBody() != null) {
+                    Matcher inner = JOB_CLASS.matcher(other.decl().getBody().printTrimmed());
+                    while (inner.find()) {
+                        ClassInfo j = jobBySimpleName(jobs, inner.group(1));
+                        if (j != null) {
+                            return j;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static ClassInfo jobBySimpleName(Map<String, ClassInfo> jobs, String simple) {
+        return jobs.values().stream().filter(j -> j.simpleName().equals(simple)).findFirst().orElse(null);
+    }
+
+    private static String normKey(String key) {
+        return key.toLowerCase(Locale.ROOT).replaceAll("[-_]", "");
+    }
+
+    /** Where a cron expression in code comes from: each {cron, from, name?} it can be. */
+    private List<Map<String, String>> cronOrigin(MethodInfo m, String body, String expr, Map<String, String> prefixes,
+                                                 Map<String, String> props, Map<String, String> byNorm) {
+        List<Map<String, String>> out = new ArrayList<>();
+        if (expr.startsWith("\"") && expr.endsWith("\"")) {
+            out.add(Map.of("cron", expr.substring(1, expr.length() - 1), "from", "code"));
+            return out;
+        }
+        if (expr.matches("[A-Z][A-Z0-9_]*|\\w+\\.[A-Z][A-Z0-9_]*")) {
+            String v = constant(m.owner(), expr);
+            if (v != null) {
+                out.add(Map.of("cron", v, "from", "constant " + expr));
+            }
+            return out;
+        }
+        Matcher g = GETTER_CHAIN.matcher(expr.replaceAll("\\s+", ""));
+        String var;
+        List<String> chain = new ArrayList<>();
+        if (g.matches()) {
+            var = g.group(1);
+            for (String part : g.group(2).split("\\.")) {
+                if (!part.isEmpty()) {
+                    chain.add(segment(part));
+                }
+            }
+        } else if (expr.matches("[a-z]\\w*")) {
+            var = expr;
+        } else {
+            return out;
+        }
+        // a @Value field or parameter: its key
+        Matcher val = Pattern.compile("@Value\\(\\s*\"\\$\\{([^}:]+)(?::[^}]*)?}\"\\s*\\)[^;,)]*\\b" + Pattern.quote(var) + "\\b")
+                .matcher(m.decl().printTrimmed() + "\n" + m.owner().decl().printTrimmed());
+        if (chain.isEmpty() && val.find()) {
+            String v = props.get(val.group(1).strip());
+            if (v != null) {
+                out.add(Map.of("cron", v, "from", val.group(1).strip()));
+            }
+            return out;
+        }
+        for (String[] base : bases(m, body, var, prefixes, props, byNorm)) {   // {key prefix, name or null}
+            String key = byNorm.get(normKey(base[0] + (chain.isEmpty() ? "" : "." + String.join(".", chain))));
+            if (key != null && props.get(key) != null) {
+                Map<String, String> t = new TreeMap<>();
+                t.put("cron", props.get(key).strip());
+                t.put("from", key);
+                if (base[1] != null) {
+                    t.put("name", base[1]);
+                }
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /** The configuration entries a variable stands for: {key, its name when chosen by name}. */
+    private List<String[]> bases(MethodInfo m, String body, String var, Map<String, String> prefixes, Map<String, String> props,
+                                 Map<String, String> byNorm) {
+        List<String[]> out = new ArrayList<>();
+        Matcher decl = Pattern.compile("\\b[\\w.<>]+\\s+" + Pattern.quote(var) + "\\s*=\\s*([^;]+);", Pattern.DOTALL).matcher(body);
+        if (decl.find()) {   // a local: from a list of the properties, perhaps filtered by a name
+            String init = decl.group(1).replaceAll("\\s+", "");
+            Matcher list = Pattern.compile("^([a-z]\\w*)((?:\\.(?:get)?\\w+\\(\\))+?)\\.stream\\(\\)").matcher(init);
+            if (list.find()) {
+                List<String> chain = new ArrayList<>();
+                for (String part : list.group(2).split("\\.")) {
+                    if (!part.isEmpty()) {
+                        chain.add(segment(part));
+                    }
+                }
+                for (String[] b : bases(m, body, list.group(1), prefixes, props, byNorm)) {
+                    String listKey = b[0] + "." + String.join(".", chain);
+                    Matcher f = Pattern.compile("\\.(?:get)?(\\w+)\\(\\)\\.equals\\(([^()]+)\\)").matcher(init);
+                    String field = null;
+                    String wanted = null;
+                    if (f.find()) {
+                        field = segment(f.group(1) + "()");
+                        String arg = f.group(2);
+                        wanted = arg.startsWith("\"") ? arg.substring(1, arg.length() - 1) : constant(m.owner(), arg);
+                    }
+                    for (int i = 0; i < 100; i++) {
+                        String element = listKey + "[" + i + "]";
+                        if (byNorm.keySet().stream().noneMatch(k -> k.startsWith(normKey(element) + "."))) {
+                            break;
+                        }
+                        String nameKey = field == null ? null : byNorm.get(normKey(element + "." + field));
+                        String name = nameKey == null ? null : props.get(nameKey);
+                        if (wanted == null || wanted.equals(name)) {
+                            out.add(new String[]{elementKey(byNorm, element), name});
+                        }
+                    }
+                }
+                return out;
+            }
+            Matcher chainInit = GETTER_CHAIN.matcher(init);
+            if (chainInit.matches()) {
+                List<String> chain = new ArrayList<>();
+                for (String part : chainInit.group(2).split("\\.")) {
+                    if (!part.isEmpty()) {
+                        chain.add(segment(part));
+                    }
+                }
+                for (String[] b : bases(m, body, chainInit.group(1), prefixes, props, byNorm)) {
+                    out.add(new String[]{b[0] + "." + String.join(".", chain), b[1]});
+                }
+                return out;
+            }
+        }
+        // a field or parameter of a @ConfigurationProperties type
+        String declared = m.decl().printTrimmed() + "\n" + m.owner().decl().printTrimmed();
+        Matcher typed = Pattern.compile("\\b([A-Z][\\w.]*)\\s+" + Pattern.quote(var) + "\\s*[;,)=]").matcher(declared);
+        while (typed.find()) {
+            String type = typed.group(1).substring(typed.group(1).lastIndexOf('.') + 1);
+            String prefix = prefixes.get(type);
+            if (prefix != null) {
+                out.add(new String[]{prefix, null});
+                return out;
+            }
+        }
+        return out;
+    }
+
+    /** The configuration's own spelling of an element key ({@code a.b[0]}), for the evidence. */
+    private static String elementKey(Map<String, String> byNorm, String element) {
+        String norm = normKey(element);
+        int parts = element.split("\\.").length;
+        return byNorm.entrySet().stream().filter(e -> e.getKey().startsWith(norm + ".")).findFirst()
+                .map(e -> String.join(".", java.util.Arrays.asList(e.getValue().split("\\.")).subList(0, parts))).orElse(element);
+    }
+
+    /** {@code getCron()} → {@code cron}, {@code retryPeriodInMs()} → {@code retryPeriodInMs}. */
+    private static String segment(String getter) {
+        String n = getter.replaceAll("\\(\\)$", "");
+        if (n.startsWith("get") && n.length() > 3 && Character.isUpperCase(n.charAt(3))) {
+            n = n.substring(3);
+        }
+        return Character.toLowerCase(n.charAt(0)) + n.substring(1);
     }
 
     /** #197: job → the triggers its configuration lists (base files). */
