@@ -26,7 +26,7 @@ import java.util.concurrent.Callable;
 /** #156: an MCP server over the facts of many repos (docs/mcp.md). */
 @Command(name = "mcp", hidden = true, description = "MCP server (stdio) that answers questions over facts files of many "
         + "repos: who writes a table, what an endpoint calls, which entrypoints run a profile (docs/mcp.md)",
-        subcommands = McpCmd.Config.class)
+        subcommands = {McpCmd.Config.class, McpCmd.ReviewPage.class})
 final class McpCmd implements Callable<Integer> {
     @Option(names = "--kb", description = "A facts file or a folder of them (repeatable; default: LOGAST_KB, else kb.paths "
             + "in ~/.config/logast/config.yaml)")
@@ -63,6 +63,44 @@ final class McpCmd implements Callable<Integer> {
                 args.add("--kb").add(p.toAbsolutePath().normalize().toString());
             }
             System.out.println(json.writeValueAsString(root));
+            return 0;
+        }
+    }
+
+    @Command(name = "review", description = "A local page to approve or reject inferred links and the LLM's proposals; "
+            + "decisions go to knowledge.decisions.yml (docs/mcp.md)")
+    static final class ReviewPage implements Callable<Integer> {
+        @Option(names = "--kb", description = "Facts files or folders (default: LOGAST_KB, else kb.paths)")
+        List<Path> kb = new ArrayList<>();
+        @Option(names = "--by", description = "Who decides (default: the user name)")
+        String by;
+        @Option(names = "--port", defaultValue = "0", description = "Port (0 = any free port)")
+        int port;
+        @Option(names = "--open", description = "Open the page in the default browser")
+        boolean open;
+
+        @Override
+        public Integer call() throws Exception {
+            KbPaths.Resolved r = KbPaths.resolve(kb, FleetHome.Env.current());
+            if (r.paths().isEmpty()) {
+                Out.warn("no facts: give --kb <folder>, or set LOGAST_KB or kb.paths");
+                return 2;
+            }
+            Path proposed = dev.logast.kb.Proposals.file(r.paths());
+            Path decisions = proposed.resolveSibling(dev.logast.kb.KbReview.FILE);
+            dev.logast.kb.KbReview page = new dev.logast.kb.KbReview(() -> KnowledgeBase.load(KnowledgeBase.factFiles(r.paths())), decisions,
+                    proposed, by != null ? by : System.getProperty("user.name"));
+            String url = page.start(port);
+            System.out.println("review: " + url + "  (decisions go to " + decisions + "; Ctrl+C ends)");
+            if (open) {
+                String os = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT);
+                try {
+                    new ProcessBuilder(os.contains("mac") ? new String[]{"open", url} : new String[]{"xdg-open", url}).start();
+                } catch (IOException e) {
+                    System.out.println("could not open a browser; open the URL above");
+                }
+            }
+            Thread.currentThread().join();
             return 0;
         }
     }
