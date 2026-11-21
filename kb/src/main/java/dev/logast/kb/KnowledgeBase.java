@@ -111,7 +111,9 @@ public final class KnowledgeBase {
             out.computeIfAbsent(fe.fact().from(), k -> new ArrayList<>()).add(fe);
             in.computeIfAbsent(fe.fact().to(), k -> new ArrayList<>()).add(fe);
         }
-        for (Lineage.Derived d : Lineage.derive(this)) {   // #164: HTTP calls → endpoints, schema-less table names
+        List<Lineage.Derived> derived = new ArrayList<>(Lineage.derive(this));   // #164: HTTP calls → endpoints, schema-less table names
+        derived.addAll(WorkflowChains.derive(this));   // #214: a workflow's script effects, resolved for each caller
+        for (Lineage.Derived d : derived) {
             Fact<Edge> fe = new Fact<>(d.edge(), d.basis().header(), d.basis().file());
             edges.add(fe);
             out.computeIfAbsent(fe.fact().from(), k -> new ArrayList<>()).add(fe);

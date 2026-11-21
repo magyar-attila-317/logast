@@ -38,11 +38,26 @@ final class ShellCommands {
         List<Command> out = new ArrayList<>();
         List<String> lines = logicalLines(text);
         Map<String, String> clonedInto = new LinkedHashMap<>();   // a clone's folder → the repo
+        Map<String, String> vars = new LinkedHashMap<>();   // the script's own assignments, expanded where used
         String cwdRepo = null;
         for (int i = 0; i < lines.size(); i++) {
             String raw = lines.get(i);
             int lineNo = lineOf(text, raw);
-            for (List<String> t : commands(raw)) {
+            for (List<String> t0 : commands(raw)) {
+                List<String> t = new ArrayList<>(t0);
+                if (!t.isEmpty() && t.getFirst().equals("export")) {
+                    t.removeFirst();
+                }
+                if (!t.isEmpty() && t.stream().allMatch(w -> ASSIGN.matcher(w).matches())) {
+                    for (String w : t) {
+                        Matcher a = ASSIGN.matcher(w);
+                        if (a.matches()) {
+                            vars.put(a.group(1), expand(a.group(2), vars));
+                        }
+                    }
+                    continue;
+                }
+                t.replaceAll(w -> expand(w, vars));
                 String part = String.join(" ", t);
                 String cmd = t.getFirst().replaceFirst("^.*/", "");
                 if (cmd.equals("cd") && t.size() > 1) {
@@ -326,6 +341,25 @@ final class ShellCommands {
     }
 
     private static final String OP = "\u0000";
+    private static final Pattern ASSIGN = Pattern.compile("^([A-Za-z_][A-Za-z0-9_]*)=(.*)$");
+    /** {@code $NAME}, {@code ${NAME}}, {@code $1}; not {@code ${{ … }}} (GitHub's). */
+    static final Pattern VAR = Pattern.compile("\\$(?:\\{([A-Za-z_][A-Za-z0-9_]*|[0-9])}|([A-Za-z_][A-Za-z0-9_]*|[0-9]))");
+
+    /** The variables of {@code vars} replaced in {@code s}; others kept as written. */
+    static String expand(String s, Map<String, String> vars) {
+        if (s.indexOf('$') < 0 || vars.isEmpty()) {
+            return s;
+        }
+        Matcher m = VAR.matcher(s);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            String name = m.group(1) != null ? m.group(1) : m.group(2);
+            String v = vars.get(name);
+            m.appendReplacement(sb, Matcher.quoteReplacement(v != null ? v : m.group()));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
 
     /** A line's commands: its words split at {@code &&}, {@code ||}, {@code ;} and {@code |} outside quotes. */
     static List<List<String>> commands(String line) {

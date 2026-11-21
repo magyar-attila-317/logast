@@ -226,10 +226,10 @@ class WorkflowExtractorTest {
                 "workflow:org/gitops/.github/workflows/deploy-service.yml -runs-> script:org/gitops/scripts/bump.sh "
                         + "{args=[${{ inputs.service }}, ${{ inputs.tag }}], env={GH_TOKEN=${{ secrets.K8S_TOKEN }}, VALUES=charts/services/values-prod.yaml}, job=bump}",
                 "script:org/gitops/scripts/bump.sh -clones-> repo:org/k8s {}",
-                "script:org/gitops/scripts/bump.sh -writes-> file:org/k8s/$VALUES {expression=.services.${SERVICE}.image.tag = \"${TAG}\", key=.services.${SERVICE}.image.tag, via=yq}",
-                "script:org/gitops/scripts/bump.sh -writes-> file:org/k8s/charts/services/Chart.yaml {expression=s/^appVersion:.*/appVersion: ${TAG}/, via=sed}",
+                "script:org/gitops/scripts/bump.sh -writes-> file:org/k8s/$VALUES {expression=.services.$1.image.tag = \"$2\", key=.services.$1.image.tag, via=yq}",
+                "script:org/gitops/scripts/bump.sh -writes-> file:org/k8s/charts/services/Chart.yaml {expression=s/^appVersion:.*/appVersion: $2/, via=sed}",
                 "script:org/gitops/scripts/bump.sh -pushes-> repo:org/k8s {}",
-                "script:org/gitops/scripts/bump.sh -installs-> helm-release:$SERVICE {chart=./charts/services, namespace=apps, set={image.tag=$TAG}, values=[values-prod.yaml]}");
+                "script:org/gitops/scripts/bump.sh -installs-> helm-release:$1 {chart=./charts/services, namespace=apps, set={image.tag=$2}, values=[values-prod.yaml]}");
         assertThat(got).as("a token in a URL is not a fact").noneMatch(l -> l.contains("x-access-token"));
     }
 }

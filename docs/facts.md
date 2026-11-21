@@ -235,7 +235,13 @@ these) (#167):
   `file:<owner/name>/<path>` (in the cloned repo when the path or the current folder is in it) with `via`,
   `expression` and, for `yq`, the `key` it sets; `helm upgrade --install <release> <chart>` `installs`
   `helm-release:<release>` (`chart`, `namespace`, `set`, `values`); `kubectl apply -f <file>` `applies` the file.
-  Variables stay as written (`.services.${SERVICE}.image.tag`, `file:org/k8s/$VALUES`); other commands are not read.
+  A script's own assignments are used (`SERVICE="$1"` makes `.services.$1.image.tag`); other variables stay as
+  written (`file:org/k8s/$VALUES`); other commands are not read.
+- The chain resolved (#214): the knowledge base follows a script's `$1`/`$NAME` to the `args`/`env` of the step that
+  runs it, then `${{ inputs.x }}` / `${{ github.event.client_payload.x }}` to each caller of the workflow (a call's
+  `with:`, a dispatch's inputs or payload). The caller gets the effect, inferred (`via: workflow-chain`, `through` the
+  workflow and script): `workflow:org/orders/…/release.yml -writes-> file:org/k8s/charts/services/values-prod.yaml
+  {key: .services.orders-api.image.tag}`. So `neighbors` of a values file shows which service's release writes it.
 - `logast mcp`'s `workflow_refs` lists, per reusable workflow, the refs its callers use.
 
 ## Self-hosted runners (Ansible)
