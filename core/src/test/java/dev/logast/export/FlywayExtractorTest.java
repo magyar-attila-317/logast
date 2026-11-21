@@ -113,6 +113,21 @@ class FlywayExtractorTest {
                         "table:orchestration.job_definition -has-> row:orchestration.job_definition:month-end [prod]");
     }
 
+    /** #215: a table the migrations fill with a few rows gives them unasked; a bigger one only when asked. */
+    @Test
+    void seededReferenceRowsComeWithoutBeingAsked() throws IOException {
+        Path root = service("spring:\n  flyway:\n    placeholders:\n      schema: orchestration\n      batch_size: \"100\"\n");
+        Files.writeString(root.resolve("src/main/resources/db/migration/common/V3__events.sql"),
+                "insert into audit_event (kind) select 'tick' from generate_series(1, " + (FlywayExtractor.SEED_ROWS + 1) + ");\n");
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("scheduler", List.of(), null);
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.node("row:orchestration.job_definition:settlement", "dev")).as("a few rows: reference data").isNotNull();
+        assertThat(c.nodes).as("more than " + FlywayExtractor.SEED_ROWS + " rows: only when asked")
+                .noneMatch(n -> n.id().startsWith("row:public.audit_event"));
+    }
+
     @Test
     void anEnvironmentWhoseMigrationsFailIsReportedAndTheOthersStillCount() throws IOException {
         Path root = service("spring:\n  flyway:\n    placeholders:\n      schema: orchestration\n");   // no batch_size outside prod

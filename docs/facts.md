@@ -143,8 +143,9 @@ migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes w
   (`application-<env>.yml`) over the base config. A placeholder with no value runs with its own name; a placeholder
   used as a schema (`${schema}.jobs`) gets that schema created first.
 - **Facts**: `table:<schema>.<name>` per environment (`env`), with its `columns`, the migration's `create table` line
-  as evidence; with `--rows`, each row of those tables as `row:<schema>.<table>:<primary key>` (else `#<position>`),
-  its columns as attributes: a scheduler's job definitions, for example.
+  as evidence; each row as `row:<schema>.<table>:<primary key>` (else `#<position>`), its columns as attributes, of
+  the tables the migrations fill with a few rows (up to 50: reference data, a scheduler's definitions; #215) and of
+  the tables asked for with `--rows` (or `rows:` in a fleet's `repos.yaml`), whatever their size.
 - **Migrations from libraries** (#181): a `classpath:` location is looked up on the service's classpath too, as Flyway
   scans it at runtime: class folders, and jars by their entries under that path, so a library that ships migrations
   in its jar runs with the service's own; its tables cite `<jar>!/<entry>`.

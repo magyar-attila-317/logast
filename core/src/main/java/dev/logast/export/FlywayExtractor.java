@@ -672,7 +672,7 @@ public final class FlywayExtractor implements Extractor {
                 Node n = new Node("table:" + table, "table", run.env(), attrs, at);
                 out.node(n);
                 out.edge(Edge.extracted("service:" + service, "has", n.id(), null, at).inEnv(run.env()));
-                if (rowTables.contains(table) || rowTables.contains(table.substring(table.indexOf('.') + 1))) {
+                if (rowTables.contains(table) || rowTables.contains(table.substring(table.indexOf('.') + 1)) || seeded(c, table)) {
                     rows(c, table, run.env(), at, out);
                 }
             }
@@ -696,6 +696,19 @@ public final class FlywayExtractor implements Extractor {
             }
         }
         return out;
+    }
+
+    /** #215: a table the migrations fill with a few rows (reference data) gives them without being asked. */
+    static final int SEED_ROWS = 50;
+
+    private static boolean seeded(Connection c, String table) throws SQLException {
+        String[] st = table.split("\\.", 2);
+        try (Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("select count(*) from (select 1 from \"" + st[0].replace("\"", "\"\"") + "\".\""
+                     + st[1].replace("\"", "\"\"") + "\" limit " + (SEED_ROWS + 1) + ") x")) {
+            long n = rs.next() ? rs.getLong(1) : 0;
+            return n > 0 && n <= SEED_ROWS;
+        }
     }
 
     /** The rows of a table as {@code row:<table>:<key>} nodes: the primary key's values, else the row's position. */
