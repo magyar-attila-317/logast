@@ -89,6 +89,58 @@ final class Identity {
         return Map.entry(links, ambiguous);
     }
 
+    /**
+     * #211: a workload that starts a service with a profile active ({@code SPRING_PROFILES_ACTIVE}) runs that service's job
+     * for the profile ({@code job:<svc>:<profile>}, a startup entrypoint). The service is the one the workload is
+     * linked to; when it is linked to none, the only service with a job for that profile.
+     */
+    static List<Map.Entry<Edge, KnowledgeBase.Fact<Node>>> profileRuns(List<KnowledgeBase.Fact<Node>> nodes, List<Link> links) {
+        Map<String, List<String>> jobsByProfile = new HashMap<>();
+        java.util.Set<String> jobIds = new java.util.HashSet<>();
+        for (KnowledgeBase.Fact<Node> n : nodes) {
+            Node j = n.fact();
+            if (j.kind().equals("job") && "startup".equals(j.attrs().get("entrypoint")) && j.attrs().get("profile") != null) {
+                jobsByProfile.computeIfAbsent(String.valueOf(j.attrs().get("profile")), k -> new ArrayList<>()).add(j.id());
+                jobIds.add(j.id());
+            }
+        }
+        List<Map.Entry<Edge, KnowledgeBase.Fact<Node>>> out = new ArrayList<>();
+        if (jobIds.isEmpty()) {
+            return out;
+        }
+        for (KnowledgeBase.Fact<Node> w : nodes) {
+            Node wn = w.fact();
+            boolean workload = wn.kind().equals("deployment") || wn.kind().equals("job") && "cronjob".equals(wn.attrs().get("entrypoint"));
+            if (!workload || !(wn.attrs().get("env") instanceof Map<?, ?> env) || env.get("SPRING_PROFILES_ACTIVE") == null) {
+                continue;
+            }
+            List<String> services = links.stream().filter(l -> l.workload().equals(wn.id()) && Objects.equals(l.env(), wn.env()))
+                    .map(Link::service).distinct().toList();
+            java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+            for (String profile : String.valueOf(env.get("SPRING_PROFILES_ACTIVE")).split("\\s*,\\s*")) {
+                String job = null;
+                String via;
+                double confidence;
+                if (services.size() == 1) {
+                    String candidate = "job:" + services.getFirst().substring("service:".length()) + ":" + profile.strip();
+                    job = jobIds.contains(candidate) ? candidate : null;
+                    via = "identity:profile";
+                    confidence = 0.9;
+                } else {
+                    List<String> byName = jobsByProfile.getOrDefault(profile.strip(), List.of());
+                    job = services.isEmpty() && byName.size() == 1 ? byName.getFirst() : null;
+                    via = "identity:profile-name";
+                    confidence = 0.7;
+                }
+                if (job != null && seen.add(job)) {
+                    out.add(Map.entry(new Edge(wn.id(), "runs", job, wn.env(), Map.of("profile", profile.strip()), Provenance.INFERRED,
+                            confidence, via, null, wn.evidence()), w));
+                }
+            }
+        }
+        return out;
+    }
+
     static Edge edge(Link l) {
         return new Edge(l.service(), "deployed-as", l.workload(), l.env(), Map.of(), Provenance.INFERRED, l.confidence(),
                 "identity:" + l.via(), null, l.workloadFact().fact().evidence());

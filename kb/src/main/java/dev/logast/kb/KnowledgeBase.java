@@ -101,6 +101,16 @@ public final class KnowledgeBase {
             in.computeIfAbsent(fe.fact().to(), k -> new ArrayList<>()).add(fe);
         }
         ambiguous.addAll(r.getValue());
+        for (var pr : Identity.profileRuns(nodes(), r.getKey())) {   // #211: the workload that starts a profile's job
+            Edge edge = decide(pr.getKey(), pr.getValue().header());
+            if (edge == null) {
+                continue;
+            }
+            Fact<Edge> fe = new Fact<>(edge, pr.getValue().header(), pr.getValue().file());
+            edges.add(fe);
+            out.computeIfAbsent(fe.fact().from(), k -> new ArrayList<>()).add(fe);
+            in.computeIfAbsent(fe.fact().to(), k -> new ArrayList<>()).add(fe);
+        }
         for (Lineage.Derived d : Lineage.derive(this)) {   // #164: HTTP calls → endpoints, schema-less table names
             Fact<Edge> fe = new Fact<>(d.edge(), d.basis().header(), d.basis().file());
             edges.add(fe);

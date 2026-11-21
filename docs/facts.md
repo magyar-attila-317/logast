@@ -334,6 +334,9 @@ abstract job class, an interface) gives `job:<svc>:<profile>` for each, with `en
 `handler`, the bean's class as `implementation` and `profile`. Its reads, writes and calls are what that class's own
 methods reach (the listener keeps all of them). `@Profile` values are read from constants too
 (`@Profile(JobNames.INVOICES)`). Profiles that name an environment (`local`, `dev`, `test`, `prod`, …) are not jobs.
+A workload that starts the service with that profile active (a CronJob or Deployment whose `SPRING_PROFILES_ACTIVE`
+lists it, e.g. `ppe,invoiceJob`) `runs` the job, inferred: through the service the workload is linked to
+(`identity:profile`), else when only one service has a job for that profile (`identity:profile-name`).
 
 ## No secrets in facts
 

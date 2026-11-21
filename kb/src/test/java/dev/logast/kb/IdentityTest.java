@@ -50,4 +50,28 @@ class IdentityTest {
         assertThat(kb.summary()).contains("4 deployments linked", "not linked, more than one service fits");
         assertThat(kb.path("service:orders", "image:registry.example.com/shop/orders-api", 4)).contains("-deployed-as->", "-deploys->");
     }
+
+    /** #211: a CronJob that starts the service with a job's profile active runs that job. */
+    @Test
+    void aWorkloadRunsTheJobOfTheProfileItActivates() throws IOException {
+        Files.writeString(tmp.resolve("code.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"java","repo":"billing"}}
+                {"node":{"id":"service:billing","kind":"service","evidence":{"file":"build.gradle.kts"}}}
+                {"node":{"id":"job:billing:invoiceJob","kind":"job","attrs":{"entrypoint":"startup","profile":"invoiceJob"},"evidence":{"file":"InvoiceJob.java"}}}
+                {"node":{"id":"job:billing:reminderJob","kind":"job","attrs":{"entrypoint":"startup","profile":"reminderJob"},"evidence":{"file":"ReminderJob.java"}}}
+                """);
+        Files.writeString(tmp.resolve("deploy.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"helm","repo":"deploy"}}
+                {"node":{"id":"job:platform:billing-invoicejob","kind":"job","env":"prod","attrs":{"entrypoint":"cronjob","schedule":"0 1 * * *","env":{"SPRING_PROFILES_ACTIVE":"prod,invoiceJob"}},"evidence":{"file":"charts/billing/templates/job.yaml"}}}
+                {"edge":{"from":"job:platform:billing-invoicejob","kind":"deploys","to":"image:registry.example.com/shop/billing","env":"prod","provenance":"extracted","evidence":{"file":"charts/billing/templates/job.yaml"}}}
+                {"node":{"id":"job:platform:reminders","kind":"job","env":"prod","attrs":{"entrypoint":"cronjob","schedule":"0 2 * * *","env":{"SPRING_PROFILES_ACTIVE":"prod, reminderJob"}},"evidence":{"file":"charts/other/templates/job.yaml"}}}
+                {"node":{"id":"job:platform:warmup","kind":"job","env":"prod","attrs":{"entrypoint":"cronjob","schedule":"0 3 * * *","env":{"SPRING_PROFILES_ACTIVE":"prod"}},"evidence":{"file":"charts/other/templates/warmup.yaml"}}}
+                """);
+        KnowledgeBase kb = KnowledgeBase.load(List.of(tmp));
+        assertThat(kb.neighbors("job:billing:invoiceJob", "in", List.of("runs"), 10)).as("through the service the CronJob is linked to")
+                .contains("job:platform:billing-invoicejob -runs-> {profile=invoiceJob} [prod] [inferred via identity:profile]");
+        assertThat(kb.neighbors("job:billing:reminderJob", "in", List.of("runs"), 10)).as("not linked: the one service with that profile")
+                .contains("job:platform:reminders -runs-> {profile=reminderJob} [prod] [inferred via identity:profile-name]");
+        assertThat(kb.neighbors("job:platform:warmup", "out", List.of("runs"), 10)).as("an environment profile only").doesNotContain("-runs->");
+    }
 }
