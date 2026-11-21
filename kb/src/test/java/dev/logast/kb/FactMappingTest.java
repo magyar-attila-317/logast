@@ -221,4 +221,19 @@ class FactMappingTest {
                       - {id: "team:{owner | shout}", kind: team}
                 """))).hasMessageContaining("unknown filter 'shout'");
     }
+
+    /** #215: a mapping says which tables' rows it needs; a fleet exports them. */
+    @Test
+    void aMappingSaysTheRowsItNeeds() throws IOException {
+        FactMapping m = FactMapping.parse(new ObjectMapper(new YAMLFactory()).readTree("""
+                needs:
+                  rows: [sched.pipeline, sched.step]
+                mappings:
+                  - name: steps
+                    match: {kind: row}
+                    nodes:
+                      - {id: "team:{owner}", kind: team}
+                """));
+        assertThat(m.neededRows()).containsExactly("sched.pipeline", "sched.step");
+    }
 }

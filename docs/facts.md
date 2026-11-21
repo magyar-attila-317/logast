@@ -312,6 +312,8 @@ Read top to bottom: take every pipeline row; for each entry of `actions.jobs`, f
 
 ### Reference
 
+- **`needs`** (top level, beside `mappings`): `{rows: [schema.table, …]}`: the tables whose rows the mapping reads; a
+  fleet run with `--flyway` exports them (else it says to add `--flyway`, or `rows:` to the repo in `repos.yaml`).
 - **`match`**: `kind`, `idPrefix` (at least one), and `where`: attribute → a value (equal, as text) or conditions
   `{not: x}`, `{in: [a, b]}`, `{regex: p}` (found anywhere), `{contains: s}`, `{exists: true|false}`; all must hold.
   `_id`, `_kind`, `_env` can be tested too.

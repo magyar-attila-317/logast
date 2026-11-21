@@ -143,9 +143,15 @@ public final class FactMapping {
     }
 
     private final List<Rule> rules;
+    private List<String> neededRows = List.of();
 
     private FactMapping(List<Rule> rules) {
         this.rules = rules;
+    }
+
+    /** #215: the tables whose rows the mapping needs ({@code needs: {rows: [schema.table]}}): a fleet exports them. */
+    public List<String> neededRows() {
+        return neededRows;
     }
 
     public static FactMapping load(Path file) throws IOException {
@@ -191,7 +197,11 @@ public final class FactMapping {
         if (rules.isEmpty()) {
             throw new IllegalArgumentException("no mappings: the file needs a 'mappings:' list");
         }
-        return new FactMapping(rules);
+        FactMapping fm = new FactMapping(rules);
+        List<String> rows = new ArrayList<>();
+        root.path("needs").path("rows").forEach(t -> rows.add(t.asText().strip()));
+        fm.neededRows = List.copyOf(rows);
+        return fm;
     }
 
     /** Applies every rule to the knowledge base's nodes; the new facts go to {@code out}. */

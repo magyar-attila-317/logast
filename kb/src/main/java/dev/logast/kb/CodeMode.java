@@ -82,6 +82,10 @@ public final class CodeMode {
         Map<String, Set<String>> edgeKinds = new TreeMap<>();
         kb.allEdges().forEach(e -> edgeKinds.computeIfAbsent(e.fact().kind(), x -> new TreeSet<>()));
         sb.append("\n// Edge kinds: ").append(String.join(", ", edgeKinds.keySet()));
+        sb.append("\n// What runs: job (attrs.entrypoint: scheduled, quartz, startup = one per profile a container starts with, "
+                + "cronjob, pipeline), listener (messages, events), endpoint (HTTP). Raw values to join on: property "
+                + "(a configuration key: value, byProfile), constant, enum-constant (values), row (a table's row). "
+                + "Filter and count in the program; return small results.");   // #215, #201
         sb.append("\n// Attributes seen per kind").append(kind == null || kind.isBlank() ? "" : " (" + kind + ")").append(":");
         Map<String, Set<String>> attrs = new TreeMap<>();
         for (var f : kb.nodes()) {

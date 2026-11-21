@@ -41,4 +41,13 @@ class FleetRepoRowsTest {
         assertThat(f.flywayOptions("scheduler").rows()).containsExactly("shared.lookup", "scheduling.pipeline");
         assertThat(f.flywayOptions("orders").rows()).containsExactly("shared.lookup");
     }
+
+    /** #215: the rows the fleet's mappings need, from kb/mappings. */
+    @Test
+    void theFleetsMappingsSayWhichRowsTheyNeed() throws IOException {
+        Path maps = Files.createDirectories(tmp.resolve("kb/mappings"));
+        Files.writeString(maps.resolve("a.yaml"), "needs: {rows: [sched.pipeline]}\nmappings:\n  - {name: a, match: {kind: row}, nodes: [{id: \"team:{x}\", kind: team}]}\n");
+        Files.writeString(maps.resolve("b.yml"), "needs: {rows: [sched.pipeline, ref.country]}\nmappings:\n  - {name: b, match: {kind: row}, nodes: [{id: \"team:{x}\", kind: team}]}\n");
+        assertThat(Fleet.neededRows(tmp.resolve("kb"))).containsExactly("sched.pipeline", "ref.country");
+    }
 }

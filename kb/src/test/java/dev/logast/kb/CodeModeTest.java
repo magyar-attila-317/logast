@@ -40,6 +40,8 @@ class CodeModeTest {
         String api = CodeMode.api(kb(), null);
         assertThat(api).contains("declare function nodes(kind: string", "declare function runs(", "Loaded now: 2 repos; ",
                 "2 job", "Edge kinds: reads, writes", "job: cron, entrypoint, zone", "// Examples");
+        assertThat(api).as("#215: which kinds run, which are raw values").contains("startup = one per profile",
+                "Raw values to join on: property", "Filter and count in the program");
     }
 
     @Test

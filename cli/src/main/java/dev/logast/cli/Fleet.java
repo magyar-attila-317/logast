@@ -301,6 +301,31 @@ final class Fleet implements Callable<Integer> {
     /** #205: the tables the members' migrations create, for the migrations of others that need them (stand-ins). */
     private volatile Map<String, List<String>> tablesMade = Map.of();
 
+    /** #215: the tables the fleet's mappings ({@code kb/mappings/*.yaml}) need the rows of ({@code needs: {rows: […]}}). */
+    static List<String> neededRows(Path kb) {
+        List<String> out = new java.util.ArrayList<>();
+        Path dir = kb.resolve("mappings");
+        if (!Files.isDirectory(dir)) {
+            return out;
+        }
+        try (var s = Files.list(dir)) {
+            for (Path f : s.filter(p -> p.getFileName().toString().matches(".*\\.ya?ml")).sorted().toList()) {
+                try {
+                    dev.logast.kb.FactMapping.load(f).neededRows().forEach(t -> {
+                        if (!out.contains(t)) {
+                            out.add(t);
+                        }
+                    });
+                } catch (IOException | IllegalArgumentException e) {
+                    // a broken mapping is reported when the mappings are applied
+                }
+            }
+        } catch (IOException e) {
+            return out;
+        }
+        return out;
+    }
+
     /** #216: the rows each repo of repos.yaml asks for ({@code rows:}): repo name → tables. */
     Map<String, List<String>> repoRows = Map.of();
 
@@ -561,6 +586,14 @@ final class Fleet implements Callable<Integer> {
             }
         }
         repoRows = asked;
+        for (String t : neededRows(dir.resolve("kb"))) {   // #215: what the fleet's mappings say they need
+            if (!rows.contains(t)) {
+                rows.add(t);
+            }
+        }
+        if (kb && !flyway && rows.size() > 0 && asked.isEmpty()) {
+            Out.warn("fleet: the mappings need rows of " + rows + ": add --flyway, or rows: to the repo that seeds them in repos.yaml");
+        }
 
         List<FleetRepos.Repo> repos = refresh ? FleetRepos.list(dir) : List.of();
         if (log != null) {
