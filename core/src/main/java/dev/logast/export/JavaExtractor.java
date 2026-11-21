@@ -49,6 +49,8 @@ public final class JavaExtractor implements Extractor {
     private final Analysis a;
     private final ScanResult scan;
     private final List<Path> classpath;
+    /** #211: a job a startup entrypoint runs when a profile is active, to the keys of the methods its class reaches. */
+    private final Map<String, Set<String>> profileJobs = new LinkedHashMap<>();
 
     public JavaExtractor(Analysis a, ScanResult scan, List<Path> classpath) {
         this.a = a;
@@ -172,7 +174,122 @@ public final class JavaExtractor implements Extractor {
             }
         }
         quartz(svc, service, sink, ids);
+        startupJobs(svc, service, sink);
         return ids;
+    }
+
+    /** Profiles that name an environment, not a job: beans chosen by them are not #211 jobs. */
+    private static final Set<String> ENVIRONMENTS = Set.of("default", "local", "dev", "development", "test", "testing", "it",
+            "integration", "qa", "uat", "stage", "staging", "preprod", "prod", "production", "docker", "k8s", "kubernetes", "cloud");
+    private static final Set<String> STARTUP_EVENTS = Set.of("ApplicationReadyEvent", "ApplicationStartedEvent", "ContextRefreshedEvent");
+
+    /** An entrypoint that runs once when the application starts: a runner, or a listener of a startup event. */
+    private static boolean startup(Entrypoint ep) {
+        return ep.kind() == Entrypoint.Kind.BATCH
+                || ep.kind() == Entrypoint.Kind.EVENT && STARTUP_EVENTS.stream().anyMatch(e -> ep.label().contains(e));
+    }
+
+    /**
+     * #211: a service whose startup code runs one of several {@code @Profile} beans of a common type (one job per
+     * container start, the active profile choosing it): each profile is a job, with what its bean's own methods reach.
+     */
+    private void startupJobs(String svc, String service, Sorted sink) {
+        for (Entrypoint ep : a.entrypoints) {
+            if (!startup(ep)) {
+                continue;
+            }
+            Set<String> reached = a.paths.reachableFrom(ep);
+            Map<String, List<ClassInfo>> byType = new TreeMap<>();
+            for (ClassInfo c : a.index.classes()) {
+                if (c.isInterface() || profiles(c).isEmpty()
+                        || a.index.methodsOf(c.fqn()).stream().noneMatch(m -> reached.contains(m.key()))) {
+                    continue;
+                }
+                for (ClassInfo sup : a.index.sourceSupertypes(c)) {
+                    byType.computeIfAbsent(sup.fqn(), k -> new ArrayList<>()).add(c);
+                }
+            }
+            for (List<ClassInfo> impls : byType.values()) {
+                if (impls.size() < 2) {
+                    continue;
+                }
+                for (ClassInfo c : impls) {
+                    Set<String> keys = reach(a.index.methodsOf(c.fqn()));
+                    for (String p : profiles(c)) {
+                        if (p.startsWith("!") || ENVIRONMENTS.contains(p.toLowerCase(Locale.ROOT))) {
+                            continue;
+                        }
+                        String id = "job:" + svc + ":" + p;
+                        if (profileJobs.containsKey(id)) {
+                            profileJobs.get(id).addAll(keys);
+                            continue;
+                        }
+                        Map<String, Object> attrs = base("startup", ep.method(), ep);
+                        attrs.put("profile", p);
+                        attrs.put("implementation", c.fqn());
+                        Evidence at = Evidence.at(c.file().relPath(), line(Pos.line(c.decl().getName())));
+                        sink.node(Node.of("job", svc + ":" + p, attrs, at));
+                        sink.edge(Edge.extracted(service, "has", "job:" + svc + ":" + p, null, at));
+                        sink.edge(Edge.extracted("job:" + svc + ":" + p, "active-with", "profile:" + svc + ":" + p, null, at));
+                        profileJobs.put(id, new LinkedHashSet<>(keys));
+                    }
+                }
+            }
+        }
+    }
+
+    /** The keys of the methods reachable from {@code from} (themselves included) through the call graph. */
+    private Set<String> reach(List<MethodInfo> from) {
+        Set<String> seen = new LinkedHashSet<>();
+        java.util.ArrayDeque<MethodInfo> todo = new java.util.ArrayDeque<>(from);
+        while (!todo.isEmpty()) {
+            MethodInfo m = todo.pop();
+            if (seen.add(m.key())) {
+                a.graph.out(m).forEach(e -> todo.push(e.to()));
+            }
+        }
+        return seen;
+    }
+
+    /** The entrypoints (and #211 profile jobs) whose runs reach {@code m}. */
+    private Set<String> reachers(MethodInfo m, Map<MethodInfo, List<String>> entryIds) {
+        Set<String> from = new LinkedHashSet<>(entryIds.getOrDefault(m, List.of()));
+        for (Entrypoint ep : a.paths.entrypointsReaching(m)) {
+            from.addAll(entryIds.getOrDefault(ep.method(), List.of()));
+        }
+        profileJobs.forEach((id, keys) -> {
+            if (keys.contains(m.key())) {
+                from.add(id);
+            }
+        });
+        return from;
+    }
+
+    /** A class's {@code @Profile} values: literals and constants (#211: {@code @Profile(Constants.NIGHTLY)}). */
+    private List<String> profiles(ClassInfo c) {
+        List<String> out = new ArrayList<>();
+        for (J.Annotation an : c.decl().getLeadingAnnotations()) {
+            if (Annotations.is(an, "org.springframework.context.annotation.Profile")) {
+                out.addAll(profileValues(an));
+            }
+        }
+        return out;
+    }
+
+    private List<String> profileValues(J.Annotation an) {
+        List<String> out = new ArrayList<>();
+        for (org.openrewrite.java.tree.Expression arg : an.getArguments() == null ? List.<org.openrewrite.java.tree.Expression>of() : an.getArguments()) {
+            org.openrewrite.java.tree.Expression v = arg instanceof J.Assignment as ? as.getAssignment() : arg;
+            List<org.openrewrite.java.tree.Expression> items = v instanceof J.NewArray na && na.getInitializer() != null
+                    ? na.getInitializer() : List.of(v);
+            for (org.openrewrite.java.tree.Expression e : items) {
+                String str = dev.logast.graph.Constants.concatenated(a.index, e);
+                if (str != null) {
+                    out.add(str);
+                }
+            }
+        }
+        return out.isEmpty() ? strings(an) : out;
     }
 
     private static Map<String, Object> base(String kind, MethodInfo m, Entrypoint ep) {
@@ -279,13 +396,7 @@ public final class JavaExtractor implements Extractor {
                 edgeAttrs.put("traceBreaks", c.breaks().what());
             }
             MethodInfo m = byLabel.get(c.file() + "#" + c.method());
-            Set<String> from = new LinkedHashSet<>();
-            if (m != null) {
-                from.addAll(entryIds.getOrDefault(m, List.of()));
-                for (Entrypoint ep : a.paths.entrypointsReaching(m)) {
-                    from.addAll(entryIds.getOrDefault(ep.method(), List.of()));
-                }
-            }
+            Set<String> from = m == null ? new LinkedHashSet<>() : reachers(m, entryIds);
             if (from.isEmpty()) {   // no entrypoint reaches it (startup code, an unresolved caller): the service makes it
                 Map<String, Object> e2 = new TreeMap<>(edgeAttrs);
                 e2.put("reached", false);
@@ -307,7 +418,7 @@ public final class JavaExtractor implements Extractor {
             int profileLine = -1;
             for (J.Annotation an : c.decl().getLeadingAnnotations()) {
                 if (Annotations.is(an, "org.springframework.context.annotation.Profile")) {
-                    profiles.addAll(strings(an));
+                    profiles.addAll(profileValues(an));
                     profileLine = Pos.line(an);
                 }
             }
@@ -351,10 +462,7 @@ public final class JavaExtractor implements Extractor {
             if (!profiles.isEmpty()) {   // which entrypoints run this profile's bean: profile → bean → the code that runs
                 Set<String> runs = new LinkedHashSet<>();
                 for (MethodInfo m : a.index.methodsOf(c.fqn())) {
-                    runs.addAll(entryIds.getOrDefault(m, List.of()));
-                    for (Entrypoint ep : a.paths.entrypointsReaching(m)) {
-                        runs.addAll(entryIds.getOrDefault(ep.method(), List.of()));
-                    }
+                    runs.addAll(reachers(m, entryIds));
                 }
                 runs.forEach(r -> sink.edge(Edge.extracted(r, "runs", bean, null, classAt)));
             }
@@ -409,10 +517,7 @@ public final class JavaExtractor implements Extractor {
                 sink.node(sql);
                 to = sql.id();
             }
-            Set<String> from = new LinkedHashSet<>(entryIds.getOrDefault(x.method(), List.of()));
-            for (Entrypoint ep : a.paths.entrypointsReaching(x.method())) {
-                from.addAll(entryIds.getOrDefault(ep.method(), List.of()));
-            }
+            Set<String> from = reachers(x.method(), entryIds);
             if (from.isEmpty()) {
                 attrs.put("reached", false);
                 sink.edge(Edge.extracted(service, kind, to, attrs, at));
@@ -432,10 +537,7 @@ public final class JavaExtractor implements Extractor {
             attrs.put("via", x.via());
             String to = "file-location:" + x.location();
             String kind = x.write() ? "writes" : "reads";
-            Set<String> from = new LinkedHashSet<>(entryIds.getOrDefault(x.method(), List.of()));
-            for (Entrypoint ep : a.paths.entrypointsReaching(x.method())) {
-                from.addAll(entryIds.getOrDefault(ep.method(), List.of()));
-            }
+            Set<String> from = reachers(x.method(), entryIds);
             if (from.isEmpty()) {
                 attrs.put("reached", false);
                 sink.edge(Edge.extracted(service, kind, to, attrs, at));

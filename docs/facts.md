@@ -325,6 +325,16 @@ name a job (`CLEANUP(CleanupJob.class, …)`, or the job's name), or the one con
 `cleanup`, `clean-up`, as Spring binds them) gives its cron, else a cron among the constant's arguments does. Jobs whose schedule lives in database rows link through a mapping on the row's class name
 (`handler`).
 
+## Jobs chosen by a profile at startup
+
+A service that runs one job per start, chosen by the active profile (#211), has a job per profile: a startup
+entrypoint (a listener of `ApplicationReadyEvent`, `ApplicationStartedEvent` or `ContextRefreshedEvent`, a
+`CommandLineRunner`/`ApplicationRunner`) that reaches two or more `@Profile` beans of a common type of the repo (an
+abstract job class, an interface) gives `job:<svc>:<profile>` for each, with `entrypoint: startup`, the listener as
+`handler`, the bean's class as `implementation` and `profile`. Its reads, writes and calls are what that class's own
+methods reach (the listener keeps all of them). `@Profile` values are read from constants too
+(`@Profile(JobNames.INVOICES)`). Profiles that name an environment (`local`, `dev`, `test`, `prod`, …) are not jobs.
+
 ## No secrets in facts
 
 Facts are committed (the fleet's `kb/`) and read by an LLM, so they never carry a secret (#183). Where a literal value
