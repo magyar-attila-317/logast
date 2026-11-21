@@ -648,4 +648,52 @@ class QuartzJobsTest {
         // the code's to say (TracedSchedulesTest follows it), not the shape of the keys
         assertThat(jobs).as(out.toString()).noneMatch(l -> l.contains("\"position\"") || l.contains("\"runsAfter\""));
     }
+
+    /** #220: what a job does through the services it calls is the job's: its writes and calls, not only its own method's. */
+    @Test
+    void aJobsEffectsThroughItsServicesAreItsOwn() throws IOException {
+        Path root = tmp.resolve("billing");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        write(root, "InvoiceSender", """
+                package com.example.jobs;
+
+                import org.springframework.jdbc.core.JdbcTemplate;
+
+                public class InvoiceSender {
+                    private final JdbcTemplate jdbc;
+
+                    public InvoiceSender(JdbcTemplate jdbc) {
+                        this.jdbc = jdbc;
+                    }
+
+                    public void sendAll() {
+                        mark();
+                    }
+
+                    private void mark() {
+                        jdbc.update("update billing.invoice_message set state = 'SENT'");
+                    }
+                }
+                """);
+        write(root, "DailyReportJob", """
+                package com.example.jobs;
+
+                import org.quartz.Job;
+                import org.quartz.JobExecutionContext;
+
+                public class DailyReportJob implements Job {
+                    private InvoiceSender sender;
+
+                    @Override
+                    public void execute(JobExecutionContext context) {
+                        sender.sendAll();
+                    }
+                }
+                """);
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "billing", "test", out);
+        assertThat(out.toString().lines().filter(l -> l.contains("\"from\":\"job:billing:com.example.jobs.DailyReportJob\"")
+                && l.contains("\"kind\":\"writes\"") && l.contains("invoice_message"))).as(out.toString()).isNotEmpty();
+    }
 }

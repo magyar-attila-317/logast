@@ -49,7 +49,7 @@ public final class JavaExtractor implements Extractor {
     private final Analysis a;
     private final ScanResult scan;
     private final List<Path> classpath;
-    /** #211: a job a startup entrypoint runs when a profile is active, to the keys of the methods its class reaches. */
+    /** A job the call graph has no entrypoint for (#211: a profile's startup job; #220: a Quartz job), to the keys of the methods it reaches. */
     private final Map<String, Set<String>> profileJobs = new LinkedHashMap<>();
 
     public JavaExtractor(Analysis a, ScanResult scan, List<Path> classpath) {
@@ -799,6 +799,9 @@ public final class JavaExtractor implements Extractor {
             for (MethodInfo m : entry) {
                 ids.computeIfAbsent(m, k -> new ArrayList<>()).add(n.id());
             }
+            // #220: what the job reaches through the code it calls (a service, a repository), not only its own method:
+            // Quartz jobs are no entrypoint of the call graph, so their reach is followed here, as #211's jobs'
+            profileJobs.computeIfAbsent(n.id(), k -> new LinkedHashSet<>()).addAll(reach(entry));
             }
         }
     }
