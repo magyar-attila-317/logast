@@ -68,6 +68,7 @@ public final class CodeMode {
                 /** Nodes whose id or attributes contain a text (case-insensitive), optionally of one kind */
                 declare function find(text: string, kind?: string): Node[];
                 /** The times a job runs on a day ("monday", "today", "2026-11-23") in an environment, in a zone (default UTC) */
+                /** "≥ 01:00 … after X": a later step of a chain starts after the job before it ends, not at the clock time */
                 declare function runs(jobId: string, day: string, env?: string, zone?: string): string[];
                 /** How a job is scheduled: each cron (and trigger), or what runs it, or "not known: …". An empty runs() is not
                     "never": check schedule() for the jobs it returns nothing for, and say which schedules are not known. */
@@ -327,7 +328,7 @@ public final class CodeMode {
             }
             for (Schedules.Schedule s : own) {
                 if (s.cron() != null) {
-                    s.cron().on(day, s.zone(zone)).forEach(t -> out.add(t.withZoneSameInstant(zone).toLocalTime() + s.triggerLabel()));
+                    s.cron().on(day, s.zone(zone)).forEach(t -> out.add(s.at(String.valueOf(t.withZoneSameInstant(zone).toLocalTime())) + s.triggerLabel()));
                 } else if (s.every() != null) {
                     out.add(s.every());
                 }

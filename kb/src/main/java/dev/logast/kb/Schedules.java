@@ -28,18 +28,24 @@ public final class Schedules {
     }
 
     /** A job's schedule: a cron, an interval, or why there is none usable. */
-    record Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem, String trigger, String zoneOfTrigger) {
+    /** @param after #219: in a chain, the job it starts after: the cron is when the chain starts, not this job */
+    record Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem, String trigger, String zoneOfTrigger, String after) {
         Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem) {
-            this(job, cron, every, problem, null, null);
+            this(job, cron, every, problem, null, null, null);
         }
 
         Schedule(KnowledgeBase.Fact<Node> job, Cron cron, String every, String problem, String trigger) {
-            this(job, cron, every, problem, trigger, null);
+            this(job, cron, every, problem, trigger, null, null);
         }
 
-        /** " · <trigger>" when the job has several. */
+        /** " · <trigger>" when the job has several; in a chain, after which job. */
         String triggerLabel() {
-            return trigger == null ? "" : " · " + trigger;
+            return (trigger == null ? "" : " · " + trigger) + (after == null ? "" : ", after " + after + " (the chain starts then)");
+        }
+
+        /** #219: a time of this schedule as it reads: a later step of a chain runs then at the earliest. */
+        String at(String time) {
+            return after == null ? time : "≥ " + time;
         }
 
         ZoneId zone(ZoneId fallback) {
@@ -65,7 +71,8 @@ public final class Schedules {
                 String expr = String.valueOf(m.get("cron"));
                 String label = m.get("name") != null ? String.valueOf(m.get("name")) : expr;
                 try {
-                    out.add(new Schedule(job, Cron.parse(expr, format), null, null, label, m.get("zone") == null ? null : String.valueOf(m.get("zone"))));
+                    out.add(new Schedule(job, Cron.parse(expr, format), null, null, label, m.get("zone") == null ? null : String.valueOf(m.get("zone")),
+                            m.get("runsAfter") == null ? null : String.valueOf(m.get("runsAfter"))));
                 } catch (IllegalArgumentException e) {
                     out.add(new Schedule(job, null, null, e.getMessage(), label));
                 }
@@ -219,7 +226,7 @@ public final class Schedules {
                 List<ZonedDateTime> times = s.cron().on(day, z);
                 if (!times.isEmpty()) {
                     List<String> shown = times.stream().limit(6).map(t -> t.withZoneSameInstant(zone).format(TIME)).toList();
-                    hits.add(new Hit("- " + shown.getFirst() + "  " + label + "  " + s.cron().expression()
+                    hits.add(new Hit("- " + s.at(shown.getFirst()) + "  " + label + "  " + s.cron().expression()
                             + (times.size() > 1 ? "  (" + times.size() + " runs: " + String.join(", ", shown) + (times.size() > 6 ? ", …" : "") + ")" : "")
                             + (z.equals(zone) ? "" : "  [" + z + "]") + src, times.getFirst(), f.fact().id()));
                     ran.add(f.fact().id());
@@ -324,7 +331,7 @@ public final class Schedules {
                 ZoneId z = s.zone(zone);
                 sb.append(s.cron().expression()).append(z.equals(zone) ? "" : " [" + z + "]").append('\n');
                 s.cron().next(now.withZoneSameInstant(z), count)
-                        .forEach(t -> sb.append("- ").append(t.withZoneSameInstant(zone).format(DateTimeFormatter.ofPattern("EEE yyyy-MM-dd HH:mm:ss", Locale.ROOT))).append('\n'));
+                        .forEach(t -> sb.append("- ").append(s.at(t.withZoneSameInstant(zone).format(DateTimeFormatter.ofPattern("EEE yyyy-MM-dd HH:mm:ss", Locale.ROOT)))).append('\n'));
             }
             }
         }

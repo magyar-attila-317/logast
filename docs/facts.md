@@ -371,7 +371,8 @@ job (its `JobDetail`'s job class, an enum constant's argument included) its `cro
 `name` and `group`. A chain: a global `JobListener` of the project is run as Quartz runs it after each job, with the
 trigger's `JobDataMap`; the job it triggers next (`triggerJob`, or `scheduleJob` of a trigger `forJob` it), with the
 data it passes on, is the next step (`chain`, `position`, `runsAfter`), with the values that data carries (a country,
-a delay). Lombok and Quartz need not be on the classpath. Job names listed under a configuration entry are no chain by
+a delay). A later step's times read "≥ 01:00 … after LoadJob" in `runs_on`, `next_runs` and code mode: it starts after
+the job before it ends, at the earliest when the chain starts (#219). Lombok and Quartz need not be on the classpath. Job names listed under a configuration entry are no chain by
 themselves: only code that runs them makes one.
 Its `execute` (or `executeInternal`; else the methods it overrides of its base class) is where its calls, reads and
 writes start, so `lineage`, `writers_of` and `readers_of` see them. Its `cron` is read where the code builds the schedule
