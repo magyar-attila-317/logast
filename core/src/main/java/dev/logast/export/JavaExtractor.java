@@ -98,6 +98,7 @@ public final class JavaExtractor implements Extractor {
         Map<MethodInfo, List<String>> entryIds = entrypoints(svc, service, surface, sink);
         calls(svc, service, surface, entryIds, sink);
         beans(svc, entryIds, sink);
+        properties(svc, sink);
         tables(svc, service, entryIds, sink);
         files(svc, service, entryIds, sink);
         libraries.forEach((ga, version) -> {
@@ -405,6 +406,68 @@ public final class JavaExtractor implements Extractor {
             for (String f : from) {
                 sink.edge(Edge.extracted(f, "calls", call.id(), edgeAttrs, at));
             }
+        }
+    }
+
+    // ---- #217: the configuration's values ------------------------------------------------------------------------------
+
+    /**
+     * #217: every key the service's configuration sets, as {@code property:<svc>:<key>} with its {@code value} (the base
+     * files') and {@code byProfile} (a profile's, where it differs): the raw material a team's mappings join on. A
+     * value that looks like a secret is never written (#183).
+     */
+    private void properties(String svc, Sorted sink) {
+        if (root == null) {
+            return;
+        }
+        Path resources = dev.logast.SpringProperties.appResources(root);
+        if (resources == null) {
+            return;
+        }
+        Map<String, String> base = a.springProperties;
+        Map<String, Map<String, String>> byProfile = new TreeMap<>();
+        for (String profile : profiles(root)) {
+            dev.logast.SpringProperties.forProfile(root, profile).forEach((k, v) -> {
+                if (!v.equals(base.get(k))) {
+                    byProfile.computeIfAbsent(k, x -> new TreeMap<>()).put(profile, dev.logast.facts.Secrets.clean(k, v));
+                }
+            });
+        }
+        java.util.Set<String> keys = new java.util.TreeSet<>(base.keySet());
+        keys.addAll(byProfile.keySet());
+        Map<String, String> fileOf = new java.util.HashMap<>();   // the file that sets each key (the last one wins)
+        List<Path> files = new ArrayList<>();
+        dev.logast.SpringProperties.FILES.forEach(n -> files.add(resources.resolve(n)));
+        for (String profile : profiles(root)) {
+            for (String ext : List.of("yml", "yaml", "properties")) {
+                files.add(resources.resolve("application-" + profile + "." + ext));
+                files.add(resources.resolve("config/application-" + profile + "." + ext));
+            }
+        }
+        for (Path f : files) {
+            if (Files.isRegularFile(f)) {
+                String rel = root.relativize(f).toString().replace('\\', '/');
+                boolean profileFile = f.getFileName().toString().startsWith("application-");
+                for (String k : dev.logast.SpringProperties.allKeys(f)) {
+                    if (profileFile) {
+                        fileOf.putIfAbsent(k, rel);
+                    } else {
+                        fileOf.put(k, rel);
+                    }
+                }
+            }
+        }
+        String folder = root.relativize(resources).toString().replace('\\', '/');
+        for (String k : keys) {
+            Evidence at = Evidence.at(fileOf.getOrDefault(k, folder), null);
+            Map<String, Object> attrs = new TreeMap<>();
+            if (base.get(k) != null) {
+                attrs.put("value", dev.logast.facts.Secrets.clean(k, base.get(k)));
+            }
+            if (byProfile.containsKey(k)) {
+                attrs.put("byProfile", byProfile.get(k));
+            }
+            sink.node(Node.of("property", svc + ":" + k, attrs, at));
         }
     }
 

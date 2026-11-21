@@ -361,6 +361,15 @@ name a job (`CLEANUP(CleanupJob.class, …)`, or the job's name), or the one con
 `cleanup`, `clean-up`, as Spring binds them) gives its cron, else a cron among the constant's arguments does. Jobs whose schedule lives in database rows link through a mapping on the row's class name
 (`handler`).
 
+## Configuration values
+
+Every key a service's configuration sets is `property:<svc>:<key>` (#217), as Spring flattens it
+(`batch.triggers.weekly-a.plans[0].chain[1].name`), with its `value` in the base files and `byProfile` where a
+profile's file (`application-<profile>.yml`, a document activated for it) sets another; the evidence names the file
+that sets it. A value that looks like a secret is never written (#183). These are the raw material for mappings
+(a team's own rules join on them), and the `uses-property` edges of `@Value` and `@ConfigurationProperties` beans now
+reach a node.
+
 ## Jobs chosen by a profile at startup
 
 A service that runs one job per start, chosen by the active profile (#211), has a job per profile: a startup

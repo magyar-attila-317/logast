@@ -403,4 +403,22 @@ class TracedSchedulesTest {
         assertThat(report).as("the next plan's chain, after the first plan's").contains("\"position\":\"3 of 3\"",
                 "\"runsAfter\":\"TotalsJob\"", "\"country\":\"IE\"");
     }
+
+    /** #217: the configuration's values are facts, a profile's where it differs; a secret never is. */
+    @Test
+    void configurationValuesAreFacts() throws IOException {
+        Path root = service(tmp);
+        Path res = root.resolve("src/main/resources");
+        Files.writeString(res.resolve("application.yml"), Files.readString(res.resolve("application.yml"))
+                + "spring.datasource.password: s3cr3t-value\n");
+        Files.writeString(res.resolve("application-prod.yml"), "batch.triggers.daily-b.cron: \"0 0 4 * * ?\"\n");
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "batch", "test", out);
+        String facts = out.toString();
+        assertThat(facts.lines().filter(l -> l.contains("\"id\":\"property:batch:batch.triggers.daily-b.cron\"")))
+                .singleElement().asString().contains("\"value\":\"0 30 2 * * ?\"", "\"byProfile\":{\"prod\":\"0 0 4 * * ?\"}",
+                        "\"file\":\"src/main/resources/application.yml\"");
+        assertThat(facts).contains("\"id\":\"property:batch:batch.triggers.weekly-a.plans[0].chain[1].delay-in-minutes\"")
+                .contains("\"id\":\"property:batch:spring.datasource.password\"").doesNotContain("s3cr3t-value");
+    }
 }
