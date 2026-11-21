@@ -218,7 +218,9 @@ final class KbExport {
                      FactWriter fw = new FactWriter(w, Header.of("mapping", McpCmd.build(), "mapped", null))) {
                     FactMapping.Stats st = m.apply(base, fw);
                     int n = st.written().values().stream().mapToInt(Integer::intValue).sum();
-                    lines.add("mapping " + name + ": " + n + " facts" + (st.skipped().isEmpty() ? "" : ", " + st.skipped() + " skipped for a missing value"));
+                    lines.add("mapping " + name + ": " + n + " facts");
+                    st.skipped().forEach((rule, k) -> lines.add("mapping " + name + ": rule " + rule + ": " + k + " skipped, e.g. "
+                            + st.skippedExample().get(rule) + " (logast facts map --explain <id> shows why)"));
                 }
             } catch (IllegalArgumentException e) {
                 lines.add("mapping " + name + ": " + e.getMessage());

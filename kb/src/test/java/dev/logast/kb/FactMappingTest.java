@@ -176,4 +176,49 @@ class FactMappingTest {
                 .contains("job:agenda:NightlyBilling", "job:platform:billing-invoicejob, run by job:agenda:NightlyBilling",
                         "job:billing:invoiceJob, run by job:platform:billing-invoicejob");
     }
+
+    /** #213: filters in templates, conditions in where (also a lookup's), and what --explain says about one node. */
+    @Test
+    void filtersConditionsAndExplain() throws IOException {
+        Files.writeString(tmp.resolve("rows.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"java+flyway","repo":"scheduler"}}
+                {"node":{"id":"row:sched.step:1","kind":"row","attrs":{"workload":"billing-svc-InvoiceJob","type":"K8S_JOB","owner":"Billing Team"},"evidence":{"file":"V1.sql"}}}
+                {"node":{"id":"row:sched.step:2","kind":"row","attrs":{"workload":"billing-svc-reminderjob","type":"HTTP"},"evidence":{"file":"V1.sql"}}}
+                {"node":{"id":"row:sched.step:3","kind":"row","attrs":{"workload":"orders-svc-exportjob","type":"K8S_JOB"},"evidence":{"file":"V1.sql"}}}
+                {"node":{"id":"job:billing:invoiceJob","kind":"job","attrs":{"entrypoint":"startup","profile":"invoiceJob"},"evidence":{"file":"InvoiceJob.java"}}}
+                {"node":{"id":"job:orders:exportJob","kind":"job","attrs":{"entrypoint":"quartz"},"evidence":{"file":"ExportJob.java"}}}
+                """);
+        FactMapping m = FactMapping.parse(new ObjectMapper(new YAMLFactory()).readTree("""
+                mappings:
+                  - name: steps
+                    match: {kind: row, idPrefix: "row:sched.step:", where: {type: {in: [K8S_JOB, CRON_JOB]}, workload: {regex: "-svc-"}}}
+                    lookup:
+                      - {as: job, kind: job, idSuffix: ":{workload | after:'-' | lower}", ignoreCase: true, where: {entrypoint: startup}}
+                    nodes:
+                      - {id: "team:{owner | lower | replace:' ':'-' | default:'unowned'}", kind: team}
+                    edges:
+                      - {from: "row:sched.step:{_id | after:':'}", kind: starts, to: "{job._id}"}
+                """));
+        Collect c = new Collect();
+        List<String> trace = new ArrayList<>();
+        FactMapping.Stats stats = m.apply(KnowledgeBase.load(List.of(tmp)), c, "row:sched.step:3", trace);
+        assertThat(c.nodes).extracting(Node::id).as("lower, replace, default").containsExactlyInAnyOrder("team:billing-team", "team:unowned");
+        assertThat(c.edges).extracting(e -> e.from() + " -> " + e.to()).as("after, lower; a lookup's where").containsExactly(
+                "row:sched.step:1 -> job:billing:invoiceJob");
+        assertThat(trace).as(String.join("\n", trace)).contains("rule steps: matched")
+                .anyMatch(l -> l.contains("lookup job by id ending :exportjob: nothing found"))
+                .anyMatch(l -> l.contains("{job._id}") && l.contains("skipped: {job._id} has no value; there are:"));
+        List<String> other = new ArrayList<>();
+        m.apply(KnowledgeBase.load(List.of(tmp)), new Collect(), "row:sched.step:2", other);
+        assertThat(other).singleElement().asString().isEqualTo("rule steps: not matched: where type (in [K8S_JOB, CRON_JOB]): is HTTP");
+        assertThat(stats.skippedExample().get("steps")).contains("has no value");
+
+        assertThatThrownBy(() -> FactMapping.parse(new ObjectMapper(new YAMLFactory()).readTree("""
+                mappings:
+                  - name: bad
+                    match: {kind: row}
+                    nodes:
+                      - {id: "team:{owner | shout}", kind: team}
+                """))).hasMessageContaining("unknown filter 'shout'");
+    }
 }

@@ -97,4 +97,45 @@ class FactsCliTest {
         assertThat(failed.exit()).isEqualTo(1);
         assertThat(failed.out()).contains(bad + ":2: id 'shipping' is not <kind>:<name>");
     }
+
+    /** #213: golden tests for mappings (--test, --update) and --explain for one node. */
+    @Test
+    void mappingsHaveGoldenTestsAndExplain() throws IOException {
+        Path maps = Files.createDirectories(tmp.resolve("mappings/tests"));
+        Path mapping = tmp.resolve("mappings/teams.yaml");
+        Files.writeString(mapping, """
+                mappings:
+                  - name: teams
+                    match: {kind: row, idPrefix: "row:owners:"}
+                    nodes:
+                      - {id: "team:{owner | lower}", kind: team}
+                """);
+        Files.writeString(maps.resolve("teams.input.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"test","repo":"test"}}
+                {"node":{"id":"row:owners:1","kind":"row","attrs":{"owner":"Billing"},"evidence":{"file":"V1.sql"}}}
+                {"node":{"id":"row:owners:2","kind":"row","attrs":{"team":"Orders"},"evidence":{"file":"V1.sql"}}}
+                """);
+        Run first = run("facts", "map", "--test", tmp.resolve("mappings").toString());
+        assertThat(first.exit()).as(first.out()).isEqualTo(1);
+        assertThat(first.out()).contains("✗ teams: no tests/teams.expected.jsonl (--update writes it)", "+ {\"node\":{\"id\":\"team:billing\"");
+        assertThat(run("facts", "map", "--test", tmp.resolve("mappings").toString(), "--update").exit()).isZero();
+        Run pass = run("facts", "map", "--test", tmp.resolve("mappings").toString());
+        assertThat(pass.exit()).as(pass.out()).isZero();
+        assertThat(pass.out()).contains("✓ teams: 1 facts as expected");
+        Files.writeString(mapping, Files.readString(mapping).replace("{owner | lower}", "{owner | upper}"));
+        Run fail = run("facts", "map", "--test", tmp.resolve("mappings").toString());
+        assertThat(fail.exit()).isEqualTo(1);
+        assertThat(fail.out()).contains("- {\"node\":{\"id\":\"team:billing\"", "+ {\"node\":{\"id\":\"team:BILLING\"");
+
+        var err = System.err;
+        ByteArrayOutputStream e = new ByteArrayOutputStream();
+        try {
+            System.setErr(new PrintStream(e, true, StandardCharsets.UTF_8));
+            run("facts", "map", "--mapping", mapping.toString(), maps.resolve("teams.input.jsonl").toString(), "--explain", "row:owners:2");
+        } finally {
+            System.setErr(err);
+        }
+        assertThat(e.toString(StandardCharsets.UTF_8)).contains("explain row:owners:2:", "rule teams: matched",
+                "skipped: {owner | upper} has no value; there are: _id, _kind, team");
+    }
 }

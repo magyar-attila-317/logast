@@ -255,45 +255,80 @@ hosts (#173): every host whose variables (inline, `group_vars`, `host_vars`, thr
 
 ## Company-specific facts: `logast facts map`
 
-Some knowledge is your company's own: a scheduler that keeps its job definitions in database rows, a convention for
-naming things. `logast facts map --mapping <file.yaml> <facts files or folders…> [--out file]` turns facts into more
-facts with rules from a mapping file, so that knowledge needs no code in logast and the file stays in your own repo
-(#158). For example, with the rows `export --flyway --rows` wrote:
+Some knowledge is your own team's: a scheduler that keeps its pipelines in database rows, a naming convention, which
+team owns what. It does not belong in logast's code: logast discovers what code and configuration state, generically,
+and your mappings join those facts the way only your team knows (#158, #215). A mapping file lives in your fleet's
+`kb/mappings/` (committed in your private fleet repo, never in logast's); `logast fleet … --kb` applies every one into
+`kb/mapped/`, and `logast mcp` loads the result with the rest.
+
+### How a rule works
+
+```
+match   → which facts to start from      (kind, idPrefix, where)
+each    → optional: once per item of a JSON list in a value   ({step.field}, {prev.field})
+lookup  → optional: other facts, by id or the end of an id    ({as.attribute}, {as._id})
+nodes / edges → what to write, as templates                   ({name | filter …})
+```
+
+An example: a scheduler's `pipeline` rows (made facts by `rows:` in `repos.yaml`, or `--rows`) list in a JSON column
+the Kubernetes jobs they start one after the other; each of those is a rendered CronJob (`job:<release>:<name>`) that
+starts a service's job (#211):
 
 ```yaml
 mappings:
-  - name: jobs
-    match: {kind: row, idPrefix: "row:orchestration.job_definition:", where: {enabled: "true"}}
+  - name: pipelines
+    match: {kind: row, idPrefix: "row:agenda.routine:", where: {run_mode: CRON}}
     nodes:
-      - {id: "job:{service}:{name}", kind: job, attrs: {schedule: "{cron}", scheduleFormat: unix}}
+      - {id: "job:agenda:{name}", kind: job, attrs: {schedule: "{run_spec}", scheduleFormat: spring, entrypoint: pipeline}}
+  - name: pipeline-steps
+    match: {kind: row, idPrefix: "row:agenda.routine:"}
+    each: {attr: actions, path: jobs, as: step}
+    lookup:
+      - {as: k8s, kind: job, idSuffix: ":{step.k8sName}"}
+      - {as: before, kind: job, idSuffix: ":{prev.k8sName}"}
     edges:
-      - {from: "service:{service}", kind: has, to: "job:{service}:{name}"}
-      - {from: "job:{service}:{name}", kind: runs, to: "profile:{service}:{profile}"}   # joins the @Profile bean
-  - name: pipeline
-    match: {kind: row, idPrefix: "row:orchestration.pipeline_step:"}
-    lookup:                                   # other nodes by id: their attributes as {as.attribute}
-      - {as: job, id: "row:orchestration.job_definition:{job_id}"}
-      - {as: next, id: "row:orchestration.job_definition:{next_job_id}"}
-    edges:
-      - {from: "job:{job.service}:{job.name}", kind: after, to: "job:{next.service}:{next.name}"}
+      - {from: "job:agenda:{name}", kind: runs, to: "{k8s._id}", attrs: {position: "{step._index} of {step._count}"}}
+      - {from: "{before._id}", kind: after, to: "{k8s._id}"}
 ```
 
-- **`match`**: a node `kind`, an `idPrefix`, and `where` (attribute equals a value, as text); at least a kind or a
-  prefix.
-- **Templates**: `{attribute}` of the matched node, `{as.attribute}` of a lookup, `{_id}`, `{_env}`, `{_kind}`. A
-  template with a placeholder that has no (non-blank) value is skipped and counted on stderr, never written
-  half-filled; a lookup finds the node of the same environment (or one for all).
-- **Mapped facts** keep the matched fact's environment and evidence (with its repo and commit made explicit), and say
-  which rule made them (`attrs.mappedBy`). Write them next to the other facts files; `logast mcp` loads them all.
+Read top to bottom: take every pipeline row; for each entry of `actions.jobs`, find the job whose id ends with
+`:<k8sName>`; write "the pipeline runs it" and "it runs after the one before".
 
-A rule can also go through a JSON list inside a column (#212): `each: {attr: actions, path: jobs, as: step}` runs
-the rule once per element of `actions.jobs`, with its fields as `{step.<field>}`, `{step._index}`, `{step._count}`,
-and the element before it as `{prev.<field>}` (nothing is written, and nothing reported, for the first one's
-`prev`). A lookup finds a node by the end of its id when the full id is not known: `{as: k8s, kind: job, idSuffix:
-":{step.k8sName}"}` (a workload whose id has its release in front). A row without environment matches nodes of every
-environment, and the facts are written once per environment found. A job without a schedule that a scheduled job
-`runs` (through the workloads it starts, up to four steps) gets that job's times in `next_runs`, and `runs_on` lists
-it below that job.
+### Writing one
+
+1. **Look at the facts you start from**: their ids and attributes are what you can use
+   (`grep '"row:agenda' kb/*/*.jsonl | head -3`, or `describe` through MCP).
+2. **Aim at ids logast already writes** (`service:<name>`, `job:<svc>:<name>`, `table:<schema>.<name>`,
+   `property:<svc>:<key>`), so your facts join the graph instead of making islands.
+3. **Try it**: `logast facts map --mapping kb/mappings/x.yaml kb/ --out /tmp/try.jsonl` prints each rule's facts and
+   skips (with the first skip's reason).
+4. **Ask why** for one fact: `--explain <id>` says, rule by rule, whether it matched (or which condition failed), its
+   `each` elements, each lookup's node (or nothing), each fact written or the placeholder that had no value and the
+   values there were.
+5. **Pin it with a test**: `kb/mappings/tests/<name>.input.jsonl` (a few hand-written facts, one per case) and
+   `logast facts map --test kb/mappings --update` writes `tests/<name>.expected.jsonl`; from then on
+   `logast facts map --test kb/mappings` says ✓, or ✗ with the facts missing (`-`) and new (`+`).
+
+### Reference
+
+- **`match`**: `kind`, `idPrefix` (at least one), and `where`: attribute → a value (equal, as text) or conditions
+  `{not: x}`, `{in: [a, b]}`, `{regex: p}` (found anywhere), `{contains: s}`, `{exists: true|false}`; all must hold.
+  `_id`, `_kind`, `_env` can be tested too.
+- **`each`**: `{attr, path, as}`: the JSON list at `path` (dotted) inside the attribute; `{as.<field>}`,
+  `{as._index}`, `{as._count}`, and `{prev.<field>}` of the element before (nothing written, nothing reported, for
+  the first one's `prev`).
+- **`lookup`**: `{as, id}` or `{as, kind, idSuffix}` (`ignoreCase: true` compares without case, `where:` filters the
+  nodes found, as above). A fact without environment matches nodes of every environment, and the facts are written
+  once per environment found; one with an environment, that one's (or one for all).
+- **Templates**: `{attribute}`, `{as.attribute}`, `{_id}`, `{_env}`, `{_kind}`, each with filters:
+  `lower`, `upper`, `trim`, `default:'x'` (when there is none), `replace:'a':'b'`, `regex:'p'` (the first group, else
+  the match; none when it does not match), `before:'s'` (before the first s), `after:'s'` (after the last s); e.g.
+  `{step.k8sName | after:'-' | lower}`. An unknown filter is an error when the file is read. A template with a
+  placeholder that has no (non-blank) value is skipped and counted, never written half-filled.
+- **Mapped facts** keep the matched fact's environment and evidence (repo and commit made explicit), and say which
+  rule made them (`attrs.mappedBy`).
+- **Schedules through mappings**: a job without a schedule that a scheduled job `runs` (through the workloads it
+  starts, up to four steps) gets that job's times in `next_runs`, and `runs_on` lists it below that job (#212).
 
 ## Your own facts
 
