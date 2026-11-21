@@ -95,4 +95,35 @@ class CodeModeTest {
         assertThat(answer.at("/result/content/0/text").asText()).isEqualTo("[\"job:billing:com.example.InvoiceJob\"]");
         assertThat(kb.nodeCount()).isPositive();
     }
+
+    /** #204: at fleet size (about 29k nodes, 3,000 jobs) the per-job lookups of a program stay well inside its limits. */
+    @Test
+    void aFleetSizedQueryStaysInsideItsLimits() throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("fleet"));
+        for (int r = 0; r < 150; r++) {
+            StringBuilder sb = new StringBuilder("{\"header\":{\"schema\":\"kb-facts/0\",\"extractor\":\"java\",\"repo\":\"s" + r + "\"}}\n");
+            for (int t = 0; t < 50; t++) {
+                sb.append("{\"node\":{\"id\":\"table:s").append(r).append(".t").append(t).append("\",\"kind\":\"table\",\"attrs\":{},\"evidence\":{\"file\":\"V1.sql\"}}}\n");
+            }
+            for (int e = 0; e < 120; e++) {
+                sb.append("{\"node\":{\"id\":\"endpoint:s").append(r).append(":GET /r").append(e).append("\",\"kind\":\"endpoint\",\"attrs\":{},\"evidence\":{\"file\":\"C.java\"}}}\n");
+            }
+            for (int j = 0; j < 20; j++) {
+                String id = "job:s" + r + ":Job" + j;
+                sb.append("{\"node\":{\"id\":\"").append(id).append("\",\"kind\":\"job\",\"attrs\":{\"cron\":\"0 ").append(j)
+                        .append(" 2 * * *\"},\"evidence\":{\"file\":\"Job.java\"}}}\n");
+                sb.append("{\"edge\":{\"from\":\"").append(id).append("\",\"kind\":\"writes\",\"to\":\"table:s").append(r).append(".t").append(j)
+                        .append("\",\"provenance\":\"extracted\",\"evidence\":{\"file\":\"Job.java\"}}}\n");
+            }
+            Files.writeString(dir.resolve("s" + r + ".jsonl"), sb);
+        }
+        KnowledgeBase kb = KnowledgeBase.load(List.of(dir));
+        assertThat(kb.nodeCount()).isGreaterThan(28_000);
+        CodeMode.Result r = CodeMode.run(kb, """
+                return nodes("job").filter(j => runs(j.id, "2026-11-23").length && node(j.id).length)
+                  .flatMap(j => out(j.id, "writes").map(w => w.to)).length;
+                """);
+        assertThat(r.error()).isNull();
+        assertThat(r.json()).isEqualTo("3000");
+    }
 }

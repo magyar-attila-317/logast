@@ -112,11 +112,27 @@ public final class CodeMode {
         return sb.toString();
     }
 
+    private static volatile Engine engine;
+
+    /** #204: one engine for the server's life: each query still gets its own context, but parsing and warm-up are shared. */
+    private static Engine engine() {
+        Engine e = engine;
+        if (e == null) {
+            synchronized (CodeMode.class) {
+                e = engine;
+                if (e == null) {
+                    e = Engine.newBuilder("js").option("engine.WarnInterpreterOnly", "false").build();
+                    engine = e;
+                }
+            }
+        }
+        return e;
+    }
+
     /** The program's result as JSON, or what went wrong with a hint (an error the agent can fix and run again). */
     public static Result run(KnowledgeBase kb, String code) {
         Set<String> kinds = kb.kindCounts().keySet();
-        try (Engine engine = Engine.newBuilder("js").option("engine.WarnInterpreterOnly", "false").build();
-             Context ctx = Context.newBuilder("js").engine(engine)
+        try (Context ctx = Context.newBuilder("js").engine(engine())
                      .allowHostAccess(HostAccess.NONE).allowHostClassLookup(c -> false).allowIO(IOAccess.NONE)
                      .allowCreateThread(false).allowCreateProcess(false).allowNativeAccess(false)
                      .allowPolyglotAccess(PolyglotAccess.NONE).allowEnvironmentAccess(org.graalvm.polyglot.EnvironmentAccess.NONE)
@@ -139,7 +155,13 @@ public final class CodeMode {
                     for (const g of ["Java", "Packages", "java", "javax", "com", "org", "edu", "net", "Polyglot", "load", "print"]) {
                       try { delete globalThis[g]; } catch (e) { globalThis[g] = undefined; }
                     }
-                    const nodes = (kind, where) => { const all = JSON.parse(__nodes(kind ?? "")); return where ? all.filter(where) : all; };
+                    const __byKind = new Map();   // each kind's nodes once per query
+                    const nodes = (kind, where) => {
+                      const k = kind ?? "";
+                      if (!__byKind.has(k)) __byKind.set(k, JSON.parse(__nodes(k)));
+                      const all = __byKind.get(k);
+                      return where ? all.filter(where) : all.slice();
+                    };
                     const node = id => JSON.parse(__node(id));
                     const out = (id, kind) => JSON.parse(__out(id, kind ?? ""));
                     const into = (id, kind) => JSON.parse(__into(id, kind ?? ""));
@@ -214,7 +236,7 @@ public final class CodeMode {
     }
 
     private static List<ObjectNode> node(KnowledgeBase kb, String id) {
-        return kb.nodes().stream().filter(f -> f.fact().id().equals(id)).map(CodeMode::node).toList();
+        return kb.node(id).stream().map(CodeMode::node).toList();
     }
 
     private static List<ObjectNode> edges(List<KnowledgeBase.Fact<Edge>> edges, String kind) {
@@ -251,8 +273,8 @@ public final class CodeMode {
         ZoneId zone = ZoneId.of(zoneText.isBlank() ? "UTC" : zoneText);
         LocalDate day = Schedules.day(dayText, LocalDate.now(zone));
         Set<String> out = new LinkedHashSet<>();
-        for (var f : kb.nodes()) {
-            if (!f.fact().id().equals(id) || !env.isBlank() && f.fact().env() != null && !f.fact().env().equals(env)) {
+        for (var f : kb.node(id)) {
+            if (!env.isBlank() && f.fact().env() != null && !f.fact().env().equals(env)) {
                 continue;
             }
             for (Schedules.Schedule s : Schedules.all(f, env.isBlank() ? null : env)) {
