@@ -301,12 +301,22 @@ final class Fleet implements Callable<Integer> {
     /** #205: the tables the members' migrations create, for the migrations of others that need them (stand-ins). */
     private volatile Map<String, List<String>> tablesMade = Map.of();
 
-    private dev.logast.export.Export.FlywayOptions flywayOptions() {
-        return flyway ? new dev.logast.export.Export.FlywayOptions(rows, postgresImage, tablesMade) : null;
+    /** #216: the rows each repo of repos.yaml asks for ({@code rows:}): repo name → tables. */
+    Map<String, List<String>> repoRows = Map.of();
+
+    /** A member's Flyway options: --flyway's, with the rows repos.yaml asks of it (which run its migrations alone too). */
+    dev.logast.export.Export.FlywayOptions flywayOptions(String member) {
+        List<String> own = repoRows.getOrDefault(member, List.of());
+        if (!flyway && own.isEmpty()) {
+            return null;
+        }
+        java.util.Set<String> all = new java.util.LinkedHashSet<>(rows);
+        all.addAll(own);
+        return new dev.logast.export.Export.FlywayOptions(List.copyOf(all), postgresImage, tablesMade);
     }
 
-    private String kbOptions() throws IOException {
-        return KbExport.optionsKey(McpCmd.build(), flywayOptions(), classpathFile, noBuilds);   // a new logast build re-exports
+    private String kbOptions(String member) throws IOException {
+        return KbExport.optionsKey(McpCmd.build(), flywayOptions(member), classpathFile, noBuilds);   // a new logast build re-exports
     }
 
     /** One member's facts into {@code kb/<member>/}, unless its commit and the options are those of its last export. */
@@ -379,18 +389,19 @@ final class Fleet implements Callable<Integer> {
         Path out = dir.resolve("kb").resolve(name);
         try {
             String commit = dev.logast.fleet.NamedFleet.commit(root);
-            String options = kbOptions();
-            if (!again && !kbFull && KbExport.upToDate(out, commit, options) && !(flyway && KbExport.needsChanged(out, tablesMade))) {
+            dev.logast.export.Export.FlywayOptions fly = flywayOptions(name);
+            String options = kbOptions(name);
+            if (!again && !kbFull && KbExport.upToDate(out, commit, options) && !(fly != null && KbExport.needsChanged(out, tablesMade))) {
                 return new KbOutcome(FleetLog.Status.SAME, "knowledge base unchanged since its last export (" + commit + "), kept", List.of());
             }
             Path ar = analysedRoot == null ? null : analysedRoot.toAbsolutePath().normalize();
             dev.logast.export.RepoExport.Result r = KbExport.repo(root, name, out, dir.resolve(".cache/kb-classpath").resolve(name),
-                    classpathFile, noBuilds, flywayOptions(), List.of(), List.of(),
+                    classpathFile, noBuilds, fly, List.of(), List.of(),
                     rootDir -> analysed != null && rootDir.toAbsolutePath().normalize().equals(ar) ? analysed : null);
             String files = "knowledge base: " + r.files().size() + " facts file(s)";
             if (r.problems().isEmpty()) {
                 // #205: what its migrations needed from other repos goes into the stamp: a change of that exports it again
-                List<KbExport.Need> needs = flyway ? KbExport.needs(out) : List.of();
+                List<KbExport.Need> needs = fly != null ? KbExport.needs(out) : List.of();
                 KbExport.stamp(out, commit, options, KbExport.resolved(needs, tablesMade));
                 List<KbExport.Need> left = needs.stream().filter(KbExport.Need::leftOut).toList();
                 long standIns = needs.stream().filter(n -> !n.leftOut()).count();
@@ -543,6 +554,13 @@ final class Fleet implements Callable<Integer> {
         }
         // #193: what the run does, a header per phase, a line per repo, a summary
         FleetLog log = refresh || kb ? new FleetLog() : null;
+        Map<String, List<String>> asked = new java.util.TreeMap<>();
+        for (FleetRepos.Repo r : FleetRepos.list(dir)) {
+            if (!r.rows().isEmpty()) {
+                asked.put(r.name(), r.rows());
+            }
+        }
+        repoRows = asked;
 
         List<FleetRepos.Repo> repos = refresh ? FleetRepos.list(dir) : List.of();
         if (log != null) {

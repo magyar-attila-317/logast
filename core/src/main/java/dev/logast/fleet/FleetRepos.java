@@ -22,8 +22,18 @@ public final class FleetRepos {
     public static final String CACHE = ".cache/repos";
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
 
-    /** @param branch null: the repo's default branch */
-    public record Repo(String name, String url, String branch) {
+    /**
+     * @param branch null: the repo's default branch
+     * @param rows   #216: tables whose rows its Flyway migrations seed and that become facts ({@code schema.table})
+     */
+    public record Repo(String name, String url, String branch, List<String> rows) {
+        public Repo(String name, String url, String branch) {
+            this(name, url, branch, List.of());
+        }
+
+        public Repo {
+            rows = rows == null ? List.of() : List.copyOf(rows);
+        }
     }
 
     private FleetRepos() {
@@ -36,7 +46,7 @@ public final class FleetRepos {
         return name.isEmpty() ? null : name;
     }
 
-    /** The repos of repos.yaml; empty without the file. An entry is a URL, or {url, name?, branch?}. */
+    /** The repos of repos.yaml; empty without the file. An entry is a URL, or {url, name?, branch?, rows?}. */
     public static List<Repo> list(Path fleet) {
         JsonNode n = read(fleet);
         List<Repo> out = new ArrayList<>();
@@ -50,7 +60,18 @@ public final class FleetRepos {
             }
             String name = e.isObject() && e.hasNonNull("name") ? e.get("name").asText() : nameOf(url);
             String branch = e.isObject() && e.hasNonNull("branch") ? e.get("branch").asText() : null;
-            out.add(new Repo(name, url.strip(), branch));
+            List<String> rows = new ArrayList<>();
+            JsonNode r = e.path("rows");
+            if (r.isTextual()) {
+                for (String t : r.asText().split(",")) {
+                    if (!t.isBlank()) {
+                        rows.add(t.strip());
+                    }
+                }
+            } else {
+                r.forEach(t -> rows.add(t.asText().strip()));
+            }
+            out.add(new Repo(name, url.strip(), branch, rows));
         }
         return out;
     }

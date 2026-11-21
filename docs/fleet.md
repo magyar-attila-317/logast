@@ -222,7 +222,7 @@ fleet folder as `fleet create --dir .` makes it, plus
 
 | file | what it is |
 |---|---|
-| `repos.yaml` | the members by repo URL (`https://…`, `git@…`; an entry may name a `branch` and a `name`) |
+| `repos.yaml` | the members by repo URL (`https://…`, `git@…`; an entry may name a `branch`, a `name`, and the `rows` its migrations seed that become facts) |
 | `README.md` | what the owner does, and what service developers run |
 | `.github/workflows/logast-fleet.yml` | on push to main/master, weekday mornings and by hand: builds logast at the commit that scaffolded it (`LOGAST_REF`), clones the repos, runs `logast fleet . --refresh --kb --no-builds --classpath-file .cache/classpath.txt`, commits `kb/` when it changed, writes the overview to the run's summary and keeps `report/` as the run's artifact; publishes it to GitHub Pages only when the repository variable `LOGAST_PAGES` is `true` |
 | `.gitignore` | `.cache/`, `services/`, `report/`, `members.yaml`: generated, never committed |
@@ -231,6 +231,16 @@ fleet folder as `fleet create --dir .` makes it, plus
 Existing files are kept. `logast fleet <path> --refresh` (`.` in the fleet repo) clones each repo of `repos.yaml` shallow
 (newest commit of its branch) into `.cache/repos/<name>`, or fetches and resets an existing clone, registers it as an
 added member and scans it read-only. A folder with `repos.yaml` is a fleet even without `members.yaml` (a fresh checkout).
+
+A repo whose Flyway migrations seed tables you want as facts (a scheduler's pipelines, a lookup table) names them in
+its entry (#216); its export then runs its migrations (Docker) and writes those rows, without `--flyway` and for that
+repo only. `--rows` on the command line adds tables for every member.
+
+```yaml
+repos:
+  - url: https://github.com/org/scheduler.git
+    rows: [scheduling.pipeline]
+```
 
 - **`--no-builds`**: an added member is scanned without running its own Gradle. In the fleet's CI a member's build
   script would run next to a token that reads every repo, so it never runs there; the code is resolved against
