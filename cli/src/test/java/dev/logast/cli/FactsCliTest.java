@@ -59,7 +59,7 @@ class FactsCliTest {
                 .isEqualTo("[\"mcp\",\"--kb\",\"" + tmp.toAbsolutePath().normalize() + "\",\"--log\",\"" + f.toAbsolutePath() + "\"]");
     }
 
-    /** #210: the server's stderr goes to the --log file too, and a --kb path that does not exist is named there. */
+    /** #210: the server's stderr and its messages in and out go to the --log file too, and a --kb path that does not exist is named there. */
     @Test
     void mcpLogsToItsFileAndNamesAMissingKb() throws IOException {
         Path missing = tmp.resolve("kb 2>>err.log");
@@ -67,14 +67,18 @@ class FactsCliTest {
         var in = System.in;
         var err = System.err;
         try {
-            System.setIn(new java.io.ByteArrayInputStream(new byte[0]));
+            System.setIn(new java.io.ByteArrayInputStream(
+                    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n".getBytes(StandardCharsets.UTF_8)));
             System.setErr(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
             assertThat(run("mcp", "--kb", missing.toString(), "--log", log.toString()).exit()).isZero();
         } finally {
             System.setIn(in);
             System.setErr(err);
         }
-        assertThat(Files.readString(log)).contains("facts from --kb").contains(missing + " does not exist: no facts from it");
+        String logged = Files.readString(log);
+        assertThat(logged).contains("facts from --kb").contains(missing + " does not exist: no facts from it")
+                .contains("> {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n");
+        assertThat(logged.lines().filter(l -> l.startsWith("< {")).toList()).singleElement().asString().contains("\"id\":1");
     }
 
     @Test

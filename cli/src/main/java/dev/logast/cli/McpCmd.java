@@ -33,13 +33,15 @@ final class McpCmd implements Callable<Integer> {
     @Option(names = "--code-mode", description = "Offer two tools instead of twenty (#201): api (the facts API, what is "
             + "loaded, examples) and query (a read-only JavaScript program over the facts, run in a sandbox)")
     boolean codeMode;
-    @Option(names = "--log", description = "Also append the server's stderr (startup, timings, errors) to this file (#210): "
-            + "MCP clients start the server without a shell, so a 2>> in their config does not work")
+    @Option(names = "--log", description = "Also append to this file the server's stderr (startup, timings, errors) and "
+            + "every message in (> line) and out (< line) (#210): MCP clients start the server without a shell, so a 2>> "
+            + "in their config does not work")
     Path log;
 
     @Override
     public Integer call() throws IOException {
-        java.io.PrintStream err = log == null ? System.err : tee(System.err, log);
+        java.io.OutputStream file = log == null ? null : open(log);
+        java.io.PrintStream err = file == null ? System.err : new java.io.PrintStream(tee(System.err, file), true, StandardCharsets.UTF_8);
         KbPaths.Resolved r = KbPaths.resolve(kb, KbPaths.Env.current());
         err.println("logast mcp " + build() + ": facts from " + r.source() + ": " + r.paths() + (codeMode ? " (code mode)" : ""));
         for (Path p : r.paths()) {
@@ -49,39 +51,122 @@ final class McpCmd implements Callable<Integer> {
         }
         McpServer server = new McpServer(() -> KnowledgeBase.factFiles(r.paths()), build(), err,
                 r.paths().isEmpty() ? null : dev.logast.kb.Proposals.file(r.paths()), codeMode);
+        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         Writer out = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
-        server.run(new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)), out);
+        if (file != null) {
+            in = traffic(in, file);
+            out = new OutputStreamWriter(tee(System.out, new Prefixed(file, "< ")), StandardCharsets.UTF_8);
+        }
+        server.run(in, out);
         err.flush();
+        if (file != null) {
+            file.close();
+        }
         return 0;
     }
 
-    /** #210: what goes to {@code err} also goes to the end of {@code file}. */
-    static java.io.PrintStream tee(java.io.PrintStream err, Path file) throws IOException {
+    private static java.io.OutputStream open(Path file) throws IOException {
         Path abs = file.toAbsolutePath();
         if (abs.getParent() != null) {
             java.nio.file.Files.createDirectories(abs.getParent());
         }
         java.io.OutputStream f = java.nio.file.Files.newOutputStream(abs, java.nio.file.StandardOpenOption.CREATE,
                 java.nio.file.StandardOpenOption.APPEND);
-        return new java.io.PrintStream(new java.io.OutputStream() {
+        return new java.io.OutputStream() {   // stderr and traffic share it: each write whole
             @Override
-            public void write(int b) throws IOException {
-                err.write(b);
+            public synchronized void write(int b) throws IOException {
                 f.write(b);
             }
 
             @Override
-            public void write(byte[] b, int off, int len) throws IOException {
-                err.write(b, off, len);
+            public synchronized void write(byte[] b, int off, int len) throws IOException {
                 f.write(b, off, len);
             }
 
             @Override
-            public void flush() throws IOException {
-                err.flush();
+            public synchronized void flush() throws IOException {
                 f.flush();
             }
-        }, true, StandardCharsets.UTF_8);
+
+            @Override
+            public void close() throws IOException {
+                f.close();
+            }
+        };
+    }
+
+    /** #210: what goes to {@code a} also goes to {@code b}. */
+    static java.io.OutputStream tee(java.io.OutputStream a, java.io.OutputStream b) {
+        return new java.io.OutputStream() {
+            @Override
+            public void write(int x) throws IOException {
+                a.write(x);
+                b.write(x);
+            }
+
+            @Override
+            public void write(byte[] x, int off, int len) throws IOException {
+                a.write(x, off, len);
+                b.write(x, off, len);
+            }
+
+            @Override
+            public void flush() throws IOException {
+                a.flush();
+                b.flush();
+            }
+        };
+    }
+
+    /** Lines written to the log with a prefix (a reply is one line, written whole before its flush). */
+    private static final class Prefixed extends java.io.OutputStream {
+        private final java.io.OutputStream to;
+        private final byte[] prefix;
+        private final java.io.ByteArrayOutputStream line = new java.io.ByteArrayOutputStream();
+
+        Prefixed(java.io.OutputStream to, String prefix) {
+            this.to = to;
+            this.prefix = prefix.getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            line.write(b);
+            if (b == '\n') {
+                emit();
+            }
+        }
+
+        @Override
+        public void flush() throws IOException {
+            if (line.size() > 0) {
+                emit();
+            }
+            to.flush();
+        }
+
+        private void emit() throws IOException {
+            byte[] all = new byte[prefix.length + line.size()];
+            System.arraycopy(prefix, 0, all, 0, prefix.length);
+            System.arraycopy(line.toByteArray(), 0, all, prefix.length, line.size());
+            to.write(all, 0, all.length);
+            line.reset();
+        }
+    }
+
+    /** The messages read, each also logged as a {@code > } line. */
+    private static BufferedReader traffic(BufferedReader in, java.io.OutputStream file) {
+        return new BufferedReader(in) {
+            @Override
+            public String readLine() throws IOException {
+                String l = in.readLine();
+                if (l != null && !l.isBlank()) {
+                    file.write(("> " + l + "\n").getBytes(StandardCharsets.UTF_8));
+                    file.flush();
+                }
+                return l;
+            }
+        };
     }
 
     @Command(name = "config", description = "Print the server entry to add to an MCP client's configuration (the common "

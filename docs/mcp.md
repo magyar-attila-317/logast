@@ -42,8 +42,8 @@ logast mcp config --kb ~/src/my-company-logast/kb
 prints the server entry in the `mcpServers` shape most clients read (`command` + `args`, stdio); paste it into your
 client's MCP configuration. `logast` must be on the `PATH` the client starts it with (else use its full path).
 
-To see what the server does (the facts it loaded, `query <ms>` timings, errors), add `--log` (#210): the entry then has
-the server append its stderr to `logast-mcp.log` in the temp folder (`logast-mcp-code.log` with `--code-mode`), or to
+To see what the server does (the facts it loaded, the questions and answers, `query <ms>` timings, errors), add `--log` (#210): the entry then has
+the server append its stderr and every message in (`> `) and out (`< `) to `logast-mcp.log` in the temp folder (`logast-mcp-code.log` with `--code-mode`), or to
 `--log <file>`. Clients start the server without a shell, so a `2>>file` written into `args` does not redirect: it
 becomes part of the argument before it. At startup the server names any `--kb` path that does not exist.
 
