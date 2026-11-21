@@ -8,6 +8,8 @@ description = "logast kb: facts of many repos in memory, the questions over them
 dependencies {
     api(project(":facts"))
     implementation(libs.jackson.yaml)
+    implementation(libs.graalvm.polyglot)   // #201: code mode
+    runtimeOnly(libs.graalvm.js)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

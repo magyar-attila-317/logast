@@ -42,6 +42,21 @@ logast mcp config --kb ~/src/my-company-logast/kb
 prints the server entry in the `mcpServers` shape most clients read (`command` + `args`, stdio); paste it into your
 client's MCP configuration. `logast` must be on the `PATH` the client starts it with (else use its full path).
 
+## Code mode (`--code-mode`)
+
+`logast mcp --code-mode` (`logast mcp config --code-mode` writes the entry) offers two tools instead of twenty (#201):
+
+- **`api`**: the facts API as a TypeScript declaration (`nodes(kind, where?)`, `node(id)`, `out(id, kind?)`,
+  `into(id, kind?)`, `find(text, kind?)`, `runs(jobId, day, env?, zone?)`, `lineage(id, direction?, depth?)`), what is
+  loaded (repos, counts per kind, environments, edge kinds, attributes per kind) and worked examples;
+- **`query`**: a read-only JavaScript program over the facts; its `return` value comes back as JSON (at most 40,000
+  characters). A question that takes many lookups is one program: filter, follow edges, join and count in it.
+
+Every node and edge carries its `source` (repo/file:line) to cite. A mistake comes back as an error with a hint (an
+unknown kind lists the kinds). The program runs in GraalJS with no host access, no I/O, no output (stdout is MCP's), a
+fresh context per call, at most 5 s and 50M steps. Without the flag the server is as before. Code mode adds about
+60 MB to the installation (the JavaScript engine).
+
 ## Protocol versions
 
 `logast mcp` speaks both eras of MCP over stdio in one process (#202): a client of the 2026-07-28 revision (stateless:

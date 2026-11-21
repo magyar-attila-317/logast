@@ -1,6 +1,7 @@
 [versions]
 rewrite = "8.90.4"
 jackson = "2.23.0"
+graalvm = "25.0.5"   # #201: code mode runs agents' programs in GraalJS
 picocli = "4.7.7"
 junit = "6.1.3"
 assertj = "3.27.7"
@@ -26,6 +27,8 @@ rewrite-java25 = { module = "org.openrewrite:rewrite-java-25" }
 rewrite-java21 = { module = "org.openrewrite:rewrite-java-21" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml", version.ref = "jackson" }
+graalvm-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graalvm" }
+graalvm-js = { module = "org.graalvm.polyglot:js-community", version.ref = "graalvm" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

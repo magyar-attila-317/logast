@@ -45,6 +45,14 @@ public final class McpServer {
 
     /** @param proposals where propose_flow and propose_summary write (#168); null: read-only */
     public McpServer(Supplier<List<Path>> files, String version, PrintStream log, Path proposals) {
+        this(files, version, log, proposals, false);
+    }
+
+    /** #201: {@code codeMode}: the two code-mode tools (api, query) instead of the twenty. */
+    private final boolean codeMode;
+
+    public McpServer(Supplier<List<Path>> files, String version, PrintStream log, Path proposals, boolean codeMode) {
+        this.codeMode = codeMode;
         this.files = files;
         this.version = version;
         this.log = log;
@@ -133,7 +141,7 @@ public final class McpServer {
                 case "server/discover" -> discover();
                 case "ping" -> JSON.createObjectNode();
                 case "tools/list" -> {
-                    ObjectNode t = tools();
+                    ObjectNode t = codeMode ? codeTools() : tools();
                     if (modern) {   // 2026-07-28: how long the list holds, for whom
                         t.put("ttlMs", 300_000).put("cacheScope", "private");
                     }
@@ -344,7 +352,57 @@ public final class McpServer {
         return r;
     }
 
+    /** #201: the code-mode tools. */
+    private static final List<Tool> CODE_TOOLS = List.of(
+            new Tool("api", "Read this first: the facts API (a TypeScript declaration) for the query tool, what is loaded now "
+                    + "(kinds, counts, environments, attributes per kind) and worked examples.",
+                    new String[][]{{"kind", "string", "only the attributes of this kind"}}, new String[0]),
+            new Tool("query", "Run a read-only JavaScript program over the facts (the api tool describes the functions: nodes, "
+                    + "node, out, into, find, runs, lineage); its `return` value comes back as JSON. One program can answer what "
+                    + "takes many lookups: filter, follow edges, join and count in it, return only the answer with sources.",
+                    new String[][]{{"code", "string", "the program; end with `return <value>`"}}, new String[]{"code"}));
+
+    private static ObjectNode codeTools() {
+        ObjectNode r = JSON.createObjectNode();
+        ArrayNode list = r.putArray("tools");
+        for (Tool t : CODE_TOOLS) {
+            ObjectNode o = list.addObject().put("name", t.name()).put("description", t.description());
+            ObjectNode schema = o.putObject("inputSchema").put("type", "object");
+            ObjectNode props = schema.putObject("properties");
+            for (String[] p : t.params()) {
+                props.putObject(p[0]).put("type", p[1]).put("description", p[2]);
+            }
+            if (t.required().length > 0) {
+                ArrayNode req = schema.putArray("required");
+                for (String q : t.required()) {
+                    req.add(q);
+                }
+            }
+        }
+        return r;
+    }
+
+    private ObjectNode codeCall(String name, JsonNode a) {
+        KnowledgeBase k = kb();
+        return switch (name) {
+            case "api" -> text(CodeMode.api(k, a.path("kind").asText(null)), false);
+            case "query" -> {
+                String code = a.path("code").asText("");
+                if (code.isBlank()) {
+                    yield text("'code' is required: a JavaScript program ending with `return <value>` (see the api tool)", true);
+                }
+                CodeMode.Result r = CodeMode.run(k, code);
+                yield r.error() != null ? text(r.error() + "\n(the api tool lists the functions, kinds and attributes)", true)
+                        : text(r.json(), false);
+            }
+            default -> throw new IllegalArgumentException("unknown tool: " + name + " (code mode: api, query)");
+        };
+    }
+
     private ObjectNode call(JsonNode params) {
+        if (codeMode) {
+            return codeCall(params.path("name").asText(""), params.path("arguments"));
+        }
         String called = params.path("name").asText("");
         String name = called.startsWith(PREFIX) ? called.substring(PREFIX.length()) : called;
         JsonNode a = params.path("arguments");

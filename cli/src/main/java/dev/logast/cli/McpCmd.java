@@ -30,13 +30,16 @@ final class McpCmd implements Callable<Integer> {
     @Option(names = "--kb", description = "A facts file or a folder of them (repeatable; default: LOGAST_KB, else kb.paths "
             + "in ~/.config/logast/config.yaml)")
     List<Path> kb = new ArrayList<>();
+    @Option(names = "--code-mode", description = "Offer two tools instead of twenty (#201): api (the facts API, what is "
+            + "loaded, examples) and query (a read-only JavaScript program over the facts, run in a sandbox)")
+    boolean codeMode;
 
     @Override
     public Integer call() throws IOException {
         KbPaths.Resolved r = KbPaths.resolve(kb, KbPaths.Env.current());
-        System.err.println("logast mcp: facts from " + r.source() + ": " + r.paths());
+        System.err.println("logast mcp: facts from " + r.source() + ": " + r.paths() + (codeMode ? " (code mode)" : ""));
         McpServer server = new McpServer(() -> KnowledgeBase.factFiles(r.paths()), build(), System.err,
-                r.paths().isEmpty() ? null : dev.logast.kb.Proposals.file(r.paths()));
+                r.paths().isEmpty() ? null : dev.logast.kb.Proposals.file(r.paths()), codeMode);
         Writer out = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
         server.run(new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)), out);
         return 0;
@@ -50,6 +53,8 @@ final class McpCmd implements Callable<Integer> {
         List<Path> kb = new ArrayList<>();
         @Option(names = "--name", defaultValue = "logast-kb", description = "The server's name in the client (default: ${DEFAULT-VALUE})")
         String name;
+        @Option(names = "--code-mode", description = "The entry starts the server in code mode (two tools: api, query)")
+        boolean codeMode;
 
         @Override
         public Integer call() throws IOException {
@@ -60,6 +65,9 @@ final class McpCmd implements Callable<Integer> {
             ArrayNode args = server.putArray("args").add("mcp");
             for (Path p : kb) {
                 args.add("--kb").add(p.toAbsolutePath().normalize().toString());
+            }
+            if (codeMode) {
+                args.add("--code-mode");
             }
             System.out.println(json.writeValueAsString(root));
             return 0;
