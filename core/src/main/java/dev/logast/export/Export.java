@@ -78,7 +78,8 @@ public final class Export {
             if (flyway != null) {
                 FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image())
                         .withCodeRuns(ProgrammaticFlyway.find(a.index))   // #179: the runs the code makes (per tenant)
-                        .withClasspath(classpath);   // #181: migrations a library ships in its jar
+                        .withClasspath(classpath)   // #181: migrations a library ships in its jar
+                        .withElsewhere(flyway.elsewhere());   // #205: what other services' migrations create
                 fx.extract(r, w);
                 problems.addAll(fx.problems());
             }
@@ -176,6 +177,9 @@ public final class Export {
     }
 
     /** What {@code --flyway} asks for: the tables whose rows become facts, and the PostgreSQL image. */
-    public record FlywayOptions(List<String> rows, String image) {
+    public record FlywayOptions(List<String> rows, String image, java.util.Map<String, List<String>> elsewhere) {
+        public FlywayOptions(List<String> rows, String image) {
+            this(rows, image, java.util.Map.of());
+        }
     }
 }

@@ -331,22 +331,48 @@ class FlywayExtractorTest {
      */
     @Test
     void aMigrationNeedingAnotherServicesObjectIsLeftOut() throws IOException {
-        Path root = tmp.resolve("accounting");
-        Path mig = Files.createDirectories(root.resolve("src/main/resources/db/migration"));
-        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
-        Files.writeString(mig.resolve("V1__ledger.sql"), "create table ledger (id bigint primary key);\n");
-        Files.writeString(mig.resolve("V2__shared_views.sql"), "create view ledger_items as select * from catalog.items;\n");
-        Files.writeString(mig.resolve("V3__journal.sql"), "create table journal (id bigint primary key);\n");
-        Files.writeString(mig.resolve("V4__seq.sql"), "create table posting (id bigint primary key default nextval('orders_seq'));\n");
-        Files.writeString(mig.resolve("V5__last.sql"), "create table period (id bigint primary key);\n");
+        Path root = accounting();
         Collect c = new Collect();
         FlywayExtractor fx = new FlywayExtractor("accounting", List.of(), null);
         fx.extract(root, c);
         assertThat(fx.problems()).isEmpty();
-        assertThat(c.nodes).extracting(Node::id).contains("table:public.ledger", "table:public.journal", "table:public.period")
-                .doesNotContain("table:public.ledger_items", "table:public.posting");
+        // #205: a sequence made elsewhere is stood in for (it needs no columns), so V4 runs
+        assertThat(c.nodes).extracting(Node::id).contains("table:public.ledger", "table:public.journal", "table:public.period",
+                "table:public.posting").doesNotContain("table:public.ledger_line");
         assertThat(c.edges).filteredOn(e -> e.kind().equals("reads")).extracting(e -> e.from() + " " + e.to() + " " + e.attrs().get("via"))
-                .containsExactlyInAnyOrder("service:accounting table:catalog.items migration V2__shared_views.sql",
+                .containsExactlyInAnyOrder("service:accounting table:catalog.items migration V2__shared.sql",
                         "service:accounting table:public.orders_seq migration V4__seq.sql");
+        // #205: the left-out migration is a fact, with what was lost with it
+        Edge left = c.edges.stream().filter(e -> e.to().equals("table:catalog.items")).findFirst().orElseThrow();
+        assertThat(left.attrs()).containsEntry("leftOut", true).containsEntry("lost", List.of("ledger_line"));
+    }
+
+    /** #205: what another service's migrations create stands in (empty, with its columns), so the migration runs in full. */
+    @Test
+    void aMigrationNeedingAnotherServicesTableRunsAgainstAStandIn() throws IOException {
+        Path root = accounting();
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("accounting", List.of(), null)
+                .withElsewhere(java.util.Map.of("catalog.items", List.of("id bigint", "name character varying", "tags ARRAY")));
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        assertThat(c.nodes).extracting(Node::id).contains("table:public.ledger_line", "table:public.period")
+                .doesNotContain("table:catalog.items");   // the stand-in is not this service's table
+        Edge reads = c.edges.stream().filter(e -> e.to().equals("table:catalog.items")).findFirst().orElseThrow();
+        assertThat(reads.attrs()).containsEntry("standIn", true).doesNotContainKey("leftOut")
+                .containsEntry("columnsAssumed", List.of("id bigint", "name character varying", "tags ARRAY"));
+    }
+
+    private Path accounting() throws IOException {
+        Path root = tmp.resolve("accounting");
+        Path mig = Files.createDirectories(root.resolve("src/main/resources/db/migration"));
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        Files.writeString(mig.resolve("V1__ledger.sql"), "create table ledger (id bigint primary key);\n");
+        Files.writeString(mig.resolve("V2__shared.sql"), "create table ledger_line (id bigint primary key, item bigint references catalog.items(id));\n"
+                + "create view ledger_items as select * from catalog.items;\n");
+        Files.writeString(mig.resolve("V3__journal.sql"), "create table journal (id bigint primary key);\n");
+        Files.writeString(mig.resolve("V4__seq.sql"), "create table posting (id bigint primary key default nextval('orders_seq'));\n");
+        Files.writeString(mig.resolve("V5__last.sql"), "create table period (id bigint primary key);\n");
+        return root;
     }
 }

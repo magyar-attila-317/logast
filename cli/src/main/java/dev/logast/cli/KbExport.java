@@ -86,11 +86,100 @@ final class KbExport {
     }
 
     static void stamp(Path outDir, String commit, String options) throws IOException {
+        stamp(outDir, commit, options, java.util.Map.of());
+    }
+
+    /** @param needs #205: what its migrations needed from other repos, and how that resolved ({@link #needs}) */
+    static void stamp(Path outDir, String commit, String options, java.util.Map<String, String> needs) throws IOException {
         Files.createDirectories(outDir);
         var n = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
         n.put("commit", commit);
         n.put("options", options);
+        if (!needs.isEmpty()) {
+            var o = n.putObject("needs");
+            new java.util.TreeMap<>(needs).forEach(o::put);
+        }
         Files.writeString(outDir.resolve(STAMP), n.toString() + "\n");
+    }
+
+    /**
+     * #205: the tables the members' migrations create ({@code schema.name} to its columns), from their facts under
+     * {@code kb}: what a migration of another member that needs one runs against.
+     */
+    static java.util.Map<String, List<String>> tablesMade(Path kb) {
+        java.util.Map<String, List<String>> out = new java.util.TreeMap<>();
+        if (!Files.isDirectory(kb)) {
+            return out;
+        }
+        Path mapped = kb.resolve("mapped");
+        KnowledgeBase k = KnowledgeBase.load(KnowledgeBase.factFiles(List.of(kb)).stream().filter(f -> !f.startsWith(mapped)).toList());
+        for (var n : k.nodes()) {
+            if (n.fact().kind().equals("table") && n.fact().attrs().get("columns") instanceof List<?> cols && !cols.isEmpty()) {
+                out.putIfAbsent(n.fact().id().substring("table:".length()).toLowerCase(java.util.Locale.ROOT),
+                        cols.stream().map(String::valueOf).toList());
+            }
+        }
+        return out;
+    }
+
+    /** #205: a need's resolution: the columns of the table another member makes, else {@code -} (none does). */
+    static String resolve(java.util.Map<String, List<String>> tables, String asked, String searchSchema) {
+        String t = dev.logast.export.FlywayExtractor.madeElsewhere(tables, asked, searchSchema);
+        return t == null ? "-" : t + "(" + String.join(", ", tables.get(t)) + ")";
+    }
+
+    /** A need: the object a migration asked for, its run's schema, and the migration (for the notes). */
+    record Need(String asked, String searchSchema, String via, boolean leftOut, List<String> lost) {
+        String key() {
+            return asked + "|" + searchSchema;
+        }
+    }
+
+    /** #205: what a member's migrations needed from other repos (tables, not sequences: those stand in without columns). */
+    static List<Need> needs(Path outDir) {
+        List<Need> out = new ArrayList<>();
+        if (!Files.isDirectory(outDir)) {
+            return out;
+        }
+        KnowledgeBase k = KnowledgeBase.load(KnowledgeBase.factFiles(List.of(outDir)));
+        for (var e : k.allEdges()) {
+            var a = e.fact().attrs();
+            if (Boolean.TRUE.equals(a.get("madeElsewhere")) && a.get("asked") != null && !"sequence".equals(a.get("objectKind"))) {
+                List<String> lost = a.get("lost") instanceof List<?> l ? l.stream().map(String::valueOf).toList() : List.of();
+                out.add(new Need(String.valueOf(a.get("asked")), String.valueOf(a.get("searchSchema")), String.valueOf(a.get("via")),
+                        Boolean.TRUE.equals(a.get("leftOut")), lost));
+            }
+        }
+        return out;
+    }
+
+    /** The needs as the stamp keeps them: each resolved against {@code tables}. */
+    static java.util.Map<String, String> resolved(List<Need> needs, java.util.Map<String, List<String>> tables) {
+        java.util.Map<String, String> out = new java.util.TreeMap<>();
+        needs.forEach(n -> out.put(n.key(), resolve(tables, n.asked(), n.searchSchema())));
+        return out;
+    }
+
+    /** #205: a need of the member's last export resolves differently now (a repo makes it now, or changed it). */
+    static boolean needsChanged(Path outDir, java.util.Map<String, List<String>> tables) {
+        Path f = outDir.resolve(STAMP);
+        if (!Files.isRegularFile(f)) {
+            return false;
+        }
+        try {
+            var needs = new com.fasterxml.jackson.databind.ObjectMapper().readTree(f.toFile()).path("needs");
+            var it = needs.fields();
+            while (it.hasNext()) {
+                var e = it.next();
+                String[] k = e.getKey().split("\\|", 2);
+                if (!resolve(tables, k[0], k.length > 1 ? k[1] : null).equals(e.getValue().asText())) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     private static String slug(Path repo, Path root) {

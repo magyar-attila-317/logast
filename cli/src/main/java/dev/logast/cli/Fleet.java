@@ -298,8 +298,11 @@ final class Fleet implements Callable<Integer> {
     /** #184: members exported during this run's refresh (with the scan's analysis). */
     private final java.util.Set<String> kbDone = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /** #205: the tables the members' migrations create, for the migrations of others that need them (stand-ins). */
+    private volatile Map<String, List<String>> tablesMade = Map.of();
+
     private dev.logast.export.Export.FlywayOptions flywayOptions() {
-        return flyway ? new dev.logast.export.Export.FlywayOptions(rows, postgresImage) : null;
+        return flyway ? new dev.logast.export.Export.FlywayOptions(rows, postgresImage, tablesMade) : null;
     }
 
     private String kbOptions() throws IOException {
@@ -312,11 +315,16 @@ final class Fleet implements Callable<Integer> {
     }
 
     private KbOutcome exportMember(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot) {
+        return exportMember(dir, name, root, analysed, analysedRoot, false);
+    }
+
+    private KbOutcome exportMember(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot,
+                                   boolean again) {
         Path out = dir.resolve("kb").resolve(name);
         try {
             String commit = dev.logast.fleet.NamedFleet.commit(root);
             String options = kbOptions();
-            if (!kbFull && KbExport.upToDate(out, commit, options)) {
+            if (!again && !kbFull && KbExport.upToDate(out, commit, options) && !(flyway && KbExport.needsChanged(out, tablesMade))) {
                 return new KbOutcome(FleetLog.Status.SAME, "knowledge base unchanged since its last export (" + commit + "), kept", List.of());
             }
             Path ar = analysedRoot == null ? null : analysedRoot.toAbsolutePath().normalize();
@@ -325,8 +333,19 @@ final class Fleet implements Callable<Integer> {
                     rootDir -> analysed != null && rootDir.toAbsolutePath().normalize().equals(ar) ? analysed : null);
             String files = "knowledge base: " + r.files().size() + " facts file(s)";
             if (r.problems().isEmpty()) {
-                KbExport.stamp(out, commit, options);
-                return new KbOutcome(FleetLog.Status.OK, files, List.of());
+                // #205: what its migrations needed from other repos goes into the stamp: a change of that exports it again
+                List<KbExport.Need> needs = flyway ? KbExport.needs(out) : List.of();
+                KbExport.stamp(out, commit, options, KbExport.resolved(needs, tablesMade));
+                List<KbExport.Need> left = needs.stream().filter(KbExport.Need::leftOut).toList();
+                long standIns = needs.stream().filter(n -> !n.leftOut()).count();
+                String withStandIns = standIns == 0 ? "" : ", " + standIns + " table(s) of other repos stood in for";
+                if (left.isEmpty()) {
+                    return new KbOutcome(FleetLog.Status.OK, files + withStandIns, List.of());
+                }
+                List<String> notes = left.stream().limit(5).map(n -> n.via() + " left out: it needs " + n.asked() + ", which no repo of the "
+                        + "fleet makes" + (n.lost().isEmpty() ? "" : "; missing with it: " + String.join(", ", n.lost()))).toList();
+                return new KbOutcome(FleetLog.Status.PROBLEM, files + withStandIns + ", " + left.size() + " migration(s) left out (exported "
+                        + "again once a repo makes what they need)", notes);
             }
             // #187: a partial export is not done: the next run exports it again, once its cause is fixed
             Files.deleteIfExists(out.resolve(KbExport.STAMP));
@@ -391,12 +410,46 @@ final class Fleet implements Callable<Integer> {
                 pool.shutdown();
             }
         }
+        phase.end();
+        if (flyway) {
+            dependencyRounds(dir, members, log);
+        }
         List<String> mapped = KbExport.mappings(kbDir);
         if (!mapped.isEmpty()) {
             System.err.println("   " + Ansi.dim("kb/mappings:"));
             mapped.forEach(l -> System.err.println("     " + l));
         }
-        phase.end();
+    }
+
+    /**
+     * #205: a member's migrations that need another member's tables ran against what the knowledge base had when it
+     * started; once every member is exported, the ones whose needs resolve differently now run again, round by round
+     * (x needs y, y needs z), until none changes.
+     */
+    private void dependencyRounds(Path dir, Map<String, Path> members, FleetLog log) {
+        for (int round = 1; round <= 4; round++) {
+            tablesMade = KbExport.tablesMade(dir.resolve("kb"));
+            Map<String, Path> again = new java.util.LinkedHashMap<>();
+            for (var m : members.entrySet()) {
+                if (Files.isDirectory(m.getValue()) && KbExport.needsChanged(dir.resolve("kb").resolve(m.getKey()), tablesMade)) {
+                    again.put(m.getKey(), m.getValue());
+                }
+            }
+            if (again.isEmpty()) {
+                return;
+            }
+            FleetLog.Phase phase = log.phase("dependencies" + (round == 1 ? "" : " " + round), "migrations needing tables other repos "
+                    + "make, run again now that those repos are exported", again.size());
+            for (var m : again.entrySet()) {
+                long t0 = System.nanoTime();
+                KbOutcome o;
+                try (Out.Progress p = phase.working(m.getKey(), "running its migrations again")) {
+                    o = exportMember(dir, m.getKey(), m.getValue(), null, null, true);
+                }
+                phase.done(m.getKey(), o.status(), System.nanoTime() - t0, o.detail(), o.notes());
+            }
+            phase.end();
+        }
     }
 
     // ---- logast fleet <name> -----------------------------------------------------------------------------------------
@@ -421,6 +474,9 @@ final class Fleet implements Callable<Integer> {
             if (kb) {
                 plan.add(new String[]{"knowledge base", "facts of the other repos into kb/" + (kbFull ? ", all of them"
                         : ", unchanged ones kept") + (flyway ? ", tables from the migrations (Docker)" : "")});
+                if (flyway) {
+                    plan.add(new String[]{"dependencies", "migrations needing another repo's tables run again against them (when any)"});
+                }
             }
             plan.add(new String[]{"report", "the overview, report/fleet.html"});
             log.intro("logast fleet " + name + " · " + names.size() + " repos", plan, names.stream().mapToInt(String::length).max().orElse(20));
@@ -442,6 +498,9 @@ final class Fleet implements Callable<Integer> {
         }
         Map<String, Path> members = NamedFleet.members(dir);
         Map<String, Path> added = NamedFleet.added(dir);
+        if (kb && flyway) {   // #205: what the last export knew of each member's tables, for the others' migrations
+            tablesMade = KbExport.tablesMade(dir.resolve("kb"));
+        }
         if (refresh) {
             FleetLog.Phase phase = log.phase("scan", null, members.size());
             for (var m : members.entrySet()) {

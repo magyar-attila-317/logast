@@ -368,7 +368,26 @@ public final class KnowledgeBase {
         if (!ambiguous.isEmpty()) {
             sb.append("not linked, more than one service fits: ").append(String.join("; ", ambiguous)).append('\n');
         }
+        List<String> incomplete = leftOut().stream().map(e -> e.fact().from()).distinct().sorted().toList();
+        if (!incomplete.isEmpty()) {
+            sb.append("INCOMPLETE schemas (migrations left out, their tables missing; describe says which): ")
+                    .append(String.join(", ", incomplete)).append('\n');
+        }
         return sb.toString();
+    }
+
+    /** #205: the migrations left out of a run (they need what no repo makes): their service's schema is incomplete. */
+    private List<Fact<Edge>> leftOut() {
+        return edges.stream().filter(e -> Boolean.TRUE.equals(e.fact().attrs().get("leftOut"))).toList();
+    }
+
+    private static String leftOutNote(Fact<Edge> e) {
+        Map<String, Object> a = e.fact().attrs();
+        Object lost = a.get("lost");
+        return a.get("via") + env(e.fact().env()) + " was left out: "
+                + (a.get("error") != null ? "it failed: " + a.get("error") : "it needs " + a.get("objectKind") + " " + a.get("asked")
+                + ", which no repo in the facts makes")
+                + (lost instanceof List<?> l && !l.isEmpty() ? "; missing with it: " + l : "");
     }
 
     /** Nodes whose id or attributes contain {@code text} (case-insensitive), optionally of one kind. */
@@ -425,6 +444,14 @@ public final class KnowledgeBase {
                     .append(n.fact().attrs().isEmpty() ? "" : n.fact().attrs() + " ")
                     .append("(").append(cite(n.fact().evidence(), n.header())).append(")\n");
         }
+        // #205: a schema the facts have only in part, and the tables that stood in for other services' ones
+        o.stream().filter(e -> Boolean.TRUE.equals(e.fact().attrs().get("leftOut")))
+                .forEach(e -> sb.append("  INCOMPLETE schema: ").append(leftOutNote(e)).append('\n'));
+        List<String> standIns = o.stream().filter(e -> Boolean.TRUE.equals(e.fact().attrs().get("standIn")))
+                .map(e -> e.fact().to()).distinct().toList();
+        if (!standIns.isEmpty()) {
+            sb.append("  its migrations need other services' objects (run against stand-ins): ").append(String.join(", ", standIns)).append('\n');
+        }
         appendEdges(sb, "out", o, true, limit);
         appendEdges(sb, "in", i, false, limit);
         return sb.toString();
@@ -467,6 +494,14 @@ public final class KnowledgeBase {
         String kind = writes ? "writes" : "reads";
         List<String> ids = tableIds(table);
         if (ids.isEmpty()) {
+            String bare = table.substring(table.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+            List<String> lostIn = leftOut().stream().filter(e -> e.fact().attrs().get("lost") instanceof List<?> l
+                    && l.stream().anyMatch(x -> String.valueOf(x).toLowerCase(Locale.ROOT).replaceAll(".*\\.", "").equals(bare)))
+                    .map(e -> e.fact().from() + ": " + leftOutNote(e)).toList();
+            if (!lostIn.isEmpty()) {   // #205: not unknown: its migration could not run
+                return "No table " + table + " in the facts, but a migration that creates it was left out, so the facts are "
+                        + "incomplete here:\n- " + String.join("\n- ", lostIn) + "\n";
+            }
             return "No table " + table + " in the facts. " + find(table, "entity", 5);
         }
         StringBuilder sb = new StringBuilder();
