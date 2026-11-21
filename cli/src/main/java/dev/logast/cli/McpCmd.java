@@ -33,16 +33,55 @@ final class McpCmd implements Callable<Integer> {
     @Option(names = "--code-mode", description = "Offer two tools instead of twenty (#201): api (the facts API, what is "
             + "loaded, examples) and query (a read-only JavaScript program over the facts, run in a sandbox)")
     boolean codeMode;
+    @Option(names = "--log", description = "Also append the server's stderr (startup, timings, errors) to this file (#210): "
+            + "MCP clients start the server without a shell, so a 2>> in their config does not work")
+    Path log;
 
     @Override
     public Integer call() throws IOException {
+        java.io.PrintStream err = log == null ? System.err : tee(System.err, log);
         KbPaths.Resolved r = KbPaths.resolve(kb, KbPaths.Env.current());
-        System.err.println("logast mcp: facts from " + r.source() + ": " + r.paths() + (codeMode ? " (code mode)" : ""));
-        McpServer server = new McpServer(() -> KnowledgeBase.factFiles(r.paths()), build(), System.err,
+        err.println("logast mcp " + build() + ": facts from " + r.source() + ": " + r.paths() + (codeMode ? " (code mode)" : ""));
+        for (Path p : r.paths()) {
+            if (!java.nio.file.Files.exists(p)) {
+                err.println("logast mcp: " + p + " does not exist: no facts from it (#210)");
+            }
+        }
+        McpServer server = new McpServer(() -> KnowledgeBase.factFiles(r.paths()), build(), err,
                 r.paths().isEmpty() ? null : dev.logast.kb.Proposals.file(r.paths()), codeMode);
         Writer out = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
         server.run(new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)), out);
+        err.flush();
         return 0;
+    }
+
+    /** #210: what goes to {@code err} also goes to the end of {@code file}. */
+    static java.io.PrintStream tee(java.io.PrintStream err, Path file) throws IOException {
+        Path abs = file.toAbsolutePath();
+        if (abs.getParent() != null) {
+            java.nio.file.Files.createDirectories(abs.getParent());
+        }
+        java.io.OutputStream f = java.nio.file.Files.newOutputStream(abs, java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+        return new java.io.PrintStream(new java.io.OutputStream() {
+            @Override
+            public void write(int b) throws IOException {
+                err.write(b);
+                f.write(b);
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                err.write(b, off, len);
+                f.write(b, off, len);
+            }
+
+            @Override
+            public void flush() throws IOException {
+                err.flush();
+                f.flush();
+            }
+        }, true, StandardCharsets.UTF_8);
     }
 
     @Command(name = "config", description = "Print the server entry to add to an MCP client's configuration (the common "
@@ -55,6 +94,10 @@ final class McpCmd implements Callable<Integer> {
         String name;
         @Option(names = "--code-mode", description = "The entry starts the server in code mode (two tools: api, query)")
         boolean codeMode;
+        @Option(names = "--log", arity = "0..1", fallbackValue = "", paramLabel = "<file>", description = "The entry has the "
+                + "server append its stderr to a file (#210; without a file: logast-mcp.log, or logast-mcp-code.log in code "
+                + "mode, in the temp folder)")
+        String log;
 
         @Override
         public Integer call() throws IOException {
@@ -68,6 +111,11 @@ final class McpCmd implements Callable<Integer> {
             }
             if (codeMode) {
                 args.add("--code-mode");
+            }
+            if (log != null) {
+                Path f = log.isEmpty() ? Path.of(System.getProperty("java.io.tmpdir"), codeMode ? "logast-mcp-code.log" : "logast-mcp.log")
+                        : Path.of(log);
+                args.add("--log").add(f.toAbsolutePath().normalize().toString());
             }
             System.out.println(json.writeValueAsString(root));
             return 0;

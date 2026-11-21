@@ -45,6 +45,38 @@ class FactsCliTest {
                 .isEqualTo("[\"mcp\",\"--kb\",\"" + tmp.toAbsolutePath().normalize() + "\"]");
     }
 
+    /** #210: clients start the server without a shell, so the entry asks the server itself to log its stderr. */
+    @Test
+    void mcpConfigLogsWithoutAShell() throws IOException {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        String tmpdir = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize().toString();
+        assertThat(json.readTree(run("mcp", "config", "--kb", tmp.toString(), "--code-mode", "--log").out())
+                .at("/mcpServers/logast-kb/args").toString())
+                .endsWith("\"--code-mode\",\"--log\",\"" + Path.of(tmpdir, "logast-mcp-code.log") + "\"]");
+        Path f = tmp.resolve("mine.log");
+        assertThat(json.readTree(run("mcp", "config", "--log", f.toString(), "--kb", tmp.toString()).out())
+                .at("/mcpServers/logast-kb/args").toString())
+                .isEqualTo("[\"mcp\",\"--kb\",\"" + tmp.toAbsolutePath().normalize() + "\",\"--log\",\"" + f.toAbsolutePath() + "\"]");
+    }
+
+    /** #210: the server's stderr goes to the --log file too, and a --kb path that does not exist is named there. */
+    @Test
+    void mcpLogsToItsFileAndNamesAMissingKb() throws IOException {
+        Path missing = tmp.resolve("kb 2>>err.log");
+        Path log = tmp.resolve("logs/mcp.log");
+        var in = System.in;
+        var err = System.err;
+        try {
+            System.setIn(new java.io.ByteArrayInputStream(new byte[0]));
+            System.setErr(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+            assertThat(run("mcp", "--kb", missing.toString(), "--log", log.toString()).exit()).isZero();
+        } finally {
+            System.setIn(in);
+            System.setErr(err);
+        }
+        assertThat(Files.readString(log)).contains("facts from --kb").contains(missing + " does not exist: no facts from it");
+    }
+
     @Test
     void validFilesPassAndBrokenLinesAreNamed() throws IOException {
         String header = "{\"header\":{\"schema\":\"kb-facts/0\",\"extractor\":\"java\",\"repo\":\"shipping\"}}\n";
