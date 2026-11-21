@@ -230,6 +230,56 @@ public final class FlywayExtractor implements Extractor {
         return this;
     }
 
+    private Map<String, List<String>> elsewhere = Map.of();
+
+    /**
+     * #205: the tables other services create ({@code schema.name} to its columns, {@code "name type"}), from the fleet's
+     * facts: a migration needing one runs against an empty stand-in with those columns instead of being left out.
+     */
+    public FlywayExtractor withElsewhere(Map<String, List<String>> tables) {
+        this.elsewhere = tables == null ? Map.of() : tables;
+        return this;
+    }
+
+    /**
+     * #205: the table of {@code tables} a migration asking for {@code asked} means: a qualified name as it is; a bare one in
+     * the run's schema, else the only schema that has it. Null: no other service makes it.
+     */
+    public static String madeElsewhere(Map<String, List<String>> tables, String asked, String searchSchema) {
+        String a = asked.toLowerCase(Locale.ROOT);
+        if (a.contains(".")) {
+            return tables.containsKey(a) ? a : null;
+        }
+        if (searchSchema != null && tables.containsKey(searchSchema.toLowerCase(Locale.ROOT) + "." + a)) {
+            return searchSchema.toLowerCase(Locale.ROOT) + "." + a;
+        }
+        List<String> hits = tables.keySet().stream().filter(k -> k.endsWith("." + a)).toList();
+        return hits.size() == 1 ? hits.getFirst() : null;
+    }
+
+    private static final Pattern PLAIN_TYPE = Pattern.compile("[a-z][a-z0-9 ()]*");
+
+    private static String quoted(String name) {
+        return "\"" + name.replace("\"", "\"\"") + "\"";
+    }
+
+    private static String qualified(String name) {
+        return name.contains(".") ? quoted(name.substring(0, name.indexOf('.'))) + "." + quoted(name.substring(name.indexOf('.') + 1))
+                : quoted(name);
+    }
+
+    /** {@code create table} of a stand-in: the columns with their types (text where the type is not a plain one). */
+    static String standInSql(String table, List<String> columns) {
+        List<String> cols = new ArrayList<>();
+        for (String c : columns) {
+            int sp = c.indexOf(' ');
+            String name = sp < 0 ? c : c.substring(0, sp);
+            String type = sp < 0 ? "text" : c.substring(sp + 1).strip();
+            cols.add(quoted(name) + " " + (PLAIN_TYPE.matcher(type).matches() ? type : "text"));
+        }
+        return "create table " + qualified(table) + " (" + String.join(", ", cols) + ")";
+    }
+
     /** #179: the Flyway runs the service's code makes (per tenant schema, for instance). */
     public FlywayExtractor withCodeRuns(List<ProgrammaticFlyway.CodeRun> runs) {
         this.codeRuns = runs;
@@ -387,22 +437,50 @@ public final class FlywayExtractor implements Extractor {
      * the missing one is created, empty, and the migrations run again (a failed one rolled back: PostgreSQL's DDL is
      * transactional). Said on stderr; what the migrations create still counts.
      */
-    /** #196: a migration left out because it needs an object another service makes. */
+    /** #196: a migration left out because it needs an object no other service makes (or failed against stand-ins). */
     record Skipped(String script, String kind, String name) {
+    }
+
+    /** #205: an object another service makes, stood in for (empty) so the migrations needing it run in full. */
+    record StandIn(String script, String kind, String asked, String table, List<String> columns) {
+    }
+
+    /** What the migrations needed from elsewhere. */
+    record Needs(List<Skipped> skipped, List<StandIn> standIns) {
     }
 
     private static final Pattern ELSEWHERE = Pattern.compile("(relation|sequence|type|view) \"([^\"]+)\" does not exist");
     private static final Pattern SCRIPT = Pattern.compile("(?:script|[Mm]igration) ([^\\s/\\\\]+\\.sql)");
 
-    private static List<Skipped> migrateCreatingWhatIsMissing(org.flywaydb.core.api.configuration.FluentConfiguration flyway, String url,
-                                                     String user, String password, Run run, Map<String, String> placeholders,
-                                                     Map<String, String> config, Set<String> defaulted) throws SQLException {
+    private static final Pattern LOCATION = Pattern.compile("Location\\s*: (\\S+\\.sql)");
+
+    /** The failed script (its path in Flyway's message) takes {@code nextval('asked')}: a sequence. */
+    private static boolean nextval(String message, String asked) {
+        Matcher l = LOCATION.matcher(message);
+        if (!l.find()) {
+            return false;
+        }
+        try {
+            String sql = Files.readString(Path.of(l.group(1))).toLowerCase(Locale.ROOT);
+            return Pattern.compile("nextval\\s*\\(\\s*'" + Pattern.quote(asked.toLowerCase(Locale.ROOT)) + "'").matcher(sql).find();
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    private static final Pattern NO_UNIQUE = Pattern.compile("no unique constraint matching given keys for referenced table \"([^\"]+)\"");
+
+    private Needs migrateCreatingWhatIsMissing(org.flywaydb.core.api.configuration.FluentConfiguration flyway, String url,
+                                               String user, String password, Run run, Map<String, String> placeholders,
+                                               Map<String, String> config, Set<String> defaulted, String searchSchema) throws SQLException {
         Set<String> created = new LinkedHashSet<>();
         List<Skipped> skipped = new ArrayList<>();
+        List<StandIn> standIns = new ArrayList<>();
+        String where = "flyway" + (run.env() == null ? "" : " " + run.env());
         while (true) {
             try {
                 flyway.load().migrate();
-                return skipped;
+                return new Needs(skipped, standIns);
             } catch (org.flywaydb.core.api.FlywayException e) {
                 Matcher m = null;
                 StringBuilder all = new StringBuilder();
@@ -415,15 +493,58 @@ public final class FlywayExtractor implements Extractor {
                 }
                 Matcher other = ELSEWHERE.matcher(all);
                 Matcher script = SCRIPT.matcher(all);
-                if (m == null && other.find() && script.find() && skipped.size() < 30
-                        && skipped.stream().noneMatch(sk -> sk.script().equals(script.group(1)))) {
-                    // #196: it reads what another service makes (a view on its table, its sequence): left out, the rest still run
-                    skipped.add(new Skipped(script.group(1), other.group(1), other.group(2)));
+                boolean needsOther = m == null && other.find();
+                boolean hasScript = script.find();
+                if (needsOther && hasScript && standIns.size() < 30) {
+                    String kind = other.group(1);
+                    String asked = other.group(2);
+                    String table = kind.equals("relation") ? madeElsewhere(elsewhere, asked, searchSchema) : null;
+                    // nextval('x') of a missing sequence fails as a missing relation: the script (Flyway says where) has it
+                    boolean sequence = kind.equals("sequence") || table == null && nextval(all.toString(), asked);
+                    if (sequence) {
+                        kind = "sequence";
+                    }
+                    String key = sequence ? (asked.contains(".") ? asked : searchSchema + "." + asked) : table;
+                    if (key != null && standIns.stream().noneMatch(si -> si.table().equals(key))) {
+                        // #205: another service makes it: an empty stand-in, and the migration runs in full
+                        try (Connection c = DriverManager.getConnection(url, user, password); Statement st = c.createStatement()) {
+                            if (key.contains(".")) {
+                                st.execute("create schema if not exists " + quoted(key.substring(0, key.indexOf('.'))));
+                            }
+                            st.execute(sequence ? "create sequence if not exists " + qualified(key) : standInSql(key, elsewhere.get(key)));
+                        }
+                        standIns.add(new StandIn(script.group(1), kind, asked, key, sequence ? List.of() : elsewhere.get(key)));
+                        System.err.println(where + ": " + script.group(1) + " needs " + kind + " " + asked + (sequence ? ", made elsewhere: "
+                                + "ran it against an empty one" : ", which another service makes: ran it against a stand-in with its columns"));
+                        continue;
+                    }
+                }
+                Matcher unique = NO_UNIQUE.matcher(all);
+                if (m == null && unique.find()) {   // #205: a foreign key to a stand-in: each of its columns unique (it is empty)
+                    String t = unique.group(1);
+                    StandIn si = standIns.stream().filter(x -> x.table().endsWith("." + t) && !x.columns().isEmpty()).findFirst().orElse(null);
+                    if (si != null && created.add("unique " + si.table())) {
+                        try (Connection c = DriverManager.getConnection(url, user, password); Statement st = c.createStatement()) {
+                            for (String col : si.columns()) {
+                                String name = col.contains(" ") ? col.substring(0, col.indexOf(' ')) : col;
+                                st.execute("alter table " + qualified(si.table()) + " add unique (" + quoted(name) + ")");
+                            }
+                        }
+                        continue;
+                    }
+                }
+                boolean leaveOut = hasScript && skipped.size() < 30 && skipped.stream().noneMatch(sk -> sk.script().equals(script.group(1)))
+                        && (needsOther || m == null && !standIns.isEmpty());
+                if (leaveOut) {
+                    // #196: it needs what no repo of the fleet makes (or failed against a stand-in): left out, the rest still run
+                    String kind = needsOther ? other.group(1) : "error";
+                    String name = needsOther ? other.group(2) : firstLine(e);
+                    skipped.add(new Skipped(script.group(1), kind, name));
                     Set<String> leave = new LinkedHashSet<>();
                     skipped.forEach(sk -> leave.add(sk.script()));
                     flyway.locations(without(run.folders(), leave).stream().map(p -> "filesystem:" + p).toArray(String[]::new));
-                    System.err.println("flyway" + (run.env() == null ? "" : " " + run.env()) + ": left out " + script.group(1) + ": it needs "
-                            + other.group(1) + " " + other.group(2) + ", which another service makes");
+                    System.err.println(where + ": left out " + script.group(1) + ": " + (needsOther ? "it needs " + kind + " " + name
+                            + ", which no repo of the fleet makes" : "it failed against a stand-in: " + name));
                     continue;
                 }
                 if (m == null || created.size() >= 20 || !created.add(m.group(0))) {
@@ -438,8 +559,8 @@ public final class FlywayExtractor implements Extractor {
                 try (Connection c = DriverManager.getConnection(url, user, password); Statement st = c.createStatement()) {
                     st.execute(m.group(1).equals("schema") ? "create schema if not exists \"" + name + "\"" : "create role \"" + name + "\"");
                 }
-                System.err.println("flyway" + (run.env() == null ? "" : " " + run.env()) + ": the migrations expect " + m.group(1) + " "
-                        + m.group(2) + " to exist (made outside Flyway): created it empty and ran them again");
+                System.err.println(where + ": the migrations expect " + m.group(1) + " " + m.group(2)
+                        + " to exist (made outside Flyway): created it empty and ran them again");
             }
         }
     }
@@ -486,17 +607,50 @@ public final class FlywayExtractor implements Extractor {
                 }
             }
         }
-        List<Skipped> skipped = migrateCreatingWhatIsMissing(flyway, url, user, password, run, placeholders, config, defaulted);
-        for (Skipped sk : skipped) {   // #196: what a migration needs from elsewhere is a fact: this service reads it
-            String rel = sk.name().contains(".") ? sk.name() : (run.schema() != null ? run.schema()
-                    : config.getOrDefault("spring.flyway.default-schema", "public")) + "." + sk.name();
+        String searchSchema = run.schema() != null ? run.schema() : defaultSchema != null && !defaultSchema.isBlank() ? defaultSchema : "public";
+        Needs needs = migrateCreatingWhatIsMissing(flyway, url, user, password, run, placeholders, config, defaulted, searchSchema);
+        Set<String> standInTables = new LinkedHashSet<>();
+        for (StandIn si : needs.standIns()) {   // #205: what it needs another service makes: it reads that one
+            Path f = files.stream().filter(x -> x.getFileName().toString().equals(si.script())).findFirst().orElse(null);
+            Map<String, Object> ea = new TreeMap<>();
+            ea.put("via", "migration " + si.script());
+            ea.put("madeElsewhere", true);
+            ea.put("objectKind", si.kind());
+            ea.put("asked", si.asked());
+            ea.put("searchSchema", searchSchema);
+            ea.put("standIn", true);
+            if (!si.columns().isEmpty()) {
+                ea.put("columnsAssumed", si.columns());
+                standInTables.add(si.table());
+            }
+            out.edge(Edge.extracted("service:" + service, "reads", "table:" + si.table(), ea,
+                    Evidence.at(f == null ? si.script() : name(root, f), null)).inEnv(run.env()));
+        }
+        for (Skipped sk : needs.skipped()) {   // #196: left out: a fact, with what it would have made
+            String rel = sk.kind().equals("error") ? null : sk.name().contains(".") ? sk.name() : searchSchema + "." + sk.name();
             Path f = files.stream().filter(x -> x.getFileName().toString().equals(sk.script())).findFirst().orElse(null);
             Evidence at = Evidence.at(f == null ? sk.script() : name(root, f), null);
             Map<String, Object> ea = new TreeMap<>();
             ea.put("via", "migration " + sk.script());
-            ea.put("madeElsewhere", true);
+            ea.put("leftOut", true);
             ea.put("objectKind", sk.kind());
-            out.edge(Edge.extracted("service:" + service, "reads", "table:" + rel, ea, at).inEnv(run.env()));
+            List<String> lost = new ArrayList<>();
+            if (f != null) {
+                Matcher ct = CREATE_TABLE.matcher(read(f));
+                while (ct.find()) {
+                    lost.add(ct.group(1).replace("\"", ""));
+                }
+            }
+            ea.put("lost", lost);
+            if (rel == null) {
+                ea.put("error", sk.name());
+                out.edge(Edge.extracted("service:" + service, "leftOut", "migration:" + service + ":" + sk.script(), ea, at).inEnv(run.env()));
+            } else {
+                ea.put("madeElsewhere", true);
+                ea.put("asked", sk.name());
+                ea.put("searchSchema", searchSchema);
+                out.edge(Edge.extracted("service:" + service, "reads", "table:" + rel, ea, at).inEnv(run.env()));
+            }
         }
 
         Map<String, Evidence> createdIn = createdIn(root, files, placeholders);
@@ -504,7 +658,7 @@ public final class FlywayExtractor implements Extractor {
             Map<String, List<String>> columns = columns(c);
             for (var t : columns.entrySet()) {
                 String table = t.getKey();
-                if (table.endsWith(".flyway_schema_history")) {
+                if (table.endsWith(".flyway_schema_history") || standInTables.contains(table)) {
                     continue;
                 }
                 Map<String, Object> attrs = new TreeMap<>();

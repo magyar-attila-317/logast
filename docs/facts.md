@@ -75,10 +75,19 @@ Edge kinds: `has`, `calls`, `reads`, `writes`, `publishes`, `consumes`, `runs`, 
 Migrations that expect a schema or a role made elsewhere (a DBA, an init script, another service: `create table
 cache.x`, `grant … to reporting_reader`) fail in the throwaway database. logast creates the missing one, empty, and runs
 the migrations again (#192: a failed migration rolls back, PostgreSQL's DDL is transactional), and says so on stderr.
-A migration that reads what another service makes (`relation|sequence|type|view … does not exist`: a view on its
-table, its sequence) is left out and the migrations after it still run (#196); it says so on stderr, and what it
-reads becomes an edge `service:<svc> -reads-> table:<schema.name>` with `via: migration <file>` and
-`madeElsewhere: true`. The objects the left-out migration itself would have made are missing.
+A migration that needs what another service makes (`relation|sequence|type|view … does not exist`: a view on its
+table, a foreign key to it, its sequence) runs against a **stand-in** where it can (#205):
+- a table another repo's migrations create (in a fleet: from the other members' facts, `withElsewhere` in code) is
+  created empty with that table's columns (and each column unique, for a foreign key to it); a sequence is created empty;
+- the migration then runs in full; the stand-in is not the service's table: an edge `service:<svc> -reads->
+  table:<schema.name>` with `via: migration <file>`, `madeElsewhere: true`, `standIn: true` and `columnsAssumed`.
+
+Where nothing can stand in (no repo makes it; a type or a view of another service), the migration is **left out** and
+the ones after it still run (#196). That is a fact too: the same `reads` edge with `leftOut: true` and `lost` (the
+tables the left-out migration would have created); a migration that failed against a stand-in gets a `leftOut` edge
+to `migration:<svc>:<file>` with its `error`. The MCP says the schema is incomplete: `summary` lists those services,
+`describe` of the service says which migration and what is missing with it, and a question about a lost table says
+why it is not in the facts.
 
 ## A whole repo, any layout: `--out-dir`
 

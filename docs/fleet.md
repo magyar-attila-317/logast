@@ -283,6 +283,11 @@ logast could not read) is not recorded, so the next run exports it again once th
 after its scan, with that scan's classpath and analysis; the others go `--kb-threads` at a time (default 2: one
 analysis can take a few GB). `--flyway` (with `--rows`, `--postgres-image`) adds the tables each member's migrations
 create, per environment, as `logast export --flyway` (needs Docker); changing it re-exports every member once (#184).
+A migration needing a table another member creates runs against a stand-in with that table's columns (#205,
+docs/facts.md); after the knowledge base phase, a **dependencies** phase runs the members whose needs resolve
+differently now (a member exported later makes it, or its columns changed) again, round by round for chains. A member
+with migrations left out (nothing in the fleet makes what they need) shows `!` with the migration and what is missing;
+its stamp keeps those needs, so it is exported again once some member makes them.
 
 In a fleet repo, the workflow `fleet init` writes runs with `--kb` and commits `kb/` when it changed (with the job's own
 token), so `git pull` in a clone brings everyone the newest knowledge base. The facts name endpoints, tables, hosts and
