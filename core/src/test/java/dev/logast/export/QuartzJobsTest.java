@@ -437,4 +437,119 @@ class QuartzJobsTest {
                 .as("the trigger the code picks by name, not the first one").contains("\"cron\":\"0 30 1 ? * *\"",
                         "\"cronFrom\":\"logistics.scheduling.sync.triggers[1].cron\"", "\"zone\":\"Europe/London\"").doesNotContain("0 0 12");
     }
+
+    /**
+     * #208: the jobs a JobDetailFactoryBean defines: one per JobDetail (one class run as several jobs, each with its name,
+     * its data and its trigger), a class whose base class is a library's (no Quartz import, no classpath: named only where
+     * it is scheduled), and a class handed to a helper that builds the JobDetail.
+     */
+    @Test
+    void eachJobDetailIsAJob() throws IOException {
+        Path root = tmp.resolve("ledger");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        write(root, "TallyJob", """
+                package com.example.jobs;
+
+                import com.example.platform.PlatformJob;
+
+                public class TallyJob extends PlatformJob {
+                    @Override
+                    protected void runJob(CalcType type) {
+                    }
+                }
+                """);
+        write(root, "CleanupJob", """
+                package com.example.jobs;
+
+                import com.example.platform.PlatformJob;
+
+                public class CleanupJob extends PlatformJob {
+                    @Override
+                    protected void runJob(CalcType type) {
+                    }
+                }
+                """);
+        write(root, "CalcType", """
+                package com.example.jobs;
+
+                public enum CalcType { DAILY, MONTHLY }
+                """);
+        write(root, "LedgerJobConfig", """
+                package com.example.jobs;
+
+                import java.util.Map;
+                import org.quartz.Job;
+                import org.quartz.JobDetail;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.scheduling.quartz.CronTriggerFactoryBean;
+                import org.springframework.scheduling.quartz.JobDetailFactoryBean;
+
+                public class LedgerJobConfig {
+                    @Bean
+                    public JobDetailFactoryBean dailyTallyDetail() {
+                        JobDetailFactoryBean f = new JobDetailFactoryBean();
+                        f.setJobClass(TallyJob.class);
+                        f.setName("daily-tally");
+                        f.setJobDataAsMap(Map.of("type", CalcType.DAILY));
+                        return f;
+                    }
+
+                    @Bean
+                    public JobDetailFactoryBean monthlyTallyDetail() {
+                        JobDetailFactoryBean f = new JobDetailFactoryBean();
+                        f.setJobClass(TallyJob.class);
+                        f.setName("monthly-tally");
+                        f.setJobDataAsMap(Map.of("type", CalcType.MONTHLY));
+                        return f;
+                    }
+
+                    @Bean
+                    public JobDetailFactoryBean cleanupDetail() {
+                        return detail(CleanupJob.class, "cleanup");
+                    }
+
+                    @Bean
+                    public CronTriggerFactoryBean dailyTallyTrigger(JobDetail dailyTallyDetail) {
+                        CronTriggerFactoryBean t = new CronTriggerFactoryBean();
+                        t.setJobDetail(dailyTallyDetail);
+                        t.setCronExpression("0 0 2 * * ?");
+                        return t;
+                    }
+
+                    @Bean
+                    public CronTriggerFactoryBean monthlyTallyTrigger() {
+                        CronTriggerFactoryBean t = new CronTriggerFactoryBean();
+                        t.setJobDetail(monthlyTallyDetail().getObject());
+                        t.setCronExpression("0 0 3 1 * ?");
+                        return t;
+                    }
+
+                    @Bean
+                    public CronTriggerFactoryBean cleanupTrigger(JobDetail cleanupDetail) {
+                        CronTriggerFactoryBean t = new CronTriggerFactoryBean();
+                        t.setJobDetail(cleanupDetail);
+                        t.setCronExpression("0 30 4 * * ?");
+                        return t;
+                    }
+
+                    private static JobDetailFactoryBean detail(Class<? extends Job> type, String name) {
+                        JobDetailFactoryBean f = new JobDetailFactoryBean();
+                        f.setJobClass(type);
+                        f.setName(name);
+                        return f;
+                    }
+                }
+                """);
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "ledger", "test", out);
+        List<String> jobs = out.toString().lines().filter(l -> l.contains("\"kind\":\"job\"")).toList();
+        assertThat(jobs).as(out.toString()).hasSize(3);
+        assertThat(jobs).filteredOn(l -> l.contains("TallyJob#daily-tally")).singleElement().asString()
+                .contains("\"cron\":\"0 0 2 * * ?\"", "\"jobName\":\"daily-tally\"", "CalcType.DAILY");
+        assertThat(jobs).filteredOn(l -> l.contains("TallyJob#monthly-tally")).singleElement().asString()
+                .contains("\"cron\":\"0 0 3 1 * ?\"", "CalcType.MONTHLY");
+        assertThat(jobs).filteredOn(l -> l.contains("job:ledger:com.example.jobs.CleanupJob\"")).singleElement().asString()
+                .contains("\"cron\":\"0 30 4 * * ?\"");
+    }
 }
