@@ -265,6 +265,15 @@ mappings:
 - **Mapped facts** keep the matched fact's environment and evidence (with its repo and commit made explicit), and say
   which rule made them (`attrs.mappedBy`). Write them next to the other facts files; `logast mcp` loads them all.
 
+A rule can also go through a JSON list inside a column (#212): `each: {attr: actions, path: jobs, as: step}` runs
+the rule once per element of `actions.jobs`, with its fields as `{step.<field>}`, `{step._index}`, `{step._count}`,
+and the element before it as `{prev.<field>}` (nothing is written, and nothing reported, for the first one's
+`prev`). A lookup finds a node by the end of its id when the full id is not known: `{as: k8s, kind: job, idSuffix:
+":{step.k8sName}"}` (a workload whose id has its release in front). A row without environment matches nodes of every
+environment, and the facts are written once per environment found. A job without a schedule that a scheduled job
+`runs` (through the workloads it starts, up to four steps) gets that job's times in `next_runs`, and `runs_on` lists
+it below that job.
+
 ## Your own facts
 
 Knowledge no extractor or mapping covers (an internal API, a custom file format, a spreadsheet of owners) can be

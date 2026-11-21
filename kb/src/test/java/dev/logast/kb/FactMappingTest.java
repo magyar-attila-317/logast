@@ -113,4 +113,67 @@ class FactMappingTest {
         assertThat(FactMapping.fill("job:{service}", java.util.Map.of("service", " "))).as("blank is no value").isNull();
         assertThat(FactMapping.fill("a$b {x}", java.util.Map.of("x", "$1"))).isEqualTo("a$b $1");
     }
+
+    /**
+     * #212: a pipeline row lists its steps in a JSON column; each step names the workload it starts (the workload's id
+     * has a release in front); the rows have no environment, the workloads do. The service's job then runs when the
+     * pipeline does.
+     */
+    @Test
+    void pipelineStepsInAJsonColumnRunTheWorkloadsTheyName() throws IOException {
+        String quote = "\\\"";
+        String actions = "{" + quote + "jobs" + quote + ":[{" + quote + "type" + quote + ":" + quote + "K8S_JOB" + quote + "," + quote + "k8sName"
+                + quote + ":" + quote + "billing-invoicejob" + quote + "},{" + quote + "type" + quote + ":" + quote + "K8S_JOB" + quote + ","
+                + quote + "k8sName" + quote + ":" + quote + "billing-reminderjob" + quote + "}]}";
+        Files.writeString(tmp.resolve("agenda.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"java+flyway","repo":"agenda"}}
+                {"node":{"id":"row:agenda.routine:1","kind":"row","attrs":{"id":1,"name":"NightlyBilling","run_mode":"CRON","run_spec":"0 0 1 * * MON","actions":"%s"},"evidence":{"file":"db/migration/V5__pipelines.sql","line":3}}}
+                """.formatted(actions));
+        Files.writeString(tmp.resolve("deploy.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"helm","repo":"deploy"}}
+                {"node":{"id":"job:platform:billing-invoicejob","kind":"job","env":"ppe","attrs":{"entrypoint":"cronjob","schedule":"0 0 1 1 *","suspended":true},"evidence":{"file":"charts/billing/job.yaml"}}}
+                {"node":{"id":"job:platform:billing-reminderjob","kind":"job","env":"ppe","attrs":{"entrypoint":"cronjob","schedule":"0 0 1 1 *","suspended":true},"evidence":{"file":"charts/billing/job.yaml"}}}
+                {"edge":{"from":"job:platform:billing-invoicejob","kind":"runs","to":"job:billing:invoiceJob","env":"ppe","provenance":"extracted","evidence":{"file":"charts/billing/job.yaml"}}}
+                {"node":{"id":"job:billing:invoiceJob","kind":"job","attrs":{"entrypoint":"startup","profile":"invoiceJob"},"evidence":{"file":"InvoiceJob.java"}}}
+                """);
+        FactMapping m = FactMapping.parse(new ObjectMapper(new YAMLFactory()).readTree("""
+                mappings:
+                  - name: pipelines
+                    match: {kind: row, idPrefix: "row:agenda.routine:", where: {run_mode: CRON}}
+                    nodes:
+                      - {id: "job:agenda:{name}", kind: job, attrs: {schedule: "{run_spec}", scheduleFormat: spring, entrypoint: pipeline}}
+                  - name: pipeline-steps
+                    match: {kind: row, idPrefix: "row:agenda.routine:"}
+                    each: {attr: actions, path: jobs, as: step}
+                    lookup:
+                      - {as: k8s, kind: job, idSuffix: ":{step.k8sName}"}
+                      - {as: before, kind: job, idSuffix: ":{prev.k8sName}"}
+                    edges:
+                      - {from: "job:agenda:{name}", kind: runs, to: "{k8s._id}", attrs: {position: "{step._index} of {step._count}"}}
+                      - {from: "{before._id}", kind: after, to: "{k8s._id}"}
+                """));
+        Collect c = new Collect();
+        FactMapping.Stats stats = m.apply(KnowledgeBase.load(List.of(tmp)), c);
+        assertThat(stats.skipped()).as("the first step has none before it: not a skip").isEmpty();
+        assertThat(c.edges).extracting(e -> e.from() + " -" + e.kind() + "-> " + e.to() + " [" + e.env() + "] " + e.attrs().getOrDefault("position", ""))
+                .containsExactlyInAnyOrder(
+                        "job:agenda:NightlyBilling -runs-> job:platform:billing-invoicejob [ppe] 1 of 2",
+                        "job:agenda:NightlyBilling -runs-> job:platform:billing-reminderjob [ppe] 2 of 2",
+                        "job:platform:billing-invoicejob -after-> job:platform:billing-reminderjob [ppe] ");
+
+        Path mapped = Files.createDirectories(tmp.resolve("mapped"));
+        try (var w = Files.newBufferedWriter(mapped.resolve("agenda.jsonl"));
+             var fw = new dev.logast.facts.FactWriter(w, dev.logast.facts.Header.of("mapping", "1", "mapped", null))) {
+            c.nodes.forEach(fw::node);
+            c.edges.forEach(fw::edge);
+        }
+        KnowledgeBase kb = KnowledgeBase.load(List.of(tmp));
+        String next = Schedules.nextRuns(kb, "job:billing:invoiceJob", "ppe", 2, "UTC",
+                java.time.ZonedDateTime.of(2026, 11, 21, 12, 0, 0, 0, java.time.ZoneOffset.UTC));
+        assertThat(next).as("the pipeline's times, not those of the CronJob it starts")
+                .contains("run by job:agenda:NightlyBilling", "Mon 2026-11-23 01:00:00").doesNotContain("01-01");
+        assertThat(Schedules.runsOn(kb, "2026-11-23", "ppe", "UTC", java.time.LocalDate.of(2026, 11, 21)))
+                .contains("job:agenda:NightlyBilling", "job:platform:billing-invoicejob, run by job:agenda:NightlyBilling",
+                        "job:billing:invoiceJob, run by job:platform:billing-invoicejob");
+    }
 }

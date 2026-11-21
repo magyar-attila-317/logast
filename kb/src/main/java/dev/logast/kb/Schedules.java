@@ -245,9 +245,11 @@ public final class Schedules {
             List<String> next = new ArrayList<>();
             for (String id : frontier) {
                 for (var e : kb.outgoing(id)) {
-                    if (e.fact().kind().equals("after") && (env == null || env.isBlank() || e.fact().env() == null
+                    boolean step = e.fact().kind().equals("after") || e.fact().kind().equals("runs") && e.fact().to().startsWith("job:");   // #212
+                    if (step && (env == null || env.isBlank() || e.fact().env() == null
                             || Objects.equals(e.fact().env(), env)) && seen.add(e.fact().to())) {
-                        after.add("- " + e.fact().to() + " after " + id + " (" + KnowledgeBase.cite(e.fact().evidence(), e.header()) + ")");
+                        after.add("- " + e.fact().to() + (e.fact().kind().equals("runs") ? ", run by " : " after ") + id
+                                + " (" + KnowledgeBase.cite(e.fact().evidence(), e.header()) + ")");
                         next.add(e.fact().to());
                     }
                 }
@@ -265,6 +267,34 @@ public final class Schedules {
         return sb.toString();
     }
 
+    /** #212: the nearest job with a schedule that runs {@code id}, following {@code runs} back (4 steps; not {@code after}: that starts later). */
+    static KnowledgeBase.Fact<Node> scheduledRunner(KnowledgeBase kb, String id, String env) {
+        Set<String> seen = new LinkedHashSet<>(List.of(id));
+        List<String> frontier = List.of(id);
+        for (int depth = 0; depth < 4 && !frontier.isEmpty(); depth++) {
+            List<String> next = new ArrayList<>();
+            for (String x : frontier) {
+                for (var e : kb.incoming(x)) {
+                    String from = e.fact().from();
+                    boolean envOk = env == null || env.isBlank() || e.fact().env() == null || Objects.equals(e.fact().env(), env);
+                    if (!e.fact().kind().equals("runs") || !from.startsWith("job:") || !envOk || !seen.add(from)) {
+                        continue;
+                    }
+                    for (KnowledgeBase.Fact<Node> n : kb.nodes()) {
+                        boolean triggered = kb.incoming(from).stream().anyMatch(i -> i.fact().kind().equals("runs") && i.fact().from().startsWith("job:"));
+                        if (n.fact().id().equals(from) && !triggered && inEnv(n.fact(), env) && !all(n, env).isEmpty()
+                                && all(n, env).stream().allMatch(sc -> sc.problem() == null)) {
+                            return n;
+                        }
+                    }
+                    next.add(from);
+                }
+            }
+            frontier = next;
+        }
+        return null;
+    }
+
     /** The next times a job runs (in the environment). */
     public static String nextRuns(KnowledgeBase kb, String id, String env, int count, String zoneText, ZonedDateTime now) {
         ZoneId zone = ZoneId.of(zoneText == null || zoneText.isBlank() ? "UTC" : zoneText);
@@ -276,7 +306,13 @@ public final class Schedules {
             List<Schedule> ss = all(f, env);
             if (ss.isEmpty()) {
                 sb.append(id).append(f.fact().env() == null ? "" : " [" + f.fact().env() + "]").append(": ");
-                sb.append("no schedule in the facts (it may run in a pipeline or when called)\n");
+                KnowledgeBase.Fact<Node> by = scheduledRunner(kb, id, f.fact().env() != null ? f.fact().env() : env);
+                if (by == null) {
+                    sb.append("no schedule in the facts (it may run in a pipeline or when called)\n");
+                } else {   // #212: run by a pipeline (through the workload that starts it): the pipeline's times
+                    sb.append("run by ").append(by.fact().id()).append(", which runs at:\n");
+                    sb.append(nextRuns(kb, by.fact().id(), by.fact().env() != null ? by.fact().env() : env, count, zoneText, now));
+                }
             }
             for (Schedule s : ss) {
             sb.append(id).append(f.fact().env() == null ? "" : " [" + f.fact().env() + "]").append(s.triggerLabel()).append(": ");

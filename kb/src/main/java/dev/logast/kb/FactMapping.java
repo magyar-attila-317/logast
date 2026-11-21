@@ -50,11 +50,16 @@ import java.util.regex.Pattern;
 public final class FactMapping {
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]+)}");
 
-    record Rule(String name, String kind, String idPrefix, Map<String, String> where, List<Lookup> lookups,
+    record Rule(String name, String kind, String idPrefix, Map<String, String> where, Each each, List<Lookup> lookups,
                 List<NodeTemplate> nodes, List<EdgeTemplate> edges) {
     }
 
-    record Lookup(String as, String id) {
+    /** #212: one pass per element of a JSON array in an attribute ({@code path} dotted inside it). */
+    record Each(String attr, String path, String as) {
+    }
+
+    /** By {@code id}, or (#212) by {@code idSuffix} among the nodes of {@code kind}. */
+    record Lookup(String as, String id, String kind, String idSuffix) {
     }
 
     record NodeTemplate(String id, String kind, Map<String, String> attrs) {
@@ -88,7 +93,17 @@ public final class FactMapping {
                 throw new IllegalArgumentException("mapping '" + name + "': match needs a kind or an idPrefix");
             }
             List<Lookup> lookups = new ArrayList<>();
-            r.path("lookup").forEach(l -> lookups.add(new Lookup(required(l, "as", name), required(l, "id", name))));
+            for (JsonNode l : r.path("lookup")) {
+                String id = l.path("id").asText(null);
+                String suffix = l.path("idSuffix").asText(null);
+                if ((id == null) == (suffix == null)) {
+                    throw new IllegalArgumentException("mapping '" + name + "': a lookup needs an id or an idSuffix");
+                }
+                lookups.add(new Lookup(required(l, "as", name), id, l.path("kind").asText(null), suffix));
+            }
+            JsonNode e0 = r.path("each");
+            Each each = e0.isMissingNode() ? null : new Each(required(e0, "attr", name), e0.path("path").asText(""),
+                    e0.path("as").asText("item"));
             List<NodeTemplate> nodes = new ArrayList<>();
             r.path("nodes").forEach(n -> nodes.add(new NodeTemplate(required(n, "id", name), required(n, "kind", name), strings(n.path("attrs")))));
             List<EdgeTemplate> edges = new ArrayList<>();
@@ -98,7 +113,7 @@ public final class FactMapping {
                 throw new IllegalArgumentException("mapping '" + name + "' writes nothing: give it nodes or edges");
             }
             rules.add(new Rule(name, m.path("kind").asText(null), m.path("idPrefix").asText(null), strings(m.path("where")),
-                    lookups, nodes, edges));
+                    each, lookups, nodes, edges));
         }
         if (rules.isEmpty()) {
             throw new IllegalArgumentException("no mappings: the file needs a 'mappings:' list");
@@ -121,47 +136,138 @@ public final class FactMapping {
                         || !rule.where().entrySet().stream().allMatch(w -> Objects.equals(w.getValue(), str(n.attrs().get(w.getKey()))))) {
                     continue;
                 }
-                Map<String, String> values = values(n);
-                for (Lookup l : rule.lookups()) {
-                    String id = fill(l.id(), values);
-                    if (id == null) {
-                        continue;
-                    }
-                    byId.getOrDefault(id, List.of()).stream().filter(x -> Objects.equals(x.fact().env(), n.env()) || x.fact().env() == null)
-                            .findFirst().ifPresent(x -> values(x.fact()).forEach((k, v) -> {
-                                if (!k.startsWith("_")) {
-                                    values.put(l.as() + "." + k, v);
-                                }
-                            }));
-                }
                 Evidence ev = evidence(n.evidence(), f.header());
-                for (NodeTemplate t : rule.nodes()) {
-                    String id = fill(t.id(), values);
-                    Map<String, Object> attrs = attrs(t.attrs(), values, rule.name());
-                    if (id == null || attrs == null || FactFormat.kindOf(id) == null || !FactFormat.kindOf(id).equals(t.kind())) {
-                        skip(skipped, example, rule.name(), t.id(), n.id());
-                        continue;
+                for (Map<String, String> element : elements(rule.each(), n)) {
+                    for (Binding b : bind(rule.lookups(), new Binding(element, n.env()), byId, kb)) {
+                        Map<String, String> values = b.values();
+                        for (NodeTemplate t : rule.nodes()) {
+                            String id = fill(t.id(), values);
+                            Map<String, Object> attrs = attrs(t.attrs(), values, rule.name());
+                            if (id == null || attrs == null || FactFormat.kindOf(id) == null || !FactFormat.kindOf(id).equals(t.kind())) {
+                                skip(skipped, example, rule.name(), t.id(), n.id(), values);
+                                continue;
+                            }
+                            out.node(new Node(id, t.kind(), b.env(), attrs, ev));
+                            written.merge(rule.name(), 1, Integer::sum);
+                        }
+                        for (EdgeTemplate t : rule.edges()) {
+                            String from = fill(t.from(), values);
+                            String to = fill(t.to(), values);
+                            Map<String, Object> attrs = attrs(t.attrs(), values, rule.name());
+                            if (from == null || to == null || attrs == null || FactFormat.kindOf(from) == null || FactFormat.kindOf(to) == null) {
+                                skip(skipped, example, rule.name(), t.from() + " -" + t.kind() + "-> " + t.to(), n.id(), values);
+                                continue;
+                            }
+                            out.edge(Edge.extracted(from, t.kind(), to, attrs, ev).inEnv(b.env()));
+                            written.merge(rule.name(), 1, Integer::sum);
+                        }
                     }
-                    out.node(new Node(id, t.kind(), n.env(), attrs, ev));
-                    written.merge(rule.name(), 1, Integer::sum);
-                }
-                for (EdgeTemplate t : rule.edges()) {
-                    String from = fill(t.from(), values);
-                    String to = fill(t.to(), values);
-                    Map<String, Object> attrs = attrs(t.attrs(), values, rule.name());
-                    if (from == null || to == null || attrs == null || FactFormat.kindOf(from) == null || FactFormat.kindOf(to) == null) {
-                        skip(skipped, example, rule.name(), t.from() + " -" + t.kind() + "-> " + t.to(), n.id());
-                        continue;
-                    }
-                    out.edge(Edge.extracted(from, t.kind(), to, attrs, ev).inEnv(n.env()));
-                    written.merge(rule.name(), 1, Integer::sum);
                 }
             }
         }
         return new Stats(written, skipped, example);
     }
 
-    private static void skip(Map<String, Integer> skipped, Map<String, String> example, String rule, String template, String from) {
+    private record Binding(Map<String, String> values, String env) {
+    }
+
+    /** #212: the node's values, once per element of its {@code each} array ({@code <as>.*}, {@code prev.*}). */
+    private static List<Map<String, String>> elements(Each each, Node n) {
+        Map<String, String> base = values(n);
+        if (each == null) {
+            return List.of(base);
+        }
+        List<Map<String, String>> out = new ArrayList<>();
+        Object raw = n.attrs().get(each.attr());
+        JsonNode arr;
+        try {
+            arr = raw instanceof String str ? JSON.readTree(str) : JSON.valueToTree(raw);
+        } catch (IOException | IllegalArgumentException e) {
+            return out;
+        }
+        for (String part : each.path().isBlank() ? new String[0] : each.path().split("\\.")) {
+            arr = arr == null ? null : arr.path(part);
+        }
+        if (arr == null || !arr.isArray()) {
+            return out;
+        }
+        Map<String, String> prev = null;
+        int i = 0;
+        for (JsonNode el : arr) {
+            i++;
+            Map<String, String> fields = new LinkedHashMap<>();
+            if (el.isObject()) {
+                el.fields().forEachRemaining(e -> {
+                    if (e.getValue().isValueNode() && !e.getValue().isNull()) {
+                        fields.put(e.getKey(), e.getValue().asText());
+                    }
+                });
+            } else if (el.isValueNode()) {
+                fields.put("value", el.asText());
+            }
+            Map<String, String> v = new LinkedHashMap<>(base);
+            fields.forEach((k, x) -> v.put(each.as() + "." + k, x));
+            v.put(each.as() + "._index", String.valueOf(i));
+            v.put(each.as() + "._count", String.valueOf(arr.size()));
+            if (prev == null) {
+                v.put("_first", "true");
+            } else {
+                prev.forEach((k, x) -> v.put("prev." + k, x));
+            }
+            out.add(v);
+            prev = fields;
+        }
+        return out;
+    }
+
+    /**
+     * The values after each lookup: a looked-up node's as {@code <as>.*}. A fact without environment matches nodes of
+     * any (#212), and continues once per environment found; one with an environment, that one's or none's.
+     */
+    private static List<Binding> bind(List<Lookup> lookups, Binding start, Map<String, List<KnowledgeBase.Fact<Node>>> byId, KnowledgeBase kb) {
+        List<Binding> bs = List.of(start);
+        for (Lookup l : lookups) {
+            List<Binding> next = new ArrayList<>();
+            for (Binding b : bs) {
+                String key = fill(l.id() != null ? l.id() : l.idSuffix(), b.values());
+                List<KnowledgeBase.Fact<Node>> found = key == null ? List.of() : l.id() != null ? byId.getOrDefault(key, List.of())
+                        : kb.nodes().stream().filter(x -> (l.kind() == null || l.kind().equals(x.fact().kind())) && x.fact().id().endsWith(key)).toList();
+                Map<String, List<KnowledgeBase.Fact<Node>>> byEnv = new LinkedHashMap<>();
+                for (KnowledgeBase.Fact<Node> x : found) {
+                    if (b.env() == null || x.fact().env() == null || Objects.equals(b.env(), x.fact().env())) {
+                        byEnv.computeIfAbsent(String.valueOf(x.fact().env()), k -> new ArrayList<>()).add(x);
+                    }
+                }
+                if (key == null && b.values().containsKey("_first") && (l.id() != null ? l.id() : l.idSuffix()).contains("{prev.")) {
+                    Map<String, String> v = new LinkedHashMap<>(b.values());
+                    v.put("_noprev." + l.as(), "true");   // the first element: what it would name does not exist
+                    next.add(new Binding(v, b.env()));
+                    continue;
+                }
+                if (byEnv.isEmpty()) {
+                    next.add(b);
+                    continue;
+                }
+                for (List<KnowledgeBase.Fact<Node>> xs : byEnv.values()) {
+                    Node x = xs.getFirst().fact();
+                    Map<String, String> v = new LinkedHashMap<>(b.values());
+                    values(x).forEach((k, y) -> v.put(l.as() + "." + k, y));
+                    next.add(new Binding(v, b.env() != null ? b.env() : x.env()));
+                }
+            }
+            bs = next;
+        }
+        return bs;
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private static void skip(Map<String, Integer> skipped, Map<String, String> example, String rule, String template, String from,
+                             Map<String, String> values) {
+        if (values.containsKey("_first") && (template.contains("{prev.") || values.keySet().stream()
+                .anyMatch(k -> k.startsWith("_noprev.") && template.contains("{" + k.substring("_noprev.".length()) + ".")))) {
+            return;   // #212: the first element has none before it
+        }
         skipped.merge(rule, 1, Integer::sum);
         example.putIfAbsent(rule, template + " for " + from);
     }
