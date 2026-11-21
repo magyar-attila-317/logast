@@ -39,17 +39,16 @@ final class FleetLog {
     }
 
     private final long start = System.nanoTime();
-    private final java.io.PrintStream err = System.err;
     private final List<Phase> phases = new ArrayList<>();
     private int nameWidth = 20;
 
     /** The run's plan: a title, then {phase, what it does} lines. */
     void intro(String title, List<String[]> plan, int nameWidth) {
         this.nameWidth = Math.min(40, Math.max(12, nameWidth));
-        err.println();
-        err.println(Ansi.bold(title));
+        System.err.println();
+        System.err.println(Ansi.bold(title));
         for (int i = 0; i < plan.size(); i++) {
-            err.println("  " + Ansi.cyan((i + 1) + " " + String.format("%-15s", plan.get(i)[0])) + Ansi.dim(plan.get(i)[1]));
+            System.err.println("  " + Ansi.cyan((i + 1) + " " + String.format("%-15s", plan.get(i)[0])) + Ansi.dim(plan.get(i)[1]));
         }
         Out.Progress.quiet = true;
     }
@@ -58,10 +57,10 @@ final class FleetLog {
         Phase p = new Phase(phases.size() + 1, title, count);
         phases.add(p);
         String head = "━━ " + p.number + " " + title + (count > 0 ? " · " + count + " repo" + (count == 1 ? "" : "s") : "") + " ";
-        err.println();
-        err.println(Ansi.bold(head + "━".repeat(Math.max(3, Math.min(Out.width(), 100) - head.length()))));
+        System.err.println();
+        System.err.println(Ansi.bold(head + "━".repeat(Math.max(3, Math.min(Out.width(), 100) - head.length()))));
         if (explain != null && !explain.isBlank()) {
-            err.println("   " + Ansi.dim(explain));
+            System.err.println("   " + Ansi.dim(explain));
         }
         return p;
     }
@@ -69,9 +68,9 @@ final class FleetLog {
     /** The closing summary: per phase what happened and how long it took, the slowest repos, what to do next. */
     void summary(List<String[]> next) {
         Out.Progress.quiet = false;
-        err.println();
+        System.err.println();
         String head = "━━ done in " + Out.duration(System.nanoTime() - start) + " ";
-        err.println(Ansi.bold(head + "━".repeat(Math.max(3, Math.min(Out.width(), 100) - head.length()))));
+        System.err.println(Ansi.bold(head + "━".repeat(Math.max(3, Math.min(Out.width(), 100) - head.length()))));
         for (Phase p : phases) {
             if (p.results.isEmpty()) {
                 continue;
@@ -83,21 +82,21 @@ final class FleetLog {
                     counts.append(counts.isEmpty() ? "" : ", ").append(n).append(' ').append(s.word);
                 }
             }
-            err.println("  " + String.format("%-15s", p.title) + String.format("%-42s", counts) + Ansi.dim(Out.duration(p.elapsed())));
+            System.err.println("  " + String.format("%-15s", p.title) + String.format("%-42s", counts) + Ansi.dim(Out.duration(p.elapsed())));
             List<Result> slow = p.results.stream().filter(r -> r.nanos > 5_000_000_000L).sorted(Comparator.comparingLong((Result r) -> -r.nanos))
                     .limit(3).toList();
             if (slow.size() > 1) {
-                err.println("  " + " ".repeat(15) + Ansi.dim("slowest: " + String.join(", ",
+                System.err.println("  " + " ".repeat(15) + Ansi.dim("slowest: " + String.join(", ",
                         slow.stream().map(r -> r.name + " " + Out.duration(r.nanos)).toList())));
             }
         }
         if (!next.isEmpty()) {
-            err.println();
+            System.err.println();
             for (String[] n : next) {
-                err.println("  " + Ansi.cyan(n[0]) + "  " + Ansi.dim(n[1]));
+                System.err.println("  " + Ansi.cyan(n[0]) + "  " + Ansi.dim(n[1]));
             }
         }
-        err.println();
+        System.err.println();
     }
 
     /** #206: the time-left column's width ("~12m 30s left"). */
@@ -184,15 +183,15 @@ final class FleetLog {
             String head = "  " + counter(k) + " " + status.icon + " " + fit(name, nameWidth) + " " + String.format("%7s", Out.duration(nanos))
                     + (count > 2 ? "  " + String.format("%-" + LEFT + "s", left) : "") + "  ";
             List<String> d = wrap(detail == null ? "" : detail, Math.max(30, Math.min(Out.width(), 160) - head.length() - 1));
-            synchronized (err) {
-                err.println("  " + Ansi.dim(counter(k)) + " " + status.colored() + " " + fit(name, nameWidth)
+            synchronized (FleetLog.class) {
+                System.err.println("  " + Ansi.dim(counter(k)) + " " + status.colored() + " " + fit(name, nameWidth)
                         + " " + Ansi.dim(String.format("%7s", Out.duration(nanos))) + (count > 2 ? "  " + Ansi.dim(String.format("%-" + LEFT + "s", left)) : "")
                         + "  " + paint(status, d.getFirst()));
                 for (String more : d.subList(1, d.size())) {   // a long detail goes on under its own column
-                    err.println(" ".repeat(head.length()) + paint(status, more));
+                    System.err.println(" ".repeat(head.length()) + paint(status, more));
                 }
                 for (String n : notes) {   // #206: a note on one line, under the repo (a parser's message spans several)
-                    err.println("  " + " ".repeat(counter(k).length() + 3) + Ansi.dim("└ " + oneLine(n.replace('\n', ' ').replaceAll(" {2,}", " "))));
+                    System.err.println("  " + " ".repeat(counter(k).length() + 3) + Ansi.dim("└ " + oneLine(n.replace('\n', ' ').replaceAll(" {2,}", " "))));
                 }
             }
         }

@@ -320,6 +320,62 @@ final class Fleet implements Callable<Integer> {
 
     private KbOutcome exportMember(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot,
                                    boolean again) {
+        // #207: what the export prints (Flyway's notes, warnings) is kept: condensed under the repo's line, in full in a log
+        List<String> printed = new java.util.ArrayList<>();
+        KbOutcome o;
+        try {
+            o = Out.Routing.capture(printed, () -> exportMemberQuietly(dir, name, root, analysed, analysedRoot, again));
+        } catch (Exception e) {
+            o = new KbOutcome(FleetLog.Status.FAILED, "knowledge base not exported: " + e.getMessage(), List.of());
+        }
+        if (printed.isEmpty()) {
+            return o;
+        }
+        Path log = dir.resolve("kb").resolve(name).resolve("export.log");
+        try {
+            Files.createDirectories(log.getParent());
+            Files.write(log, printed);
+        } catch (IOException e) {
+            log = null;
+        }
+        List<String> notes = new java.util.ArrayList<>(o.notes());
+        notes.addAll(condense(printed, log == null ? null : dir.relativize(log).toString()));
+        return new KbOutcome(o.status(), o.detail(), notes);
+    }
+
+    private static final java.util.regex.Pattern MADE_OUTSIDE = java.util.regex.Pattern.compile(
+            "^flyway(?: \\S+)?: the migrations expect (schema|role) (\\S+) to exist");
+
+    /**
+     * #207: an export's printed lines as a few notes: the schemas and roles its migrations expect from outside in one
+     * line; Flyway's left-out and stand-in lines dropped (the repo's line says them, from the facts); the export's own
+     * problems dropped (they are the repo's notes already); the rest, the first three, then where the whole log is.
+     */
+    static List<String> condense(List<String> printed, String log) {
+        java.util.Set<String> outside = new java.util.TreeSet<>();
+        List<String> rest = new java.util.ArrayList<>();
+        for (String l : printed) {
+            java.util.regex.Matcher m = MADE_OUTSIDE.matcher(l);
+            if (m.find()) {
+                outside.add(m.group(1) + " " + m.group(2));
+            } else if (!(l.startsWith("flyway") && (l.contains(": left out ") || l.contains("stand-in") || l.contains("ran it against")))
+                    && !l.startsWith("export: ") && !l.startsWith("WARNING: ") && !rest.contains(l)) {
+                rest.add(l);
+            }
+        }
+        List<String> notes = new java.util.ArrayList<>();
+        if (!outside.isEmpty()) {
+            notes.add("its migrations expect from outside (created empty for the run): " + String.join(", ", outside));
+        }
+        rest.stream().limit(3).forEach(notes::add);
+        if (rest.size() > 3 && log != null) {
+            notes.add("… " + (rest.size() - 3) + " more line(s) in " + log);
+        }
+        return notes;
+    }
+
+    private KbOutcome exportMemberQuietly(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot,
+                                          boolean again) {
         Path out = dir.resolve("kb").resolve(name);
         try {
             String commit = dev.logast.fleet.NamedFleet.commit(root);
@@ -342,9 +398,23 @@ final class Fleet implements Callable<Integer> {
                 if (left.isEmpty()) {
                     return new KbOutcome(FleetLog.Status.OK, files + withStandIns, List.of());
                 }
-                List<String> notes = left.stream().limit(5).map(n -> n.via() + " left out: it needs " + n.asked() + ", which no repo of the "
-                        + "fleet makes" + (n.lost().isEmpty() ? "" : "; missing with it: " + String.join(", ", n.lost()))).toList();
-                return new KbOutcome(FleetLog.Status.PROBLEM, files + withStandIns + ", " + left.size() + " migration(s) left out (exported "
+                // #207: grouped by what they need, one line each
+                Map<String, java.util.Set<String>> byNeed = new java.util.TreeMap<>();
+                Map<String, java.util.Set<String>> lostByNeed = new java.util.TreeMap<>();
+                for (KbExport.Need n : left) {
+                    byNeed.computeIfAbsent(n.asked(), k -> new java.util.TreeSet<>()).add(n.via().replaceFirst("^migration ", "")
+                            .replaceFirst("__.*", ""));
+                    lostByNeed.computeIfAbsent(n.asked(), k -> new java.util.TreeSet<>()).addAll(n.lost());
+                }
+                List<String> notes = new java.util.ArrayList<>();
+                byNeed.entrySet().stream().limit(6).forEach(e -> notes.add("needs " + e.getKey() + " (no repo of the fleet makes it): "
+                        + String.join(", ", e.getValue()) + " left out" + (lostByNeed.get(e.getKey()).isEmpty() ? ""
+                        : "; missing: " + String.join(", ", lostByNeed.get(e.getKey())))));
+                if (byNeed.size() > 6) {
+                    notes.add("… and " + (byNeed.size() - 6) + " more (logast mcp: describe service:" + name + ")");
+                }
+                long migrations = left.stream().map(KbExport.Need::via).distinct().count();
+                return new KbOutcome(FleetLog.Status.PROBLEM, files + withStandIns + ", " + migrations + " migration(s) left out (exported "
                         + "again once a repo makes what they need)", notes);
             }
             // #187: a partial export is not done: the next run exports it again, once its cause is fixed
@@ -455,12 +525,25 @@ final class Fleet implements Callable<Integer> {
     // ---- logast fleet <name> -----------------------------------------------------------------------------------------
 
     private int named(String name, Path dir) throws IOException {
+        java.io.PrintStream before = System.err;
+        if (refresh || kb) {
+            System.setErr(new Out.Routing(before));   // #207: an export's lines go under its repo, not between the others
+        }
+        try {
+            return namedRun(name, dir);
+        } finally {
+            System.setErr(before);
+        }
+    }
+
+    private int namedRun(String name, Path dir) throws IOException {
         if (refresh && noBuilds) {
             Out.warn("fleet: --no-builds: added members are scanned from their source only (survey quality: calls through "
                     + "library types may stay unresolved)");
         }
         // #193: what the run does, a header per phase, a line per repo, a summary
         FleetLog log = refresh || kb ? new FleetLog() : null;
+
         List<FleetRepos.Repo> repos = refresh ? FleetRepos.list(dir) : List.of();
         if (log != null) {
             java.util.Set<String> names = new java.util.TreeSet<>(NamedFleet.members(dir).keySet());
