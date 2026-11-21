@@ -165,6 +165,7 @@ itself runs on Java 21+ (25 recommended).
 | [vocabulary](docs/vocabulary.md) | vocabulary, policy layers, phrasing, levels, log volume |
 | [gradle-plugin](docs/gradle-plugin.md) | `logastApply`, `logastCheck`, SARIF and PR annotations |
 | [fleet](docs/fleet.md) | many services: the overview, the report page, the fleet repo |
+| [architecture](docs/architecture.md) | discover, derive, map: what logast reads, what it infers, what your mappings add |
 | [platform](docs/platform.md) | company policy, central vocabulary, publishing the support library |
 | [starter](docs/starter.md) | the runtime library and its properties |
 | [llm-workflow](docs/llm-workflow.md) | the loop an LLM follows (installed as the Claude Code skill) |

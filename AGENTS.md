@@ -34,6 +34,13 @@ on real services; the background is in issue #7.
   edits code, or a finding's rule or place) can touch every scenario: then update and run all of them
   (`./gradlew build -Pe2e`).
 
+## Where knowledge belongs (discover, derive, map)
+- logast's extractors read what code and configuration state through documented conventions (Spring, Quartz, Flyway,
+  GitHub Actions, Helm, Terraform), by following the code, not by guessing from names or key shapes. One team's
+  layout (its tables, its keys, its conventions) belongs in that team's mappings, never in an extractor.
+- A request that only fits one team's setup: add the raw fact or the generic mapping capability that is missing, and
+  give the team the mapping. The layers and the rules are in [docs/architecture.md](docs/architecture.md) (#215).
+
 ## Documentation
 - README.md is the stable overview (what logast is, install, quick start, workflow, packs in a line each, pointers).
   Rule tables, per-rule details, property tables and anything that drifts (counts, timings, version lists) belong in
