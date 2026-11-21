@@ -48,6 +48,7 @@ public final class Tracer {
     private final Map<String, Value> beans = new HashMap<>();
     private final Map<String, Value.Obj> enums = new HashMap<>();
     private int steps;
+    private static final Value.Unknown IN_CREATION = new Value.Unknown("a bean that needs itself");
 
     public Tracer(Types types, Map<String, String> config) {
         this.types = types;
@@ -114,7 +115,7 @@ public final class Tracer {
         if (v != null) {
             return v;
         }
-        beans.put(m.key(), new Value.Unknown("bean in creation"));
+        beans.put(m.key(), IN_CREATION);
         List<Value> args = new ArrayList<>();
         for (Statement p : m.decl().getParameters()) {
             if (p instanceof J.VariableDeclarations vd) {
@@ -130,10 +131,18 @@ public final class Tracer {
     }
 
     /** Runs {@code m} on {@code self} with {@code args}; never throws: what goes wrong is {@link Value.Unknown}. */
+    /** #218: the steps taken so far, and whether the budget ran out. */
+    public int steps() {
+        return steps;
+    }
+
+    public boolean outOfBudget;
+
     public Value run(MethodInfo m, Value.Obj self, List<Value> args) {
         try {
             return invoke(m, self, args, 0);
         } catch (OutOfBudget e) {
+            outOfBudget = true;
             return new Value.Unknown("too much to follow");
         } catch (RuntimeException e) {
             return new Value.Unknown("could not follow: " + e.getClass().getSimpleName());

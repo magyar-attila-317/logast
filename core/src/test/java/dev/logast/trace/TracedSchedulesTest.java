@@ -434,4 +434,23 @@ class TracedSchedulesTest {
         assertThat(facts.lines().filter(l -> l.contains("\"id\":\"constant:batch:JobKeys.PARAMS\""))).singleElement().asString()
                 .contains("\"value\":\"batch.params\"");
     }
+
+    /** #218: with LOGAST_TRACE, the tracer says what it ran, the triggers it built and what it could not know. */
+    @Test
+    void theTracerSaysWhatItDidWhenAsked() throws IOException {
+        Path root = service(tmp);
+        var err = System.err;
+        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+        System.setProperty("logast.trace", "true");
+        try {
+            System.setErr(new java.io.PrintStream(buf, true, java.nio.charset.StandardCharsets.UTF_8));
+            Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "batch", "test", new StringWriter());
+        } finally {
+            System.setErr(err);
+            System.clearProperty("logast.trace");
+        }
+        String said = buf.toString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(said).contains("trace: triggers built: 2", "trace: listeners: [ChainListener]",
+                "trace:   run weekly-a: [LoadJob, TotalsJob, ReportJob]", "TriggersConfig.register", "trace: not known, most often:");
+    }
 }

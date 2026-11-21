@@ -40,6 +40,9 @@ public sealed interface Value permits Value.Lit, Value.EnumConst, Value.ClassRef
 
     /** No value the tracer can know (a runtime value, a library's internals); {@code why} says which. */
     record Unknown(String why) implements Value {
+        public Unknown {
+            Diagnostics.unknown(why);
+        }
     }
 
     /** Present or not ({@code inner} null: empty). */

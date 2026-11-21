@@ -69,6 +69,9 @@ public final class CodeMode {
                 declare function find(text: string, kind?: string): Node[];
                 /** The times a job runs on a day ("monday", "today", "2026-11-23") in an environment, in a zone (default UTC) */
                 declare function runs(jobId: string, day: string, env?: string, zone?: string): string[];
+                /** How a job is scheduled: each cron (and trigger), or what runs it, or "not known: …". An empty runs() is not
+                    "never": check schedule() for the jobs it returns nothing for, and say which schedules are not known. */
+                declare function schedule(jobId: string, env?: string): string[];
                 /** What follows from a node (down: calls, messages, writes, readers, next steps) or leads to it (up), as text */
                 declare function lineage(id: string, direction?: "down" | "up", depth?: number): string;
                 """);
@@ -153,6 +156,7 @@ public final class CodeMode {
             js.putMember("__into", (ProxyExecutable) a -> json(edges(kb.incoming(str(a, 0)), str(a, 1))));
             js.putMember("__find", (ProxyExecutable) a -> json(find(kb, str(a, 0), str(a, 1))));
             js.putMember("__runs", (ProxyExecutable) a -> json(runs(kb, str(a, 0), str(a, 1), str(a, 2), str(a, 3))));
+            js.putMember("__schedule", (ProxyExecutable) a -> json(schedule(kb, str(a, 0), str(a, 1))));
             js.putMember("__lineage", (ProxyExecutable) a -> Lineage.lineage(kb, str(a, 0), !"up".equalsIgnoreCase(str(a, 1)),
                     a.length > 2 && a[2].fitsInInt() ? a[2].asInt() : 6, 200));
             ctx.eval(Source.create("js", """
@@ -171,6 +175,7 @@ public final class CodeMode {
                     const into = (id, kind) => JSON.parse(__into(id, kind ?? ""));
                     const find = (text, kind) => JSON.parse(__find(text, kind ?? ""));
                     const runs = (id, day, env, zone) => JSON.parse(__runs(id, day, env ?? "", zone ?? ""));
+                    const schedule = (id, env) => JSON.parse(__schedule(id, env ?? ""));
                     const lineage = (id, direction, depth) => __lineage(id, direction ?? "down", depth ?? 6);
                     """));
             var timer = WATCHDOG.schedule(() -> ctx.close(true), TIMEOUT_MS, TimeUnit.MILLISECONDS);
@@ -273,6 +278,40 @@ public final class CodeMode {
         return out;
     }
 
+    /** #218: how a job is scheduled, or that it is not known (and why). */
+    private static List<String> schedule(KnowledgeBase kb, String id, String env) {
+        List<String> out = new ArrayList<>();
+        for (var f : kb.node(id)) {
+            if (!env.isBlank() && f.fact().env() != null && !f.fact().env().equals(env)) {
+                continue;
+            }
+            String where = f.fact().env() == null ? "" : " [" + f.fact().env() + "]";
+            List<Schedules.Schedule> own = Schedules.all(f, env.isBlank() ? null : env);
+            if (own.isEmpty()) {
+                var by = Schedules.scheduledRunner(kb, id, env.isBlank() ? f.fact().env() : env);
+                if (by == null) {
+                    out.add("not known" + where + ": no schedule in the facts (started by another job, by hand, or by something logast does not read)");
+                    continue;
+                }
+                for (Schedules.Schedule s : Schedules.all(by, env.isBlank() ? null : env)) {
+                    out.add(describe(s) + where + " (run by " + by.fact().id() + ")");
+                }
+                continue;
+            }
+            own.forEach(s -> out.add(describe(s) + where));
+        }
+        if (out.isEmpty()) {
+            out.add("not known: no job " + id);
+        }
+        return out;
+    }
+
+    private static String describe(Schedules.Schedule s) {
+        return s.problem() != null ? "not known: " + s.problem() : s.every() != null ? s.every()
+                : "cron " + s.cron().expression() + (s.zoneOfTrigger() != null ? " " + s.zoneOfTrigger()
+                : s.job().fact().attrs().get("zone") != null ? " " + s.job().fact().attrs().get("zone") : "") + s.triggerLabel();
+    }
+
     private static List<String> runs(KnowledgeBase kb, String id, String dayText, String env, String zoneText) {
         ZoneId zone = ZoneId.of(zoneText.isBlank() ? "UTC" : zoneText);
         LocalDate day = Schedules.day(dayText, LocalDate.now(zone));
@@ -281,7 +320,12 @@ public final class CodeMode {
             if (!env.isBlank() && f.fact().env() != null && !f.fact().env().equals(env)) {
                 continue;
             }
-            for (Schedules.Schedule s : Schedules.all(f, env.isBlank() ? null : env)) {
+            List<Schedules.Schedule> own = Schedules.all(f, env.isBlank() ? null : env);
+            if (own.isEmpty()) {   // #218: run by a pipeline or a workload: its times
+                var by = Schedules.scheduledRunner(kb, id, env.isBlank() ? f.fact().env() : env);
+                own = by == null ? List.of() : Schedules.all(by, env.isBlank() ? null : env);
+            }
+            for (Schedules.Schedule s : own) {
                 if (s.cron() != null) {
                     s.cron().on(day, s.zone(zone)).forEach(t -> out.add(t.withZoneSameInstant(zone).toLocalTime() + s.triggerLabel()));
                 } else if (s.every() != null) {

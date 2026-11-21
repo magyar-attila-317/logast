@@ -128,4 +128,25 @@ class CodeModeTest {
         assertThat(r.error()).isNull();
         assertThat(r.json()).isEqualTo("3000");
     }
+
+    /** #218: schedule() says how a job is scheduled or that it is not known; runs() follows what runs a job. */
+    @Test
+    void anEmptyRunsIsNotNeverScheduleSays() throws IOException {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("sched");
+        java.nio.file.Files.writeString(dir.resolve("f.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"java","repo":"calc"}}
+                {"node":{"id":"job:calc:Cron","kind":"job","attrs":{"entrypoint":"scheduled","cron":"0 0 2 * * MON"},"evidence":{"file":"A.java"}}}
+                {"node":{"id":"job:calc:Unknown","kind":"job","attrs":{"entrypoint":"quartz"},"evidence":{"file":"B.java"}}}
+                {"node":{"id":"job:calc:Chained","kind":"job","attrs":{"entrypoint":"startup"},"evidence":{"file":"C.java"}}}
+                {"node":{"id":"job:orch:Pipe","kind":"job","attrs":{"schedule":"0 0 1 * * WED","scheduleFormat":"spring"},"evidence":{"file":"V1.sql"}}}
+                {"edge":{"from":"job:orch:Pipe","kind":"runs","to":"job:calc:Chained","provenance":"extracted","evidence":{"file":"V1.sql"}}}
+                """);
+        KnowledgeBase kb = KnowledgeBase.load(List.of(dir));
+        CodeMode.Result r = CodeMode.run(kb, """
+                return ["Cron", "Unknown", "Chained"].map(j => ({ j, schedule: schedule("job:calc:" + j), wed: runs("job:calc:" + j, "2026-11-25") }));
+                """);
+        assertThat(r.error()).isNull();
+        assertThat(r.json()).contains("cron 0 0 2 * * MON", "not known: no schedule in the facts", "(run by job:orch:Pipe)", "01:00");
+        assertThat(CodeMode.api(kb, null)).contains("declare function schedule(", "An empty runs() is not");
+    }
 }

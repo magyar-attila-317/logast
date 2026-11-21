@@ -43,15 +43,22 @@ final class QuartzTrace {
             return out;
         }
         Tracer t = new Tracer(new Types(index), config);
+        boolean diag = dev.logast.trace.Diagnostics.enabled();
+        dev.logast.trace.Diagnostics.reset();
+        List<String> ran = new ArrayList<>();
         for (ClassInfo c : index.classes()) {
             if (!Types.annotated(c, "Configuration")) {
                 continue;
             }
             for (MethodInfo m : index.methodsOf(c.fqn())) {
+                Value v = null;
                 if (Tracer.annotated(m, "Bean")) {
-                    t.bean(m);
+                    v = t.bean(m);
                 } else if (Tracer.annotated(m, "PostConstruct") && m.decl().getParameters().stream().noneMatch(p -> p instanceof J.VariableDeclarations)) {
-                    t.run(m, t.instance(c), List.of());
+                    v = t.run(m, t.instance(c), List.of());
+                }
+                if (v != null && diag) {
+                    ran.add(c.simpleName() + "." + m.name() + " → " + (v instanceof Value.Unknown u ? "not known: " + u.why() : v));
                 }
             }
         }
@@ -89,7 +96,37 @@ final class QuartzTrace {
             String group = trig.fields.get("group") instanceof Value.Lit g ? g.text() : null;
             out.add(new Run(name, group, c.text(), c.from(), zone, steps));
         }
+        if (diag) {
+            report(t, ran, listeners, out);
+        }
         return out;
+    }
+
+    private static String text(Value v) {
+        return v instanceof Value.Lit l ? l.text() + (l.from() == null ? "" : " (" + l.from() + ")") : String.valueOf(v);
+    }
+
+    /** #218: what the tracer did, to stderr: where a run on a real service stopped. */
+    private static void report(Tracer t, List<String> ran, List<Value.Obj> listeners, List<Run> runs) {
+        java.io.PrintStream err = System.err;
+        err.println("trace: ran " + ran.size() + " @Bean/@PostConstruct method(s)" + (t.outOfBudget ? ", the step budget ran out" : "")
+                + " (" + t.steps() + " steps)");
+        ran.forEach(r -> err.println("trace:   " + r));
+        List<Value.Obj> triggers = t.created.stream().filter(o -> o.type.equals("CronTriggerFactoryBean")
+                || o.type.equals("Trigger") && o.fields.containsKey("withSchedule")).toList();
+        err.println("trace: triggers built: " + triggers.size());
+        for (Value.Obj o : triggers) {
+            Value.Obj d = detail(o.fields.containsKey("jobDetail") ? o.fields.get("jobDetail") : o.fields.get("forJob"));
+            err.println("trace:   " + text(o.fields.get("name")) + " cron " + text(o.fields.get("cronExpression")) + " job "
+                    + (d == null ? "not known (" + (o.fields.containsKey("jobDetail") ? o.fields.get("jobDetail") : "no setJobDetail") + ")"
+                    : jobClass(d) != null ? jobClass(d) : "detail without a job class: " + d.fields.keySet()));
+        }
+        err.println("trace: listeners: " + listeners.stream().map(Value.Obj::simpleType).toList());
+        runs.forEach(r -> err.println("trace:   run " + r.name() + ": " + r.steps().stream()
+                .map(s -> s.job().substring(s.job().lastIndexOf('.') + 1)).toList()));
+        err.println("trace: not known, most often:");
+        dev.logast.trace.Diagnostics.unknowns().entrySet().stream().limit(20)
+                .forEach(e -> err.println("trace:   " + e.getValue() + "× " + e.getKey()));
     }
 
     /** The next jobs: the listeners run after each, with the data the last step passed on. */

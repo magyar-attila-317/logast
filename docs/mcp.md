@@ -52,7 +52,8 @@ becomes part of the argument before it. At startup the server names any `--kb` p
 `logast mcp --code-mode` (`logast mcp config --code-mode` writes the entry) offers two tools instead of twenty (#201):
 
 - **`api`**: the facts API as a TypeScript declaration (`nodes(kind, where?)`, `node(id)`, `out(id, kind?)`,
-  `into(id, kind?)`, `find(text, kind?)`, `runs(jobId, day, env?, zone?)`, `lineage(id, direction?, depth?)`), what is
+  `into(id, kind?)`, `find(text, kind?)`, `runs(jobId, day, env?, zone?)`, `schedule(jobId, env?)` (how a job is
+  scheduled, what runs it, or "not known: …": an empty `runs()` is not "never", #218), `lineage(id, direction?, depth?)`), what is
   loaded (repos, counts per kind, environments, edge kinds, attributes per kind) and worked examples;
 - **`query`**: a read-only JavaScript program over the facts; its `return` value comes back as JSON (at most 40,000
   characters). A question that takes many lookups is one program: filter, follow edges, join and count in it.
