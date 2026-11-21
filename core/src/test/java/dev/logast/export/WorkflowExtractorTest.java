@@ -129,4 +129,107 @@ class WorkflowExtractorTest {
         assertThat(refs).startsWith("workflow:org/ci/.github/workflows/gradle.yml  (2 refs in use)")
                 .contains("@v2 (1):\n  - workflow:org/billing/.github/workflows/build.yml", "@v3 (2):");
     }
+
+    private static List<Edge> edges(String repo, Path root) {
+        List<Edge> edges = new ArrayList<>();
+        new WorkflowExtractor(repo).extract(root, new FactSink() {
+            @Override
+            public void node(Node n) {
+            }
+
+            @Override
+            public void edge(Edge e) {
+                edges.add(e);
+            }
+        });
+        return edges;
+    }
+
+    private static String show(Edge e) {
+        return e.from() + " -" + e.kind() + "-> " + e.to();
+    }
+
+    /**
+     * #214: a service's workflow starts a deploy in a GitOps repo (a reusable call with what it passes, a dispatch); the
+     * GitOps workflow runs a script that clones the Kubernetes repo, writes the image tag into a values file and pushes.
+     */
+    @Test
+    void aDeployChainAcrossRepos() throws IOException {
+        Path orders = repo("orders", """
+                name: release
+                on: {push: {branches: [main]}}
+                jobs:
+                  deploy:
+                    uses: org/gitops/.github/workflows/deploy-service.yml@main
+                    with:
+                      service: orders-api
+                      tag: ${{ github.sha }}
+                    secrets: inherit
+                  notify:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - run: gh workflow run deploy-service.yml -R org/gitops -f service=orders-api -f tag=${{ github.sha }}
+                      - run: |
+                          curl -X POST https://api.github.com/repos/org/gitops/dispatches \\
+                            -H "Authorization: Bearer $TOKEN" \\
+                            -d '{"event_type":"deploy","client_payload":{"service":"orders-api"}}'
+                      - uses: peter-evans/repository-dispatch@v3
+                        with:
+                          repository: org/gitops
+                          event-type: deploy
+                          client-payload: '{"service": "orders-api", "token": "s3cr3t"}'
+                """, "release.yml");
+        List<String> sent = edges("org/orders", orders).stream().map(e -> show(e) + " " + e.attrs()).toList();
+        assertThat(sent).contains(
+                "workflow:org/orders/.github/workflows/release.yml -calls-> workflow:org/gitops/.github/workflows/deploy-service.yml "
+                        + "{job=deploy, ref=main, with={service=orders-api, tag=${{ github.sha }}}}",
+                "workflow:org/orders/.github/workflows/release.yml -dispatches-> workflow:org/gitops/.github/workflows/deploy-service.yml "
+                        + "{inputs={service=orders-api, tag=${{ github.sha }}}, job=notify, via=gh workflow run}",
+                "workflow:org/orders/.github/workflows/release.yml -dispatches-> event:github:org/gitops:deploy "
+                        + "{job=notify, payload={service=orders-api}, via=curl}");
+        assertThat(sent).filteredOn(l -> l.contains("repository-dispatch action")).singleElement().asString()
+                .contains("-dispatches-> event:github:org/gitops:deploy", "service=orders-api").doesNotContain("s3cr3t");
+
+        Path gitops = repo("gitops", """
+                name: deploy-service
+                on:
+                  workflow_call:
+                    inputs:
+                      service: {type: string}
+                      tag: {type: string}
+                  repository_dispatch:
+                    types: [deploy]
+                env:
+                  VALUES: charts/services/values-prod.yaml
+                jobs:
+                  bump:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - run: ./scripts/bump.sh "${{ inputs.service }}" "${{ inputs.tag }}"
+                        env:
+                          GH_TOKEN: ${{ secrets.K8S_TOKEN }}
+                """, "deploy-service.yml");
+        Files.createDirectories(gitops.resolve("scripts"));
+        Files.writeString(gitops.resolve("scripts/bump.sh"), """
+                #!/bin/sh
+                SERVICE="$1"; TAG="$2"
+                git clone https://x-access-token:${GH_TOKEN}@github.com/org/k8s.git
+                cd k8s
+                yq -i ".services.${SERVICE}.image.tag = \\"${TAG}\\"" "$VALUES"
+                sed -i "s/^appVersion:.*/appVersion: ${TAG}/" charts/services/Chart.yaml
+                git commit -am "deploy ${SERVICE} ${TAG}" && git push origin main
+                helm upgrade --install "$SERVICE" ./charts/services -n apps --set image.tag="$TAG" -f values-prod.yaml
+                """);
+        List<String> got = edges("org/gitops", gitops).stream().map(e -> show(e) + " " + e.attrs()).toList();
+        assertThat(got).contains(
+                "event:github:org/gitops:deploy -triggers-> workflow:org/gitops/.github/workflows/deploy-service.yml {}",
+                "workflow:org/gitops/.github/workflows/deploy-service.yml -runs-> script:org/gitops/scripts/bump.sh "
+                        + "{args=[${{ inputs.service }}, ${{ inputs.tag }}], env={GH_TOKEN=${{ secrets.K8S_TOKEN }}, VALUES=charts/services/values-prod.yaml}, job=bump}",
+                "script:org/gitops/scripts/bump.sh -clones-> repo:org/k8s {}",
+                "script:org/gitops/scripts/bump.sh -writes-> file:org/k8s/$VALUES {expression=.services.${SERVICE}.image.tag = \"${TAG}\", key=.services.${SERVICE}.image.tag, via=yq}",
+                "script:org/gitops/scripts/bump.sh -writes-> file:org/k8s/charts/services/Chart.yaml {expression=s/^appVersion:.*/appVersion: ${TAG}/, via=sed}",
+                "script:org/gitops/scripts/bump.sh -pushes-> repo:org/k8s {}",
+                "script:org/gitops/scripts/bump.sh -installs-> helm-release:$SERVICE {chart=./charts/services, namespace=apps, set={image.tag=$TAG}, values=[values-prod.yaml]}");
+        assertThat(got).as("a token in a URL is not a fact").noneMatch(l -> l.contains("x-access-token"));
+    }
 }

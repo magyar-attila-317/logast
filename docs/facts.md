@@ -221,6 +221,21 @@ these) (#167):
 - `calls` the reusable workflows a job uses, with the `ref`; `uses` the actions its steps use (`action:<owner/name>`,
   `ref`); `runs` the repo's scripts a step runs (`script:<owner/repo>/<path>`: `./scripts/x.sh`, `bash ci/y.sh`, files
   the repo has).
+- What a caller passes (#214): a `calls` edge has the job's `with:` values as written (`${{ github.sha }}` kept); a
+  `runs` edge has the script's `args` and the `env` the step sees (workflow, job and step `env:` merged). Secrets are
+  never values (`<redacted…>`).
+- Dispatches (#214): `gh workflow run <file> -R owner/repo -f k=v` and the REST API's
+  `repos/<o>/<r>/actions/workflows/<file>/dispatches` (`inputs`) `dispatches` that workflow; `repos/<o>/<r>/dispatches`
+  with an `event_type`, `gh api … -f event_type=…`, and a `…/repository-dispatch` action (`event-type`,
+  `client-payload` as `payload`) `dispatches` `event:github:<o>/<r>:<type>`, which `triggers` the workflows with
+  `on: repository_dispatch: types: [<type>]`. `workflow_dispatch` inputs are `dispatchInputs`.
+- Well-known commands in a step's `run:` and in the repo's scripts it runs (#214), from the workflow or the
+  `script:` node: `git clone <url>` `clones` `repo:<owner/name>` (a token in the URL is dropped), `git push` `pushes`
+  it (the repo cloned, or the one `cd`'d into); `yq -i '<path> = …' <file>` and `sed -i '<expr>' <file>` `writes`
+  `file:<owner/name>/<path>` (in the cloned repo when the path or the current folder is in it) with `via`,
+  `expression` and, for `yq`, the `key` it sets; `helm upgrade --install <release> <chart>` `installs`
+  `helm-release:<release>` (`chart`, `namespace`, `set`, `values`); `kubectl apply -f <file>` `applies` the file.
+  Variables stay as written (`.services.${SERVICE}.image.tag`, `file:org/k8s/$VALUES`); other commands are not read.
 - `logast mcp`'s `workflow_refs` lists, per reusable workflow, the refs its callers use.
 
 ## Self-hosted runners (Ansible)
