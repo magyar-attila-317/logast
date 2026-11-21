@@ -775,9 +775,13 @@ abstract class E2eGoldenTest {
                 + "intended, then review `git diff e2e`)").isEmpty();
     }
 
-    /** #193: a fleet run's line for a repo, "[k/n] <icon> <name>  <time>  <what happened>". */
+    /**
+     * #193: a fleet run's line for a repo, "[k/n] <icon> <name>  <time>  <what happened>"; #206: a long "what happened"
+     * goes on under its column on the next lines.
+     */
     private static java.util.regex.Pattern line(String name, String text) {
-        return java.util.regex.Pattern.compile("\\] \\S " + java.util.regex.Pattern.quote(name) + " .*" + java.util.regex.Pattern.quote(text));
+        return java.util.regex.Pattern.compile("\\] \\S " + java.util.regex.Pattern.quote(name) + " [^\\n]*"
+                + String.join("\\s+", java.util.Arrays.stream(text.split(" +")).map(java.util.regex.Pattern::quote).toList()));
     }
 
     /**

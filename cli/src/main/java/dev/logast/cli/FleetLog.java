@@ -100,6 +100,34 @@ final class FleetLog {
         err.println();
     }
 
+    /** #206: the time-left column's width ("~12m 30s left"). */
+    private static final int LEFT = 14;
+
+    private static String paint(Status status, String text) {
+        return status == Status.FAILED ? Ansi.red(text) : status == Status.PROBLEM ? Ansi.yellow(text) : text;
+    }
+
+    /** {@code text} in lines of at most {@code width}, broken at spaces (a longer word on its own line). */
+    static List<String> wrap(String text, int width) {
+        List<String> out = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String w : text.strip().split(" +")) {
+            if (!line.isEmpty() && line.length() + 1 + w.length() > width) {
+                out.add(line.toString());
+                line.setLength(0);
+            }
+            line.append(line.isEmpty() ? "" : " ").append(w);
+        }
+        out.add(line.toString());
+        return out;
+    }
+
+    /** {@code text} in exactly {@code width} characters: padded, or shortened with an ellipsis. */
+    static String fit(String text, int width) {
+        String t = text == null ? "" : text;
+        return t.length() <= width ? String.format("%-" + width + "s", t) : t.substring(0, Math.max(0, width - 1)) + "…";
+    }
+
     /** A message on one line: git's "fatal:" line when there is one, else the first line, without the exception's class. */
     static String oneLine(String message) {
         if (message == null) {
@@ -139,7 +167,10 @@ final class FleetLog {
             return new Out.Progress("~" + what).label(Ansi.dim(counter(results.size() + 1)) + " " + name);
         }
 
-        /** A repo's line: its status, time and what happened, then notes (problems) below it. */
+        /**
+         * A repo's line: its status, time and what happened, then notes (problems) below it. #206: every column has a fixed
+         * width (a long name is shortened, the time left has its own column), and the line fits the terminal.
+         */
         synchronized void done(String name, Status status, long nanos, String detail, List<String> notes) {
             results.add(new Result(name, status, nanos));
             int k = results.size();
@@ -147,15 +178,21 @@ final class FleetLog {
             if (count > 2 && k >= 2 && k < count) {
                 long rest = elapsed() / k * (count - k);
                 if (rest >= 10_000_000_000L) {   // worth saying from 10s on
-                    left = "  " + Ansi.dim("~" + Out.duration(rest) + " left");
+                    left = "~" + Out.duration(rest) + " left";
                 }
             }
+            String head = "  " + counter(k) + " " + status.icon + " " + fit(name, nameWidth) + " " + String.format("%7s", Out.duration(nanos))
+                    + (count > 2 ? "  " + String.format("%-" + LEFT + "s", left) : "") + "  ";
+            List<String> d = wrap(detail == null ? "" : detail, Math.max(30, Math.min(Out.width(), 160) - head.length() - 1));
             synchronized (err) {
-                err.println("  " + Ansi.dim(counter(k)) + " " + status.colored() + " " + String.format("%-" + nameWidth + "s", name)
-                        + " " + Ansi.dim(String.format("%7s", Out.duration(nanos))) + "  " + (status == Status.FAILED ? Ansi.red(detail)
-                        : status == Status.PROBLEM ? Ansi.yellow(detail) : detail) + left);
-                for (String n : notes) {
-                    err.println("  " + " ".repeat(counter(k).length() + 3) + Ansi.dim("└ " + n));
+                err.println("  " + Ansi.dim(counter(k)) + " " + status.colored() + " " + fit(name, nameWidth)
+                        + " " + Ansi.dim(String.format("%7s", Out.duration(nanos))) + (count > 2 ? "  " + Ansi.dim(String.format("%-" + LEFT + "s", left)) : "")
+                        + "  " + paint(status, d.getFirst()));
+                for (String more : d.subList(1, d.size())) {   // a long detail goes on under its own column
+                    err.println(" ".repeat(head.length()) + paint(status, more));
+                }
+                for (String n : notes) {   // #206: a note on one line, under the repo (a parser's message spans several)
+                    err.println("  " + " ".repeat(counter(k).length() + 3) + Ansi.dim("└ " + oneLine(n.replace('\n', ' ').replaceAll(" {2,}", " "))));
                 }
             }
         }
