@@ -324,11 +324,17 @@ JobDetail from a `Class` parameter, in a file importing Quartz; `X` resolved thr
 JobDetails (several `JobDetailFactoryBean`s, each with its own, different name) is one job per JobDetail:
 `job:<svc>:<class>#<name>` (the method's name when it sets none), with `jobDetail` (the method), `jobName`,
 `jobData` (the enum constants in it) and the cron of the trigger that sets that JobDetail.
-A trigger in the configuration that lists the jobs it starts one after the other below its cron
-(`<trigger>.execution-plans[i].jobChain[j].name: SOME_JOB`, by enum constant, class or key) gives each of them its
-schedule (#209): every trigger a job is in goes into its `triggers`, with the trigger's own values (name, group), its
-place (`chain`, `position`, `runsAfter`: it starts when the one before it is done) and its plan's values (a
-description, a country code).
+Schedules are first found by following the code (#217): logast runs the configurations' `@Bean` and `@PostConstruct`
+methods on the bound configuration, the way the application does at startup: `@ConfigurationProperties` classes bound
+from their prefix (inherited fields, nested lists and enums, relaxed names), `List<T>` injected with every bean of T,
+`@Bean` methods, constructors (Lombok's by field order), builders, getters, streams, `Optional`, maps, enum constants
+with their constructor arguments. Each trigger it builds (`CronTriggerFactoryBean`, `TriggerBuilder…build()`) gives a
+job (its `JobDetail`'s job class, an enum constant's argument included) its `cron` (with the key it came from), `zone`,
+`name` and `group`. A chain: a global `JobListener` of the project is run as Quartz runs it after each job, with the
+trigger's `JobDataMap`; the job it triggers next (`triggerJob`, or `scheduleJob` of a trigger `forJob` it), with the
+data it passes on, is the next step (`chain`, `position`, `runsAfter`), with the values that data carries (a country,
+a delay). Lombok and Quartz need not be on the classpath. Job names listed under a configuration entry are no chain by
+themselves: only code that runs them makes one.
 Its `execute` (or `executeInternal`; else the methods it overrides of its base class) is where its calls, reads and
 writes start, so `lineage`, `writers_of` and `readers_of` see them. Its `cron` is read where the code builds the schedule
 next to the job's class: one method with `JobBuilder.newJob(X.class)` and `cronSchedule(…)`, or one configuration

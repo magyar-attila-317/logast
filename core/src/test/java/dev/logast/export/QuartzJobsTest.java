@@ -578,7 +578,7 @@ class QuartzJobsTest {
      * the chain and what its plan says.
      */
     @Test
-    void jobsChainedUnderATriggerGetItsSchedule() throws IOException {
+    void jobNamesUnderATriggerAreNoChainWithoutTheCode() throws IOException {
         Path root = tmp.resolve("totals");
         Files.createDirectories(root);
         Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
@@ -644,11 +644,8 @@ class QuartzJobsTest {
         Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "totals", "test", out);
         List<String> jobs = out.toString().lines().filter(l -> l.contains("\"kind\":\"job\"")).toList();
         assertThat(jobs).as(out.toString()).hasSize(3);
-        assertThat(jobs).filteredOn(l -> l.contains("ViewRefreshJob")).singleElement().asString()
-                .contains("\"cron\":\"0 45 1 ? * 2\"", "\"position\":\"1 of 2\"", "\"region-code\":\"N\"");
-        assertThat(jobs).filteredOn(l -> l.contains("WeeklyTotalsJob")).singleElement().asString()
-                .contains("\"cron\":\"0 45 1 ? * 2\"", "\"cron\":\"0 15 2 ? * 2\"", "\"runsAfter\":\"VIEW_REFRESH\"",
-                        "\"name\":\"MondayRunSouth\"", "\"description\":\"South jobs for last week\"");
-        assertThat(jobs).filteredOn(l -> l.contains("DailyTotalsJob")).singleElement().asString().doesNotContain("cron");
+        // #217: without code that schedules them, job names listed under a trigger's entry are no chain: what runs them is
+        // the code's to say (TracedSchedulesTest follows it), not the shape of the keys
+        assertThat(jobs).as(out.toString()).noneMatch(l -> l.contains("\"position\"") || l.contains("\"runsAfter\""));
     }
 }

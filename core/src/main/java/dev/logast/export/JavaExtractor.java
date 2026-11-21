@@ -573,8 +573,11 @@ public final class JavaExtractor implements Extractor {
         }
         Map<String, String> crons = quartzSchedules(jobs);
         enumJobs = enumJobs(jobs);   // #190: enum constants that carry a job's metadata
-        Map<String, List<Map<String, String>>> traced = tracedSchedules(jobs, root == null ? Map.of()
-                : dev.logast.SpringProperties.read(root));   // #198: from setCronExpression back to the configuration
+        Map<String, List<Map<String, String>>> traced = new LinkedHashMap<>(tracedSchedules(jobs, root == null ? Map.of()
+                : dev.logast.SpringProperties.read(root)));   // #198: from setCronExpression back to the configuration
+        // #217: what following the code finds (bound configuration → triggers → jobs, a listener's chain) wins
+        QuartzTrace.triggersByJob(QuartzTrace.runs(a.index, root == null ? Map.of() : dev.logast.SpringProperties.read(root)))
+                .forEach(traced::put);
         Map<String, Map<String, String>> fromConfig = configSchedules(jobs);   // #189: application.yml, per profile
         for (ClassInfo c : jobs.values()) {
             if (c.decl().hasModifier(J.Modifier.Type.Abstract)) {
@@ -850,62 +853,10 @@ public final class JavaExtractor implements Extractor {
                 }
                 at = parentKey(at);
             }
-            Map<ClassInfo, Map<String, String>> found = new LinkedHashMap<>();   // job → what its place in the entry adds
-            if (job != null) {
-                found.put(job, Map.of());
-            } else {
-                found.putAll(chainedJobs(jobs, props, groups, entry));   // #209: jobs listed under it, a chain the cron starts
-            }
-            found.forEach((foundJob, extra) -> configSchedule(foundJob, extra, entry, keys, cronKey, profile, out, base));
-        });
-    }
-
-    private static final Pattern INDEXED = Pattern.compile("^(.*)\\[(\\d+)](?:\\.([\\w-]+))?$");
-
-    /**
-     * #209: the jobs named below a trigger's entry ({@code triggers.x.execution-plans[0].jobChain[3].name: SOME_JOB}):
-     * the trigger starts them one after the other. Each with its place ({@code chain}, {@code position},
-     * {@code runsAfter}) and what its plan says ({@code country-code}, {@code description}: the plan's own values).
-     */
-    private Map<ClassInfo, Map<String, String>> chainedJobs(Map<String, ClassInfo> jobs, Map<String, String> props,
-                                                            Map<String, Map<String, String>> groups, String entry) {
-        Map<ClassInfo, Map<String, String>> out = new LinkedHashMap<>();
-        Map<String, java.util.TreeMap<Integer, String>> lists = new LinkedHashMap<>();   // a list's key → index → value
-        props.forEach((k, v) -> {
-            if (!k.startsWith(entry + ".") || v == null || k.substring(entry.length()).chars().filter(c -> c == '.').count() > 4) {
-                return;
-            }
-            Matcher ix = INDEXED.matcher(k);
-            if (ix.matches() && (ix.group(3) == null || ix.group(3).equals("name") || ix.group(3).equals("job"))) {
-                lists.computeIfAbsent(ix.group(1), x -> new java.util.TreeMap<>()).put(Integer.parseInt(ix.group(2)), v.strip());
+            if (job != null) {   // #217: a chain under the entry is the code's to say (QuartzTrace), not the keys' shape
+                configSchedule(job, Map.of(), entry, keys, cronKey, profile, out, base);
             }
         });
-        lists.forEach((list, items) -> {
-            String plan = parentKey(list);
-            Map<String, String> planValues = new TreeMap<>();
-            groups.getOrDefault(plan, Map.of()).forEach((k, v) -> {
-                if (v != null && v.length() <= 120 && !k.contains("[")) {
-                    planValues.put(k, v.strip());
-                }
-            });
-            String before = null;
-            int position = 0;
-            for (var item : items.entrySet()) {
-                position++;
-                ClassInfo j = jobNamed(jobs, item.getValue());
-                if (j != null && !out.containsKey(j)) {
-                    Map<String, String> extra = new TreeMap<>(planValues);
-                    extra.put("chain", list);
-                    extra.put("position", position + " of " + items.size());
-                    if (before != null) {
-                        extra.put("runsAfter", before);
-                    }
-                    out.put(j, extra);
-                }
-                before = item.getValue();
-            }
-        });
-        return out;
     }
 
     private void configSchedule(ClassInfo job, Map<String, String> extra, String entry, Map<String, String> keys, String cronKey,
