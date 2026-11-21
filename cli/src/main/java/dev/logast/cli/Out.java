@@ -83,6 +83,55 @@ final class Out {
     }
 
     /**
+     * #207: stderr that keeps what a thread prints while it {@link #capture captures}: a fleet's parallel exports print
+     * into their own buffers (shown condensed under their repo's line), the rest goes on to the terminal.
+     */
+    static final class Routing extends java.io.PrintStream {
+        private static final ThreadLocal<java.io.ByteArrayOutputStream> BUFFER = new ThreadLocal<>();
+        private final java.io.PrintStream to;
+
+        Routing(java.io.PrintStream to) {
+            super(to, true);
+            this.to = to;
+        }
+
+        @Override
+        public void write(int b) {
+            var buf = BUFFER.get();
+            if (buf != null) {
+                buf.write(b);
+            } else {
+                to.write(b);
+            }
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) {
+            var buf = BUFFER.get();
+            if (buf != null) {
+                buf.write(b, off, len);
+            } else {
+                to.write(b, off, len);
+                to.flush();
+            }
+        }
+
+        /** Runs {@code work}; what this thread prints to stderr meanwhile goes into {@code into} (its lines, without escapes). */
+        static <T> T capture(List<String> into, java.util.concurrent.Callable<T> work) throws Exception {
+            var buf = new java.io.ByteArrayOutputStream();
+            var before = BUFFER.get();
+            BUFFER.set(buf);
+            try {
+                return work.call();
+            } finally {
+                BUFFER.set(before);
+                buf.toString(java.nio.charset.StandardCharsets.UTF_8).replaceAll("\u001b\\[[0-9;]*[A-Za-z]|\r", "").lines()
+                        .map(String::stripTrailing).filter(l -> !l.isBlank()).forEach(into::add);
+            }
+        }
+    }
+
+    /**
      * Progress for long work. On a terminal, each step stays visible above a live spinner with elapsed time. Elsewhere
      * (CI, pipes), each new step is printed once.
      */

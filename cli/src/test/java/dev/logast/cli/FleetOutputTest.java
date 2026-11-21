@@ -66,4 +66,48 @@ class FleetOutputTest {
         assertThat(lines.get(3).indexOf("word")).isEqualTo(detail);   // a long detail goes on under its column
         assertThat(lines).allMatch(l -> l.length() <= Out.width());
     }
+
+    /** #207: what an export prints goes to its own buffer, not between the other repos' lines; condensed into a few notes. */
+    @Test
+    void anExportsOwnLinesAreKeptAndCondensed() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream before = System.err;
+        System.setErr(new Out.Routing(new PrintStream(bytes, true, StandardCharsets.UTF_8)));
+        java.util.List<String> printed = new java.util.ArrayList<>();
+        try {
+            Out.Routing.capture(printed, () -> {
+                System.err.println("flyway: the migrations expect schema cache to exist (made outside Flyway): created it empty and ran them again");
+                System.err.println("flyway prod: the migrations expect role reader to exist (made outside Flyway): created it empty and ran them again");
+                System.err.println("flyway: left out V2__x.sql: it needs relation cache.items, which no repo of the fleet makes");
+                System.err.println("\u001b[2Kexport: a problem the repo's line has already");
+                for (int i = 1; i <= 5; i++) {
+                    System.err.println("something else " + i);
+                }
+                return null;
+            });
+            System.err.println("the run's own line");
+        } finally {
+            System.setErr(before);
+        }
+        assertThat(bytes.toString(StandardCharsets.UTF_8)).isEqualTo("the run's own line\n");
+        assertThat(Fleet.condense(printed, "kb/x/export.log")).containsExactly(
+                "its migrations expect from outside (created empty for the run): role reader, schema cache",
+                "something else 1", "something else 2", "something else 3", "… 2 more line(s) in kb/x/export.log");
+    }
+
+    /** #207: a repo's line clears the live line first (it went through the stream stderr had before the live line). */
+    @Test
+    void aRepoLineClearsTheLiveLine() {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream before = System.err;
+        try {
+            FleetLog log = new FleetLog();
+            FleetLog.Phase p = log.phase("scan", null, 1);
+            System.setErr(new Out.Progress.ClearingStream(new PrintStream(bytes, true, StandardCharsets.UTF_8)));
+            p.done("billing", FleetLog.Status.OK, 1_000_000_000L, "scanned", java.util.List.of());
+        } finally {
+            System.setErr(before);
+        }
+        assertThat(bytes.toString(StandardCharsets.UTF_8)).startsWith("\r\u001b[2K  [1/1]");
+    }
 }
