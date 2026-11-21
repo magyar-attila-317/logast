@@ -542,7 +542,8 @@ public final class JavaExtractor implements Extractor {
                 }
             });
             List<Map<String, String>> triggers = ownTriggers != null ? ownTriggers : configTriggers.getOrDefault(c.fqn(), List.of());
-            if (triggers.size() > 1) {   // #197: a job with several triggers runs at each
+            if (triggers.size() > 1 || triggers.stream().anyMatch(t -> t.containsKey("chain"))) {
+                // #197: a job with several triggers runs at each; #209: in a chain, where it runs in it
                 attrs.put("triggers", triggers);
             }
             java.util.Set<String> zones = new java.util.LinkedHashSet<>();
@@ -747,9 +748,67 @@ public final class JavaExtractor implements Extractor {
                 }
                 at = parentKey(at);
             }
-            if (job == null) {
+            Map<ClassInfo, Map<String, String>> found = new LinkedHashMap<>();   // job → what its place in the entry adds
+            if (job != null) {
+                found.put(job, Map.of());
+            } else {
+                found.putAll(chainedJobs(jobs, props, groups, entry));   // #209: jobs listed under it, a chain the cron starts
+            }
+            found.forEach((foundJob, extra) -> configSchedule(foundJob, extra, entry, keys, cronKey, profile, out, base));
+        });
+    }
+
+    private static final Pattern INDEXED = Pattern.compile("^(.*)\\[(\\d+)](?:\\.([\\w-]+))?$");
+
+    /**
+     * #209: the jobs named below a trigger's entry ({@code triggers.x.execution-plans[0].jobChain[3].name: SOME_JOB}):
+     * the trigger starts them one after the other. Each with its place ({@code chain}, {@code position},
+     * {@code runsAfter}) and what its plan says ({@code country-code}, {@code description}: the plan's own values).
+     */
+    private Map<ClassInfo, Map<String, String>> chainedJobs(Map<String, ClassInfo> jobs, Map<String, String> props,
+                                                            Map<String, Map<String, String>> groups, String entry) {
+        Map<ClassInfo, Map<String, String>> out = new LinkedHashMap<>();
+        Map<String, java.util.TreeMap<Integer, String>> lists = new LinkedHashMap<>();   // a list's key → index → value
+        props.forEach((k, v) -> {
+            if (!k.startsWith(entry + ".") || v == null || k.substring(entry.length()).chars().filter(c -> c == '.').count() > 4) {
                 return;
             }
+            Matcher ix = INDEXED.matcher(k);
+            if (ix.matches() && (ix.group(3) == null || ix.group(3).equals("name") || ix.group(3).equals("job"))) {
+                lists.computeIfAbsent(ix.group(1), x -> new java.util.TreeMap<>()).put(Integer.parseInt(ix.group(2)), v.strip());
+            }
+        });
+        lists.forEach((list, items) -> {
+            String plan = parentKey(list);
+            Map<String, String> planValues = new TreeMap<>();
+            groups.getOrDefault(plan, Map.of()).forEach((k, v) -> {
+                if (v != null && v.length() <= 120 && !k.contains("[")) {
+                    planValues.put(k, v.strip());
+                }
+            });
+            String before = null;
+            int position = 0;
+            for (var item : items.entrySet()) {
+                position++;
+                ClassInfo j = jobNamed(jobs, item.getValue());
+                if (j != null && !out.containsKey(j)) {
+                    Map<String, String> extra = new TreeMap<>(planValues);
+                    extra.put("chain", list);
+                    extra.put("position", position + " of " + items.size());
+                    if (before != null) {
+                        extra.put("runsAfter", before);
+                    }
+                    out.put(j, extra);
+                }
+                before = item.getValue();
+            }
+        });
+        return out;
+    }
+
+    private void configSchedule(ClassInfo job, Map<String, String> extra, String entry, Map<String, String> keys, String cronKey,
+                                String profile, Map<String, Map<String, String>> out, Map<String, String> base) {
+        {
             String key = entry + "." + cronKey;
             String cron = keys.get(cronKey).strip();
             if (base == null) {   // #197: every trigger of the job, with what else its entry says (its name, a country)
@@ -759,6 +818,7 @@ public final class JavaExtractor implements Extractor {
                         trigger.put(k.equals(cronKey) ? "cron" : k, v.strip());
                     }
                 });
+                extra.forEach(trigger::putIfAbsent);
                 trigger.put("from", key);
                 List<Map<String, String>> list = configTriggers.computeIfAbsent(job.fqn(), x -> new ArrayList<>());
                 if (list.stream().noneMatch(t -> t.get("from").equals(key))) {
@@ -771,7 +831,7 @@ public final class JavaExtractor implements Extractor {
             Map<String, String> m = out.computeIfAbsent(job.fqn(), x -> new TreeMap<>());
             m.putIfAbsent(profile, cron);
             m.putIfAbsent("@from", "application config: " + key);
-        });
+        }
     }
 
     /** #190: an enum constant that carries a job's metadata: the job it stands for, and a cron among its arguments. */

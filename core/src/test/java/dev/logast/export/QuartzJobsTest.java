@@ -571,4 +571,84 @@ class QuartzJobsTest {
                 .contains("\"cron\":\"0 30 4 * * ?\"");
         assertThat(jobs).noneMatch(l -> l.contains("Report"));
     }
+
+    /**
+     * #209: a trigger in the configuration that starts a chain of jobs: its cron above, the jobs listed below it by enum
+     * constant ({@code execution-plans[i].jobChain[j].name}); each job gets every trigger it is in, with its place in
+     * the chain and what its plan says.
+     */
+    @Test
+    void jobsChainedUnderATriggerGetItsSchedule() throws IOException {
+        Path root = tmp.resolve("totals");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("build.gradle.kts"), "plugins { java }\n");
+        for (String job : List.of("ViewRefreshJob", "WeeklyTotalsJob", "DailyTotalsJob")) {
+            write(root, job, """
+                    package com.example.jobs;
+
+                    import org.quartz.Job;
+                    import org.quartz.JobExecutionContext;
+
+                    public class %s implements Job {
+                        @Override
+                        public void execute(JobExecutionContext context) {
+                        }
+                    }
+                    """.formatted(job));
+        }
+        write(root, "TotalsJobType", """
+                package com.example.jobs;
+
+                import org.quartz.Job;
+
+                public enum TotalsJobType {
+                    VIEW_REFRESH(ViewRefreshJob.class, "ViewRefreshJob"),
+                    WEEKLY_TOTALS(WeeklyTotalsJob.class, "WeeklyTotalsJob"),
+                    DAILY_TOTALS(DailyTotalsJob.class, "DailyTotalsJob");
+
+                    private final Class<? extends Job> jobClass;
+                    private final String key;
+
+                    TotalsJobType(Class<? extends Job> jobClass, String key) {
+                        this.jobClass = jobClass;
+                        this.key = key;
+                    }
+                }
+                """);
+        Path res = Files.createDirectories(root.resolve("src/main/resources"));
+        Files.writeString(res.resolve("application.yml"), """
+                totals:
+                  run-triggers:
+                    monday-north:
+                      name: "MondayRunNorth"
+                      cron: "0 45 1 ? * 2"
+                      trigger-group: "RunTriggersNorth"
+                      execution-plans:
+                        - description: North jobs for last week
+                          region-code: N
+                          jobChain:
+                            - name: VIEW_REFRESH
+                            - name: WEEKLY_TOTALS
+                              send-email: true
+                    monday-south:
+                      name: "MondayRunSouth"
+                      cron: "0 15 2 ? * 2"
+                      trigger-group: "RunTriggersSouth"
+                      execution-plans:
+                        - description: South jobs for last week
+                          region-code: S
+                          jobChain:
+                            - name: WEEKLY_TOTALS
+                """);
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "totals", "test", out);
+        List<String> jobs = out.toString().lines().filter(l -> l.contains("\"kind\":\"job\"")).toList();
+        assertThat(jobs).as(out.toString()).hasSize(3);
+        assertThat(jobs).filteredOn(l -> l.contains("ViewRefreshJob")).singleElement().asString()
+                .contains("\"cron\":\"0 45 1 ? * 2\"", "\"position\":\"1 of 2\"", "\"region-code\":\"N\"");
+        assertThat(jobs).filteredOn(l -> l.contains("WeeklyTotalsJob")).singleElement().asString()
+                .contains("\"cron\":\"0 45 1 ? * 2\"", "\"cron\":\"0 15 2 ? * 2\"", "\"runsAfter\":\"VIEW_REFRESH\"",
+                        "\"name\":\"MondayRunSouth\"", "\"description\":\"South jobs for last week\"");
+        assertThat(jobs).filteredOn(l -> l.contains("DailyTotalsJob")).singleElement().asString().doesNotContain("cron");
+    }
 }

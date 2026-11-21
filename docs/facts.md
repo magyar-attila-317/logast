@@ -294,6 +294,11 @@ JobDetail from a `Class` parameter, in a file importing Quartz; `X` resolved thr
 JobDetails (several `JobDetailFactoryBean`s, each with its own, different name) is one job per JobDetail:
 `job:<svc>:<class>#<name>` (the method's name when it sets none), with `jobDetail` (the method), `jobName`,
 `jobData` (the enum constants in it) and the cron of the trigger that sets that JobDetail.
+A trigger in the configuration that lists the jobs it starts one after the other below its cron
+(`<trigger>.execution-plans[i].jobChain[j].name: SOME_JOB`, by enum constant, class or key) gives each of them its
+schedule (#209): every trigger a job is in goes into its `triggers`, with the trigger's own values (name, group), its
+place (`chain`, `position`, `runsAfter`: it starts when the one before it is done) and its plan's values (a
+description, a country code).
 Its `execute` (or `executeInternal`; else the methods it overrides of its base class) is where its calls, reads and
 writes start, so `lineage`, `writers_of` and `readers_of` see them. Its `cron` is read where the code builds the schedule
 next to the job's class: one method with `JobBuilder.newJob(X.class)` and `cronSchedule(…)`, or one configuration
