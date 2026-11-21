@@ -268,6 +268,11 @@ public final class KnowledgeBase {
     }
 
     /** Every node fact, in id order (a node in several environments or files once per fact). */
+    /** #204: a node's facts by id (each environment's), without walking all of them. */
+    public List<Fact<Node>> node(String id) {
+        return nodes.getOrDefault(id, List.of());
+    }
+
     public List<Fact<Node>> nodes() {
         return nodes.values().stream().flatMap(List::stream).toList();
     }

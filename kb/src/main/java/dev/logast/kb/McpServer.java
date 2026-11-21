@@ -391,7 +391,11 @@ public final class McpServer {
                 if (code.isBlank()) {
                     yield text("'code' is required: a JavaScript program ending with `return <value>` (see the api tool)", true);
                 }
+                long t0 = System.nanoTime();
                 CodeMode.Result r = CodeMode.run(k, code);
+                // #204: what code mode costs, for comparing sessions: time, result size, the first line of an error
+                log.printf("logast mcp: query %d ms, %s%n", (System.nanoTime() - t0) / 1_000_000, r.error() != null
+                        ? "error: " + r.error().lines().findFirst().orElse("") : r.json().length() + " characters");
                 yield r.error() != null ? text(r.error() + "\n(the api tool lists the functions, kinds and attributes)", true)
                         : text(r.json(), false);
             }
