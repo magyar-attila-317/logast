@@ -77,8 +77,8 @@ cache.x`, `grant … to reporting_reader`) fail in the throwaway database. logas
 the migrations again (#192: a failed migration rolls back, PostgreSQL's DDL is transactional), and says so on stderr.
 A migration that needs what another service makes (`relation|sequence|type|view … does not exist`: a view on its
 table, a foreign key to it, its sequence) runs against a **stand-in** where it can (#205):
-- a table another repo's migrations create (in a fleet: from the other members' facts, `withElsewhere` in code) is
-  created empty with that table's columns (and each column unique, for a foreign key to it); a sequence is created empty;
+- a table another repo's migrations create (in a fleet: from the other members' facts, `withElsewhere` in code; a
+  name without a schema only in the run's own schema) is created empty with that table's columns (and each column unique, for a foreign key to it); a sequence is created empty;
 - the migration then runs in full; the stand-in is not the service's table: an edge `service:<svc> -reads->
   table:<schema.name>` with `via: migration <file>`, `madeElsewhere: true`, `standIn: true` and `columnsAssumed`.
 
@@ -290,8 +290,8 @@ A class that is a `org.quartz.Job` (or `InterruptableJob`, `StatefulJob`, Spring
 `entrypoint: quartz` and its class as `handler` (#187): by type when the classpath has Quartz, else by what the source
 names with an import of Quartz, and classes extending a job class of the repo too (an abstract base class is no job).
 A class named where a job is scheduled (`setJobClass(X.class)`, `newJob(X.class)`, or a helper that builds the
-JobDetail from a `Class` parameter) is a job too, whatever its base class (a library's) (#208). A class with several
-JobDetails (several `JobDetailFactoryBean`s, each its own name and data) is one job per JobDetail:
+JobDetail from a `Class` parameter, in a file importing Quartz; `X` resolved through its imports) is a job too, whatever its base class (a library's) (#208). A class with several
+JobDetails (several `JobDetailFactoryBean`s, each with its own, different name) is one job per JobDetail:
 `job:<svc>:<class>#<name>` (the method's name when it sets none), with `jobDetail` (the method), `jobName`,
 `jobData` (the enum constants in it) and the cron of the trigger that sets that JobDetail.
 Its `execute` (or `executeInternal`; else the methods it overrides of its base class) is where its calls, reads and
