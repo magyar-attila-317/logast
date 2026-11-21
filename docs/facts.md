@@ -405,6 +405,13 @@ that sets it. A value that looks like a secret is never written (#183). These ar
 (a team's own rules join on them), and the `uses-property` edges of `@Value` and `@ConfigurationProperties` beans now
 reach a node.
 
+## The code's own values
+
+Each enum constant is `enum-constant:<svc>:<Enum>.<NAME>` with `values`: what its constructor gives its fields
+(`JobType.LOAD` → `jobClass`, `key`, `description`; Lombok's constructors by field order), and each `static final`
+String or number is `constant:<svc>:<Class>.<NAME>` with its `value` (#215). Like configuration values, they are raw
+material for mappings; `find` lists them after the nodes they are about (give `kind` to list them).
+
 ## Jobs chosen by a profile at startup
 
 A service that runs one job per start, chosen by the active profile (#211), has a job per profile: a startup

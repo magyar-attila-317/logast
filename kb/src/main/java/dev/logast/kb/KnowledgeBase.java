@@ -403,28 +403,48 @@ public final class KnowledgeBase {
     }
 
     /** Nodes whose id or attributes contain {@code text} (case-insensitive), optionally of one kind. */
+    /** #215: raw material (configuration values, constants, enum constants, table rows): listed after what it is about. */
+    static final java.util.Set<String> RAW_KINDS = java.util.Set.of("property", "constant", "enum-constant", "row");
+
     public String find(String text, String kind, int limit) {
         String t = text == null ? "" : text.toLowerCase(Locale.ROOT);
+        boolean anyKind = kind == null || kind.isBlank();
         List<String> hits = new ArrayList<>();
+        List<String> raw = new ArrayList<>();
+        java.util.Map<String, Integer> rawKinds = new java.util.TreeMap<>();
         int total = 0;
         for (var e : nodes.entrySet()) {
             Fact<Node> n = e.getValue().getFirst();
-            if (kind != null && !kind.isBlank() && !n.fact().kind().equals(kind)) {
+            if (!anyKind && !n.fact().kind().equals(kind)) {
                 continue;
             }
             boolean match = e.getKey().toLowerCase(Locale.ROOT).contains(t)
                     || e.getValue().stream().anyMatch(x -> x.fact().attrs().toString().toLowerCase(Locale.ROOT).contains(t));
-            if (match) {
-                total++;
-                if (hits.size() < limit) {
-                    hits.add("- " + e.getKey() + "  (" + cite(n.fact().evidence(), n.header()) + ")");
-                }
+            if (!match) {
+                continue;
+            }
+            String line = "- " + e.getKey() + "  (" + cite(n.fact().evidence(), n.header()) + ")";
+            if (anyKind && RAW_KINDS.contains(n.fact().kind())) {   // #215: raw material after what it is about
+                rawKinds.merge(n.fact().kind(), 1, Integer::sum);
+                raw.add(line);
+                continue;
+            }
+            total++;
+            if (hits.size() < limit) {
+                hits.add(line);
             }
         }
-        if (total == 0) {
-            return "No node matches '" + text + "'" + (kind == null || kind.isBlank() ? "" : " of kind " + kind) + ".";
+        int rawTotal = raw.size();
+        if (total == 0 && rawTotal == 0) {
+            return "No node matches '" + text + "'" + (anyKind ? "" : " of kind " + kind) + ".";
         }
-        return total + " nodes" + (total > hits.size() ? " (first " + hits.size() + ")" : "") + ":\n" + String.join("\n", hits);
+        if (total == 0) {   // only raw facts match: show them
+            hits.addAll(raw.subList(0, Math.min(limit, rawTotal)));
+            return rawTotal + " nodes" + (rawTotal > hits.size() ? " (first " + hits.size() + ")" : "") + ":\n" + String.join("\n", hits);
+        }
+        String more = rawTotal == 0 ? "" : "\n(and " + rawTotal + " configuration/code values: " + rawKinds.entrySet().stream()
+                .map(x -> x.getValue() + " " + x.getKey()).collect(java.util.stream.Collectors.joining(", ")) + "; give kind to list them)";
+        return total + " nodes" + (total > hits.size() ? " (first " + hits.size() + ")" : "") + ":\n" + String.join("\n", hits) + more;
     }
 
     /** A node: its attributes and evidence (per environment and file), and its edges. */

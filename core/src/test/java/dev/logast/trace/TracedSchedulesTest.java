@@ -421,4 +421,17 @@ class TracedSchedulesTest {
         assertThat(facts).contains("\"id\":\"property:batch:batch.triggers.weekly-a.plans[0].chain[1].delay-in-minutes\"")
                 .contains("\"id\":\"property:batch:spring.datasource.password\"").doesNotContain("s3cr3t-value");
     }
+
+    /** #215: the code's own values: enum constants with what their constructor gives their fields, constants. */
+    @Test
+    void enumConstantsAndConstantsAreFacts() throws IOException {
+        Path root = service(tmp);
+        StringWriter out = new StringWriter();
+        Export.java(root, Fixtures.classpath(), Logast.policy(root, null), "batch", "test", out);
+        String facts = out.toString();
+        assertThat(facts.lines().filter(l -> l.contains("\"id\":\"enum-constant:batch:JobType.LOAD\""))).singleElement().asString()
+                .contains("\"jobClass\":\"com.example.batch.LoadJob\"", "\"key\":\"load\"", "\"description\":\"Loads the data\"");
+        assertThat(facts.lines().filter(l -> l.contains("\"id\":\"constant:batch:JobKeys.PARAMS\""))).singleElement().asString()
+                .contains("\"value\":\"batch.params\"");
+    }
 }

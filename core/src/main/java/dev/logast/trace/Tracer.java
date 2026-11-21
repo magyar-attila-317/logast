@@ -854,7 +854,17 @@ public final class Tracer {
         return o;
     }
 
-    Value.Obj enumObjectOf(Value.EnumConst e) {
-        return enumObject(e);
+    /** An enum constant's fields, from its constructor arguments (#215); null when the enum is not the project's. */
+    public Value.Obj enumObjectOf(Value.EnumConst e) {
+        try {
+            return enumObject(e);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    /** The names of an enum's constants, in order. */
+    public static List<String> constantsOf(ClassInfo c) {
+        return enumConstants(c);
     }
 }

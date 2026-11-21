@@ -99,6 +99,7 @@ public final class JavaExtractor implements Extractor {
         calls(svc, service, surface, entryIds, sink);
         beans(svc, entryIds, sink);
         properties(svc, sink);
+        constants(svc, sink);
         tables(svc, service, entryIds, sink);
         files(svc, service, entryIds, sink);
         libraries.forEach((ga, version) -> {
@@ -468,6 +469,69 @@ public final class JavaExtractor implements Extractor {
                 attrs.put("byProfile", byProfile.get(k));
             }
             sink.node(Node.of("property", svc + ":" + k, attrs, at));
+        }
+    }
+
+    /**
+     * #215: the code's own values: each enum constant ({@code enum-constant:<svc>:<Enum>.<NAME>}) with the values its
+     * constructor gives its fields ({@code JobType.LOAD} → its job class, its key), and each {@code static final} String
+     * or number of a class ({@code constant:<svc>:<Class>.<NAME>}): what a mapping follows a name to.
+     */
+    private void constants(String svc, Sorted sink) {
+        dev.logast.trace.Tracer t = new dev.logast.trace.Tracer(new dev.logast.trace.Types(a.index), a.springProperties);
+        for (ClassInfo c : a.index.classes()) {
+            String file = c.file().relPath();
+            if (c.decl().getKind() == J.ClassDeclaration.Kind.Type.Enum) {
+                for (String name : dev.logast.trace.Tracer.constantsOf(c)) {
+                    Map<String, Object> attrs = new TreeMap<>();
+                    attrs.put("enum", c.fqn());
+                    var o = t.enumObjectOf(new dev.logast.trace.Value.EnumConst(c.fqn(), name));
+                    Map<String, Object> values = new TreeMap<>();
+                    if (o != null) {
+                        o.fields.forEach((k, v) -> {
+                            String text = switch (v) {
+                                case dev.logast.trace.Value.Lit l -> l.text();
+                                case dev.logast.trace.Value.ClassRef r -> r.fqn();
+                                case dev.logast.trace.Value.EnumConst e -> e.simple();
+                                default -> null;
+                            };
+                            if (text != null && text.length() <= 200) {
+                                values.put(k, dev.logast.facts.Secrets.clean(k, text));
+                            }
+                        });
+                    }
+                    if (!values.isEmpty()) {
+                        attrs.put("values", values);
+                    }
+                    sink.node(Node.of("enum-constant", svc + ":" + c.simpleName() + "." + name, attrs,
+                            Evidence.at(file, line(Pos.line(c.decl().getName())))));
+                }
+            }
+            if (c.decl().getBody() == null) {
+                continue;
+            }
+            for (var st : c.decl().getBody().getStatements()) {
+                if (!(st instanceof J.VariableDeclarations vd) || !vd.hasModifier(J.Modifier.Type.Static) || !vd.hasModifier(J.Modifier.Type.Final)) {
+                    continue;
+                }
+                for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
+                    if (v.getInitializer() == null || v.getSimpleName().equals("serialVersionUID")) {
+                        continue;
+                    }
+                    String value = dev.logast.graph.Constants.concatenated(a.index, v.getInitializer());
+                    if (value == null && v.getInitializer() instanceof J.Literal l && l.getValue() instanceof Number n) {
+                        value = String.valueOf(n);
+                    }
+                    if (value == null || value.length() > 200) {
+                        continue;
+                    }
+                    Map<String, Object> attrs = new TreeMap<>();
+                    attrs.put("value", dev.logast.facts.Secrets.clean(v.getSimpleName(), value));
+                    attrs.put("class", c.fqn());
+                    sink.node(Node.of("constant", svc + ":" + c.simpleName() + "." + v.getSimpleName(), attrs,
+                            Evidence.at(file, line(Pos.line(v)))));
+                }
+            }
         }
     }
 
