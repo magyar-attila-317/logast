@@ -484,17 +484,40 @@ public final class JavaExtractor implements Extractor {
                 entry = own.stream().filter(m -> m.decl().getLeadingAnnotations().stream()
                         .anyMatch(an -> an.getSimpleName().equals("Override"))).toList();
             }
-            Evidence at = Evidence.at(c.file().relPath(), line(Pos.line(c.decl().getName())));
+            // #208: a class with several JobDetails runs as several jobs: one each, with its name, data and trigger
+            List<Detail> details = details(c);
+            for (Detail d : details.size() > 1 ? details : java.util.Collections.<Detail>singletonList(null)) {
+            Evidence at = d == null ? Evidence.at(c.file().relPath(), line(Pos.line(c.decl().getName())))
+                    : Evidence.at(d.method().file().relPath(), line(Pos.line(d.method().decl().getName())));
             Map<String, Object> attrs = new TreeMap<>();
             attrs.put("entrypoint", "quartz");
             attrs.put("handler", c.fqn());
-            String cron = crons.get(c.fqn());
-            List<Map<String, String>> fromCode = traced.getOrDefault(c.fqn(), List.of());
+            if (d != null) {
+                attrs.put("jobDetail", d.method().owner().simpleName() + "." + d.method().name());
+                if (d.name() != null) {
+                    attrs.put("jobName", d.name());
+                }
+                if (!d.data().isEmpty()) {
+                    attrs.put("jobData", d.data());
+                }
+            }
+            String cron = d == null ? crons.get(c.fqn()) : null;
+            List<Map<String, String>> fromCode = traced.getOrDefault(c.fqn(), List.of()).stream()
+                    .filter(t -> d == null || d.method().name().equals(t.get("@detail"))).map(t -> {
+                        Map<String, String> copy = new TreeMap<>(t);
+                        copy.remove("@detail");
+                        return (Map<String, String>) copy;
+                    }).toList();
+            List<Map<String, String>> ownTriggers = d == null ? null : new ArrayList<>(fromCode);
             if (!fromCode.isEmpty()) {   // #198: what the code schedules it with wins over names in the configuration
-                configTriggers.put(c.fqn(), new ArrayList<>(fromCode));
+                if (d == null) {
+                    configTriggers.put(c.fqn(), new ArrayList<>(fromCode));
+                }
                 cron = fromCode.getFirst().get("cron");
                 attrs.put("cronFrom", fromCode.getFirst().get("from"));
-                crons.put(c.fqn(), cron);
+                if (d == null) {
+                    crons.put(c.fqn(), cron);
+                }
             }
             EnumJob ej = enumJobs.values().stream().filter(e -> e.job().equals(c.fqn())).findFirst().orElse(null);
             if (ej != null) {
@@ -515,7 +538,7 @@ public final class JavaExtractor implements Extractor {
                     byProfile.put(p, v);
                 }
             });
-            List<Map<String, String>> triggers = configTriggers.getOrDefault(c.fqn(), List.of());
+            List<Map<String, String>> triggers = ownTriggers != null ? ownTriggers : configTriggers.getOrDefault(c.fqn(), List.of());
             if (triggers.size() > 1) {   // #197: a job with several triggers runs at each
                 attrs.put("triggers", triggers);
             }
@@ -534,11 +557,12 @@ public final class JavaExtractor implements Extractor {
                     schedule(entry.getFirst(), attrs);   // resolves a ${…} in it, as for @Scheduled
                 }
             }
-            Node n = Node.of("job", svc + ":" + c.fqn(), attrs, at);
+            Node n = Node.of("job", svc + ":" + c.fqn() + (d == null ? "" : "#" + (d.name() != null ? d.name() : d.method().name())), attrs, at);
             sink.node(n);
             sink.edge(Edge.extracted(service, "has", n.id(), null, at));
             for (MethodInfo m : entry) {
                 ids.computeIfAbsent(m, k -> new ArrayList<>()).add(n.id());
+            }
             }
         }
     }
@@ -555,6 +579,10 @@ public final class JavaExtractor implements Extractor {
             if (byType || bySource) {
                 jobs.put(c.fqn(), c);
             }
+        }
+        for (String simple : scheduledJobClasses()) {   // #208: named where it is scheduled (its base class a library's)
+            classes.stream().filter(c -> c.simpleName().equals(simple) && !jobs.containsKey(c.fqn())).findFirst()
+                    .ifPresent(c -> jobs.put(c.fqn(), c));
         }
         boolean more = true;
         while (more) {   // a class extending a job class of the repo, without a classpath to say so
@@ -831,7 +859,93 @@ public final class JavaExtractor implements Extractor {
     private static final Pattern SET_CRON = Pattern.compile("(?:setCronExpression|cronSchedule|cronScheduleNonvalidatedExpression)"
             + "\\(\\s*((?:[^()]|\\([^()]*\\))+?)\\s*\\)");
     private static final Pattern JOB_CLASS = Pattern.compile("(?:setJobClass|newJob|ofType)\\(\\s*([A-Z]\\w*)\\.class\\s*\\)");
-    private static final Pattern JOB_DETAIL = Pattern.compile("(?:setJobDetail|forJob)\\(\\s*([a-z]\\w*)\\s*\\)");
+    private static final Pattern JOB_DETAIL = Pattern.compile("(?:setJobDetail|forJob)\\(\\s*([a-z]\\w*)(?:\\(\\)\\.getObject\\(\\))?\\s*\\)");
+    private static final Pattern JOB_CLASS_PARAM = Pattern.compile("(?:setJobClass|newJob|ofType)\\(\\s*([a-z]\\w*)\\s*\\)");
+    private static final Pattern DETAIL_NAME = Pattern.compile("(?:setName|withIdentity)\\(\\s*\"([^\"]+)\"");
+
+    /** #208: a JobDetail a method builds: the method (its bean), the job's name, the enum constants in its data. */
+    record Detail(MethodInfo method, String name, List<String> data) {
+    }
+
+    private java.util.Set<String> jobHelpers;
+
+    /** #208: methods that build a JobDetail of the class they are given ({@code setJobClass(type)} of a parameter). */
+    private java.util.Set<String> jobHelpers() {
+        if (jobHelpers == null) {
+            java.util.Set<String> out = new java.util.LinkedHashSet<>();
+            for (MethodInfo m : a.index.methods()) {
+                String body = m.decl().getBody() == null ? "" : m.decl().getBody().printTrimmed();
+                Matcher p = JOB_CLASS_PARAM.matcher(body);
+                while (p.find()) {
+                    String param = p.group(1);
+                    if (m.decl().getParameters().stream().anyMatch(x -> x instanceof J.VariableDeclarations vd
+                            && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(param)))) {
+                        out.add(m.name());
+                    }
+                }
+            }
+            jobHelpers = out;
+        }
+        return jobHelpers;
+    }
+
+    /** #208: the job classes (simple names) a piece of code schedules: {@code setJobClass(X.class)}, or through a helper. */
+    private List<String> namedJobClasses(String body) {
+        List<String> out = new ArrayList<>();
+        Matcher jc = JOB_CLASS.matcher(body);
+        while (jc.find()) {
+            out.add(jc.group(1));
+        }
+        for (String h : jobHelpers()) {
+            Matcher hc = Pattern.compile("\\b" + Pattern.quote(h) + "\\(\\s*([A-Z]\\w*)\\.class").matcher(body);
+            while (hc.find()) {
+                out.add(hc.group(1));
+            }
+        }
+        return out;
+    }
+
+    private java.util.Set<String> scheduledJobClasses() {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (MethodInfo m : a.index.methods()) {
+            if (m.decl().getBody() != null) {
+                out.addAll(namedJobClasses(m.decl().getBody().printTrimmed()));
+            }
+        }
+        return out;
+    }
+
+    /** #208: the JobDetails built for a job class: each method naming it (directly or through a helper), not the helper. */
+    private List<Detail> details(ClassInfo job) {
+        java.util.Set<String> enums = new java.util.HashSet<>();
+        a.index.classes().stream().filter(x -> x.decl().getKind() == J.ClassDeclaration.Kind.Type.Enum).forEach(x -> enums.add(x.simpleName()));
+        List<Detail> out = new ArrayList<>();
+        for (MethodInfo m : a.index.methods()) {
+            String body = m.decl().getBody() == null ? "" : m.decl().getBody().printTrimmed();
+            if (!namedJobClasses(body).contains(job.simpleName())) {
+                continue;
+            }
+            String name = null;
+            Matcher dn = DETAIL_NAME.matcher(body);
+            if (dn.find()) {
+                name = dn.group(1);
+            } else {
+                Matcher hn = Pattern.compile("\\b" + Pattern.quote(job.simpleName()) + "\\.class\\s*,\\s*\"([^\"]+)\"").matcher(body);
+                if (hn.find()) {
+                    name = hn.group(1);
+                }
+            }
+            List<String> data = new ArrayList<>();
+            Matcher er = Pattern.compile("\\b([A-Z]\\w*)\\.([A-Z][A-Z0-9_]*)\\b").matcher(body);
+            while (er.find()) {
+                if (enums.contains(er.group(1)) && !data.contains(er.group())) {
+                    data.add(er.group());
+                }
+            }
+            out.add(new Detail(m, name, data));
+        }
+        return out;
+    }
     private static final Pattern GETTER_CHAIN = Pattern.compile("^([a-z]\\w*)((?:\\.(?:get)?\\w+\\(\\))+)$");
     private static final Pattern CONFIG_PREFIX = Pattern.compile("@ConfigurationProperties\\(\\s*(?:(?:prefix|value)\\s*=\\s*)?\"([^\"]+)\"");
 
@@ -859,7 +973,8 @@ public final class JavaExtractor implements Extractor {
             if (!body.contains("setCronExpression") && !body.contains("cronSchedule")) {
                 continue;
             }
-            ClassInfo job = triggerJob(body, jobs);
+            String[] detail = new String[1];
+            ClassInfo job = triggerJob(body, jobs, m.name(), detail);
             if (job == null) {
                 continue;
             }
@@ -871,8 +986,12 @@ public final class JavaExtractor implements Extractor {
                     if (zone != null) {
                         t.put("zone", zone);
                     }
+                    if (detail[0] != null) {
+                        t.put("@detail", detail[0]);   // #208: which JobDetail it triggers (taken out before it is written)
+                    }
                     List<Map<String, String>> list = out.computeIfAbsent(job.fqn(), x -> new ArrayList<>());
-                    if (list.stream().noneMatch(o -> java.util.Objects.equals(o.get("from"), t.get("from")) && java.util.Objects.equals(o.get("cron"), t.get("cron")))) {
+                    if (list.stream().noneMatch(o -> java.util.Objects.equals(o.get("from"), t.get("from")) && java.util.Objects.equals(o.get("cron"), t.get("cron"))
+                            && java.util.Objects.equals(o.get("@detail"), t.get("@detail")))) {
                         list.add(t);
                     }
                 }
@@ -918,11 +1037,12 @@ public final class JavaExtractor implements Extractor {
     }
 
     /** The job a trigger is for: a class literal in the method, or the bean its JobDetail parameter names. */
-    private ClassInfo triggerJob(String body, Map<String, ClassInfo> jobs) {
-        Matcher jc = JOB_CLASS.matcher(body);
-        while (jc.find()) {
-            ClassInfo j = jobBySimpleName(jobs, jc.group(1));
+    /** The job a trigger's code schedules; {@code detail[0]} gets the method building its JobDetail (#208). */
+    private ClassInfo triggerJob(String body, Map<String, ClassInfo> jobs, String own, String[] detail) {
+        for (String n : namedJobClasses(body)) {
+            ClassInfo j = jobBySimpleName(jobs, n);
             if (j != null) {
+                detail[0] = own;
                 return j;
             }
         }
@@ -931,10 +1051,10 @@ public final class JavaExtractor implements Extractor {
             String bean = jd.group(1);
             for (MethodInfo other : a.index.methods()) {
                 if (other.name().equals(bean) && other.decl().getBody() != null) {
-                    Matcher inner = JOB_CLASS.matcher(other.decl().getBody().printTrimmed());
-                    while (inner.find()) {
-                        ClassInfo j = jobBySimpleName(jobs, inner.group(1));
+                    for (String n : namedJobClasses(other.decl().getBody().printTrimmed())) {
+                        ClassInfo j = jobBySimpleName(jobs, n);
                         if (j != null) {
+                            detail[0] = bean;
                             return j;
                         }
                     }

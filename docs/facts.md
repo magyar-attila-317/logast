@@ -110,7 +110,7 @@ else the one its `.logast` has, else (unless `--no-builds`) its Gradle runs once
 | the service | `service:<spring.application.name, else the folder>` | `application`, `package`, `springBoot`; `has` each entrypoint, `depends-on` each library |
 | an HTTP endpoint | `endpoint:<svc>:<METHOD> <path>` | `method`, `path`, `handler`, `observed` |
 | a listener | `listener:<svc>:<kafka\|rabbit\|jms> <destination>`, other kinds `listener:<svc>:<kind> <label>` | `destination`, `handler`; `consumes` `topic:<name>` (Kafka) or `queue:<name>` |
-| a job | `job:<svc>:<Class.method>` (scheduled, runners, batch steps), `job:<svc>:<class>` (Quartz) | `cron` / `fixedRate` / `fixedDelay` / `zone` as written (placeholders kept: each environment resolves them) |
+| a job | `job:<svc>:<Class.method>` (scheduled, runners, batch steps), `job:<svc>:<class>` (Quartz; `#<name>` per JobDetail when a class has several) | `cron` / `fixedRate` / `fixedDelay` / `zone` as written (placeholders kept: each environment resolves them) |
 | an outgoing call | `call:<svc>:<transport> <METHOD> <base><path>` or `call:<svc>:<transport> <topic>` | `client`, `base`, `target`; `calls` from each entrypoint that reaches it (or from the service, `reached: false`), `traceBreaks` when the trace stops there; `publishes` the topic or queue |
 | a bean with a `@Profile`, `@Value` or `@ConfigurationProperties` | `bean:<svc>:<class>` | `profiles`; `active-with` `profile:<svc>:<name>` (`negated` for `!name`); `runs` from each entrypoint that reaches it; `uses-property` `property:<svc>:<key>` (`default`), `<prefix>.*` for configuration properties |
 | a library | `library:<group>:<artifact>` | `version` (from the classpath's jar paths) |
@@ -289,6 +289,11 @@ its paths (#171).
 A class that is a `org.quartz.Job` (or `InterruptableJob`, `StatefulJob`, Spring's `QuartzJobBean`) is a `job` with
 `entrypoint: quartz` and its class as `handler` (#187): by type when the classpath has Quartz, else by what the source
 names with an import of Quartz, and classes extending a job class of the repo too (an abstract base class is no job).
+A class named where a job is scheduled (`setJobClass(X.class)`, `newJob(X.class)`, or a helper that builds the
+JobDetail from a `Class` parameter) is a job too, whatever its base class (a library's) (#208). A class with several
+JobDetails (several `JobDetailFactoryBean`s, each its own name and data) is one job per JobDetail:
+`job:<svc>:<class>#<name>` (the method's name when it sets none), with `jobDetail` (the method), `jobName`,
+`jobData` (the enum constants in it) and the cron of the trigger that sets that JobDetail.
 Its `execute` (or `executeInternal`; else the methods it overrides of its base class) is where its calls, reads and
 writes start, so `lineage`, `writers_of` and `readers_of` see them. Its `cron` is read where the code builds the schedule
 next to the job's class: one method with `JobBuilder.newJob(X.class)` and `cronSchedule(…)`, or one configuration
