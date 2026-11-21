@@ -485,8 +485,11 @@ public final class JavaExtractor implements Extractor {
                         .anyMatch(an -> an.getSimpleName().equals("Override"))).toList();
             }
             // #208: a class with several JobDetails runs as several jobs: one each, with its name, data and trigger
+            // only JobDetails with names of their own, all different: a method that merely mentions the class is none
             List<Detail> details = details(c);
-            for (Detail d : details.size() > 1 ? details : java.util.Collections.<Detail>singletonList(null)) {
+            boolean several = details.size() > 1 && details.stream().allMatch(x -> x.name() != null)
+                    && details.stream().map(Detail::name).distinct().count() == details.size();
+            for (Detail d : several ? details : java.util.Collections.<Detail>singletonList(null)) {
             Evidence at = d == null ? Evidence.at(c.file().relPath(), line(Pos.line(c.decl().getName())))
                     : Evidence.at(d.method().file().relPath(), line(Pos.line(d.method().decl().getName())));
             Map<String, Object> attrs = new TreeMap<>();
@@ -580,9 +583,8 @@ public final class JavaExtractor implements Extractor {
                 jobs.put(c.fqn(), c);
             }
         }
-        for (String simple : scheduledJobClasses()) {   // #208: named where it is scheduled (its base class a library's)
-            classes.stream().filter(c -> c.simpleName().equals(simple) && !jobs.containsKey(c.fqn())).findFirst()
-                    .ifPresent(c -> jobs.put(c.fqn(), c));
+        for (ClassInfo c : scheduledJobClasses(classes)) {   // #208: named where it is scheduled (its base class a library's)
+            jobs.putIfAbsent(c.fqn(), c);
         }
         boolean more = true;
         while (more) {   // a class extending a job class of the repo, without a classpath to say so
@@ -905,11 +907,40 @@ public final class JavaExtractor implements Extractor {
         return out;
     }
 
-    private java.util.Set<String> scheduledJobClasses() {
-        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+    private static final Pattern SCHEDULES_CLASS = Pattern.compile("(?:setJobClass|newJob)\\(\\s*([A-Z]\\w*)\\.class\\s*\\)");
+
+    /**
+     * #208: the classes Quartz code schedules ({@code setJobClass(X.class)}, {@code newJob(X.class)}, a helper's argument)
+     * in a file that imports Quartz; {@code X} as that file sees it (imported, same package, else the only class so named).
+     */
+    private java.util.Set<ClassInfo> scheduledJobClasses(List<ClassInfo> classes) {
+        java.util.Set<ClassInfo> out = new java.util.LinkedHashSet<>();
         for (MethodInfo m : a.index.methods()) {
-            if (m.decl().getBody() != null) {
-                out.addAll(namedJobClasses(m.decl().getBody().printTrimmed()));
+            String file = m.owner().file().text();
+            if (m.decl().getBody() == null || !(file.contains("org.quartz") || file.contains("scheduling.quartz"))) {
+                continue;
+            }
+            String body = m.decl().getBody().printTrimmed();
+            List<String> names = new ArrayList<>();
+            Matcher sc = SCHEDULES_CLASS.matcher(body);
+            while (sc.find()) {
+                names.add(sc.group(1));
+            }
+            for (String h : jobHelpers()) {
+                Matcher hc = Pattern.compile("\\b" + Pattern.quote(h) + "\\(\\s*([A-Z]\\w*)\\.class").matcher(body);
+                while (hc.find()) {
+                    names.add(hc.group(1));
+                }
+            }
+            String pkg = m.owner().fqn().contains(".") ? m.owner().fqn().substring(0, m.owner().fqn().lastIndexOf('.')) : "";
+            for (String n : names) {
+                List<ClassInfo> named = classes.stream().filter(c -> c.simpleName().equals(n)).toList();
+                ClassInfo pick = named.stream().filter(c -> file.contains("import " + c.fqn() + ";")).findFirst()
+                        .or(() -> named.stream().filter(c -> c.fqn().equals(pkg.isEmpty() ? n : pkg + "." + n)).findFirst())
+                        .orElse(named.size() == 1 ? named.getFirst() : null);
+                if (pick != null) {
+                    out.add(pick);
+                }
             }
         }
         return out;

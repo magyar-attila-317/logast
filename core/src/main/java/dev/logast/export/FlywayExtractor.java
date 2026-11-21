@@ -242,19 +242,14 @@ public final class FlywayExtractor implements Extractor {
     }
 
     /**
-     * #205: the table of {@code tables} a migration asking for {@code asked} means: a qualified name as it is; a bare one in
-     * the run's schema, else the only schema that has it. Null: no other service makes it.
+     * #205: the table of {@code tables} a migration asking for {@code asked} means: a qualified name as it is; a bare one
+     * only in the run's own schema (a table of that name in another schema may well be another one). Null: no other
+     * service makes it.
      */
     public static String madeElsewhere(Map<String, List<String>> tables, String asked, String searchSchema) {
         String a = asked.toLowerCase(Locale.ROOT);
-        if (a.contains(".")) {
-            return tables.containsKey(a) ? a : null;
-        }
-        if (searchSchema != null && tables.containsKey(searchSchema.toLowerCase(Locale.ROOT) + "." + a)) {
-            return searchSchema.toLowerCase(Locale.ROOT) + "." + a;
-        }
-        List<String> hits = tables.keySet().stream().filter(k -> k.endsWith("." + a)).toList();
-        return hits.size() == 1 ? hits.getFirst() : null;
+        String key = a.contains(".") ? a : searchSchema == null ? null : searchSchema.toLowerCase(Locale.ROOT) + "." + a;
+        return key != null && tables.containsKey(key) ? key : null;
     }
 
     private static final Pattern PLAIN_TYPE = Pattern.compile("[a-z][a-z0-9 ()]*");

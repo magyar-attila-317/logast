@@ -533,11 +533,29 @@ class QuartzJobsTest {
                         return t;
                     }
 
+                    void rescheduleCleanup(org.quartz.Scheduler scheduler) throws Exception {   // mentions it: no JobDetail of its own
+                        scheduler.addJob(org.quartz.JobBuilder.newJob(CleanupJob.class).build(), true);
+                    }
+
                     private static JobDetailFactoryBean detail(Class<? extends Job> type, String name) {
                         JobDetailFactoryBean f = new JobDetailFactoryBean();
                         f.setJobClass(type);
                         f.setName(name);
                         return f;
+                    }
+                }
+                """);
+        write(root, "ReportStream", """
+                package com.example.jobs;
+
+                import java.util.List;
+
+                public class ReportStream {   // ofType/newJob-like calls outside Quartz name no job
+                    List<Object> reports(reactor.core.publisher.Flux<Object> all) {
+                        return all.ofType(Report.class).collectList().block();
+                    }
+
+                    static class Report {
                     }
                 }
                 """);
@@ -551,5 +569,6 @@ class QuartzJobsTest {
                 .contains("\"cron\":\"0 0 3 1 * ?\"", "CalcType.MONTHLY");
         assertThat(jobs).filteredOn(l -> l.contains("job:ledger:com.example.jobs.CleanupJob\"")).singleElement().asString()
                 .contains("\"cron\":\"0 30 4 * * ?\"");
+        assertThat(jobs).noneMatch(l -> l.contains("Report"));
     }
 }
