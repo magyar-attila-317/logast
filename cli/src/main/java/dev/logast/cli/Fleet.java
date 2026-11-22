@@ -468,6 +468,30 @@ final class Fleet implements Callable<Integer> {
         }
     }
 
+    /**
+     * #150, #195: the members to rescan before the overview, with why: commits since their snapshot, or a snapshot another
+     * logast made. #223: repos without Java are not scanned.
+     */
+    private static Map<String, String> stale(Path dir, Map<String, Path> members) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        Map<String, NamedFleet.Snapshot> before = NamedFleet.snapshots(dir);
+        for (var m : members.entrySet()) {
+            NamedFleet.Snapshot snap = before.get(m.getKey());
+            if (snap == null || snap.commit() == null || !Files.isDirectory(m.getValue())
+                    || dev.logast.export.RepoExport.roots(m.getValue()).stream().noneMatch(r -> r.kind().equals("java"))) {
+                continue;
+            }
+            String head = NamedFleet.commit(m.getValue());
+            if (head != null && !head.equals(snap.commit())) {
+                out.put(m.getKey(), "new commits since its snapshot (" + snap.commit() + " → " + head + ")");
+            } else if (!dev.logast.Build.id().equals(snap.logast())) {
+                out.put(m.getKey(), "snapshot was made by " + (snap.logast() == null ? "an older logast" : "logast " + snap.logast())
+                        + ", this is " + dev.logast.Build.id());
+            }
+        }
+        return out;
+    }
+
     /** #223: the members a run works on: the one --service names (with --refresh/--kb), else all. */
     private Map<String, Path> work(Map<String, Path> members) {
         if (service == null || !(refresh || kb)) {
@@ -613,10 +637,14 @@ final class Fleet implements Callable<Integer> {
             Out.warn("fleet: no member " + service + " in " + name + ": " + String.join(", ", NamedFleet.members(dir).keySet()));
             return 2;
         }
+        Map<String, String> stale = refresh ? Map.of() : stale(dir, work(NamedFleet.members(dir)));   // #224
         if (log != null) {
             java.util.Set<String> names = new java.util.TreeSet<>(NamedFleet.members(dir).keySet());
             repos.forEach(r -> names.add(r.name()));
             List<String[]> plan = new java.util.ArrayList<>();
+            if (!stale.isEmpty()) {
+                plan.add(new String[]{"rescan", "repos changed since their snapshot, or scanned by another logast: findings again"});
+            }
             if (refresh) {
                 plan.add(new String[]{"update", "fetch each repo of repos.yaml (read-only clones)"});
                 plan.add(new String[]{"scan", "analyse each Java repo: findings and score" + (kb ? ", then its knowledge base" : "")
@@ -692,27 +720,31 @@ final class Fleet implements Callable<Integer> {
             }
             phase.end();
         }
-        if (!refresh) {
-            // #150: a member with commits since its snapshot is rescanned, so the overview never shows an old state of it
-            Map<String, NamedFleet.Snapshot> before = NamedFleet.snapshots(dir);
-            for (var m : work(members).entrySet()) {
-                NamedFleet.Snapshot snap = before.get(m.getKey());
-                if (snap == null || snap.commit() == null || !Files.isDirectory(m.getValue())
-                        || dev.logast.export.RepoExport.roots(m.getValue()).stream().noneMatch(r -> r.kind().equals("java"))) {
-                    continue;   // #223: no Java to scan: its facts come with the knowledge base
-                }
-                String head = NamedFleet.commit(m.getValue());
-                boolean newCommits = head != null && !head.equals(snap.commit());
-                boolean otherLogast = !dev.logast.Build.id().equals(snap.logast());   // #195: findings of another logast
-                if (newCommits || otherLogast) {
-                    String svc = m.getKey();
-                    Path root = m.getValue();
-                    System.err.println(newCommits ? "fleet: " + svc + " has new commits since its snapshot (" + snap.commit() + " → " + head
-                            + "): rescanning it" : "fleet: " + svc + "'s snapshot was made by " + (snap.logast() == null ? "an older logast"
-                            : "logast " + snap.logast()) + ", this is " + dev.logast.Build.id() + ": rescanning it");
+        if (!stale.isEmpty()) {
+            // #150: a member with commits since its snapshot is rescanned, so the overview never shows an old state of it;
+            // #195: so is one another logast scanned (its findings come from that logast's rules); #224: as a phase
+            FleetLog.Phase phase = log == null ? null : log.phase("rescan", null, stale.size());
+            for (var e : stale.entrySet()) {
+                String svc = e.getKey();
+                Path root = members.get(svc);
+                if (phase == null) {
+                    System.err.println("fleet: " + svc + (e.getValue().startsWith("new") ? " has " : "'s ") + e.getValue() + ": rescanning it");
                     skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc)
                             ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
+                    continue;
                 }
+                long t0 = System.nanoTime();
+                String error;
+                try (Out.Progress p = phase.working(svc, "rescanning")) {
+                    error = scanError(() -> NamedFleet.write(dir, added.containsKey(svc)
+                            ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
+                }
+                phase.done(svc, error == null ? FleetLog.Status.OK : FleetLog.Status.FAILED, System.nanoTime() - t0,
+                        error == null ? "rescanned: " + e.getValue() : "scan failed: " + FleetLog.oneLine(error)
+                                + " (its snapshot stays as it was)", List.of());
+            }
+            if (phase != null) {
+                phase.end();
             }
         }
         if (kb) {

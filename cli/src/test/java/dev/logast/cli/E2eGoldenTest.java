@@ -7644,8 +7644,9 @@ abstract class E2eGoldenTest {
             }
             STDERR.setLength(0);
             String one = run(tmp, "fleet", "shop", "--kb", "--service", "stock");
-            assertThat(STDERR.toString()).as(one + STDERR).contains("fleet: stock's snapshot was made by logast 0.0.1 (old)")
-                    .doesNotContain("fleet: orders's snapshot").doesNotContain("no stored scan");
+            assertThat(one + STDERR).as(one + STDERR).containsPattern(line("stock", "rescanned: snapshot was made by logast 0.0.1 (old)"))
+                    .contains("rescan").doesNotContain("orders's snapshot").doesNotContain("no stored scan");
+            assertThat(one + STDERR).as("#224: the rescan is a phase of the plan, like scan").containsPattern("\\d\\s+rescan\\s");
             assertThat(fleet.resolve("kb/stock")).isDirectory();
             assertThat(mapper.readTree(ordersSnap.toFile()).path("logast").asText()).isEqualTo("0.0.1 (old)");
             STDERR.setLength(0);
