@@ -4,6 +4,24 @@
 agent) can ask it questions over the [facts](facts.md) of many repos, and every answer cites the file and line it
 comes from (#156).
 
+## What you can ask
+
+Questions about the system as a whole, which no single repo answers:
+
+| question | answered from |
+|---|---|
+| *Who writes `billing.invoice`, and who reads it?* | the tables each endpoint, listener and job touches (JPA, JDBC), across repos |
+| *What runs on Monday in prod, at what time, and what runs after it?* | `@Scheduled` and Quartz crons per environment, CronJobs, a scheduler's pipeline rows |
+| *If `ledger` is down, what stops downstream?* | calls, topics and queues, tables, pipeline steps, followed as a tree with sources |
+| *Which service publishes to `order-events`, and who consumes it?* | Kafka, RabbitMQ and JMS listeners and the code that sends to them, placeholders resolved |
+| *Where is this secret used, and when does it expire?* | Terraform and Helm (Key Vault), the workloads that mount it, the services running there |
+| *Which deployments run the `billing` image, with how many replicas?* | Helm releases and Terraform resources joined to the code's build image |
+| *What does `ord_inv_ref` mean?* | the glossary in `knowledge.yml`, abbreviations and aliases |
+
+Each answer cites `repo/file:line@commit`, and says what it does not know (a job whose schedule is nowhere in the facts
+is "not known", never "never runs"). The [facts](facts.md) are what logast reads from the code and the deployment files,
+not what anyone wrote down; what people know goes in [`knowledge.yml`](#what-people-know-knowledgeyml).
+
 ## 1. Facts for every repo
 
 `logast export` writes a repo's facts (read-only, as `scan` reads):
@@ -60,6 +78,23 @@ becomes part of the argument before it. At startup the server names any `--kb` p
   take the most room, #229). A question that takes many lookups is one program: filter, follow edges, join and count
   in it. After the JSON, a **Not known** list names what the functions the program called could not know: jobs whose
   schedule is not in the facts (so their empty `runs()` is not "never"), ids not in the facts (#228).
+
+**When to use it.** The twenty tools are one question each: fine for *who writes this table?*. A question that joins
+several (*which Monday jobs in prod write a table another service reads?*) takes the LLM a dozen tool calls and a lot of
+context that way; in code mode it is one program, and only the answer comes back. Models that write code well (most
+current ones) do better with code mode; a small model may do better with the plain tools.
+
+For example, *which jobs run on Monday in prod and write a table another service reads?* is one `query`:
+
+```js
+const svc = id => id.split(":")[1];
+return nodes("job")
+  .filter(j => runs(j.id, "monday", "prod").length)
+  .flatMap(j => out(j.id, "writes").map(w => ({
+    job: j.id, table: w.to, source: w.source,
+    readBy: into(w.to, "reads").map(r => r.from).filter(f => svc(f) !== svc(j.id)) })))
+  .filter(x => x.readBy.length);
+```
 
 Every node and edge carries its `source` (repo/file:line) to cite. A mistake comes back as an error with a hint (an
 unknown kind lists the kinds). The program runs in GraalJS with no host access, no I/O, no output (stdout is MCP's), a

@@ -338,6 +338,12 @@ took and the slowest repos, and what to run next. The overview itself still goes
 
 ## The fleet's knowledge base (`kb/`)
 
+The fleet repo is also where the **knowledge base** lives: every member's facts (endpoints, jobs and their schedules,
+tables and who touches them, topics, deployments, secrets), which `logast mcp` serves to any LLM client, so questions
+about the whole system (*who writes this table, what runs Monday in prod, what stops if this service is down*) come back
+with the file and line behind every fact. What it answers and how to connect a client: [mcp.md](mcp.md); what the facts
+are: [facts.md](facts.md). This section is how the fleet builds it.
+
 `logast fleet <name|path> --kb` (with `--refresh`, after updating the clones) exports every member, whatever its
 layout, into `<fleet>/kb/<member>/` (as `logast export --out-dir`, [facts.md](facts.md#a-whole-repo-any-layout---out-dir)),
 then applies each mapping in `kb/mappings/*.y(a)ml` into `kb/mapped/` (#182). `logast mcp config --kb <fleet>/kb`

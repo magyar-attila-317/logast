@@ -1,16 +1,24 @@
 # logast
 
-**Every Spring Boot service logs, traces, measures, fails and audits the same way, in your business's language, and
-nobody has to remember the rules.**
+**One standard for how every Spring Boot service logs, traces, measures, fails and audits, written into the code
+itself, rolled out across all your services, and a map of the whole system your LLM can ask.**
 
 [![build](https://github.com/magyar-attila-317/logast/actions/workflows/build.yml/badge.svg)](https://github.com/magyar-attila-317/logast/actions/workflows/build.yml)
 [![license](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 ![Spring Boot 3 and 4](https://img.shields.io/badge/Spring%20Boot-3%20%7C%204-6db33f)
 ![Java 17+](https://img.shields.io/badge/Java-17%2B-orange)
 
-logast reads your service's code with full type resolution, follows every path from the entrypoints (HTTP, Kafka,
-schedulers, batch jobs) and rewrites what falls short: business ids in MDC, traces across threads and services, timeouts,
-metrics and log lines in one format. It changes the code itself, and the result compiles.
+logast reads your services the way a careful reviewer would, with full type resolution and every path from every
+entrypoint, and does three things with what it finds:
+
+| | |
+|---|---|
+| **Brings a service up to the standard**<br>`logast apply .` | Over a hundred rules in six packs (logging, tracing, metrics, resilience, errors, audit), fixed in the code: business ids in MDC from the entrypoint down, traces that survive threads, messaging and launched jobs, timeouts, counted outcomes, audit records. It knows every kind of entrypoint a Spring service has: HTTP and functional routes, Kafka, RabbitMQ, JMS, SQS, Redis, Spring Integration, Stream, gRPC, WebSockets, `@Scheduled`, Quartz, Spring Batch, application events. The result compiles, and a second run changes nothing. |
+| **Keeps a whole fleet there**<br>`logast fleet` | One overview of every service: scores, the call that loses the trace between two services, the same business id under three different keys, the settings everyone already agrees on. A CI gate that fails only on new problems. A governed rollout: the company policy is versioned in git, each repo decides whether it takes part, and the change arrives as a branch and a pull request you review stage by stage. |
+| **Maps the system for you and your LLM**<br>`logast mcp` | A knowledge base of what the code and the deployments actually say: endpoints, jobs and when they run per environment, the tables each one reads and writes, topics and queues, Helm and Terraform deployments, secrets, CI workflows. Any MCP client can ask *who writes this table*, *what runs Monday in prod*, *what stops if this service is down*, and every answer cites the file and line it comes from. |
+
+It reads Java and Spring, Flyway and TypeORM migrations, Helm, Terraform and Terragrunt, GitHub Actions workflows and
+Ansible inventories: what the code and the configuration state, not what someone wrote down.
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply .</code></th></tr>
@@ -78,7 +86,7 @@ or is reported with what to decide (**REPORT-ONLY**). [Every rule](docs/rules.md
 
 ---
 
-## Four ways in
+## Five ways in
 
 ### 1. A service team: `apply`, review, done
 
@@ -121,9 +129,32 @@ git push                            # the workflow scans every repo; the report 
 - **One company policy**: the settings all members already agree on, ready to make official in `company.yaml`.
 - **One vocabulary**: the same business id under different keys in different services, to decide once.
 - **A drawer per service**: its findings, its calls, where each call goes.
+- **A governed rollout**: `logast fleet tag-policy` versions the company policy, `logast fleet rollout` plans, applies,
+  commits and opens the pull request per repo, stage by stage, and a repo's own `logast.yaml` says whether it takes part.
 
 [Fleets](docs/fleet.md) · [For platform teams](docs/platform.md) (company policy, central vocabulary, publishing the
 support library).
+
+### 5. Ask an LLM about all your repos: the knowledge base over MCP
+
+Questions no single repo answers, asked in your IDE's assistant or any MCP client:
+
+- *Which jobs write to `billing.invoice`, and which of them run on Mondays in prod?*
+- *Who reads the `order-events` topic, and which service publishes to it?*
+- *If the `ledger` service is down, what stops working downstream?*
+- *Where is the `PAYMENTS_DB_PASSWORD` secret used, and when does it expire?*
+
+```bash
+logast fleet . --refresh --kb               # in the fleet repo: every repo's facts into kb/ (the workflow does it nightly)
+logast mcp config --kb ~/src/my-company/kb  # the server entry for your MCP client
+```
+
+logast reads the facts from the code and the deployment files themselves: Spring (endpoints, listeners, `@Scheduled` and
+Quartz jobs with their cron per environment, the tables JPA and JDBC touch), Flyway migrations, Helm, Terraform and
+GitHub workflows. Every answer cites the repo, file and line it comes from, and says what it does not know instead of
+answering "never". With `--code-mode`, the LLM gets two tools instead of twenty: a typed API, and a read-only JavaScript
+sandbox where one program answers what would take a dozen lookups.
+[The MCP server](docs/mcp.md) · [What the facts are](docs/facts.md).
 
 ---
 
@@ -164,7 +195,9 @@ itself runs on Java 21+ (25 recommended).
 | [configuration](docs/configuration.md) | every `logast.yaml` setting |
 | [vocabulary](docs/vocabulary.md) | vocabulary, policy layers, phrasing, levels, log volume |
 | [gradle-plugin](docs/gradle-plugin.md) | `logastApply`, `logastCheck`, SARIF and PR annotations |
-| [fleet](docs/fleet.md) | many services: the overview, the report page, the fleet repo |
+| [fleet](docs/fleet.md) | many services: the overview, the report page, the fleet repo, the rollout |
+| [mcp](docs/mcp.md) | the knowledge base over MCP: setup, what it answers, code mode, `knowledge.yml` |
+| [facts](docs/facts.md) | what `logast export` reads from code and deployments, and the facts format |
 | [architecture](docs/architecture.md) | discover, derive, map: what logast reads, what it infers, what your mappings add |
 | [platform](docs/platform.md) | company policy, central vocabulary, publishing the support library |
 | [starter](docs/starter.md) | the runtime library and its properties |
