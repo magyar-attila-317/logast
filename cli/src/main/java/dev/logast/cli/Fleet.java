@@ -80,7 +80,8 @@ final class Fleet implements Callable<Integer> {
             + "(default: the snapshots their last scan or apply left; a member with new commits since its snapshot is rescanned anyway); "
             + "an added member's scan writes only to the fleet folder")
     boolean refresh;
-    @Option(names = "--service", description = "Named fleet: what `logast scan` printed for this member, from its stored results")
+    @Option(names = "--service", description = "Named fleet: only this member. With --refresh/--kb its fetch, scan and "
+            + "knowledge base (#223: the others' migrations needing its tables still run again); else what `logast scan` printed for it")
     String service;
     @Option(names = "--html", description = "Named fleet: the report page is written by every overview (<fleet folder>/report/fleet.html, or --out); kept for scripts")
     boolean html;
@@ -467,7 +468,17 @@ final class Fleet implements Callable<Integer> {
         }
     }
 
+    /** #223: the members a run works on: the one --service names (with --refresh/--kb), else all. */
+    private Map<String, Path> work(Map<String, Path> members) {
+        if (service == null || !(refresh || kb)) {
+            return members;
+        }
+        return members.containsKey(service) ? Map.of(service, members.get(service)) : Map.of();
+    }
+
     private void knowledgeBase(Path dir, Map<String, Path> members, FleetLog log) throws IOException {
+        Map<String, Path> all = members;
+        members = work(members);
         Path kbDir = dir.resolve("kb");
         Files.createDirectories(kbDir);
         Map<String, Path> todo = new java.util.LinkedHashMap<>();
@@ -518,7 +529,7 @@ final class Fleet implements Callable<Integer> {
         }
         phase.end();
         if (flyway) {
-            dependencyRounds(dir, members, log);
+            dependencyRounds(dir, all, log);   // #223: every member whose migrations need what was exported
         }
         List<String> mapped = KbExport.mappings(kbDir);
         if (!mapped.isEmpty()) {
@@ -595,7 +606,13 @@ final class Fleet implements Callable<Integer> {
             Out.warn("fleet: the mappings need rows of " + rows + ": add --flyway, or rows: to the repo that seeds them in repos.yaml");
         }
 
-        List<FleetRepos.Repo> repos = refresh ? FleetRepos.list(dir) : List.of();
+        List<FleetRepos.Repo> repos = refresh ? FleetRepos.list(dir).stream()
+                .filter(r -> service == null || r.name().equals(service)).toList() : List.of();
+        if (service != null && (refresh || kb) && !NamedFleet.members(dir).containsKey(service)
+                && FleetRepos.list(dir).stream().noneMatch(r -> r.name().equals(service))) {
+            Out.warn("fleet: no member " + service + " in " + name + ": " + String.join(", ", NamedFleet.members(dir).keySet()));
+            return 2;
+        }
         if (log != null) {
             java.util.Set<String> names = new java.util.TreeSet<>(NamedFleet.members(dir).keySet());
             repos.forEach(r -> names.add(r.name()));
@@ -636,8 +653,8 @@ final class Fleet implements Callable<Integer> {
             tablesMade = KbExport.tablesMade(dir.resolve("kb"));
         }
         if (refresh) {
-            FleetLog.Phase phase = log.phase("scan", null, members.size());
-            for (var m : members.entrySet()) {
+            FleetLog.Phase phase = log.phase("scan", null, work(members).size());
+            for (var m : work(members).entrySet()) {
                 String svc = m.getKey();
                 Path root = m.getValue();
                 if (!Files.isDirectory(root)) {
@@ -678,10 +695,11 @@ final class Fleet implements Callable<Integer> {
         if (!refresh) {
             // #150: a member with commits since its snapshot is rescanned, so the overview never shows an old state of it
             Map<String, NamedFleet.Snapshot> before = NamedFleet.snapshots(dir);
-            for (var m : members.entrySet()) {
+            for (var m : work(members).entrySet()) {
                 NamedFleet.Snapshot snap = before.get(m.getKey());
-                if (snap == null || snap.commit() == null || !Files.isDirectory(m.getValue())) {
-                    continue;
+                if (snap == null || snap.commit() == null || !Files.isDirectory(m.getValue())
+                        || dev.logast.export.RepoExport.roots(m.getValue()).stream().noneMatch(r -> r.kind().equals("java"))) {
+                    continue;   // #223: no Java to scan: its facts come with the knowledge base
                 }
                 String head = NamedFleet.commit(m.getValue());
                 boolean newCommits = head != null && !head.equals(snap.commit());
@@ -711,7 +729,7 @@ final class Fleet implements Callable<Integer> {
             }
             log.summary(next);
         }
-        if (service != null) {
+        if (service != null && !(refresh || kb)) {   // #223: with --refresh/--kb, --service only picks what is worked on
             return service(name, dir, service, members, added);
         }
         Map<String, NamedFleet.Snapshot> snaps = NamedFleet.snapshots(dir);

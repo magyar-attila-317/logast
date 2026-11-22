@@ -7637,6 +7637,20 @@ abstract class E2eGoldenTest {
             assertThat(STDERR.toString()).contains("fleet: orders's snapshot was made by logast 0.0.1 (old), this is ")
                     .doesNotContain("fleet: stock's snapshot");
             assertThat(mapper.readTree(ordersSnap.toFile()).path("logast").asText()).isNotEqualTo("0.0.1 (old)");
+            // #223: --service with --kb works on that member only: the other's older snapshot waits for its own run
+            Path stockSnap = fleet.resolve("services/stock.json");
+            for (Path snapFile : List.of(ordersSnap, stockSnap)) {
+                Files.writeString(snapFile, Files.readString(snapFile).replaceFirst("\"logast\"\\s*:\\s*\"[^\"]*\"", "\"logast\":\"0.0.1 (old)\""));
+            }
+            STDERR.setLength(0);
+            String one = run(tmp, "fleet", "shop", "--kb", "--service", "stock");
+            assertThat(STDERR.toString()).as(one + STDERR).contains("fleet: stock's snapshot was made by logast 0.0.1 (old)")
+                    .doesNotContain("fleet: orders's snapshot").doesNotContain("no stored scan");
+            assertThat(fleet.resolve("kb/stock")).isDirectory();
+            assertThat(mapper.readTree(ordersSnap.toFile()).path("logast").asText()).isEqualTo("0.0.1 (old)");
+            STDERR.setLength(0);
+            run(tmp, "fleet", "shop");
+            assertThat(STDERR.toString()).contains("fleet: orders's snapshot was made by");
 
             // #136: a member whose scan fails (orders, scanned first) is skipped with the reason; the others are still scanned
             Path ordersPolicy = orders.resolve("logast.yaml");
