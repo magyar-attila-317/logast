@@ -42,11 +42,11 @@ class PolicyValidationTest {
             repo = repo.getParent();
         }
         List<Path> files = new ArrayList<>();
-        try (Stream<Path> e2e = Files.list(repo.resolve("e2e"))) {
+        try (Stream<Path> e2e = Files.list(repo.resolve("testing/e2e"))) {
             e2e.flatMap(d -> Stream.of(d.resolve("logast.yml"), d.resolve("logast.yaml"))).filter(Files::exists).forEach(files::add);
         }
-        files.add(repo.resolve("fixtures/sample-app/logast.yaml"));
-        files.add(repo.resolve("logast.example.yaml"));
+        files.add(repo.resolve("testing/fixtures/sample-app/logast.yaml"));
+        files.add(repo.resolve("examples/logast.example.yaml"));
         files.add(repo.resolve("examples/restaurant-company.yaml"));
         files.add(repo.resolve("examples/restaurant-service.yaml"));
         assertThat(files).as("e2e scenarios found").hasSizeGreaterThan(10);

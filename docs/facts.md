@@ -363,7 +363,7 @@ its paths (#171).
 - **Provenance**: `extracted` for what a source states, `inferred` (with `via` and a `confidence`) for what your program
   concludes.
 - **Check before loading**: `logast facts validate <file>` in the job that writes it; a broken line names its number.
-  The [JSON Schema](../facts/src/main/resources/dev/logast/facts/kb-facts-0.schema.json) checks single lines in any
+  The [JSON Schema](../modules/facts/src/main/resources/dev/logast/facts/kb-facts-0.schema.json) checks single lines in any
   language.
 
 ## Quartz jobs
@@ -467,5 +467,5 @@ logast facts validate facts/*.jsonl    # file:line: what is wrong; exit 1 when a
 ```
 
 A broken line is reported and left out; the others are read. For producers in other languages,
-[`kb-facts-0.schema.json`](../facts/src/main/resources/dev/logast/facts/kb-facts-0.schema.json) checks one line with
+[`kb-facts-0.schema.json`](../modules/facts/src/main/resources/dev/logast/facts/kb-facts-0.schema.json) checks one line with
 any JSON Schema validator (the rules across lines, header first and once, are the validator's).

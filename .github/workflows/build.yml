@@ -53,4 +53,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-report-${{ matrix.task }}-${{ matrix.os }}
-          path: cli/build/reports/tests/${{ matrix.task }}
+          path: modules/cli/build/reports/tests/${{ matrix.task }}

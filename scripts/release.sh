@@ -29,8 +29,8 @@ if [ "$current" != "$version" ]; then
   sed -i.bak "s/^version=.*/version=$version/" gradle.properties && rm -f gradle.properties.bak
   # snapshots that name the starter's version (the dependency-mode scenarios) follow it, or the release's CI fails
   snapshots=()
-  if [ -d e2e ]; then
-    while IFS= read -r f; do snapshots+=("$f"); done < <(grep -rl "dev.logast:logging-support:$current" e2e || true)
+  if [ -d testing/e2e ]; then
+    while IFS= read -r f; do snapshots+=("$f"); done < <(grep -rl "dev.logast:logging-support:$current" testing/e2e || true)
   fi
   for f in "${snapshots[@]}"; do
     sed -i.bak "s/dev\.logast:logging-support:$current/dev.logast:logging-support:$version/g" "$f" && rm -f "$f.bak"

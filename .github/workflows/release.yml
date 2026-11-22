@@ -35,8 +35,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          zip="cli/build/distributions/logast-${GITHUB_REF_NAME#v}.zip"
-          test -f "$zip" || { ls cli/build/distributions; exit 1; }
+          zip="modules/cli/build/distributions/logast-${GITHUB_REF_NAME#v}.zip"
+          test -f "$zip" || { ls modules/cli/build/distributions; exit 1; }
           prerelease=""
           case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
           # notes from the commits since the previous tag: changes go to main without pull requests, which GitHub's

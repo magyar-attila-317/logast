@@ -1,4 +1,4 @@
-# #9: logast on public Spring Boot services (corpus/corpus.yaml), cloned at pinned commits. It runs their Gradle builds
+# #9: logast on public Spring Boot services (testing/corpus/corpus.yaml), cloned at pinned commits. It runs their Gradle builds
 # (third-party build scripts), so it runs here on a throwaway runner, on demand (owner: no nightly run), and locally
 # only by choice (./gradlew :cli:corpus); not on every push (minutes per service).
 name: corpus
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: 'Services to run (comma-separated names from corpus/corpus.yaml); empty: all'
+        description: 'Services to run (comma-separated names from testing/corpus/corpus.yaml); empty: all'
         required: false
         default: ''
 
@@ -34,4 +34,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: corpus-report
-          path: cli/build/reports/tests/corpus
+          path: modules/cli/build/reports/tests/corpus

@@ -1,7 +1,7 @@
 # Examples: what `logast apply` changes
 
-Before and after, per pack. Every snippet is shortened from the end-to-end test service (`e2e/before` →
-`e2e/expected`, and the scenario snapshots in `e2e/expected-*`); `// …` marks lines left out, and a few long lines
+Before and after, per pack. Every snippet is shortened from the end-to-end test service (`testing/e2e/before` →
+`testing/e2e/expected`, and the scenario snapshots in `testing/e2e/expected-*`); `// …` marks lines left out, and a few long lines
 are wrapped.
 
 A line ending in `// logast:wording` carries a message logast wrote for review; `// logast:metric review` marks a
@@ -52,7 +52,7 @@ public void load(String listId) {
 ### A scheduled job says when it starts and ends; the per-item line moves to DEBUG
 
 The completed line carries the count and goes out only after the transaction commits, so a rollback is never
-reported as done. *`e2e/before` → `e2e/expected`, `PledgeCleanupJob.java`.*
+reported as done. *`testing/e2e/before` → `testing/e2e/expected`, `PledgeCleanupJob.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -129,7 +129,7 @@ public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") Strin
 ### Structured JSON logs with the service name and version
 
 Spring Boot's own structured logging in the format the policy chooses (here Logstash), no `logback-spring.xml`.
-*`e2e/before` → `e2e/expected`, `application.yml`.*
+*`testing/e2e/before` → `testing/e2e/expected`, `application.yml`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -212,7 +212,7 @@ void run(Runnable step) {
 ### Logged and rethrown: the extra line goes
 
 The exception is logged where it is handled, once. logast deletes a log-and-rethrow line only when every caller path
-already logs the exception; otherwise it reports it. *`e2e/before` → `e2e/expected`, `PledgeLookup.java`.*
+already logs the exception; otherwise it reports it. *`testing/e2e/before` → `testing/e2e/expected`, `PledgeLookup.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -254,7 +254,7 @@ public void reload() {
 ### The business id goes into MDC for the whole operation, and leaves the messages
 
 Every line of the operation carries `pledgeId`, including those of the code it calls; the messages stop repeating
-it. *`e2e/before` → `e2e/expected`, `PledgeService.java`.*
+it. *`testing/e2e/before` → `testing/e2e/expected`, `PledgeService.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -287,7 +287,7 @@ try (var mdc = MdcScope.of("pledgeId", request.code())) {
 
 ### The scope opens at the entrypoint; code further down drops the id from its messages
 
-*`e2e/before` → `e2e/expected`, `PledgeController.java` and `PledgeService.java`.*
+*`testing/e2e/before` → `testing/e2e/expected`, `PledgeController.java` and `PledgeService.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -338,7 +338,7 @@ public void publish(String pledgeId) {
 ### `MDC.putCloseable` becomes `MdcScope.of`
 
 `MDC.putCloseable` removes the key on close instead of restoring the value an outer scope had set.
-*`e2e/before` → `e2e/expected`, `BaseRunJob.java`.*
+*`testing/e2e/before` → `testing/e2e/expected`, `BaseRunJob.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -373,7 +373,7 @@ try (var mdc = MdcScope.of("runCode", runCode)) {
 ### An entrypoint Spring does not observe gets its own observation
 
 An `@EventListener` that starts a flow of its own had no trace id in its logs and recorded no span.
-*`e2e/before` → `e2e/expected`, `SettlementJobExecutor.java`.*
+*`testing/e2e/before` → `testing/e2e/expected`, `SettlementJobExecutor.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -645,7 +645,7 @@ spring:
 ### A failure that is logged and handled is also counted, through a generated catalog
 
 Call sites call a member of the package's metrics catalog and never spell out a metric name.
-*`e2e/before` → `e2e/expected`, `PledgeSender.java` and the generated `PledgeMetrics.java`.*
+*`testing/e2e/before` → `testing/e2e/expected`, `PledgeSender.java` and the generated `PledgeMetrics.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -691,7 +691,7 @@ public static void pledgeResendFailed() {
 ### Queries for what the service now measures and logs
 
 `.logast/reports/queries.md` (written by every scan and apply) turns the counters, observations and MDC keys into queries to paste (#106).
-*`e2e/expected-decided/.logast/reports/queries.md`, with `queries.splunk.index: shop-logs`.*
+*`testing/e2e/expected-decided/.logast/reports/queries.md`, with `queries.splunk.index: shop-logs`.*
 
 The counter of the failed resend above, in Prometheus and New Relic:
 
@@ -717,7 +717,7 @@ index=shop-logs "service.name"="e2e-shop" pledgeId="<pledgeId>"
 ### A lost cause is restored
 
 The new exception now carries the original one, so its stack trace survives.
-*`e2e/before` → `e2e/expected`, `PaymentClient.java`.*
+*`testing/e2e/before` → `testing/e2e/expected`, `PaymentClient.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -826,7 +826,7 @@ logging-support:
 ### A fire-and-forget future no longer loses its exception
 
 A `CompletableFuture` whose result nobody reads keeps its exception to itself; nothing is ever logged.
-*`e2e/before` → `e2e/expected`, `QuoteController.java`.*
+*`testing/e2e/before` → `testing/e2e/expected`, `QuoteController.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -862,7 +862,7 @@ return result;
 ### HTTP clients and JDBC queries get timeouts
 
 Spring Boot sets none: a slow dependency holds a thread (and a connection) indefinitely. The values come from the
-policy. *`e2e/before` → `e2e/expected`, `application.yml`.*
+policy. *`testing/e2e/before` → `testing/e2e/expected`, `application.yml`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -1019,7 +1019,7 @@ resilience:
 ### Audit records get their own logger
 
 Through the `audit` logger they can be routed and kept apart from the application log.
-*`e2e/before` → `e2e/expected`, `Audited.java`.*
+*`testing/e2e/before` → `testing/e2e/expected`, `Audited.java`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>
@@ -1056,7 +1056,7 @@ public interface Audited {
 ### When logast can't decide: an audit record that does not say who did it
 
 Which user to record is not something logast can know, so the code stays as it is and `FINDINGS.txt` says what to
-decide and when it counts as done. *`e2e/expected/FINDINGS.txt` (wrapped; its `path` and `why` lines left out),
+decide and when it counts as done. *`testing/e2e/expected/FINDINGS.txt` (wrapped; its `path` and `why` lines left out),
 `PledgeService.java`.*
 
 <table>

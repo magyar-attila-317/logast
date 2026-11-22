@@ -38,7 +38,7 @@ the build ([gradle-plugin.md](gradle-plugin.md)).
 
 ```bash
 ./gradlew build              # all modules and unit tests
-./gradlew :cli:installDist   # cli/build/install/logast/bin/logast
+./gradlew :cli:installDist   # modules/cli/build/install/logast/bin/logast
 ./gradlew :cli:distZip       # release zip with docs, examples and the Claude Code skill
 ```
 
@@ -51,11 +51,11 @@ the build ([gradle-plugin.md](gradle-plugin.md)).
 | `gradle-plugin` | the `dev.logast` Gradle plugin; TestKit tests: `./gradlew :gradle-plugin:functionalTest` |
 | `logging-support` | the runtime starter used by generated code |
 | `test-capture` | log capture added to test runs by `logast verify` |
-| `fixtures/sample-app` | a shop app with planted gaps; `// expect: RULE` markers are checked exactly by the tests |
+| `testing/fixtures/sample-app` | a shop app with planted gaps; `// expect: RULE` markers are checked exactly by the tests |
 
-**End-to-end tests.** `e2e/before` is a small service with the code shapes real services showed. Each scenario runs
+**End-to-end tests.** `testing/e2e/before` is a small service with the code shapes real services showed. Each scenario runs
 `logast apply` on a copy, compiles the result and compares every file and the printed output with a
-snapshot in `e2e/expected*`.
+snapshot in `testing/e2e/expected*`.
 
 ```bash
 ./gradlew :cli:e2e --tests "*Name*"   # the scenarios a change touches (JDK 25)

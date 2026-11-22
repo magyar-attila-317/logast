@@ -57,7 +57,7 @@ tasks.test {
     systemProperty("logast.fixture.root", fixture.projectDir.absolutePath)
     systemProperty("logast.fixture.classpath", fixture.layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
     // RuleLedgerTest reads e2e/before and the e2e snapshots, and the fixture's sources
-    inputs.dir(rootProject.file("e2e"))
+    inputs.dir(rootProject.file("testing/e2e"))
     inputs.dir(fixture.projectDir.resolve("src"))
     inputs.file(fixture.projectDir.resolve("logast.yaml"))
     maxHeapSize = "2g"

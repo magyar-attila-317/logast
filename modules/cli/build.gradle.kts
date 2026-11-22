@@ -33,7 +33,7 @@ distributions {
             from(rootProject.file("examples")) { into("examples") }
             from(rootProject.file("docs/llm-workflow.md")) { into("claude-skill/logast"); rename { "SKILL.md" } }
             // the init script install.sh copies to ~/.gradle/init.d/: dev.logast in every Java build, this version (#122)
-            from(rootProject.file("gradle-plugin/src/init/logast.gradle")) {
+            from(rootProject.file("modules/gradle-plugin/src/init/logast.gradle")) {
                 into("gradle")
                 val v = project.version.toString()
                 filter { line: String -> line.replace("@LOGAST_VERSION@", v) }
@@ -99,10 +99,10 @@ fun Test.e2eSetup() {
     // dependency mode: javac compiles the migrated service against the starter's classes (it is not on the classpath logast reads)
     systemProperty("logast.e2e.support", project(":logging-support").layout.buildDirectory.dir("classes/java/main").get().asFile.absolutePath)
     inputs.files(e2eLombok)
-    inputs.dir(rootProject.file("e2e"))
+    inputs.dir(rootProject.file("testing/e2e"))
     systemProperty("logast.e2e.lombok", e2eLombok.asPath)
-    systemProperty("logast.e2e.before", rootProject.file("e2e/before").absolutePath)
-    systemProperty("logast.e2e.expected", rootProject.file("e2e/expected").absolutePath)
+    systemProperty("logast.e2e.before", rootProject.file("testing/e2e/before").absolutePath)
+    systemProperty("logast.e2e.expected", rootProject.file("testing/e2e/expected").absolutePath)
     systemProperty("logast.e2e.classpath", project(":fixtures:sample-app").layout.buildDirectory.file("classpath.txt").get().asFile.absolutePath)
     systemProperty("logast.e2e.update", providers.gradleProperty("e2e.update").isPresent.toString())
     maxHeapSize = "2g"
@@ -128,7 +128,7 @@ val corpus by tasks.registering(Test::class) {
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform()
     filter { includeTestsMatching(corpusRun) }
-    systemProperty("logast.corpus.file", rootProject.file("corpus/corpus.yaml").absolutePath)
+    systemProperty("logast.corpus.file", rootProject.file("testing/corpus/corpus.yaml").absolutePath)
     providers.gradleProperty("corpus.only").orNull?.let { systemProperty("logast.corpus.only", it) }
     outputs.upToDateWhen { false }
     maxHeapSize = "4g"

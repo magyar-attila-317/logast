@@ -85,7 +85,7 @@ the wording it leaves, so they only make sense after it. Each step is also its o
 
 ## scan
 
-In a terminal, `scan` shows what needs a person, grouped (shortened from `e2e/expected-scan-human/SCAN.txt`):
+In a terminal, `scan` shows what needs a person, grouped (shortened from `testing/e2e/expected-scan-human/SCAN.txt`):
 
 ```
 $ logast scan .

@@ -51,8 +51,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Every allow-list entry names the issue that tracks it, and an entry that is no longer needed fails the test.
  */
 class RuleLedgerTest {
-    private static final Path REPO = Fixtures.root().toAbsolutePath().getParent().getParent();
-    private static final Path E2E = REPO.resolve("e2e");
+    private static final Path REPO = Fixtures.root().toAbsolutePath().getParent().getParent().getParent();   // testing/fixtures/sample-app
+    private static final Path E2E = REPO.resolve("testing/e2e");
     private static final Pattern EXPECT_NOT = Pattern.compile("// expect-not: ([A-Z_, ]+)");
     private static final Pattern ISSUE = Pattern.compile("#\\d+");
 
@@ -213,7 +213,7 @@ class RuleLedgerTest {
         snapshots(fires, silent);
         for (Map.Entry<String, String> e : SILENT_IN_UNIT_TEST.entrySet()) {
             String[] test = e.getValue().split("#");
-            Path src = REPO.resolve("core/src/test/java/dev/logast/" + test[0] + ".java");
+            Path src = REPO.resolve("modules/core/src/test/java/dev/logast/" + test[0] + ".java");
             if (Files.exists(src) && Files.readString(src).contains("void " + test[1] + "(")) {
                 silent.accept(e.getKey(), e.getValue());
             } else {

@@ -17,7 +17,7 @@ on real services; the background is in issue #7.
   is a plain `Co-Authored-By:` line.
 
 ## Every change comes with a test that fails without it
-- A new rule or fix gets a case in an e2e scenario (`e2e/before`, snapshots in `e2e/expected*`). Put the code shape
+- A new rule or fix gets a case in an e2e scenario (`testing/e2e/before`, snapshots in `testing/e2e/expected*`). Put the code shape
   that showed the problem into the scenario, with neutral names. What a scenario snapshots (#110):
   - **every file logast changes in the service** (`src/`, resources, build files), compared in full;
   - **its findings as a list** in `FINDINGS.txt`: `KIND RULE file:line` per finding left after the migration (a
@@ -32,7 +32,7 @@ on real services; the background is in issue #7.
 - The e2e scenarios run in their own tasks (#73): `./gradlew :cli:e2e` (JDK 25) and `:cli:e2eJdk21`, each with and
   without Lombok and with class folders on the classpath, as four shards (`E2eShard0..3`) in parallel JVMs. Results
   must be identical. Locally, run the scenarios your change touches (`./gradlew :cli:e2e --tests "*Name*"`); CI runs the full matrix on every push.
-- `./gradlew :cli:e2e -Pe2e.update` rewrites the snapshots (add `--tests` to limit it): review `git diff e2e/` before
+- `./gradlew :cli:e2e -Pe2e.update` rewrites the snapshots (add `--tests` to limit it): review `git diff testing/e2e/` before
   keeping them, and say in the commit why the expected output changed. A change of shared code (rule output that
   edits code, or a finding's rule or place) can touch every scenario: then update and run all of them
   (`./gradlew build -Pe2e`).

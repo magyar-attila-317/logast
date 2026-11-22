@@ -28,8 +28,8 @@ write facts; they never change logast, and logast's code never holds one team's 
 
 ## Where each piece lives
 
-- Extractors: `core/src/main/java/dev/logast/export/` (Java, Flyway, Helm, Terraform, workflows); the tracer:
-  `core/src/main/java/dev/logast/trace/`.
-- Derived links: `kb/src/main/java/dev/logast/kb/` (`Identity`, `Lineage`, `WorkflowChains`).
+- Extractors: `modules/core/src/main/java/dev/logast/export/` (Java, Flyway, Helm, Terraform, workflows); the tracer:
+  `modules/core/src/main/java/dev/logast/trace/`.
+- Derived links: `modules/kb/src/main/java/dev/logast/kb/` (`Identity`, `Lineage`, `WorkflowChains`).
 - Mappings: `kb/mappings/*.yaml` in a fleet ([facts.md](facts.md#company-specific-facts-logast-facts-map)), applied by
   `logast fleet … --kb` into `kb/mapped/`; tested with `logast facts map --test`.

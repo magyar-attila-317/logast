@@ -6,4 +6,4 @@ out/
 .idea/
 *.iml
 # the e2e snapshots keep the files apply creates there
-!e2e/expected*/.logast/
+!testing/e2e/expected*/.logast/
