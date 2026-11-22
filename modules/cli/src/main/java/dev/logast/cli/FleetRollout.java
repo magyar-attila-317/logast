@@ -137,7 +137,7 @@ final class FleetRollout {
             }
             int width = rows.stream().mapToInt(r -> r.repo().length()).max().orElse(4);
             for (Rollout.Row r : rows) {
-                System.out.println(String.format("%-" + width + "s  %-10s  %s", r.repo(), r.state().name().toLowerCase().replace('_', ' '), r.detail()));
+                System.out.printf("%-" + width + "s  %-10s  %s%n", r.repo(), r.state().name().toLowerCase().replace('_', ' '), r.detail());
             }
             boolean bad = rows.stream().anyMatch(r -> r.state() == Rollout.State.BLOCKED || r.state() == Rollout.State.FAILED);
             return bad ? 1 : 0;

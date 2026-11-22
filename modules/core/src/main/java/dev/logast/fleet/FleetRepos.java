@@ -11,7 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * #147: a fleet kept in a git repo lists its members by URL in {@code repos.yaml}; each is a shallow clone in

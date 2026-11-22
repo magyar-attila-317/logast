@@ -1,7 +1,6 @@
 package dev.logast.cli;
 
 import dev.logast.RoundScanner;
-import dev.logast.Logast;
 import dev.logast.policy.Policy;
 import dev.logast.review.ReviewServer;
 import picocli.CommandLine.Command;

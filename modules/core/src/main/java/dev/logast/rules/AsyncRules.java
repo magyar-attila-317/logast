@@ -13,7 +13,6 @@ import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.java.tree.Statement;
 
 import java.util.*;
-import java.util.List;
 
 /**
  * ASYNC_CONTEXT_LOSS for raw executors and CompletableFuture. (@Async and Spring executors are covered by the

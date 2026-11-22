@@ -1,13 +1,11 @@
 package dev.logast.rules;
 
-import dev.logast.graph.CallGraph;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.Level;
 import dev.logast.model.MethodInfo;
 import dev.logast.orders.Edit;
 import dev.logast.orders.Slot;
 import dev.logast.parse.Pos;
-import dev.logast.parse.SourceFileInfo;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;

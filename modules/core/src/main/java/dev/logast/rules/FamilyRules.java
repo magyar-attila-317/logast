@@ -1,7 +1,5 @@
 package dev.logast.rules;
 
-import dev.logast.model.Level;
-import dev.logast.model.LogCall;
 import dev.logast.model.MethodInfo;
 import dev.logast.orders.Edit;
 import dev.logast.parse.Pos;

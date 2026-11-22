@@ -6,8 +6,6 @@ import dev.logast.apply.FillValidator;
 import dev.logast.orders.ScanResult;
 import dev.logast.orders.WorkOrder;
 import dev.logast.policy.Policy;
-import dev.logast.rules.DomainValues;
-import dev.logast.rules.Glossary;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

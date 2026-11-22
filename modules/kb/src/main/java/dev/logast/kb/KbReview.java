@@ -112,7 +112,7 @@ public final class KbReview {
                     return "no such proposal: " + key;
                 }
                 if (approve) {
-                    ObjectNode copy = ((ObjectNode) entry).deepCopy();
+                    ObjectNode copy = entry.deepCopy();
                     copy.put("approvedBy", by).put("approvedAt", Instant.now().toString());
                     (root.has(section) && root.get(section).isObject() ? (ObjectNode) root.get(section) : root.putObject(section)).set(key, copy);
                 }

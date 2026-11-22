@@ -289,7 +289,7 @@ public final class PolicyLoader {
             JsonNode value = e.getValue();
             JsonNode existing = target.get(key);
             if (value.isObject() && value.path("override").asBoolean(false)) {
-                ObjectNode copy = ((ObjectNode) value).deepCopy();
+                ObjectNode copy = value.deepCopy();
                 copy.remove("override");
                 if (existing != null) {
                     overrides.add(layer + " overrides " + p);

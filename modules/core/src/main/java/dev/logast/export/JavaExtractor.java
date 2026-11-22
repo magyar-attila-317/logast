@@ -15,7 +15,6 @@ import dev.logast.orders.ScanResult;
 import dev.logast.parse.Pos;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.J;
-import org.openrewrite.java.tree.TypeUtils;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -711,7 +710,7 @@ public final class JavaExtractor implements Extractor {
                     .filter(t -> d == null || d.method().name().equals(t.get("@detail"))).map(t -> {
                         Map<String, String> copy = new TreeMap<>(t);
                         copy.remove("@detail");
-                        return (Map<String, String>) copy;
+                        return copy;
                     }).toList();
             List<Map<String, String>> ownTriggers = d == null ? null : new ArrayList<>(fromCode);
             if (!fromCode.isEmpty()) {   // #198: what the code schedules it with wins over names in the configuration

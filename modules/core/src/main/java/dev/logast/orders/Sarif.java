@@ -20,7 +20,7 @@ public final class Sarif {
     public static Map<String, Object> of(List<WorkOrder> orders, List<String> gaps) {
         Set<String> ruleIds = new TreeSet<>();
         orders.forEach(o -> ruleIds.addAll(o.fixes()));
-        List<Map<String, Object>> rules = ruleIds.stream().map(r -> Map.<String, Object>of(
+        List<Map<String, Object>> rules = ruleIds.stream().map(r -> Map.of(
                 "id", r,
                 "shortDescription", Map.of("text", r.replace('_', ' ').toLowerCase(Locale.ROOT)),
                 "properties", Map.of("tags", List.copyOf(new TreeSet<>(Rules.packsOf(r)))))).toList();

@@ -13,7 +13,6 @@ import dev.logast.fleet.FleetScaffold;
 import dev.logast.fleet.FleetReport;
 import dev.logast.fleet.FleetTidy;
 import dev.logast.fleet.NamedFleet;
-import dev.logast.fleet.ServiceSurface;
 import dev.logast.orders.Ansi;
 import dev.logast.orders.OrderJson;
 import dev.logast.orders.ScanResult;

@@ -1,6 +1,5 @@
 package dev.logast.cli;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import dev.logast.Analysis;
 import dev.logast.Explainer;
 import dev.logast.Logast;
@@ -13,8 +12,6 @@ import dev.logast.orders.OrderJson;
 import dev.logast.orders.ScanResult;
 import dev.logast.orders.WorkOrder;
 import dev.logast.policy.Policy;
-import dev.logast.rules.DomainValues;
-import dev.logast.rules.Glossary;
 import dev.logast.rules.Rules;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -27,7 +24,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.Callable;
-import java.util.stream.Collectors;
 
 // scope INHERIT: every subcommand gets -h/--help and -V/--version too (#94); its own description is kept
 @Command(name = "logast", mixinStandardHelpOptions = true, versionProvider = Main.Version.class, scope = CommandLine.ScopeType.INHERIT,

@@ -1,6 +1,5 @@
 package dev.logast.rules;
 
-import dev.logast.graph.CallGraph;
 import dev.logast.model.Annotations;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.Level;

@@ -2,7 +2,6 @@ package dev.logast.metrics;
 
 import dev.logast.Analysis;
 import dev.logast.model.Annotations;
-import dev.logast.model.ClassInfo;
 import dev.logast.model.Entrypoint;
 import dev.logast.model.MethodInfo;
 import dev.logast.parse.Pos;
@@ -11,7 +10,6 @@ import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
-import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
 
 import java.util.*;

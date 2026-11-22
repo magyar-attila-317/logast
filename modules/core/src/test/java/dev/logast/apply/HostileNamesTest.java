@@ -3,7 +3,6 @@ package dev.logast.apply;
 import dev.logast.Fixtures;
 import dev.logast.Logast;
 import dev.logast.orders.ScanResult;
-import dev.logast.orders.WorkOrder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
