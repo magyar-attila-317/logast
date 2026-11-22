@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -98,93 +99,85 @@ public final class Rollout {
         return out;
     }
 
-    /** One member repo (its clone at the newest commit of its default branch). */
+    /** One repo of a run: its clone, what is rolled out onto which base, and where its preview, stamp and log are. */
+    record Member(String fleet, String name, Path repo, String base, String target, Path work, Path stamp, Path log) {
+        static Member of(Path fleetDir, String fleet, String name, Path clone, String target) {
+            Path dir = fleetDir.resolve(".cache/rollout");
+            return new Member(fleet, name, clone, Git.must(clone, "rev-parse", "HEAD"), target, dir.resolve(name),
+                    dir.resolve(name + ".stamp"), dir.resolve(name + ".log"));
+        }
+
+        /** What a preview's result depends on: the same key, the same result (apply is deterministic). */
+        String key(String logastVersion) {
+            return base + " " + target + " " + logastVersion;
+        }
+
+        String shortBase() {
+            return base.substring(0, 8);
+        }
+    }
+
+    /** A reason not to roll a repo out now, decided by its own logast.yaml. */
+    private interface Guard {
+        Optional<Row> check(Member m, Intent intent, Options o);
+    }
+
+    private static final List<Guard> GUARDS = List.of(
+            (m, i, o) -> "off".equals(i.mode()) ? skip(m, "opted out (rollout.mode: off" + (i.hold() == null ? "" : ", " + i.hold()) + ")")
+                    : Optional.empty(),
+            (m, i, o) -> onHold(i.hold(), LocalDate.now()) ? skip(m, "on hold: " + i.hold()) : Optional.empty(),
+            (m, i, o) -> "manual".equals(i.mode()) && !o.only().contains(m.name())
+                    ? skip(m, "rollout.mode: manual (name it with --repos to roll it out)") : Optional.empty(),
+            (m, i, o) -> i.pin() != null && PolicyVersions.number(i.pin()) >= PolicyVersions.number(m.target())
+                    ? Optional.of(new Row(m.name(), State.UP_TO_DATE, "runs " + i.pin())) : Optional.empty());
+
+    private static Optional<Row> skip(Member m, String why) {
+        return Optional.of(new Row(m.name(), State.SKIPPED, why));
+    }
+
+    /**
+     * Where logast/rollout stands.
+     *
+     * @param remote  its commit on the remote; null when it is not pushed
+     * @param theirs  its newest commit lacks the trailer: someone's, left alone
+     * @param current the commit (remote's, else the local branch's) that already holds the target on the base; null when none
+     */
+    record Branch(String remote, boolean theirs, String current) {
+        boolean pushed() {
+            return current != null && current.equals(remote);
+        }
+    }
+
+    /** The outcome of making (or reusing) a preview. */
+    sealed interface Preview {
+        record Ready(String tree) implements Preview {
+        }
+
+        record Failed(Path log) implements Preview {
+        }
+
+        /** Its files changed after apply: discarded, never committed. */
+        record Changed() implements Preview {
+        }
+    }
+
+    /** One member repo (its clone at the newest commit of its default branch), up to the stage asked for. */
     static Row member(Path fleetDir, String fleet, String name, Path clone, String target, Options o, Steps steps) {
-        String base = Git.must(clone, "rev-parse", "HEAD");
+        Member m = Member.of(fleetDir, fleet, name, clone, target);
         Intent intent = intent(clone, fleet);
-        if ("off".equals(intent.mode())) {
-            return new Row(name, State.SKIPPED, "opted out (rollout.mode: off" + (intent.hold() == null ? "" : ", " + intent.hold()) + ")");
+        Optional<Row> skipped = GUARDS.stream().map(g -> g.check(m, intent, o)).flatMap(Optional::stream).findFirst();
+        if (skipped.isPresent()) {
+            return skipped.get();
         }
-        if (onHold(intent.hold(), LocalDate.now())) {
-            return new Row(name, State.SKIPPED, "on hold: " + intent.hold());
+        Branch branch = branch(m);
+        if (branch.theirs()) {
+            return skip(m, BRANCH + " has someone's commits on top: it is theirs now (`logast apply .` there updates it)").orElseThrow();
         }
-        if ("manual".equals(intent.mode()) && !o.only().contains(name)) {
-            return new Row(name, State.SKIPPED, "rollout.mode: manual (name it with --repos to roll it out)");
-        }
-        if (intent.pin() != null && PolicyVersions.number(intent.pin()) >= PolicyVersions.number(target)) {
-            return new Row(name, State.UP_TO_DATE, "runs " + intent.pin());
-        }
-        // the branch: ours (its newest commit says logast made it) or someone's
-        String remote = remoteBranch(clone);
-        if (remote != null) {
-            Git.run(clone, "fetch", "--quiet", "--depth", "1", "origin", "+refs/heads/" + BRANCH + ":refs/remotes/origin/" + BRANCH);
-        }
-        String ref = remote != null ? "refs/remotes/origin/" + BRANCH : localBranch(clone) ? "refs/heads/" + BRANCH : null;
-        boolean current = false;   // the branch already holds this policy applied to this base
-        if (ref != null) {
-            String message = Git.run(clone, "log", "-1", "--format=%B", ref).out();
-            if (!message.contains(TRAILER + ":")) {
-                return new Row(name, State.SKIPPED, BRANCH + " has someone's commits on top: it is theirs now (`logast apply .` there updates it)");
-            }
-            current = message.contains(TRAILER + ": " + target) && message.contains("Logast-Base: " + base);
-        }
-        if (!current && localBranch(clone)) {
-            String message = Git.run(clone, "log", "-1", "--format=%B", "refs/heads/" + BRANCH).out();
-            current = message.contains(TRAILER + ": " + target) && message.contains("Logast-Base: " + base);
-            ref = current ? "refs/heads/" + BRANCH : ref;
-        }
-        Path work = fleetDir.resolve(".cache/rollout").resolve(name);
-        Path stampFile = fleetDir.resolve(".cache/rollout").resolve(name + ".stamp");
-        Path log = fleetDir.resolve(".cache/rollout").resolve(name + ".log");
-        String key = base + " " + target + " " + o.logastVersion();
         if (o.stage() == Stage.PLAN) {
-            if (current) {
-                return new Row(name, remote != null && ref.startsWith("refs/remotes") ? State.UNCHANGED : State.COMMITTED,
-                        BRANCH + " holds " + target + " on " + base.substring(0, 8) + (remote != null && ref.startsWith("refs/remotes") ? " (pushed)" : " (not pushed)"));
-            }
-            String stamped = readStamp(stampFile);
-            return stamped != null && stamped.startsWith(key + " ")
-                    ? new Row(name, State.PREVIEW, "preview of " + target + " ready: " + work + " (--commit commits it)")
-                    : new Row(name, State.DUE, "would apply " + target + " to " + base.substring(0, 8) + " (--apply to see it)");
+            return plan(m, branch, o);
         }
         try {
-            String commit;
-            if (current && o.stage().compareTo(Stage.COMMIT) >= 0) {
-                commit = Git.must(clone, "rev-parse", ref);
-                if (o.stage() == Stage.COMMIT) {
-                    return new Row(name, State.UNCHANGED, BRANCH + " already applies " + target + " to " + base.substring(0, 8));
-                }
-            } else {
-                String tree = preview(clone, work, stampFile, log, fleet, target, base, key, o, steps);
-                if (tree == null) {
-                    return new Row(name, State.BLOCKED, Files.exists(log) ? "failed: " + log : "the preview changed after apply: "
-                            + "discarded (logast commits only what apply produced); --apply makes it again");
-                }
-                if (o.stage() == Stage.APPLY) {
-                    return new Row(name, State.PREVIEW, "review it: git -C " + work + " diff --cached --stat (log: " + log + ")");
-                }
-                commit = commitTree(clone, tree, base, message(fleet, target, base, o.logastVersion()));
-                Git.must(clone, "branch", "--force", BRANCH, commit);
-                discard(clone, work, stampFile);
-                if (o.stage() == Stage.COMMIT) {
-                    return new Row(name, State.COMMITTED, BRANCH + " in " + clone);
-                }
-            }
-            if (remote != null && remote.equals(commit)) {
-                if (o.stage() == Stage.PUSH) {
-                    return new Row(name, State.UNCHANGED, BRANCH + " is pushed");
-                }
-            } else {
-                Git.Result push = Git.run(clone, "push", "--quiet", "--force-with-lease=refs/heads/" + BRANCH + ":" + (remote == null ? "" : remote),
-                        "origin", commit + ":refs/heads/" + BRANCH);
-                if (!push.ok()) {
-                    return new Row(name, State.SKIPPED, "push refused (the branch moved since it was read: someone's now): " + push.out());
-                }
-                if (o.stage() == Stage.PUSH) {
-                    return new Row(name, State.PUSHED, BRANCH);
-                }
-            }
-            return new Row(name, State.PR, PullRequests.openOrUpdate(clone, BRANCH, title(target), body(fleet, target, base)));
+            return stages(m, branch, o, steps);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         } catch (RuntimeException e) {
@@ -192,41 +185,122 @@ public final class Rollout {
         }
     }
 
-    /**
-     * The applied tree for {@code key} (base, policy, logast): the preview's, when one of the same key is there and its
-     * files are still exactly what apply produced; else made again (pin, apply, build) and stamped. A preview whose files
-     * changed after apply is discarded, never committed: null, and no log. A failing apply or build: null, with its log.
-     */
-    private static String preview(Path clone, Path work, Path stampFile, Path log, String fleet, String target, String base,
-                                  String key, Options o, Steps steps) throws IOException {
-        String stamped = readStamp(stampFile);
-        if (!o.fresh() && stamped != null && stamped.startsWith(key + " ") && Files.isDirectory(work)) {
-            String tree = stamped.substring(key.length() + 1).strip();
-            Git.must(work, "add", "-A");
-            if (tree.equals(Git.must(work, "write-tree"))) {
-                return tree;
+    /** The remote branch decides whose it is when there is one; a branch holding this target on this base is reused. */
+    static Branch branch(Member m) {
+        String remote = remoteBranch(m.repo());
+        if (remote != null) {
+            Git.run(m.repo(), "fetch", "--quiet", "--depth", "1", "origin", "+refs/heads/" + BRANCH + ":refs/remotes/origin/" + BRANCH);
+        }
+        String local = localBranch(m.repo()) ? Git.must(m.repo(), "rev-parse", "refs/heads/" + BRANCH) : null;
+        String top = remote != null ? remote : local;
+        if (top != null && !Git.run(m.repo(), "log", "-1", "--format=%B", top).out().contains(TRAILER + ":")) {
+            return new Branch(remote, true, null);
+        }
+        String current = top != null && holds(m, top) ? top : local != null && holds(m, local) ? local : null;
+        return new Branch(remote, false, current);
+    }
+
+    /** The commit's trailers say it applies the member's target to its base. */
+    private static boolean holds(Member m, String commit) {
+        String message = Git.run(m.repo(), "log", "-1", "--format=%B", commit).out();
+        return message.contains(TRAILER + ": " + m.target()) && message.contains("Logast-Base: " + m.base());
+    }
+
+    /** What a run would do, changing nothing. */
+    private static Row plan(Member m, Branch b, Options o) {
+        if (b.current() != null) {
+            return new Row(m.name(), b.pushed() ? State.UNCHANGED : State.COMMITTED,
+                    BRANCH + " holds " + m.target() + " on " + m.shortBase() + (b.pushed() ? " (pushed)" : " (not pushed)"));
+        }
+        String stamped = readStamp(m.stamp());
+        return stamped != null && stamped.startsWith(m.key(o.logastVersion()) + " ")
+                ? new Row(m.name(), State.PREVIEW, "preview of " + m.target() + " ready: " + m.work() + " (--commit commits it)")
+                : new Row(m.name(), State.DUE, "would apply " + m.target() + " to " + m.shortBase() + " (--apply to see it)");
+    }
+
+    /** preview → commit → push → PR, each reusing what is there, stopping at the stage asked for. */
+    private static Row stages(Member m, Branch b, Options o, Steps steps) throws IOException {
+        String commit = b.current();
+        boolean committing = o.stage().compareTo(Stage.COMMIT) >= 0;
+        if (commit != null && committing) {
+            if (o.stage() == Stage.COMMIT) {
+                return new Row(m.name(), State.UNCHANGED, BRANCH + " already applies " + m.target() + " to " + m.shortBase());
             }
-            discard(clone, work, stampFile);
-            Files.deleteIfExists(log);
-            return null;
+        } else {
+            switch (preview(m, o, steps)) {
+                case Preview.Failed f -> {
+                    return new Row(m.name(), State.BLOCKED, "failed: " + f.log());
+                }
+                case Preview.Changed c -> {
+                    return new Row(m.name(), State.BLOCKED, "the preview changed after apply: discarded (logast commits only "
+                            + "what apply produced); --apply makes it again");
+                }
+                case Preview.Ready r -> {
+                    if (!committing) {
+                        return new Row(m.name(), State.PREVIEW, "review it: git -C " + m.work() + " diff --cached --stat (log: " + m.log() + ")");
+                    }
+                    commit = commitTree(m.repo(), r.tree(), m.base(), message(m.fleet(), m.target(), m.base(), o.logastVersion()));
+                    Git.must(m.repo(), "branch", "--force", BRANCH, commit);
+                    discard(m);
+                    if (o.stage() == Stage.COMMIT) {
+                        return new Row(m.name(), State.COMMITTED, BRANCH + " in " + m.repo());
+                    }
+                }
+            }
         }
-        discard(clone, work, stampFile);
-        Files.createDirectories(work.getParent());
-        Git.must(clone, "worktree", "add", "--quiet", "--force", "--detach", work.toString(), base);
-        pin(work.resolve("logast.yaml"), fleet, target);
-        Files.deleteIfExists(log);
-        Files.writeString(log, "");
-        if (steps.apply(work, log) != 0) {
-            return null;
+        return publish(m, b, commit, o);
+    }
+
+    /** Pushes {@code commit} with a lease against what the remote had (unless it is there already), then the PR. */
+    private static Row publish(Member m, Branch b, String commit, Options o) {
+        if (!commit.equals(b.remote())) {
+            Git.Result push = Git.run(m.repo(), "push", "--quiet", "--force-with-lease=refs/heads/" + BRANCH + ":"
+                    + (b.remote() == null ? "" : b.remote()), "origin", commit + ":refs/heads/" + BRANCH);
+            if (!push.ok()) {
+                return skip(m, "push refused (the branch moved since it was read: someone's now): " + push.out()).orElseThrow();
+            }
+            if (o.stage() == Stage.PUSH) {
+                return new Row(m.name(), State.PUSHED, BRANCH);
+            }
+        } else if (o.stage() == Stage.PUSH) {
+            return new Row(m.name(), State.UNCHANGED, BRANCH + " is pushed");
         }
-        if (o.build() && steps.build(work, log) != 0) {
-            Files.writeString(log, "\nthe build failed after apply: nothing committed\n", java.nio.file.StandardOpenOption.APPEND);
-            return null;
+        return new Row(m.name(), State.PR, PullRequests.openOrUpdate(m.repo(), BRANCH, title(m.target()), body(m.fleet(), m.target(), m.base())));
+    }
+
+    /**
+     * The applied tree for the member's key (base, policy, logast): the preview's, when one of the same key is there and
+     * its files are still exactly what apply produced; else made again (pin, apply, build) and stamped. A preview whose
+     * files changed after apply is discarded, never committed.
+     */
+    private static Preview preview(Member m, Options o, Steps steps) throws IOException {
+        String key = m.key(o.logastVersion());
+        String stamped = readStamp(m.stamp());
+        if (!o.fresh() && stamped != null && stamped.startsWith(key + " ") && Files.isDirectory(m.work())) {
+            String tree = stamped.substring(key.length() + 1).strip();
+            Git.must(m.work(), "add", "-A");
+            if (tree.equals(Git.must(m.work(), "write-tree"))) {
+                return new Preview.Ready(tree);
+            }
+            discard(m);
+            return new Preview.Changed();
         }
-        Git.must(work, "add", "-A");
-        String tree = Git.must(work, "write-tree");
-        Files.writeString(stampFile, key + " " + tree + "\n");
-        return tree;
+        discard(m);
+        Files.createDirectories(m.work().getParent());
+        Git.must(m.repo(), "worktree", "add", "--quiet", "--force", "--detach", m.work().toString(), m.base());
+        pin(m.work().resolve("logast.yaml"), m.fleet(), m.target());
+        Files.writeString(m.log(), "");
+        if (steps.apply(m.work(), m.log()) != 0) {
+            return new Preview.Failed(m.log());
+        }
+        if (o.build() && steps.build(m.work(), m.log()) != 0) {
+            Files.writeString(m.log(), "\nthe build failed after apply: nothing committed\n", java.nio.file.StandardOpenOption.APPEND);
+            return new Preview.Failed(m.log());
+        }
+        Git.must(m.work(), "add", "-A");
+        String tree = Git.must(m.work(), "write-tree");
+        Files.writeString(m.stamp(), key + " " + tree + "\n");
+        return new Preview.Ready(tree);
     }
 
     /** A commit of exactly {@code tree} on {@code base}: the person's identity, else logast's (a machine without one). */
@@ -238,10 +312,10 @@ public final class Rollout {
         return Git.must(clone, args.toArray(String[]::new));
     }
 
-    private static void discard(Path clone, Path work, Path stampFile) throws IOException {
-        Git.run(clone, "worktree", "remove", "--force", work.toString());
-        Git.run(clone, "worktree", "prune");
-        Files.deleteIfExists(stampFile);
+    private static void discard(Member m) throws IOException {
+        Git.run(m.repo(), "worktree", "remove", "--force", m.work().toString());
+        Git.run(m.repo(), "worktree", "prune");
+        Files.deleteIfExists(m.stamp());
     }
 
     private static String readStamp(Path stampFile) {
