@@ -8,11 +8,6 @@ REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController
 REPORT-ONLY DB_NO_TIMEOUT src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/audit/AuditLog.java:18
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/badge/BadgeAuditStore.java:15
-NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/badge/BadgeController.java:29
-NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/badge/BadgeController.java:34
-NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/badge/BadgeController.java:39
-NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/badge/BadgeController.java:45
-NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/badge/BadgeController.java:50
 REPORT-ONLY AUDIT_BEFORE_COMMIT src/main/java/com/example/e2e/badge/BadgeService.java:25
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/badge/BadgeService.java:55
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/badge/BadgeService.java:56
@@ -32,9 +27,7 @@ REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/pledge/PledgeLookup.ja
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:26
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:33
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
-NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/PledgeController.java:55
-NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/PledgeDetailsController.java:27
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY AUDIT_LOGGER_UNROUTED src/main/resources/application.properties:1
@@ -43,6 +36,11 @@ REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_LOGGER_UNROUTED src/main/resources/logback-spring.xml:1
 REPORT-ONLY SETUP_LOGBACK_XML src/main/resources/logback-spring.xml:1
 REPORT-ONLY AUDIT_LOG_MIXED src/main/java/com/example/e2e/audit/AuditLog.java:8
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/badge/BadgeController.java:32
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/badge/BadgeController.java:38
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/badge/BadgeController.java:45
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/badge/BadgeController.java:51
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/badge/BadgeController.java:57
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/Audited.java:11
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:45
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:48
@@ -79,5 +77,7 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

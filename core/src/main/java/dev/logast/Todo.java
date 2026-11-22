@@ -52,7 +52,7 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
                 ? new Item("logast classpath .", "logast cannot see library types yet; findings are incomplete") : null;
         // fixes that wait for a text order are counted with the texts, not as "apply again"
         Set<String> textIds = new HashSet<>();
-        orders.stream().filter(o -> !o.slots().isEmpty()).forEach(o -> textIds.add(o.id()));
+        orders.stream().filter(o -> !o.reportOnly() && !o.mechanical()).forEach(o -> textIds.add(o.id()));
         long auto = orders.stream().filter(WorkOrder::mechanical).filter(o -> o.dependsOn().stream().noneMatch(textIds::contains)).count();
         long text = textIds.size();
         long outcomes = orders.stream().filter(o -> o.rule().equals(MetricsFile.RULE) && o.reportOnly()).count();
@@ -66,7 +66,7 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
         // the rates set log levels (logging) and metrics frequency: other packs alone have no use for them (#88)
         if (a != null && !a.entrypoints.isEmpty() && (policy.packSelected("logging") || policy.packSelected("metrics"))) {
             Path file = root.resolve(LogastDir.TRAFFIC);
-            Traffic existing = Files.exists(file) ? Traffic.load(root, file) : Traffic.none();
+            Traffic existing = (Files.exists(file) ? Traffic.load(root, file) : Traffic.none()).withSchedules(a.traffic.schedules());
             if (!Files.exists(file)) {
                 try {
                     Files.createDirectories(file.getParent());

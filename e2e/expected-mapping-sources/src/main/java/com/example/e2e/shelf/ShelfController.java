@@ -17,6 +17,7 @@ public class ShelfController implements ShelfApi {
 
     @Override
     public String restock(String shelfId) {
+        log.info("Shelve restock started"); // logast:wording
         log.debug("Shelf restocked");
         return "restocked";
     }

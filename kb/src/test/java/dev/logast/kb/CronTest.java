@@ -1,5 +1,6 @@
 package dev.logast.kb;
 
+import dev.logast.facts.Cron;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

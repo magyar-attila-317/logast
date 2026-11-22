@@ -1,5 +1,6 @@
 package dev.logast.kb;
 
+import dev.logast.facts.Cron;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

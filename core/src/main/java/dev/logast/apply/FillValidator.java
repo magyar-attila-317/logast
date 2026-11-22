@@ -32,6 +32,9 @@ public final class FillValidator {
         for (var e : order.slots().entrySet()) {
             String text = fill == null ? null : fill.slots().get(e.getKey());
             if (text == null || text.isBlank()) {
+                if (e.getValue().generated() != null) {
+                    continue;   // #231: the generated wording is written, marked // logast:wording
+                }
                 problems.add("missing text for slot " + e.getKey());
                 continue;
             }

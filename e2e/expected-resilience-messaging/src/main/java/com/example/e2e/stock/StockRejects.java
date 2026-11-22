@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 public class StockRejects {
     @RabbitListener(queues = "stock-rejects")
     public void onReject(String itemId) {
+        log.info("Reject started"); // logast:wording
         if (itemId.isBlank()) {
             throw new AmqpRejectAndDontRequeueException("blank item id");
         }

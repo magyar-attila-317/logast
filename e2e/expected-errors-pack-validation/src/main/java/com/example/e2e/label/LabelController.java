@@ -1,6 +1,7 @@
 package com.example.e2e.label;
 
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+@Slf4j
 @RestController
 class LabelController {
     private final LabelStore store;
@@ -18,11 +20,13 @@ class LabelController {
 
     @PostMapping("/labels")
     String create(@RequestBody LabelRequest request) {
+        log.info("Label creation started"); // logast:wording
         return request.labelCode();
     }
 
     @PutMapping("/labels/{labelCode}")
     String update(@PathVariable String labelCode, @Valid @RequestBody LabelRequest request) {
+        log.info("Label update started"); // logast:wording
         if (request.text() == null) {
             throw new LabelStale(labelCode);
         }
@@ -31,6 +35,7 @@ class LabelController {
 
     @PostMapping("/labels/notes")
     String note(@RequestBody String text) {
+        log.info("Label notes started"); // logast:wording
         return text;
     }
 

@@ -15,6 +15,7 @@ public class StockEvents {
 
     @RabbitListener(queues = "stock-returns")
     public void onReturn(String itemId) {
+        log.info("Return started"); // logast:wording
         ledger.refill(itemId);
         log.info("Stock events completed"); // logast:wording
         StockMetrics.stockEventsCompleted(); // logast:metric review, confidence: low
@@ -22,6 +23,7 @@ public class StockEvents {
 
     @RabbitListener(queues = "stock-audits", ackMode = "MANUAL")
     public void onAudit(String itemId) {
+        log.info("Audit started"); // logast:wording
         ledger.refill(itemId);
         log.info("Stock events completed"); // logast:wording
         StockMetrics.stockEventsCompleted(); // logast:metric review, confidence: low

@@ -1,6 +1,6 @@
-logast · 76 files · 21 entrypoints · 83/220 methods reachable · 173 call edges
+logast · 76 files · 21 entrypoints · 83/222 methods reachable · 173 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
+log coverage 85.7% (jobs 9/9 · http 9/12)   (places that should log and do)
 68 orders: 0 AUTO, 21 NEEDS TEXT, 47 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
@@ -122,31 +122,11 @@ ARI-b8447c  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/exam
   why: the audit call is a call on AuditLog, recognised by its name (audit.emitters is empty)
   note: Record the authenticated user instead (SecurityContextHolder, a Principal / Authentication parameter, @AuthenticationPrincipal); the user the request names can be kept as a separate field. A record without them proves nothing.
   done when: an argument comes from the security context (a Principal / Authentication parameter, @AuthenticationPrincipal, SecurityContextHolder), or the audit method reads it itself
-AFU-acbe3b  medium  REPORT-ONLY  AUDIT_FAILURES_UNRECORDED  src/main/java/com/example/e2e/web/PledgeController.java:48  PledgeController.delete
+AFU-acbe3b  medium  REPORT-ONLY  AUDIT_FAILURES_UNRECORDED  src/main/java/com/example/e2e/web/PledgeController.java:50  PledgeController.delete
   DELETE /pledges/{pledgeId} records an audit event only when it succeeds: a rejected or failed attempt leaves no record (DELETE **)
   path: DELETE /pledges/{pledgeId} → PledgeController.delete
   note: Record the attempt's outcome either way: an audit call in a catch (with the failure) or in a finally (with the outcome), or record the attempt before the work starts.
   done when: an audit call it reaches sits in a catch or finally block, or comes before the other work
-DOM-663b01  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/PledgeController.java:55  PledgeController.revoke
-  POST /admin/pledges/{pledgeId}/revoke: MDC lacks pledgeId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
-  path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke
-  - pledges.revoke(pledgeId, userId);
-  + try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-  + log.info("{{MSG}}");
-  + pledges.revoke(pledgeId, userId);
-  + … (4 lines)
-  (+2 more edits)
-  MSG: Entry log for POST /admin/pledges/{pledgeId}/revoke (PledgeController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
-DOM-12a856  medium  NEEDS TEXT  MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT  src/main/java/com/example/e2e/web/PledgeDetailsController.java:27  PledgeDetailsController.hold
-  POST /pledges/{pledgeId}/hold: MDC lacks pledgeId; its own flow logs nothing at INFO (shared code deeper down and catch blocks do not count)
-  path: POST /pledges/{pledgeId}/hold → PledgeDetailsController.hold
-  - lookup.find(pledgeId.value());
-  + try (var mdc = MdcScope.of("pledgeId", pledgeId.value())) {
-  + log.info("{{MSG}}");
-  + lookup.find(pledgeId.value());
-  + … (4 lines)
-  (+2 more edits)
-  MSG: Entry log for POST /pledges/{pledgeId}/hold (PledgeDetailsController.hold): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as '{subject} started'
 BWU-5fc605  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/example/e2e/web/QuoteController.java:20  QuoteController.quote
   CompletableFuture.join() without a timeout on a request path: if the work never finishes, the request thread waits forever
   path: GET /quotes/{productId} → QuoteController.quote
@@ -376,6 +356,20 @@ OUM-632668  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
   "Pledge allotment completed" is logged but not counted (outcome=completed, frequency unknown: no rate for "POST /pledges/allot" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.allotment", "completed")), tag (Outcomes.tag("completed") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
+SUG-4885ca  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/web/PledgeController.java:59  PledgeController.revoke
+  Generated wording "Pledge revoke started": say it in domain terms
+  path: POST /admin/pledges/{pledgeId}/revoke → PledgeController.revoke
+  - "Pledge revoke started"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Pledge revoke started" | must read as '{subject} started'
+SUG-72f478  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/web/PledgeDetailsController.java:31  PledgeDetailsController.hold
+  Generated wording "Pledge hold started": say it in domain terms
+  path: POST /pledges/{pledgeId}/hold → PledgeDetailsController.hold
+  - "Pledge hold started"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Pledge hold started" | must read as '{subject} started'
 SUG-08dd18  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/web/QuoteController.java:30  QuoteController.refresh
   Generated wording "Quote controller async work failed": say it in domain terms
   path: GET /quotes/{productId}/refresh → QuoteController.refresh
@@ -391,7 +385,7 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 105 changes in 54 files (git diff to review)
+Applied earlier: 107 changes in 54 files (git diff to review)
 
 Optional (68) — left as is, each keeps its default:
   21 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
@@ -400,9 +394,9 @@ Optional (68) — left as is, each keeps its default:
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
-Log lines: 92 — 53 fixed, 15 with a finding, 10 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
+Log lines: 94 — 53 fixed, 17 with a finding, 10 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
 
 Also:
-  fill calls/day in .logast/decisions/traffic.yaml (optional)   21 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 
 reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)

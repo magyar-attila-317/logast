@@ -25,10 +25,32 @@ import java.util.*;
 public final class Traffic {
     private final Map<String, Double> perDay;
     private final String source;
+    /** #235: rates computed from schedules in the code, for labels the file has no value for. */
+    private final Map<String, ScheduleRate.Rate> schedules;
 
     private Traffic(Map<String, Double> perDay, String source) {
+        this(perDay, source, Map.of());
+    }
+
+    private Traffic(Map<String, Double> perDay, String source, Map<String, ScheduleRate.Rate> schedules) {
         this.perDay = perDay;
         this.source = source;
+        this.schedules = schedules;
+    }
+
+    /** #235: the same rates, with the schedules' rates for entrypoints the file has none for. */
+    public Traffic withSchedules(Map<String, ScheduleRate.Rate> rates) {
+        return new Traffic(perDay, source, Map.copyOf(rates));
+    }
+
+    /** #235: label → the rate computed from its schedule. */
+    public Map<String, ScheduleRate.Rate> schedules() {
+        return schedules;
+    }
+
+    /** #235: the rate computed from an entrypoint's schedule, or null. */
+    public ScheduleRate.Rate schedule(String label) {
+        return schedules.get(label);
     }
 
     public static Traffic none() {
@@ -113,11 +135,14 @@ public final class Traffic {
                         : "  # " + current.name().toLowerCase(Locale.ROOT) + "\n");
             }
             labels.add(label);
-            Double v = existing.perDay(label);
+            Double v = existing.perDay.get(label);
+            ScheduleRate.Rate computed = existing.schedules.get(label);
             sb.append("  \"").append(label.replace("\"", "\\\"")).append("\": ")
                     .append(v == null ? "" : (v == Math.rint(v) ? String.valueOf(v.longValue()) : String.valueOf(v)))
                     .append("    # ").append(ep.kind().name().toLowerCase(Locale.ROOT)).append(", ")
                     .append(String.join(" + ", sameLabel.get(label)))
+                    // #235: blank still means the schedule's rate is used; a value written here wins
+                    .append(computed == null ? "" : "; from " + computed.from() + ": " + number(computed.perDay()) + "/day")
                     .append('\n');
         }
         List<String> gone = existing.labels().stream().filter(l -> !labels.contains(l)).toList();
@@ -128,20 +153,28 @@ public final class Traffic {
         return sb.toString();
     }
 
-    public boolean known() {
-        return !perDay.isEmpty();
+    private static String number(double v) {
+        return v == Math.rint(v) ? String.valueOf((long) v) : String.format(Locale.ROOT, "%.2f", v);
     }
 
-    /** Calls per day for an entrypoint label, or null when not provided. */
+    public boolean known() {
+        return !perDay.isEmpty() || !schedules.isEmpty();
+    }
+
+    /** Calls per day for an entrypoint label: provided, else computed from its schedule (#235); null when neither. */
     public Double perDay(String entrypointLabel) {
-        return perDay.get(entrypointLabel);
+        Double v = perDay.get(entrypointLabel);
+        if (v != null || !schedules.containsKey(entrypointLabel)) {
+            return v;
+        }
+        return schedules.get(entrypointLabel).perDay();
     }
 
     /** Calls per day for an entrypoint: the sum over its labels (a handler mapped to several paths), or null when none is provided. */
     public Double perDay(dev.logast.model.Entrypoint ep) {
         Double sum = null;
         for (String l : ep.labels()) {
-            Double v = perDay.get(l);
+            Double v = perDay(l);
             if (v != null) {
                 sum = sum == null ? v : sum + v;
             }
@@ -150,7 +183,7 @@ public final class Traffic {
     }
 
     public String source() {
-        return source;
+        return schedules.isEmpty() ? source : source == null ? "schedules in the code" : source + " and schedules in the code";
     }
 
     public Set<String> labels() {

@@ -91,6 +91,41 @@ public void cleanup() {
 </tr>
 </table>
 
+### A request that changes data says so, with its id in MDC
+
+A POST handler whose own flow logged nothing: logast writes the started line with words from the path, marked for a
+better wording (messages.yaml asks for one), inside an MDC scope with the path's id (#231).
+*Scenario `expected`, `PledgeController.java`.*
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```java
+@PostMapping("/admin/pledges/{pledgeId}/revoke")
+public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") String userId) {
+    pledges.revoke(pledgeId, userId);
+}
+```
+
+</td>
+<td>
+
+```java
+@PostMapping("/admin/pledges/{pledgeId}/revoke")
+public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") String userId) {
+    try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+        log.info("Pledge revoke started"); // logast:wording
+        pledges.revoke(pledgeId, userId);
+    }
+}
+```
+
+</td>
+</tr>
+</table>
+
 ### Structured JSON logs with the service name and version
 
 Spring Boot's own structured logging in the format the policy chooses (here Logstash), no `logback-spring.xml`.
@@ -399,6 +434,68 @@ public void onPledge(String pledgeId) {
                 relayLog.record(pledgeId);
             });
 }
+```
+
+</td>
+</tr>
+</table>
+
+### A Quartz job is traced, with its job name and data in MDC; a chain stays one trace
+
+Quartz runs a job on a worker thread with no observation: logast wraps it, continues a trace carried in its data, puts
+the JobDetail's name and the data keys it reads into MDC (#232–#234), keeps its trace for the JobListener that starts
+the next step, and passes the current trace to the job it starts itself.
+*Scenario `expected-quartz-jobs`, `PledgeSweepJob.java` and `PledgeChainListener.java`.*
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```java
+public void execute(JobExecutionContext context) throws JobExecutionException {
+    String region = context.getMergedJobDataMap().getString("region");
+    SweepLedger.sweep(region);
+    JobDataMap next = new JobDataMap();
+    next.put("region", region);
+    try {
+        context.getScheduler().triggerJob(new JobKey("pledgeAudit"), next);
+    } // …
+}
+
+// PledgeChainListener
+public void jobWasExecuted(JobExecutionContext context, JobExecutionException jobException) {
+    // …
+    context.getScheduler().triggerJob(new JobKey("pledgeReport"));
+}
+```
+
+</td>
+<td>
+
+```java
+public void execute(JobExecutionContext context) throws JobExecutionException {
+    ObservedContext.entrypoint(SweepMetrics.PLEDGE_SWEEP_JOB_EXECUTE)
+            .remoteParent(TraceContextEnv.carrier(context.getMergedJobDataMap()))
+            .mdc("jobName", context.getJobDetail().getKey().getName())
+            .mdc("region", context.getMergedJobDataMap().get("region"))
+            .run(() -> {
+                log.info("Pledge sweep started"); // logast:wording
+                context.put(TraceContextEnv.KEY, TraceContextEnv.current());
+                String region = context.getMergedJobDataMap().getString("region");
+                SweepLedger.sweep(region);
+                JobDataMap next = new JobDataMap();
+                next.put("region", region);
+                try {
+                    next.putAll(TraceContextEnv.current());
+                    context.getScheduler().triggerJob(new JobKey("pledgeAudit"), next);
+                } // …
+            });
+}
+
+// PledgeChainListener
+context.getScheduler().triggerJob(new JobKey("pledgeReport"),
+        new JobDataMap(TraceContextEnv.from(context.get(TraceContextEnv.KEY))));
 ```
 
 </td>

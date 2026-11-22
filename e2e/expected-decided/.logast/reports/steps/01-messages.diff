@@ -62,6 +62,19 @@ index ea8b717..8fdfc04 100644
 +        AfterCommit.log(() -> log.info("Pledge sweep completed [pledgeCount={}]", pledgeIds.size()));
      }
  }
+diff --git a/src/main/java/com/example/e2e/web/PledgeController.java b/src/main/java/com/example/e2e/web/PledgeController.java
+index 5583304..b399ced 100644
+--- a/src/main/java/com/example/e2e/web/PledgeController.java
++++ b/src/main/java/com/example/e2e/web/PledgeController.java
+@@ -56,7 +56,7 @@ 
+     @PostMapping("/admin/pledges/{pledgeId}/revoke")
+     public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") String userId) {
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+-            log.info("Pledge revoke started"); // logast:wording
++            log.info("Pledge sweep started");
+             pledges.revoke(pledgeId, userId);
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 index 5149c03..7e878e4 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
@@ -111,6 +124,19 @@ index 4f47def..8117e82 100644
 +        log.info("Pledge sweep completed");
      }
  }
+diff --git a/src/main/java/com/example/e2e/web/PledgeDetailsController.java b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
+index 5bdf76f..dc097a8 100644
+--- a/src/main/java/com/example/e2e/web/PledgeDetailsController.java
++++ b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
+@@ -28,7 +28,7 @@ 
+     @PostMapping("/pledges/{pledgeId}/hold")
+     public void hold(@PathVariable PledgeId pledgeId) {
+         try (var mdc = MdcScope.of("pledgeId", pledgeId.value())) {
+-            log.info("Pledge hold started"); // logast:wording
++            log.info("Pledge sweep started");
+             lookup.find(pledgeId.value());
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
 index 63b548d..4cbe787 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java

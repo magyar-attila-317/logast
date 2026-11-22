@@ -106,8 +106,29 @@ public final class EntrypointFinder {
                 out.add(ep);
             }
         }
+        quartz(index, out);
         out.sort(Comparator.comparing(Entrypoint::label));
         return out;
+    }
+
+    /**
+     * #232: Quartz jobs, found as the export finds them ({@link QuartzJobs}): Quartz calls {@code execute} (Spring's
+     * {@code QuartzJobBean}: {@code executeInternal}) on its worker threads without an observation, so a job is a run
+     * nothing traces until logast wraps it.
+     */
+    private static void quartz(CodeIndex index, List<Entrypoint> out) {
+        Set<String> seen = new HashSet<>();
+        out.forEach(ep -> seen.add(ep.method().key()));
+        for (ClassInfo c : QuartzJobs.find(index).values()) {
+            if (c.decl().hasModifier(J.Modifier.Type.Abstract)) {
+                continue;   // a base class: its subclasses are the jobs
+            }
+            for (MethodInfo m : QuartzJobs.entryMethods(index, c)) {
+                if (m.hasBody() && seen.add(m.key())) {
+                    out.add(new Entrypoint(m, Kind.QUARTZ, "quartz " + c.simpleName() + "." + m.name(), false));
+                }
+            }
+        }
     }
 
     /** Handlers {@link #find} saw registered but could not resolve to a source method. */

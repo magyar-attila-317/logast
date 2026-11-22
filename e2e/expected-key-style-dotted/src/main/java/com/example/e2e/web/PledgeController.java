@@ -6,8 +6,10 @@ import com.example.e2e.pledge.PledgeService;
 import com.example.e2e.order.Order;
 import com.example.e2e.order.OrderService;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
 public class PledgeController {
     private final PledgeService pledges;
@@ -53,7 +55,10 @@ public class PledgeController {
 
     @PostMapping("/admin/pledges/{pledgeId}/revoke")
     public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") String userId) {
-        pledges.revoke(pledgeId, userId);
+        try (var mdc = MdcScope.of("pledge.id", pledgeId)) {
+            log.info("Pledge revoke started"); // logast:wording
+            pledges.revoke(pledgeId, userId);
+        }
     }
 
     @PostMapping("/orders")

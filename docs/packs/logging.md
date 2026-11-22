@@ -49,17 +49,17 @@ can end either way, the finding's note says why.
 | MDC_KEY_ALIAS | medium | an MDC key spelled as an alias of a vocabulary key | AUTO: renamed |
 | AREA_MDC_MISSING | medium | a key an `areas` entry requires, missing in logging methods of that area | report |
 | **Log coverage** (see [below](#log-coverage)) | | | |
-| ENTRYPOINT_SILENT | medium | an entrypoint whose own flow logs nothing at INFO on the normal path | NEEDS TEXT |
+| ENTRYPOINT_SILENT | medium | an entrypoint whose own flow logs nothing at INFO on the normal path | AUTO with generated wording from the path or method (`POST /owners/{ownerId}/pets/new` → "Pet creation started"), marked `// logast:wording` (#231); a text in messages.yaml wins; NEEDS TEXT when there are no words to use |
 | JOB_OUTCOME_MISSING | medium | a job or listener without an outcome line | AUTO |
 | SKIP_UNLOGGED | low | an early `return` in a job that says nothing | NEEDS TEXT |
-| STATE_CHANGE_UNLOGGED | medium | a repository save/delete in a method that logs nothing | NEEDS TEXT |
+| STATE_CHANGE_UNLOGGED | medium | a repository save/delete in a method that logs nothing | AUTO with generated wording from the entity and the verb ("Owner saved", "Pets deleted"), marked `// logast:wording` (#231); NEEDS TEXT when the entity is not known |
 | BATCH_SUMMARY_MISSING | low | a loop on a job path doing I/O per item, without a total | NEEDS TEXT |
 | DB_OUTCOME_UNLOGGED | medium | a JDBC statement whose outcome nobody logs | AUTO (wording marked for review) |
 | LIFECYCLE_UNEVEN | low | implementations of one method that log their lifecycle differently | AUTO: the missing lines |
 | **Levels and volume** (see [below](#noise-logs-in-loops-and-real-volume)) | | | |
 | LOG_LEVEL | medium | a level that does not fit: INFO per loop item, ERROR for a client error (`levels.clientErrors`) | AUTO |
 | LOG_IN_LOOP | low | INFO per item of a loop of unknown size | report: a `// logast:loop-size` comment settles it |
-| LOG_VOLUME | medium | a statement above `levels.volumeBudget` lines/day (needs `traffic.yaml` rates) | report |
+| LOG_VOLUME | medium | a statement above `levels.volumeBudget` lines/day (needs `traffic.yaml` rates; scheduled entrypoints' rates come from their schedule, #235) | report |
 | **Setup** | | | |
 | SETUP_SUPPORT_STARTER | high | the [runtime starter](../starter.md) the fixes use is missing (also tracing, metrics, errors) | AUTO |
 | SETUP_LOGBACK_XML | medium | a hand-rolled `logback-spring.xml` | AUTO: Spring Boot structured logging instead |

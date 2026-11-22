@@ -679,8 +679,6 @@ public final class JavaExtractor implements Extractor {
 
     private Path root;   // the service's folder, while extracting
 
-    private static final Set<String> QUARTZ_TYPES = Set.of("org.quartz.Job", "org.quartz.InterruptableJob", "org.quartz.StatefulJob",
-            "org.springframework.scheduling.quartz.QuartzJobBean");
     private static final Pattern CLASS_LITERAL = Pattern.compile("\\b([A-Z][A-Za-z0-9_]*)\\.class\\b");
     private static final Pattern CRON_CALL = Pattern.compile("(?:cronSchedule|cronScheduleNonvalidatedExpression|setCronExpression|"
             + "withCronSchedule|cronExpression|new\\s+CronExpression)\\s*\\(\\s*(?:\"((?:[^\"\\\\]|\\\\.)*)\"|([A-Za-z_][A-Za-z0-9_.]*))\\s*\\)");
@@ -808,60 +806,7 @@ public final class JavaExtractor implements Extractor {
 
     /** fqn → class, for every Quartz job class of the repo (abstract ones too: their subclasses are found through them). */
     Map<String, ClassInfo> quartzJobs() {
-        Map<String, ClassInfo> jobs = new LinkedHashMap<>();
-        List<ClassInfo> classes = a.index.classes().stream().filter(c -> !c.isInterface()).toList();
-        for (ClassInfo c : classes) {
-            boolean byType = c.type() != null && QUARTZ_TYPES.stream().anyMatch(t -> TypeUtils.isAssignableTo(t, c.type()));
-            boolean bySource = (c.file().text().contains("org.quartz.") || c.file().text().contains("org.springframework.scheduling.quartz"))
-                    && supertypes(c).stream().anyMatch(n -> QUARTZ_TYPES.contains(n)
-                    || QUARTZ_TYPES.stream().anyMatch(t -> t.endsWith("." + n)));
-            if (byType || bySource) {
-                jobs.put(c.fqn(), c);
-            }
-        }
-        for (ClassInfo c : scheduledJobClasses(classes)) {   // #208: named where it is scheduled (its base class a library's)
-            jobs.putIfAbsent(c.fqn(), c);
-        }
-        boolean more = true;
-        while (more) {   // a class extending a job class of the repo, without a classpath to say so
-            more = false;
-            for (ClassInfo c : classes) {
-                if (jobs.containsKey(c.fqn())) {
-                    continue;
-                }
-                for (String n : supertypes(c)) {
-                    ClassInfo base = jobs.get(n);
-                    if (base == null) {
-                        base = jobs.values().stream().filter(j -> j.simpleName().equals(n)).findFirst().orElse(null);
-                    }
-                    if (base != null) {
-                        jobs.put(c.fqn(), c);
-                        more = true;
-                        break;
-                    }
-                }
-            }
-        }
-        return jobs;
-    }
-
-    /** The names a class extends and implements, as written (generics dropped) and, when resolved, fully qualified. */
-    private static List<String> supertypes(ClassInfo c) {
-        List<org.openrewrite.java.tree.TypeTree> trees = new ArrayList<>();
-        if (c.decl().getExtends() != null) {
-            trees.add(c.decl().getExtends());
-        }
-        if (c.decl().getImplements() != null) {
-            trees.addAll(c.decl().getImplements());
-        }
-        List<String> out = new ArrayList<>();
-        for (var t : trees) {
-            out.add(t.printTrimmed().replaceAll("<.*|\\s+", ""));
-            if (t.getType() instanceof org.openrewrite.java.tree.JavaType.FullyQualified fq && !(fq instanceof org.openrewrite.java.tree.JavaType.Unknown)) {
-                out.add(fq.getFullyQualifiedName());
-            }
-        }
-        return out;
+        return dev.logast.graph.QuartzJobs.find(a.index);   // #232: shared with apply's entrypoints
     }
 
     /**
@@ -1105,7 +1050,6 @@ public final class JavaExtractor implements Extractor {
             + "\\(\\s*((?:[^()]|\\([^()]*\\))+?)\\s*\\)");
     private static final Pattern JOB_CLASS = Pattern.compile("(?:setJobClass|newJob|ofType)\\(\\s*([A-Z]\\w*)\\.class\\s*\\)");
     private static final Pattern JOB_DETAIL = Pattern.compile("(?:setJobDetail|forJob)\\(\\s*([a-z]\\w*)(?:\\(\\)\\.getObject\\(\\))?\\s*\\)");
-    private static final Pattern JOB_CLASS_PARAM = Pattern.compile("(?:setJobClass|newJob|ofType)\\(\\s*([a-z]\\w*)\\s*\\)");
     private static final Pattern DETAIL_NAME = Pattern.compile("(?:setName|withIdentity)\\(\\s*\"([^\"]+)\"");
 
     /** #208: a JobDetail a method builds: the method (its bean), the job's name, the enum constants in its data. */
@@ -1117,19 +1061,7 @@ public final class JavaExtractor implements Extractor {
     /** #208: methods that build a JobDetail of the class they are given ({@code setJobClass(type)} of a parameter). */
     private java.util.Set<String> jobHelpers() {
         if (jobHelpers == null) {
-            java.util.Set<String> out = new java.util.LinkedHashSet<>();
-            for (MethodInfo m : a.index.methods()) {
-                String body = m.decl().getBody() == null ? "" : m.decl().getBody().printTrimmed();
-                Matcher p = JOB_CLASS_PARAM.matcher(body);
-                while (p.find()) {
-                    String param = p.group(1);
-                    if (m.decl().getParameters().stream().anyMatch(x -> x instanceof J.VariableDeclarations vd
-                            && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(param)))) {
-                        out.add(m.name());
-                    }
-                }
-            }
-            jobHelpers = out;
+            jobHelpers = dev.logast.graph.QuartzJobs.helpers(a.index);
         }
         return jobHelpers;
     }
@@ -1145,45 +1077,6 @@ public final class JavaExtractor implements Extractor {
             Matcher hc = Pattern.compile("\\b" + Pattern.quote(h) + "\\(\\s*([A-Z]\\w*)\\.class").matcher(body);
             while (hc.find()) {
                 out.add(hc.group(1));
-            }
-        }
-        return out;
-    }
-
-    private static final Pattern SCHEDULES_CLASS = Pattern.compile("(?:setJobClass|newJob)\\(\\s*([A-Z]\\w*)\\.class\\s*\\)");
-
-    /**
-     * #208: the classes Quartz code schedules ({@code setJobClass(X.class)}, {@code newJob(X.class)}, a helper's argument)
-     * in a file that imports Quartz; {@code X} as that file sees it (imported, same package, else the only class so named).
-     */
-    private java.util.Set<ClassInfo> scheduledJobClasses(List<ClassInfo> classes) {
-        java.util.Set<ClassInfo> out = new java.util.LinkedHashSet<>();
-        for (MethodInfo m : a.index.methods()) {
-            String file = m.owner().file().text();
-            if (m.decl().getBody() == null || !(file.contains("org.quartz") || file.contains("scheduling.quartz"))) {
-                continue;
-            }
-            String body = m.decl().getBody().printTrimmed();
-            List<String> names = new ArrayList<>();
-            Matcher sc = SCHEDULES_CLASS.matcher(body);
-            while (sc.find()) {
-                names.add(sc.group(1));
-            }
-            for (String h : jobHelpers()) {
-                Matcher hc = Pattern.compile("\\b" + Pattern.quote(h) + "\\(\\s*([A-Z]\\w*)\\.class").matcher(body);
-                while (hc.find()) {
-                    names.add(hc.group(1));
-                }
-            }
-            String pkg = m.owner().fqn().contains(".") ? m.owner().fqn().substring(0, m.owner().fqn().lastIndexOf('.')) : "";
-            for (String n : names) {
-                List<ClassInfo> named = classes.stream().filter(c -> c.simpleName().equals(n)).toList();
-                ClassInfo pick = named.stream().filter(c -> file.contains("import " + c.fqn() + ";")).findFirst()
-                        .or(() -> named.stream().filter(c -> c.fqn().equals(pkg.isEmpty() ? n : pkg + "." + n)).findFirst())
-                        .orElse(named.size() == 1 ? named.getFirst() : null);
-                if (pick != null) {
-                    out.add(pick);
-                }
             }
         }
         return out;

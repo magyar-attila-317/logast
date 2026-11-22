@@ -46,7 +46,7 @@ public final class HumanFormat {
         }
 
         List<WorkOrder> auto = orders.stream().filter(WorkOrder::mechanical).toList();
-        List<WorkOrder> text = orders.stream().filter(o -> !o.reportOnly() && !o.slots().isEmpty()).toList();
+        List<WorkOrder> text = orders.stream().filter(o -> !o.reportOnly() && !o.mechanical()).toList();
         // an uncounted outcome is an entry of metrics.yaml (count, tag or skip), not a decision to read about
         List<WorkOrder> outcomes = orders.stream().filter(o -> o.reportOnly() && o.rule().equals(Rules.METRIC_OUTCOME_UNMEASURED)).toList();
         // and a recommended retry is an entry of retry.yaml (#109)

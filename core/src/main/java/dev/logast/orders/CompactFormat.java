@@ -39,7 +39,7 @@ public final class CompactFormat {
                     + "   (places that should log and do)")).append('\n');
         }
         long auto = orders.stream().filter(WorkOrder::mechanical).count();
-        long text = orders.stream().filter(o -> !o.slots().isEmpty()).count();
+        long text = orders.stream().filter(o -> !o.reportOnly() && !o.mechanical()).count();
         long report = orders.stream().filter(WorkOrder::reportOnly).count();
         sb.append(Ansi.bold(orders.size() + " orders")).append(": ").append(Ansi.green(auto + " AUTO")).append(", ")
                 .append(Ansi.cyan(text + " NEEDS TEXT")).append(", ").append(Ansi.magenta(report + " REPORT-ONLY"))
@@ -53,7 +53,7 @@ public final class CompactFormat {
         Map<String, String> ruleById = new HashMap<>();
         orders.forEach(o -> ruleById.put(o.id(), o.rule()));
         for (WorkOrder o : orders) {
-            String kind = o.reportOnly() ? "REPORT-ONLY" : o.slots().isEmpty() ? "AUTO" : "NEEDS TEXT";
+            String kind = o.reportOnly() ? "REPORT-ONLY" : o.mechanical() ? "AUTO" : "NEEDS TEXT";
             sb.append(Ansi.bold(o.id())).append("  ").append(Ansi.severity(o.severity())).append("  ").append(Ansi.kind(kind)).append("  ")
                     .append(Ansi.blue(String.join("+", o.fixes()))).append("  ").append(Ansi.dim(o.file() + ":" + o.line()))
                     .append(o.method() == null ? "" : "  " + Ansi.dim(o.method())).append('\n');

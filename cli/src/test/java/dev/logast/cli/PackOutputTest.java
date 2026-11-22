@@ -45,7 +45,7 @@ class PackOutputTest {
                 class CleanupJob {
                     private int removed;
 
-                    @Scheduled(cron = "0 0 * * * *")
+                    @Scheduled(cron = "${cleanup.cron}")   // #235: a rate the code does not give
                     void cleanup() {
                         removed++;
                     }

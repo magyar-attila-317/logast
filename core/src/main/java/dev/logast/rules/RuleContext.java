@@ -33,6 +33,8 @@ public final class RuleContext {
     final Map<String, String> entryOrders = new HashMap<>();
     /** Entrypoints that ENTRYPOINT_SILENT gives a "started" line. */
     final Set<String> silentPlanned = new HashSet<>();
+    /** #231: method key → the subject of the started line ENTRYPOINT_SILENT writes this pass with generated wording. */
+    final Map<String, String> generatedStart = new HashMap<>();
     private LifecyclePlan lifecycle;
     /** File → rules its {@code logast:ignore-file} comments silence. */
     private final Map<String, Set<String>> fileIgnores = new HashMap<>();

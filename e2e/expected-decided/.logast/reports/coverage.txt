@@ -83,8 +83,8 @@ src/main/java/com/example/e2e/stipend/StipendCalculator.java:32       fixed    L
 src/main/java/com/example/e2e/stipend/StipendCalculator.java:51       fixed    LOG_FORMAT FMT-e804b1
 src/main/java/com/example/e2e/stipend/TallyService.java:22            fixed    REPEATED_LOG_VALUE RLV-1b142f, LOG_FORMAT FMT-7785a4
 src/main/java/com/example/e2e/web/AuditController.java:16             checked  no finding
-src/main/java/com/example/e2e/web/PledgeController.java:59            checked  no finding
-src/main/java/com/example/e2e/web/PledgeDetailsController.java:31     checked  no finding
+src/main/java/com/example/e2e/web/PledgeController.java:59            fixed    MESSAGE_SUGGESTED SUG-4885ca
+src/main/java/com/example/e2e/web/PledgeDetailsController.java:31     fixed    MESSAGE_SUGGESTED SUG-72f478
 src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    MESSAGE_SUGGESTED SUG-08dd18
 # fixed lines are kept while their file is unchanged:
 # src/main/java/com/example/e2e/edge/Audited.java 563619f8202d
@@ -111,4 +111,6 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    M
 # src/main/java/com/example/e2e/stipend/PledgeChecks.java 64aaa89f9d86
 # src/main/java/com/example/e2e/stipend/StipendCalculator.java f4bdb836fbc9
 # src/main/java/com/example/e2e/stipend/TallyService.java 40f0605892c7
+# src/main/java/com/example/e2e/web/PledgeController.java 0267f8379220
+# src/main/java/com/example/e2e/web/PledgeDetailsController.java 1c678dc304c2
 # src/main/java/com/example/e2e/web/QuoteController.java d7974829aeb2

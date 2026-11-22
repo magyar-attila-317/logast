@@ -45,7 +45,8 @@ public record WorkOrder(String id, String rule, List<String> fixes, String sever
     }
 
     public boolean mechanical() {
-        return !edits.isEmpty() && slots.isEmpty();
+        // #231: a slot with generated wording does not wait for a text: it is written marked // logast:wording
+        return !edits.isEmpty() && slots.values().stream().allMatch(s -> s.generated() != null);
     }
 
     public boolean reportOnly() {

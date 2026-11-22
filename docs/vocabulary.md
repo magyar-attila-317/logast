@@ -272,7 +272,10 @@ never counted.
 
 ## Log volume
 
-logast never guesses traffic.
+logast never guesses traffic. The one rate it knows without being told is a schedule's (#235): a `@Scheduled`
+method runs as often as its `cron` (counted over a year), `fixedRate` or `fixedDelay` says (constants and `${…}` from
+the base configuration resolved; for a fixed delay, one run per interval is an upper bound). traffic.yaml shows that
+rate in the entry's comment (`from @Scheduled(cron = "0 */5 * * * *"): 288/day`); a value written there wins.
 - **LOG_IN_LOOP** works from the code alone. It flags an INFO line logged once per collection element on the normal
   path. WARN/ERROR lines and catch blocks are left alone, since those are per failure.
 - **LOG_VOLUME** needs real rates. Run `logast traffic <root>`: it writes `.logast/decisions/traffic.yaml` with every

@@ -1001,7 +1001,9 @@ final class TracingRules {
                 }
                 if (ctx.enabled(Rules.JOB_LAUNCH_UNTRACED) && !propagates && mi.getMethodType() != null) {
                     String owner = mi.getMethodType().getDeclaringType().getFullyQualifiedName();
-                    if (mi.getSimpleName().equals("withImage") && owner.startsWith("io.fabric8.kubernetes.api.model.")) {
+                    if (mi.getSimpleName().equals("triggerJob") && owner.equals("org.quartz.Scheduler")) {
+                        quartzTrigger(m, mi, getCursor(), ordinal[0]++);
+                    } else if (mi.getSimpleName().equals("withImage") && owner.startsWith("io.fabric8.kubernetes.api.model.")) {
                         fabric8(m, mi, ordinal[0]++);
                     } else if (mi.getSimpleName().equals("image") && owner.startsWith("io.kubernetes.client.openapi.models.V1Container")) {
                         jobOrder(m, mi, ordinal[0]++, "Kubernetes container (official client)")
@@ -1037,6 +1039,49 @@ final class TracingRules {
                 .context(ctx.context(m, Pos.start(tree), Text.oneLine(tree.printTrimmed(), 160), null));
         ctx.dependOnStarter(b);
         return b;
+    }
+
+    /** #234: a class that is a Quartz {@code JobListener} (by type, else by the name it implements or extends). */
+    static boolean jobListener(dev.logast.model.ClassInfo c) {
+        return c.type() != null && TypeUtils.isAssignableTo("org.quartz.JobListener", c.type())
+                || dev.logast.graph.QuartzJobs.supertypes(c).stream().anyMatch(n -> n.equals("JobListener") || n.endsWith(".JobListener")
+                || n.equals("JobListenerSupport") || n.endsWith(".JobListenerSupport"));
+    }
+
+    /**
+     * #234: {@code scheduler.triggerJob(key[, data])} starts a Quartz job on a worker thread without the caller's trace.
+     * In a JobListener ({@code jobWasExecuted}: a chain's next step) the finished job's trace is passed on, as the job
+     * kept it in its context ({@link EntrypointRules}); elsewhere the current trace. The job continues it.
+     */
+    private void quartzTrigger(MethodInfo m, J.MethodInvocation mi, Cursor cursor, int ordinal) {
+        SourceFileInfo f = m.file();
+        if (ctx.ignored(f, Pos.line(mi.getName()), Rules.JOB_LAUNCH_UNTRACED)) {
+            return;
+        }
+        String listenerContext = jobListener(m.owner()) ? EntrypointRules.quartzContext(m) : null;
+        String trace = listenerContext != null ? "TraceContextEnv.from(" + listenerContext + ".get(TraceContextEnv.KEY))"
+                : "TraceContextEnv.current()";
+        OrderBuilder b = jobOrder(m, mi, ordinal, "Quartz job (triggerJob)");
+        List<Expression> args = mi.getArguments();
+        if (args.size() == 1 && !(args.getFirst() instanceof J.Empty)) {
+            b.edit(Edit.insert(f.relPath(), Pos.end(args.getFirst()), ", new JobDataMap(" + trace + ")"));
+            b.edits(JavaEdits.imports(f, ctx.support("TraceContextEnv"), "org.quartz.JobDataMap"));
+        } else if (args.size() == 2 && args.get(1) instanceof J.Identifier data) {
+            J stmt = CoverageRules.enclosingStatement(m, mi);
+            if (stmt == null) {
+                b.suggestion("Put " + trace + " into the JobDataMap passed to triggerJob.");
+                return;
+            }
+            int[] lines = JavaEdits.statementLines(f.text(), stmt);
+            b.edit(Edit.insert(f.relPath(), lines[0], Text.indentAt(f.text(), Pos.start(stmt)) + data.getSimpleName()
+                    + ".putAll(" + trace + ");\n"));
+            b.edits(JavaEdits.imports(f, ctx.support("TraceContextEnv")));
+        } else {
+            b.suggestion("Put " + trace + " into the JobDataMap passed to triggerJob: the job continues the trace it carries.");
+            return;
+        }
+        b.suggestion("The job's ObservedContext continues the trace from its merged JobDataMap (remoteParent), so the whole "
+                + (listenerContext != null ? "chain" : "run") + " is one trace.");
     }
 
     /** {@code .withImage(x)} → {@code .withImage(x).addAllToEnv(<trace env vars>)}. */

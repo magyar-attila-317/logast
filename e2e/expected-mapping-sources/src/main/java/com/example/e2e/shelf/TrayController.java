@@ -1,10 +1,12 @@
 package com.example.e2e.shelf;
 
 import com.example.lib.shelf.ReadOnlyGet;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 
+@Slf4j
 @TrayEndpoint
 public class TrayController {
     @GetMapping({"/{trayId}", "/by-label/{label}"})
@@ -14,6 +16,7 @@ public class TrayController {
 
     @PutMapping(path = {"/{trayId}/seal", "/by-label/{label}/seal"})
     public String seal(@PathVariable(required = false) String trayId, @PathVariable(required = false) String label) {
+        log.info("Tray seal started"); // logast:wording
         return "sealed";
     }
 

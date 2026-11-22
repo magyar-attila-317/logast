@@ -28,7 +28,7 @@ public final class GithubAnnotations {
             String title = "logast " + o.rule() + (label == null ? "" : " (" + label + ")");
             String text = (o.title() == null ? o.rule() : o.title())
                     + (o.suggestion() == null ? "" : "\n" + o.suggestion())
-                    + "\n[" + o.id() + (o.reportOnly() ? ", report-only" : o.slots().isEmpty() ? ", fix: logast apply" : ", fix: needs text") + "]";
+                    + "\n[" + o.id() + (o.reportOnly() ? ", report-only" : o.mechanical() ? ", fix: logast apply" : ", fix: needs text") + "]";
             out.append("::").append(level).append(" file=").append(property(o.file())).append(",line=").append(Math.max(o.line(), 1))
                     .append(",title=").append(property(title)).append("::").append(data(text)).append('\n');
         }

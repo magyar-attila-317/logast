@@ -22,9 +22,7 @@ REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeS
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
 REPORT-ONLY SPAN_NOT_CLOSED src/main/java/com/example/e2e/stock/StockRouting.java:20
 REPORT-ONLY SPAN_NOT_CLOSED src/main/java/com/example/e2e/stock/StockRouting.java:27
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
-NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/PledgeController.java:55
-NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/PledgeDetailsController.java:27
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
@@ -65,7 +63,11 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:21
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:20
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:22
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:27
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:29
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

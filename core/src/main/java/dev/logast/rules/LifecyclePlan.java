@@ -48,7 +48,7 @@ public final class LifecyclePlan {
 
     public static Kind kindOf(Entrypoint ep) {
         return switch (ep.kind()) {
-            case SCHEDULED, BATCH, MAIN, STEP -> Kind.RUN;
+            case SCHEDULED, BATCH, MAIN, STEP, QUARTZ -> Kind.RUN;
             // gRPC: the call ends with onCompleted, which may come later than the method; its status and the server
             // observation are the outcome, like an HTTP access log (#15)
             case HTTP, GRPC -> Kind.HTTP;
@@ -137,6 +137,9 @@ public final class LifecyclePlan {
     Map<String, String> events(MethodInfo m) {
         Map<String, String> out = new LinkedHashMap<>();
         roles(m).forEach(role -> out.put(role, ""));
+        if (ctx.generatedStart.containsKey(m.key())) {
+            out.put("started", ctx.generatedStart.get(m.key()));   // #231: written in this pass
+        }
         for (LogCall lc : m.facts().logs) {
             if (!info(lc) || lc.inCatch() != null || !(lc.template() instanceof J.Literal l) || !(l.getValue() instanceof String raw)) {
                 continue;

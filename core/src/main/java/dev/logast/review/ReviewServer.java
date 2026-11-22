@@ -128,7 +128,7 @@ public final class ReviewServer {
             m.put("rule", o.rule());
             m.put("fixes", o.fixes());
             m.put("severity", o.severity());
-            m.put("kind", o.reportOnly() ? "report" : o.slots().isEmpty() ? "auto" : "text");
+            m.put("kind", o.reportOnly() ? "report" : o.mechanical() ? "auto" : "text");
             m.put("where", o.file() + ":" + o.line());
             m.put("method", o.method());
             m.put("title", o.title());

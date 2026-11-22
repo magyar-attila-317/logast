@@ -1,11 +1,13 @@
 package com.example.e2e.reactive;
 
 import com.example.e2e.messaging.ReactivePledgeLookup;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+@Slf4j
 @Component
 public class ReactivePledgeHandler {
     private final ReactivePledgeLookup lookup;
@@ -20,6 +22,7 @@ public class ReactivePledgeHandler {
     }
 
     public Mono<ServerResponse> register(ServerRequest request) {
+        log.info("Reactive route creation started"); // logast:wording
         return request.bodyToMono(String.class).flatMap(body -> ServerResponse.accepted().build());
     }
 

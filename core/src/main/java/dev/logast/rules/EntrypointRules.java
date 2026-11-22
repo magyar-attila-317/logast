@@ -12,6 +12,7 @@ import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Statement;
+import org.openrewrite.java.tree.TypeUtils;
 
 import java.util.*;
 
@@ -125,16 +126,33 @@ final class EntrypointRules {
             } else {
                 extra.addAll(logger.edits());
                 top.append(logger.name()).append('.').append(ctx.policy.logging().entryLevel()).append("(\"{{MSG}}\");\n");
+                String subject = Wording.entrySubject(ep);   // #231: written when nobody writes a text
+                if (subject != null) {
+                    // its family sees the line in this pass: siblings get theirs now, not on the rescan (LIFECYCLE_UNEVEN)
+                    ctx.generatedStart.put(m.key(), subject);
+                }
                 b.slot("MSG", new Slot("Entry log for " + ep.label() + " (" + m.label()
                         + "): what is starting, in domain terms, e.g. 'Order shipment processing started'.",
                         List.of(), ctx.glossary.terms(), null,
-                        ctx.phrasing.canonicalOf("started") == null ? null : "started", ctx.phrasing.canonicalOf("started")));
+                        ctx.phrasing.canonicalOf("started") == null ? null : "started", ctx.phrasing.canonicalOf("started"),
+                        subject == null ? null : Wording.event(ctx, subject, "started")));
             }
         }
 
         String replacement;
         if (notObserved) {
             List<String> chain = new ArrayList<>();
+            String quartz = ep.kind() == Entrypoint.Kind.QUARTZ ? quartzContext(m) : null;
+            if (quartz != null) {
+                // #234: a job started with a trace in its data (a chain's previous step) continues it; in a chain, the
+                // job keeps its own trace where the JobListener that starts the next step finds it
+                chain.add(".remoteParent(TraceContextEnv.carrier(" + quartz + ".getMergedJobDataMap()))");
+                if (quartzChain()) {
+                    String put = quartz + ".put(TraceContextEnv.KEY, TraceContextEnv.current());\n";
+                    top.insert(0, top.isEmpty() ? put : put + indent + unit);
+                }
+                extra.addAll(JavaEdits.imports(f, ctx.support("TraceContextEnv")));
+            }
             for (DomainValues.Value v : missing) {
                 chain.add(".mdc(\"" + v.key() + "\", " + v.expr() + ")");
             }
@@ -197,7 +215,90 @@ final class EntrypointRules {
      * is a separate decision.
      */
     private List<DomainValues.Value> entryValues(Entrypoint ep, MethodInfo m) {
+        if (ep.kind() == Entrypoint.Kind.QUARTZ) {
+            return quartzValues(m);
+        }
         return ep.kind() == Entrypoint.Kind.EVENT ? ctx.domain.fromVars(params(m)) : ctx.domain.fromParams(params(m));
+    }
+
+    /** The name of a Quartz job method's {@code JobExecutionContext} parameter, or null. */
+    static String quartzContext(MethodInfo m) {
+        for (Statement s : m.decl().getParameters()) {
+            if (s instanceof J.VariableDeclarations vd && vd.getTypeExpression() != null
+                    && (TypeUtils.isOfClassType(vd.getType(), "org.quartz.JobExecutionContext")
+                    || vd.getTypeExpression().printTrimmed().replaceAll("\\s+", "").endsWith("JobExecutionContext"))) {
+                return vd.getVariables().getFirst().getSimpleName();
+            }
+        }
+        return null;
+    }
+
+    private Boolean quartzChain;
+
+    /** #234: a JobListener of the project starts jobs ({@code triggerJob}): the jobs run as a chain. */
+    private boolean quartzChain() {
+        if (quartzChain == null) {
+            quartzChain = ctx.a.index.classes().stream().anyMatch(c -> TracingRules.jobListener(c)
+                    && c.file().text().contains("triggerJob("));
+        }
+        return quartzChain;
+    }
+
+    private static final java.util.Set<String> DATA_GETTERS = java.util.Set.of("get", "getString", "getInt", "getIntValue",
+            "getLong", "getLongValue", "getBoolean", "getBooleanValue", "getDouble", "getDoubleValue", "getIntegerFromString",
+            "getLongFromString", "getBooleanFromString", "getDoubleFromString", "getFloat", "getFloatValue", "getChar");
+
+    /**
+     * #233: a Quartz job's MDC: the name of the JobDetail it runs as ({@code jobName}: one class runs under several
+     * JobDetails and in chains), and each JobDataMap key its {@code execute} reads by a literal or constant name, read
+     * again from the merged map (the job's data with the trigger's on top, as Quartz merges it).
+     */
+    private List<DomainValues.Value> quartzValues(MethodInfo m) {
+        String context = quartzContext(m);
+        if (context == null || m.decl().getBody() == null) {
+            return List.of();
+        }
+        List<DomainValues.Value> out = new ArrayList<>();
+        out.add(new DomainValues.Value(ctx.policy.styledKey("jobName"), context + ".getJobDetail().getKey().getName()"));
+        Set<String> maps = new HashSet<>();   // local variables holding the job's data map
+        Set<String> keys = new LinkedHashSet<>();
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable v, Integer p) {
+                if (v.getInitializer() != null && dataMap(v.getInitializer(), maps)) {
+                    maps.add(v.getSimpleName());
+                }
+                return super.visitVariable(v, p);
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                if (DATA_GETTERS.contains(mi.getSimpleName()) && mi.getSelect() != null && dataMap(mi.getSelect(), maps)
+                        && mi.getArguments().size() == 1) {
+                    String key = dev.logast.graph.Constants.string(ctx.a.index, mi.getArguments().getFirst());
+                    if (key != null && key.matches("[A-Za-z][A-Za-z0-9_.-]*")) {
+                        keys.add(key);
+                    }
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        for (String k : keys) {
+            String mdc = ctx.policy.styledKey(k);
+            if (out.stream().noneMatch(v -> v.key().equals(mdc))) {
+                out.add(new DomainValues.Value(mdc, context + ".getMergedJobDataMap().get(" + Text.javaString(k) + ")"));
+            }
+        }
+        return out;
+    }
+
+    /** {@code context.getMergedJobDataMap()}, {@code context.getJobDetail().getJobDataMap()}, or a variable holding one. */
+    private static boolean dataMap(Expression e, Set<String> maps) {
+        if (e instanceof J.Identifier id) {
+            return maps.contains(id.getSimpleName());
+        }
+        return e instanceof J.MethodInvocation mi && (mi.getSimpleName().equals("getMergedJobDataMap")
+                || mi.getSimpleName().equals("getJobDataMap"));
     }
 
     /**

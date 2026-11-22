@@ -627,7 +627,7 @@ final class AuditRules {
     /** Entrypoints with no user behind them: a job, a batch step, a message, startup. */
     private static final Set<Entrypoint.Kind> NO_USER = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
             Entrypoint.Kind.MAIN, Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.STEP,
-            Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM);
+            Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM, Entrypoint.Kind.QUARTZ);
 
     /** Audit methods (in the code) that read the security context themselves. */
     private final Set<String> selfActor = new HashSet<>();

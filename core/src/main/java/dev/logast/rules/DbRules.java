@@ -33,7 +33,7 @@ import java.util.regex.Pattern;
  * </ul>
  */
 final class DbRules {
-    static final String WORDING_MARKER = "// logast:wording";
+    static final String WORDING_MARKER = dev.logast.orders.Slot.WORDING_MARKER;
 
     private static final Pattern WRITE = Pattern.compile("(?is)\\b(insert\\s+into|update\\s+[\\w.\"]+\\s+set|delete\\s+from|merge\\s+into)\\b");
     private static final Pattern UPSERT = Pattern.compile("(?is)on\\s+conflict.*do\\s+update|\\bmerge\\s+into\\b|on\\s+duplicate\\s+key\\s+update");
@@ -44,7 +44,7 @@ final class DbRules {
             "queryForMap", "queryForRowSet");
     private static final Set<String> CLIENT_TERMINALS = Set.of("update", "list", "single", "optional", "set");
     private static final Set<Entrypoint.Kind> LOW_FREQUENCY = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
-            Entrypoint.Kind.MAIN, Entrypoint.Kind.STEP);
+            Entrypoint.Kind.MAIN, Entrypoint.Kind.STEP, Entrypoint.Kind.QUARTZ);
 
     private final RuleContext ctx;
     private final Map<String, List<int[]>> loopRanges = new HashMap<>();

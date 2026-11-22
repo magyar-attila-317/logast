@@ -914,7 +914,8 @@ public final class Main {
         public Integer call() throws IOException {
             Analysis a = Logast.analyse(root(), classpath(), policy());
             Path file = traffic != null ? traffic : root().resolve(dev.logast.LogastDir.TRAFFIC);
-            dev.logast.Traffic existing = Files.exists(file) ? dev.logast.Traffic.load(root(), file) : dev.logast.Traffic.none();
+            dev.logast.Traffic existing = (Files.exists(file) ? dev.logast.Traffic.load(root(), file) : dev.logast.Traffic.none())
+                    .withSchedules(a.traffic.schedules());
             Files.createDirectories(file.toAbsolutePath().getParent());
             Files.writeString(file, dev.logast.Traffic.template(a.entrypoints, existing));
             long filled = a.entrypoints.stream().filter(ep -> existing.perDay(ep.label()) != null).count();

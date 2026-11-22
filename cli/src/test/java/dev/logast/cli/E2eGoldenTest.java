@@ -1358,8 +1358,10 @@ abstract class E2eGoldenTest {
                     """);
         });
         // the started lines of the controller are written and applied: each lands inside the MDC scope its method opens with
+        // (#231: the first apply writes generated ones; messages.yaml then asks for domain words in the same form)
         long filled = editDecisions(app.resolve(".logast/decisions/messages.yaml"), root -> fillMessages(root, (hint, where) ->
-                hint.matches("Entry log for [^\"]*") && where.startsWith("src/main/java/com/example/e2e/locker/LockerController")
+                (hint.matches("Entry log for [^\"]*") || hint.startsWith("Say what this is in domain terms, keeping the form '{subject} started'"))
+                        && where.startsWith("src/main/java/com/example/e2e/locker/LockerController")
                         ? "Locker change started" : null, false));
         assertThat(filled).as("messages.yaml asks for the controller's started lines").isPositive();
         String third = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
@@ -3795,6 +3797,254 @@ abstract class E2eGoldenTest {
                     public class StreamBridge {
                     }
                     """);
+
+    /** Stand-ins for Quartz and Spring's QuartzJobBean, which are not on the e2e classpath (#232): the types the scenario uses. */
+    private static final Map<String, String> QUARTZ_STUBS = Map.ofEntries(
+            Map.entry("org/quartz/Job.java", """
+                    package org.quartz;
+
+                    public interface Job {
+                        void execute(JobExecutionContext context) throws JobExecutionException;
+                    }
+                    """),
+            Map.entry("org/quartz/JobExecutionContext.java", """
+                    package org.quartz;
+
+                    public interface JobExecutionContext {
+                        Scheduler getScheduler();
+
+                        JobDetail getJobDetail();
+
+                        JobDataMap getMergedJobDataMap();
+
+                        void put(Object key, Object value);
+
+                        Object get(Object key);
+                    }
+                    """),
+            Map.entry("org/quartz/JobDetail.java", """
+                    package org.quartz;
+
+                    public interface JobDetail {
+                        JobKey getKey();
+
+                        JobDataMap getJobDataMap();
+                    }
+                    """),
+            Map.entry("org/quartz/JobKey.java", """
+                    package org.quartz;
+
+                    public class JobKey {
+                        private final String name;
+
+                        public JobKey(String name) {
+                            this.name = name;
+                        }
+
+                        public String getName() {
+                            return name;
+                        }
+                    }
+                    """),
+            Map.entry("org/quartz/JobDataMap.java", """
+                    package org.quartz;
+
+                    import java.util.HashMap;
+                    import java.util.Map;
+
+                    public class JobDataMap extends HashMap<String, Object> {
+                        public JobDataMap() {
+                        }
+
+                        public JobDataMap(Map<?, ?> map) {
+                            map.forEach((k, v) -> put(String.valueOf(k), v));
+                        }
+
+                        public String getString(String key) {
+                            return (String) get(key);
+                        }
+
+                        public int getIntValue(String key) {
+                            return Integer.parseInt(String.valueOf(get(key)));
+                        }
+                    }
+                    """),
+            Map.entry("org/quartz/SchedulerException.java", """
+                    package org.quartz;
+
+                    public class SchedulerException extends Exception {
+                    }
+                    """),
+            Map.entry("org/quartz/JobExecutionException.java", """
+                    package org.quartz;
+
+                    public class JobExecutionException extends SchedulerException {
+                    }
+                    """),
+            Map.entry("org/quartz/Scheduler.java", """
+                    package org.quartz;
+
+                    public interface Scheduler {
+                        void triggerJob(JobKey key) throws SchedulerException;
+
+                        void triggerJob(JobKey key, JobDataMap data) throws SchedulerException;
+                    }
+                    """),
+            Map.entry("org/quartz/JobListener.java", """
+                    package org.quartz;
+
+                    public interface JobListener {
+                        String getName();
+
+                        void jobToBeExecuted(JobExecutionContext context);
+
+                        void jobExecutionVetoed(JobExecutionContext context);
+
+                        void jobWasExecuted(JobExecutionContext context, JobExecutionException jobException);
+                    }
+                    """),
+            Map.entry("org/springframework/scheduling/quartz/QuartzJobBean.java", """
+                    package org.springframework.scheduling.quartz;
+
+                    import org.quartz.Job;
+                    import org.quartz.JobExecutionContext;
+                    import org.quartz.JobExecutionException;
+
+                    public abstract class QuartzJobBean implements Job {
+                        @Override
+                        public final void execute(JobExecutionContext context) throws JobExecutionException {
+                            executeInternal(context);
+                        }
+
+                        protected abstract void executeInternal(JobExecutionContext context) throws JobExecutionException;
+                    }
+                    """));
+
+    private static final String SWEEP = "src/main/java/com/example/e2e/sweep/";
+
+    /** #232: a Quartz job, a QuartzJobBean and a JobListener that starts the next job of the chain. */
+    private static final IoAction QUARTZ_JOBS = app -> {
+        Path dir = Files.createDirectories(app.resolve(SWEEP));
+        Files.writeString(dir.resolve("PledgeSweepJob.java"), """
+                package com.example.e2e.sweep;
+
+                import org.quartz.Job;
+                import org.quartz.JobDataMap;
+                import org.quartz.JobExecutionContext;
+                import org.quartz.JobExecutionException;
+                import org.quartz.JobKey;
+                import org.quartz.SchedulerException;
+
+                /** Sweeps one region's expired pledges, then has them audited. */
+                public class PledgeSweepJob implements Job {
+                    @Override
+                    public void execute(JobExecutionContext context) throws JobExecutionException {
+                        String region = context.getMergedJobDataMap().getString("region");
+                        SweepLedger.sweep(region);
+                        JobDataMap next = new JobDataMap();
+                        next.put("region", region);
+                        try {
+                            context.getScheduler().triggerJob(new JobKey("pledgeAudit"), next);
+                        } catch (SchedulerException e) {
+                            throw new JobExecutionException();
+                        }
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("PledgeReportJob.java"), """
+                package com.example.e2e.sweep;
+
+                import org.quartz.JobDataMap;
+                import org.quartz.JobExecutionContext;
+                import org.springframework.scheduling.quartz.QuartzJobBean;
+
+                /** Reports the pledges of the last days. */
+                public class PledgeReportJob extends QuartzJobBean {
+                    static final String DAYS = "days";
+
+                    @Override
+                    protected void executeInternal(JobExecutionContext context) {
+                        JobDataMap data = context.getMergedJobDataMap();
+                        SweepLedger.report(data.getIntValue(DAYS));
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("SweepLedger.java"), """
+                package com.example.e2e.sweep;
+
+                final class SweepLedger {
+                    private SweepLedger() {
+                    }
+
+                    static void sweep(String region) {
+                    }
+
+                    static void report(int days) {
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("PledgeChainListener.java"), """
+                package com.example.e2e.sweep;
+
+                import org.quartz.JobExecutionContext;
+                import org.quartz.JobExecutionException;
+                import org.quartz.JobKey;
+                import org.quartz.JobListener;
+                import org.quartz.SchedulerException;
+
+                /** After the sweep, the report: the chain's next step. */
+                public class PledgeChainListener implements JobListener {
+                    @Override
+                    public String getName() {
+                        return "pledgeChain";
+                    }
+
+                    @Override
+                    public void jobToBeExecuted(JobExecutionContext context) {
+                    }
+
+                    @Override
+                    public void jobExecutionVetoed(JobExecutionContext context) {
+                    }
+
+                    @Override
+                    public void jobWasExecuted(JobExecutionContext context, JobExecutionException jobException) {
+                        try {
+                            context.getScheduler().triggerJob(new JobKey("pledgeReport"));
+                        } catch (SchedulerException e) {
+                            throw new IllegalStateException(e);
+                        }
+                    }
+                }
+                """);
+    };
+
+    /**
+     * #232: Quartz jobs are entrypoints, found as the export finds them: {@code execute} of a Job and
+     * {@code executeInternal} of a QuartzJobBean. Quartz observes nothing, so each is wrapped in an ObservedContext.
+     * #233: its MDC carries the JobDetail's name and the JobDataMap keys it reads (a literal, a constant). #234: the job
+     * continues a trace carried in its data; in a chain it keeps its own trace in its context, and the JobListener's
+     * triggerJob passes that on, so the chain is one trace; a job starting another passes the current trace.
+     */
+    @Test
+    void quartzJobsAreTracedRunsWithTheirJobNameAndDataInMdc() throws IOException {
+        String classpath = libraryClasspath("quartz", QUARTZ_STUBS).toString();
+        Map<String, String> actual = migrate(tmp.resolve("app"), classpath, QUARTZ_JOBS);
+        assertThat(actual.get(".logast/decisions/traffic.yaml")).as("#232: both jobs are entrypoints")
+                .contains("\"quartz PledgeSweepJob.execute\"").contains("\"quartz PledgeReportJob.executeInternal\"");
+        assertThat(actual.get(SWEEP + "PledgeSweepJob.java")).as("#232 wrapped; #233 job name and data key in MDC; #234 continues a carried trace")
+                .contains("ObservedContext.entrypoint(")
+                .contains(".remoteParent(TraceContextEnv.carrier(context.getMergedJobDataMap()))")
+                .contains(".mdc(\"jobName\", context.getJobDetail().getKey().getName())")
+                .contains(".mdc(\"region\", context.getMergedJobDataMap().get(\"region\"))")
+                .as("#234: in a chain the job keeps its trace for the listener").contains("context.put(TraceContextEnv.KEY, TraceContextEnv.current());")
+                .as("#234: the job it starts gets the current trace").contains("next.putAll(TraceContextEnv.current());");
+        assertThat(actual.get(SWEEP + "PledgeReportJob.java")).as("#233: a key read through a variable and a constant")
+                .contains(".mdc(\"days\", context.getMergedJobDataMap().get(\"days\"))");
+        assertThat(actual.get(SWEEP + "PledgeChainListener.java")).as("#234: the finished job's trace goes to the next step")
+                .contains("triggerJob(new JobKey(\"pledgeReport\"), new JobDataMap(TraceContextEnv.from(context.get(TraceContextEnv.KEY))))");
+        golden(EXPECTED.resolveSibling("expected-quartz-jobs"), actual);
+    }
 
     /** Stubs compiled into a jar (logast leaves class folders out of type attribution), and a classpath file with it. */
     private Path libraryClasspath(String name, Map<String, String> stubs) throws IOException {

@@ -1,4 +1,4 @@
-package dev.logast.kb;
+package dev.logast.facts;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -178,6 +178,14 @@ public final class Cron {
             return dom || dow;   // Vixie cron: either restricted day field matching fires
         }
         return dom && dow;
+    }
+
+    /** How often it fires on a day, ignoring daylight-saving changes (#235: runs per day without listing them). */
+    public long countOn(LocalDate day) {
+        if (!months.get(day.getMonthValue()) || !dayMatches(day)) {
+            return 0;
+        }
+        return (long) hours.cardinality() * minutes.cardinality() * seconds.cardinality();
     }
 
     /** The times it fires on a day, in the zone (a time skipped by a DST change does not fire, a repeated one once). */

@@ -39,7 +39,7 @@ final class CoverageRules {
     private static final Set<Entrypoint.Kind> JOBS = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
             Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.EVENT,
             Entrypoint.Kind.CUSTOM, Entrypoint.Kind.WEBSOCKET, Entrypoint.Kind.STEP, Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS,
-            Entrypoint.Kind.STREAM, Entrypoint.Kind.REDIS, Entrypoint.Kind.INTEGRATION);
+            Entrypoint.Kind.STREAM, Entrypoint.Kind.REDIS, Entrypoint.Kind.INTEGRATION, Entrypoint.Kind.QUARTZ);
     private static final Set<String> REPO_WRITES = Set.of("save", "saveAll", "saveAndFlush", "saveAllAndFlush", "delete",
             "deleteById", "deleteAll", "deleteAllById", "deleteAllInBatch");
     private static final Set<String> EM_WRITES = Set.of("persist", "merge", "remove");
@@ -61,7 +61,8 @@ final class CoverageRules {
             anyPath.addAll(ctx.a.paths.reachableFrom(ep));
             if (JOBS.contains(ep.kind()) && !ep.method().owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
                 jobMethods.add(ep.method().key());
-                if (ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.STEP) {
+                if (ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.STEP
+                        || ep.kind() == Entrypoint.Kind.QUARTZ) {
                     runMethods.add(ep.method().key());
                 }
                 nearJob.add(ep.method().key());
@@ -532,8 +533,43 @@ final class CoverageRules {
             int[] lines = JavaEdits.statementLines(text, stmt);
             b.edit(Edit.insert(f.relPath(), lines[1], Text.indentAt(text, Pos.start(stmt)) + logLine(logger.name(), "info", "{{MSG}}", values) + "\n"));
         }
+        String changed = changed(mi, arg);   // #231: written when nobody writes a text
         b.slot("MSG", slot("What changed, in domain terms, e.g. 'Order cancelled' or 'Shift closed'",
-                values.stream().map(v -> v[0]).toList(), null));
+                values.stream().map(v -> v[0]).toList(), null).withGenerated(changed));
+    }
+
+    /**
+     * #231: "Owner saved", "Pets saved", "Order deleted": the entity written (the argument's type, a collection's
+     * element type, else the repository's name without "Repository") and the verb's past tense. Null without an entity.
+     */
+    private String changed(J.MethodInvocation mi, Expression arg) {
+        String name = mi.getSimpleName();
+        String verb = name.startsWith("save") || name.equals("persist") ? "saved" : name.equals("merge") ? "updated"
+                : name.startsWith("delete") || name.equals("remove") ? "deleted" : null;
+        if (verb == null) {
+            return null;
+        }
+        boolean many = name.contains("All");
+        String entity = null;
+        JavaType t = arg == null ? null : arg.getType();
+        if (t instanceof JavaType.Parameterized pt && TypeUtils.isAssignableTo("java.lang.Iterable", pt) && pt.getTypeParameters().size() == 1) {
+            t = pt.getTypeParameters().getFirst();
+            many = true;
+        }
+        JavaType.FullyQualified fq = TypeUtils.asFullyQualified(t);
+        if (fq != null && !name.endsWith("ById") && ctx.a.index.clazz(fq.getFullyQualifiedName()) != null) {
+            entity = fq.getClassName().substring(fq.getClassName().lastIndexOf('.') + 1);
+        } else if (mi.getMethodType() != null && !name.equals("merge") && !name.equals("persist") && !name.equals("remove")) {
+            String repo = mi.getMethodType().getDeclaringType().getClassName();
+            repo = repo.substring(repo.lastIndexOf('.') + 1);
+            String base = repo.replaceAll("(Repository|Repo|Dao|DAO)$", "");
+            entity = base.equals(repo) || base.isEmpty() ? null : base;
+        }
+        if (entity == null) {
+            return null;
+        }
+        String words = Wording.words(entity);
+        return Wording.capital((many ? words + (words.endsWith("s") ? "" : "s") : words) + " " + verb);
     }
 
     /** The values that identify what was written: an entity's id, a collection's size, or the id passed in. */

@@ -449,19 +449,37 @@ public final class Applier {
         for (Edit e : o.edits()) {
             String text = e.text();
             for (Map.Entry<String, Slot> s : o.slots().entrySet()) {
-                String value = fill.slots().get(s.getKey()).strip();
+                String written = fill == null || fill.slots().get(s.getKey()) == null ? "" : fill.slots().get(s.getKey()).strip();
+                // #231: nobody wrote a text: the generated one, marked so MESSAGE_SUGGESTED asks for better words
+                boolean generated = written.isEmpty() && s.getValue().generated() != null;
+                String value = generated ? s.getValue().generated() : written;
                 List<String> keys = new ArrayList<>(s.getValue().keys());
                 if (s.getKey().equals(o.context().argsSlot())) {
                     keys.addAll(extra);
                 }
                 String rendered = Text.javaString(value);
                 rendered = rendered.substring(1, rendered.length() - 1) + MessageTemplate.suffix(keys);
-                text = text.replace("{{" + s.getKey() + "}}", rendered);
+                String placeholder = "{{" + s.getKey() + "}}";
+                int at = text.indexOf(placeholder);
+                text = text.replace(placeholder, rendered);
+                if (generated && at >= 0) {
+                    text = markWording(text, at + rendered.length());
+                }
             }
             text = text.replace("{{ARGS}}", String.join("", extra.stream().map(a -> ", " + a).toList()));
             out.add(new Edit(e.file(), e.kind(), e.start(), e.end(), text));
         }
         return out;
+    }
+
+    /** #231: {@code // logast:wording} after the statement that ends on the line of {@code from}, when it ends there. */
+    static String markWording(String text, int from) {
+        int eol = text.indexOf('\n', from);
+        int end = eol < 0 ? text.length() : eol;
+        if (!text.substring(from, end).stripTrailing().endsWith(";")) {
+            return text;
+        }
+        return text.substring(0, end).stripTrailing() + " " + Slot.WORDING_MARKER + text.substring(end);
     }
 
     /**

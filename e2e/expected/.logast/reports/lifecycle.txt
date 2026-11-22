@@ -1,27 +1,27 @@
 http (12)
-  DELETE /pledges/{pledgeId}  src/main/java/com/example/e2e/web/PledgeController.java:48
+  DELETE /pledges/{pledgeId}  src/main/java/com/example/e2e/web/PledgeController.java:50
     start: none (not needed)   outcome: present (access log / http.server.requests)
   GET /audit/settings  src/main/java/com/example/e2e/web/AuditController.java:15
     start: none (not needed)   outcome: present (access log / http.server.requests)
-  GET /pledges  src/main/java/com/example/e2e/web/PledgeController.java:24
+  GET /pledges  src/main/java/com/example/e2e/web/PledgeController.java:26
     start: none (not needed)   outcome: present (access log / http.server.requests)
-  GET /pledges/{pledgeId}/details  src/main/java/com/example/e2e/web/PledgeDetailsController.java:20
+  GET /pledges/{pledgeId}/details  src/main/java/com/example/e2e/web/PledgeDetailsController.java:22
     start: none (not needed)   outcome: present (access log / http.server.requests)
   GET /quotes/{productId}  src/main/java/com/example/e2e/web/QuoteController.java:17
     start: none (not needed)   outcome: present (access log / http.server.requests)
   GET /quotes/{productId}/refresh  src/main/java/com/example/e2e/web/QuoteController.java:25
     start: none (not needed)   outcome: present (access log / http.server.requests)
-  POST /admin/pledges/{pledgeId}/revoke  src/main/java/com/example/e2e/web/PledgeController.java:55
-    start: none (ENTRYPOINT_SILENT)   outcome: present (access log / http.server.requests)
-  POST /orders  src/main/java/com/example/e2e/web/PledgeController.java:60
+  POST /admin/pledges/{pledgeId}/revoke  src/main/java/com/example/e2e/web/PledgeController.java:57
+    start: present (not needed)   outcome: present (access log / http.server.requests)
+  POST /orders  src/main/java/com/example/e2e/web/PledgeController.java:65
     start: none (not needed)   outcome: present (access log / http.server.requests)
-  POST /pledges/allot  src/main/java/com/example/e2e/web/PledgeController.java:43
+  POST /pledges/allot  src/main/java/com/example/e2e/web/PledgeController.java:45
     start: none (not needed)   outcome: present (access log / http.server.requests)
-  POST /pledges/{pledgeId}/hold  src/main/java/com/example/e2e/web/PledgeDetailsController.java:27
-    start: none (ENTRYPOINT_SILENT)   outcome: present (access log / http.server.requests)
-  POST /pledges/{pledgeId}/publish  src/main/java/com/example/e2e/web/PledgeController.java:29
+  POST /pledges/{pledgeId}/hold  src/main/java/com/example/e2e/web/PledgeDetailsController.java:29
+    start: present (not needed)   outcome: present (access log / http.server.requests)
+  POST /pledges/{pledgeId}/publish  src/main/java/com/example/e2e/web/PledgeController.java:31
     start: none (not needed)   outcome: present (access log / http.server.requests)
-  POST /pledges/{pledgeId}/use  src/main/java/com/example/e2e/web/PledgeController.java:36
+  POST /pledges/{pledgeId}/use  src/main/java/com/example/e2e/web/PledgeController.java:38
     start: none (not needed)   outcome: present (access log / http.server.requests)
 message (6)
   @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)  src/main/java/com/example/e2e/job/SettlementJobExecutor.java:17

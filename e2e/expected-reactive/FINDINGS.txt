@@ -25,11 +25,8 @@ REPORT-ONLY MISSING_DOMAIN_MDC src/main/java/com/example/e2e/reactive/ReactivePl
 REPORT-ONLY MISSING_DOMAIN_MDC src/main/java/com/example/e2e/reactive/ReactivePledgeController.java:36
 REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/reactive/ReactivePledgeController.java:37
 REPORT-ONLY MISSING_DOMAIN_MDC src/main/java/com/example/e2e/reactive/ReactivePledgeController.java:42
-NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/reactive/ReactivePledgeHandler.java:22
-REPORT-ONLY AUDIT_MISSING src/main/java/com/example/e2e/reactive/ReactivePledgeHandler.java:26
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
-NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/PledgeController.java:55
-NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/PledgeDetailsController.java:27
+REPORT-ONLY AUDIT_MISSING src/main/java/com/example/e2e/reactive/ReactivePledgeHandler.java:29
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
@@ -71,5 +68,8 @@ REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.jav
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/reactive/ReactivePledgeController.java:44
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/reactive/ReactivePledgeHandler.java:25
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

@@ -90,6 +90,8 @@ src/main/java/com/example/e2e/stipend/StipendCalculator.java:32       fixed    L
 src/main/java/com/example/e2e/stipend/StipendCalculator.java:51       fixed    LOG_FORMAT FMT-e804b1
 src/main/java/com/example/e2e/stipend/TallyService.java:22            fixed    REPEATED_LOG_VALUE RLV-1b142f, LOG_FORMAT FMT-7785a4
 src/main/java/com/example/e2e/web/AuditController.java:16             checked  no finding
+src/main/java/com/example/e2e/web/PledgeController.java:59            reported MESSAGE_SUGGESTED SUG-4885ca
+src/main/java/com/example/e2e/web/PledgeDetailsController.java:31     reported MESSAGE_SUGGESTED SUG-72f478
 src/main/java/com/example/e2e/web/QuoteController.java:30             reported MESSAGE_SUGGESTED SUG-08dd18
 # fixed lines are kept while their file is unchanged:
 # src/main/java/com/example/e2e/edge/Audited.java 07531fcd0582

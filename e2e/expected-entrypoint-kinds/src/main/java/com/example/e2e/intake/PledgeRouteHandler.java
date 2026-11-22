@@ -1,9 +1,11 @@
 package com.example.e2e.intake;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
 
+@Slf4j
 @Component
 public class PledgeRouteHandler {
     private final PledgeFeed feed;
@@ -17,6 +19,7 @@ public class PledgeRouteHandler {
     }
 
     public ServerResponse register(ServerRequest request) {
+        log.info("Pledge route creation started"); // logast:wording
         return ServerResponse.accepted().build();
     }
 

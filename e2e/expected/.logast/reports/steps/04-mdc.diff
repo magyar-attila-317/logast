@@ -1,15 +1,63 @@
+diff --git a/src/main/java/com/example/e2e/web/PledgeDetailsController.java b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
+index a665ddb..5bdf76f 100644
+--- a/src/main/java/com/example/e2e/web/PledgeDetailsController.java
++++ b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
+@@ -1,12 +1,15 @@ 
+ package com.example.e2e.web;
+ 
++import com.example.e2e.logging.MdcScope;
+ import com.example.e2e.pledge.PledgeId;
+ import com.example.e2e.pledge.PledgeLookup;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.PostMapping;
+ import org.springframework.web.bind.annotation.RestController;
+ 
++@Slf4j
+ @RestController
+ public class PledgeDetailsController {
+     private final PledgeLookup lookup;
+@@ -17,11 +20,16 @@
+ 
+     @GetMapping("/pledges/{pledgeId}/details")
+     public String details(@PathVariable String pledgeId) {
+-        return lookup.find(pledgeId);
++        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++            return lookup.find(pledgeId);
++        }
+     }
+ 
+     @PostMapping("/pledges/{pledgeId}/hold")
+     public void hold(@PathVariable PledgeId pledgeId) {
+-        lookup.find(pledgeId.value());
++        try (var mdc = MdcScope.of("pledgeId", pledgeId.value())) {
++            log.info("Pledge hold started"); // logast:wording
++            lookup.find(pledgeId.value());
++        }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/web/PledgeController.java b/src/main/java/com/example/e2e/web/PledgeController.java
-index 41a26ce..557bc44 100644
+index 41a26ce..5583304 100644
 --- a/src/main/java/com/example/e2e/web/PledgeController.java
 +++ b/src/main/java/com/example/e2e/web/PledgeController.java
-@@ -1,5 +1,6 @@ 
+@@ -1,12 +1,15 @@ 
  package com.example.e2e.web;
  
 +import com.example.e2e.logging.MdcScope;
  import com.example.e2e.pledge.PledgeRepository;
  import com.example.e2e.pledge.PledgeService;
  import com.example.e2e.order.Order;
-@@ -26,12 +27,16 @@
+ import com.example.e2e.order.OrderService;
+ import java.util.List;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.web.bind.annotation.*;
+ 
++@Slf4j
+ @RestController
+ public class PledgeController {
+     private final PledgeService pledges;
+@@ -26,12 +29,16 @@
  
      @PostMapping("/pledges/{pledgeId}/publish")
      public void publish(@PathVariable String pledgeId) {
@@ -28,7 +76,7 @@ index 41a26ce..557bc44 100644
      }
  
      @PostMapping("/pledges/allot")
-@@ -41,7 +46,9 @@
+@@ -41,16 +48,23 @@
  
      @DeleteMapping("/pledges/{pledgeId}")
      public void delete(@PathVariable String pledgeId) {
@@ -39,7 +87,13 @@ index 41a26ce..557bc44 100644
      }
  
      @PostMapping("/admin/pledges/{pledgeId}/revoke")
-@@ -51,6 +58,8 @@
+     public void revoke(@PathVariable String pledgeId, @RequestHeader("X-User") String userId) {
+-        pledges.revoke(pledgeId, userId);
++        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++            log.info("Pledge revoke started"); // logast:wording
++            pledges.revoke(pledgeId, userId);
++        }
+     }
  
      @PostMapping("/orders")
      public void place(@RequestBody Order order) {
@@ -110,28 +164,6 @@ index c2fd777..2bcb184 100644
 -        log.info("Order event received [amountCents={}]", order.amountCents());
      }
  }
-diff --git a/src/main/java/com/example/e2e/web/PledgeDetailsController.java b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
-index a665ddb..82c929b 100644
---- a/src/main/java/com/example/e2e/web/PledgeDetailsController.java
-+++ b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.web;
- 
-+import com.example.e2e.logging.MdcScope;
- import com.example.e2e.pledge.PledgeId;
- import com.example.e2e.pledge.PledgeLookup;
- import org.springframework.web.bind.annotation.GetMapping;
-@@ -17,7 +18,9 @@
- 
-     @GetMapping("/pledges/{pledgeId}/details")
-     public String details(@PathVariable String pledgeId) {
--        return lookup.find(pledgeId);
-+        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-+            return lookup.find(pledgeId);
-+        }
-     }
- 
-     @PostMapping("/pledges/{pledgeId}/hold")
 diff --git a/src/main/java/com/example/e2e/stipend/TallyService.java b/src/main/java/com/example/e2e/stipend/TallyService.java
 index 6e3e765..17818a5 100644
 --- a/src/main/java/com/example/e2e/stipend/TallyService.java

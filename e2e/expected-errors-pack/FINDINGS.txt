@@ -16,7 +16,6 @@ REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/order/PaymentClient.java
 REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentException.java:3
 REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/parcel/ParcelClient.java:16
 REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/parcel/ParcelClient.java:23
-NEEDS TEXT ENTRYPOINT_SILENT src/main/java/com/example/e2e/parcel/ParcelController.java:30
 REPORT-ONLY ERROR_HANDLER_STATUS_OK src/main/java/com/example/e2e/parcel/ParcelErrors.java:21
 REPORT-ONLY ERROR_HANDLER_STATUS_OK src/main/java/com/example/e2e/parcel/ParcelErrors.java:26
 REPORT-ONLY TX_COMMITS_ON_CHECKED src/main/java/com/example/e2e/parcel/ParcelLedger.java:10
@@ -26,9 +25,7 @@ REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/pledge/PledgeLookup.ja
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:26
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:33
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
-NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/PledgeController.java:55
-NEEDS TEXT MISSING_DOMAIN_MDC+ENTRYPOINT_SILENT src/main/java/com/example/e2e/web/PledgeDetailsController.java:27
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
@@ -59,6 +56,7 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderS
 NEEDS TEXT LOG_FORMAT src/main/java/com/example/e2e/order/PaymentClient.java:15
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/parcel/ParcelClient.java:15
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/parcel/ParcelClient.java:19
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/parcel/ParcelController.java:33
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/parcel/ParcelErrors.java:16
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29
@@ -72,5 +70,7 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

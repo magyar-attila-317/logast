@@ -37,7 +37,8 @@ public final class Analysis {
     public Traffic traffic = Traffic.none();
 
     public Analysis withTraffic(Traffic t) {
-        this.traffic = t == null ? Traffic.none() : t;
+        // #235: scheduled entrypoints run as often as their schedule says, unless traffic.yaml says otherwise
+        this.traffic = (t == null ? Traffic.none() : t).withSchedules(ScheduleRate.of(entrypoints, index, springProperties));
         return this;
     }
 
@@ -63,6 +64,7 @@ public final class Analysis {
                         .noneMatch(e -> e.site().type().getName().equals("publishEvent")))
                 .toList();
         this.unresolvedHandlers = finder.unresolved();
+        withTraffic(null);   // #235: the schedules' rates, until a traffic file is loaded
         this.httpFilterKeys = filterKeys(index);
         this.appPackage = appPackage(index);
         this.supportPackage = policy.support().vendor()

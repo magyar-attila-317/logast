@@ -1,5 +1,6 @@
 package dev.logast.kb;
 
+import dev.logast.facts.Cron;
 import dev.logast.facts.Node;
 
 import java.time.DayOfWeek;
