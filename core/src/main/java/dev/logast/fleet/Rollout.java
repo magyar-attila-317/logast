@@ -142,7 +142,12 @@ public final class Rollout {
                 return new Row(name, State.BLOCKED, "the build failed after apply (nothing committed): " + log);
             }
             Git.must(work, "add", "-A");
-            Git.must(work, "commit", "--quiet", "--no-verify", "-m", message(fleet, target, base, o.logastVersion()));
+            // the person's own identity; a machine without one (a CI runner) commits as logast
+            boolean identity = !Git.run(work, "config", "user.email").out().isBlank();
+            List<String> commit = new ArrayList<>(identity ? List.of() : List.of("-c", "user.name=logast", "-c",
+                    "user.email=logast@users.noreply.github.com"));
+            commit.addAll(List.of("commit", "--quiet", "--no-verify", "-m", message(fleet, target, base, o.logastVersion())));
+            Git.must(work, commit.toArray(String[]::new));
             Git.must(clone, "branch", "--force", BRANCH, Git.must(work, "rev-parse", "HEAD"));
             if (!o.push()) {
                 return new Row(name, State.COMMITTED, BRANCH + " in " + clone);
