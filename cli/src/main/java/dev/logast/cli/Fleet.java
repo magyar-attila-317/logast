@@ -304,6 +304,8 @@ final class Fleet implements Callable<Integer> {
 
     /** #205: the tables the members' migrations create, for the migrations of others that need them (stand-ins). */
     private volatile Map<String, List<String>> tablesMade = Map.of();
+    /** #227: which member makes each table, to say whose tables a member's migrations ran against. */
+    private volatile Map<String, String> tableOwners = Map.of();
 
     /** #215: the tables the fleet's mappings ({@code kb/mappings/*.yaml}) need the rows of ({@code needs: {rows: […]}}). */
     static List<String> neededRows(Path kb) {
@@ -435,8 +437,11 @@ final class Fleet implements Callable<Integer> {
                 List<KbExport.Need> left = needs.stream().filter(KbExport.Need::leftOut).toList();
                 long standIns = needs.stream().filter(n -> !n.leftOut()).count();
                 String withStandIns = standIns == 0 ? "" : ", " + standIns + " table(s) of other repos stood in for";
+                List<String> against = KbExport.ranAgainst(needs, tablesMade, tableOwners);   // #227: whose tables, said
+                String ranAgainst = against.isEmpty() ? null : "ran against other repos' tables: " + String.join(", ", against.stream().limit(8).toList())
+                        + (against.size() > 8 ? ", … " + (against.size() - 8) + " more" : "");
                 if (left.isEmpty()) {
-                    return new KbOutcome(FleetLog.Status.OK, files + withStandIns, List.of());
+                    return new KbOutcome(FleetLog.Status.OK, files + withStandIns, ranAgainst == null ? List.of() : List.of(ranAgainst));
                 }
                 // #207: grouped by what they need, one line each
                 Map<String, java.util.Set<String>> byNeed = new java.util.TreeMap<>();
@@ -447,6 +452,9 @@ final class Fleet implements Callable<Integer> {
                     lostByNeed.computeIfAbsent(n.asked(), k -> new java.util.TreeSet<>()).addAll(n.lost());
                 }
                 List<String> notes = new java.util.ArrayList<>();
+                if (ranAgainst != null) {
+                    notes.add(ranAgainst);
+                }
                 byNeed.entrySet().stream().limit(6).forEach(e -> notes.add("needs " + e.getKey() + " (no repo of the fleet makes it): "
                         + String.join(", ", e.getValue()) + " left out" + (lostByNeed.get(e.getKey()).isEmpty() ? ""
                         : "; missing: " + String.join(", ", lostByNeed.get(e.getKey())))));
@@ -615,6 +623,7 @@ final class Fleet implements Callable<Integer> {
     private void dependencyRounds(Path dir, Map<String, Path> members, FleetLog log) {
         for (int round = 1; round <= 4; round++) {
             tablesMade = KbExport.tablesMade(dir.resolve("kb"));
+            tableOwners = KbExport.tableOwners(dir.resolve("kb"));
             Map<String, Path> again = new java.util.LinkedHashMap<>();
             for (var m : members.entrySet()) {
                 if (Files.isDirectory(m.getValue()) && KbExport.needsChanged(dir.resolve("kb").resolve(m.getKey()), tablesMade)) {
@@ -724,6 +733,7 @@ final class Fleet implements Callable<Integer> {
         Map<String, Path> added = NamedFleet.added(dir);
         if (kb && flyway) {   // #205: what the last export knew of each member's tables, for the others' migrations
             tablesMade = KbExport.tablesMade(dir.resolve("kb"));
+            tableOwners = KbExport.tableOwners(dir.resolve("kb"));
         }
         if (refresh) {
             FleetLog.Phase phase = log.phase("scan", threads > 1 ? Math.max(1, threads) + " at a time" : null, work(members).size());

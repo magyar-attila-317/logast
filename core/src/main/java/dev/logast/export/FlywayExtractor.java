@@ -617,6 +617,8 @@ public final class FlywayExtractor implements Extractor {
             }
         }
         String searchSchema = run.schema() != null ? run.schema() : defaultSchema != null && !defaultSchema.isBlank() ? defaultSchema : "public";
+        History history = new History();
+        flyway.callbacks(history);   // #227: the tables after each migration, so one dropped later is still known
         Needs needs = migrateCreatingWhatIsMissing(flyway, url, user, password, run, placeholders, config, defaulted, searchSchema);
         Set<String> standInTables = new LinkedHashSet<>();
         for (StandIn si : needs.standIns()) {   // #205: what it needs another service makes: it reads that one
@@ -690,6 +692,65 @@ public final class FlywayExtractor implements Extractor {
                     rows(c, table, run.env(), at, out);
                 }
             }
+            // #227: a table an earlier migration made and a later one dropped: it existed while the migrations between
+            // ran (another repo's migrations of that time may need it), with the columns it had last
+            for (var t : history.lastSeen.entrySet()) {
+                String table = t.getKey();
+                if (columns.containsKey(table) || table.endsWith(".flyway_schema_history") || standInTables.contains(table)) {
+                    continue;
+                }
+                Map<String, Object> attrs = new TreeMap<>();
+                attrs.put("columns", t.getValue());
+                attrs.put("dropped", true);
+                String script = history.droppedBy.get(table);
+                Path df = script == null ? null : files.stream().filter(x -> x.getFileName().toString().equals(script)).findFirst().orElse(null);
+                if (script != null) {
+                    attrs.put("droppedIn", df == null ? script : name(root, df));
+                }
+                Evidence at = createdIn.getOrDefault(table, createdIn.getOrDefault(table.substring(table.indexOf('.') + 1),
+                        Evidence.at(name(root, run.folders().getLast()), null)));
+                Node n = new Node("table:" + table, "table", run.env(), attrs, at);
+                out.node(n);
+                out.edge(Edge.extracted("service:" + service, "has", n.id(), Map.of("dropped", true), at).inEnv(run.env()));
+            }
+        }
+    }
+
+    /** #227: the tables after each migration (their last columns), and the migration after which each was gone. */
+    private static final class History implements org.flywaydb.core.api.callback.Callback {
+        final Map<String, List<String>> lastSeen = new TreeMap<>();
+        final Map<String, String> droppedBy = new TreeMap<>();
+
+        @Override
+        public boolean supports(org.flywaydb.core.api.callback.Event event, org.flywaydb.core.api.callback.Context context) {
+            return event == org.flywaydb.core.api.callback.Event.AFTER_EACH_MIGRATE;
+        }
+
+        @Override
+        public boolean canHandleInTransaction(org.flywaydb.core.api.callback.Event event, org.flywaydb.core.api.callback.Context context) {
+            return true;
+        }
+
+        @Override
+        public void handle(org.flywaydb.core.api.callback.Event event, org.flywaydb.core.api.callback.Context context) {
+            try {
+                Map<String, List<String>> now = columns(context.getConnection());
+                String script = context.getMigrationInfo() == null ? null : context.getMigrationInfo().getScript();
+                for (String t : lastSeen.keySet()) {
+                    if (!now.containsKey(t) && script != null) {
+                        droppedBy.putIfAbsent(t, script.substring(script.lastIndexOf('/') + 1));
+                    }
+                }
+                now.keySet().forEach(droppedBy::remove);   // made again later: not dropped
+                lastSeen.putAll(now);
+            } catch (SQLException e) {
+                // a migration's state not readable: its tables are read at the end as before
+            }
+        }
+
+        @Override
+        public String getCallbackName() {
+            return "logast-history";
         }
     }
 

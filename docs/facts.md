@@ -146,6 +146,9 @@ migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes w
   as evidence; each row as `row:<schema>.<table>:<primary key>` (else `#<position>`), its columns as attributes, of
   the tables the migrations fill with a few rows (up to 50: reference data, a scheduler's definitions; #215) and of
   the tables asked for with `--rows` (or `rows:` in a fleet's `repos.yaml`), whatever their size.
+- **Dropped tables** (#227): the tables are read after each migration too, so one a later migration drops is still a
+  `table` with `dropped: true`, the columns it had last and `droppedIn` (the script that dropped it): it existed while
+  the migrations between ran, and another repo's migrations of that time that need it run against it.
 - **Migrations from libraries** (#181): a `classpath:` location is looked up on the service's classpath too, as Flyway
   scans it at runtime: class folders, and jars by their entries under that path, so a library that ships migrations
   in its jar runs with the service's own; its tables cite `<jar>!/<entry>`.

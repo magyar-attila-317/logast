@@ -44,4 +44,21 @@ class KbExportNeedsTest {
         Files.writeString(catalog.resolve("facts.jsonl"), Files.readString(catalog.resolve("facts.jsonl")).replace("\"name text\"", "\"title text\""));
         assertThat(KbExport.needsChanged(accounting, KbExport.tablesMade(kb))).isTrue();   // its columns changed
     }
+
+    /** #227: the fleet line says whose tables a member's migrations ran against. */
+    @Test
+    void theTablesRanAgainstNameTheirRepo() throws IOException {
+        Path kb = tmp.resolve("kb");
+        Path cache = Files.createDirectories(kb.resolve("cache-svc"));
+        Files.writeString(cache.resolve("repo.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"typeorm+flyway","repo":"cache-svc"}}
+                {"node":{"id":"table:cache.products","kind":"table","attrs":{"columns":["unique_key text","gtin text"]},"evidence":{"file":"V1.ts"}}}
+                """);
+        var tables = KbExport.tablesMade(kb);
+        var owners = KbExport.tableOwners(kb);
+        assertThat(owners).containsEntry("cache.products", "cache-svc");
+        List<KbExport.Need> needs = List.of(new KbExport.Need("cache.products", "public", "migration V3__x.sql", false, List.of()),
+                new KbExport.Need("cache.missing", "public", "migration V4__y.sql", true, List.of()));
+        assertThat(KbExport.ranAgainst(needs, tables, owners)).containsExactly("cache.products (cache-svc)");
+    }
 }

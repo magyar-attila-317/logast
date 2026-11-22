@@ -122,6 +122,46 @@ final class KbExport {
         return out;
     }
 
+    /** #227: the member (its folder under {@code kb}) that makes each table ({@code schema.name}). */
+    static java.util.Map<String, String> tableOwners(Path kb) {
+        java.util.Map<String, String> out = new java.util.TreeMap<>();
+        if (!Files.isDirectory(kb)) {
+            return out;
+        }
+        try (Stream<Path> s = Files.list(kb)) {
+            for (Path m : s.filter(Files::isDirectory).filter(d -> !d.getFileName().toString().equals("mapped")
+                    && !d.getFileName().toString().equals("mappings")).sorted().toList()) {
+                KnowledgeBase k = KnowledgeBase.load(KnowledgeBase.factFiles(List.of(m)));
+                for (var n : k.nodes()) {
+                    if (n.fact().kind().equals("table") && n.fact().attrs().get("columns") instanceof List<?> cols && !cols.isEmpty()) {
+                        out.putIfAbsent(n.fact().id().substring("table:".length()).toLowerCase(java.util.Locale.ROOT), m.getFileName().toString());
+                    }
+                }
+            }
+        } catch (IOException e) {
+            return out;
+        }
+        return out;
+    }
+
+    /**
+     * #227: the tables of other members a member's migrations ran against, each with the member that makes it
+     * ({@code cache.products (cache-svc)}).
+     */
+    static List<String> ranAgainst(List<Need> needs, java.util.Map<String, List<String>> tables, java.util.Map<String, String> owners) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (Need n : needs) {
+            if (n.leftOut()) {
+                continue;
+            }
+            String t = dev.logast.export.FlywayExtractor.madeElsewhere(tables, n.asked(), n.searchSchema());
+            if (t != null) {
+                out.add(t + (owners.containsKey(t) ? " (" + owners.get(t) + ")" : ""));
+            }
+        }
+        return List.copyOf(out);
+    }
+
     /** #205: a need's resolution: the columns of the table another member makes, else {@code -} (none does). */
     static String resolve(java.util.Map<String, List<String>> tables, String asked, String searchSchema) {
         String t = dev.logast.export.FlywayExtractor.madeElsewhere(tables, asked, searchSchema);

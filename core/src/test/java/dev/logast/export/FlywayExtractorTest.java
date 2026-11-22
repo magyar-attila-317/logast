@@ -128,6 +128,26 @@ class FlywayExtractorTest {
                 .noneMatch(n -> n.id().startsWith("row:public.audit_event"));
     }
 
+    /** #227: a table a later migration dropped is still known, with its last columns and where it was dropped. */
+    @Test
+    void aTableDroppedLaterIsStillKnown() throws IOException {
+        Path root = service("spring:\n  flyway:\n    placeholders:\n      schema: orchestration\n      batch_size: \"100\"\n");
+        Path common = root.resolve("src/main/resources/db/migration/common");
+        Files.writeString(common.resolve("V3__rates.sql"), "create table fare_table (currency text primary key, rate numeric);\n"
+                + "alter table fare_table add column valid_from date;\n");
+        Files.writeString(common.resolve("V4__rates_gone.sql"), "drop table fare_table;\n");
+        Collect c = new Collect();
+        FlywayExtractor fx = new FlywayExtractor("scheduler", List.of(), null);
+        fx.extract(root, c);
+        assertThat(fx.problems()).isEmpty();
+        Node gone = c.node("table:public.fare_table", "dev");
+        assertThat(gone).as("dropped by V4, still a fact").isNotNull();
+        assertThat(gone.attrs()).containsEntry("dropped", true)
+                .containsEntry("droppedIn", "src/main/resources/db/migration/common/V4__rates_gone.sql");
+        assertThat(gone.attrs().get("columns")).asList().contains("currency text", "valid_from date");
+        assertThat(c.node("table:orchestration.job_definition", "dev").attrs()).doesNotContainKey("dropped");
+    }
+
     @Test
     void anEnvironmentWhoseMigrationsFailIsReportedAndTheOthersStillCount() throws IOException {
         Path root = service("spring:\n  flyway:\n    placeholders:\n      schema: orchestration\n");   // no batch_size outside prod

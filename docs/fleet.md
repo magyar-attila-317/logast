@@ -90,7 +90,8 @@ logast fleet remove shop orders                            # by service name or 
   the reports are. The footer `logast scan` adds (decision files, next steps) is left out: it would write into the repo.
   With `--refresh` or `--kb` it picks the one member the run works on instead (#223): only its fetch, scan, rescan
   and knowledge base (`logast fleet . --kb-full --service cache-svc`); the dependencies phase still checks every
-  member, so another repo's migrations that need its tables run again. A member without Java (a Node.js, Helm or
+  member, so another repo's migrations that need its tables run again. A member whose migrations ran against other repos' tables
+  says which and whose (`ran against other repos' tables: cache.products (cache-svc)`, #227). A member without Java (a Node.js, Helm or
   Terraform repo) is never scanned for findings: its facts come with the knowledge base.
 - Everything else treats an added member like a joined one: trace links, metric names, vocabulary, the company.yaml
   suggestions.
