@@ -12,6 +12,9 @@ on real services; the background is in issue #7.
   a comment saying what was done and which test covers it.
 - This repository is public: no company names, company code or internal identifiers in issues, commits, tests or
   fixtures. Anonymised exports (`logast shape`) of real services stay local and never get committed.
+- No links to chat or agent sessions (`claude.ai/…`, `Claude-Session:` trailers, other tools' share links) in commits,
+  PRs or issues: those sessions hold the real code and screenshots this repository must not point to. Attribution
+  is a plain `Co-Authored-By:` line.
 
 ## Every change comes with a test that fails without it
 - A new rule or fix gets a case in an e2e scenario (`e2e/before`, snapshots in `e2e/expected*`). Put the code shape
