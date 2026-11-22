@@ -459,17 +459,18 @@ public final class Main {
                 fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders());
                 mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders());
             }
-            Written written = writeReports(r, applied, changed, scanner, policy);
+            Written written = writeReports(r, applied, changed, scanner, policy, fu, mu);
+            Outcome outcome = new Outcome(r, applied, changed, rejected, violations, header, t0);
             if (format.equals("json")) {
                 System.out.println(OrderJson.MAPPER.writeValueAsString(r));
                 return r.rejected().isEmpty() ? 0 : 1;
             }
             List<dev.logast.Todo.Item> also = new ArrayList<>();
-            Integer again = afterBuildChange(r, applied, changed, rejected, violations, header, t0, also);
+            Integer again = afterBuildChange(outcome, also);
             if (again != null) {
                 return again;
             }
-            return summary(r, applied, changed, rejected, violations, header, t0, scanner, policy, written, also, fu, mu);
+            return summary(outcome, scanner, policy, written, also);
         }
 
         /**
@@ -512,13 +513,26 @@ public final class Main {
             return null;
         }
 
-        /** What an apply wrote besides the code: the log-call ledger (#72) and the per-step diffs. */
-        private record Written(List<dev.logast.LogLedger.Entry> ledger, List<String> stepFiles) {
+        /**
+         * One apply's result, merged with the run before a classpath refresh (#126: both are one apply): what was applied,
+         * changed, rejected and broke an invariant, what the setup did (the header), and when it started.
+         */
+        private record Outcome(Applier.Result r, List<String> applied, List<String> changed, Map<String, String> rejected,
+                               List<String> violations, List<String> header, long t0) {
+        }
+
+        /**
+         * What an apply wrote besides the code: the log-call ledger (#72), the per-step diffs, and the state of
+         * messages.yaml and metrics.yaml (#101; null when --fills names another file).
+         */
+        private record Written(List<dev.logast.LogLedger.Entry> ledger, List<String> stepFiles, dev.logast.apply.FillsFile.Update fu,
+                               dev.logast.apply.FillsFile.Update mu) {
         }
 
         /** The last-apply record (#101), the applied hashes (#131), the ledger, the round trace and one diff per step. */
         private Written writeReports(Applier.Result r, List<String> applied, List<String> changed, dev.logast.RoundScanner scanner,
-                                     Policy policy) throws IOException {
+                                     Policy policy, dev.logast.apply.FillsFile.Update fu, dev.logast.apply.FillsFile.Update mu)
+                throws IOException {
             // what the last apply that changed files did: a later scan starts with its first line ("Applied earlier",
             // #101); the ids and files follow (#126: the summary lists them only with --verbose)
             if (write && !applied.isEmpty() && !changed.isEmpty()) {
@@ -560,16 +574,21 @@ public final class Main {
                     stepFiles.add(file);
                 }
             }
-            return new Written(ledger, stepFiles);
+            return new Written(ledger, stepFiles, fu, mu);
         }
 
         /**
          * Dependencies changed (a build file, or a script it applies, #80): the classpath is refreshed and (#117) one more
          * run with it settles the setup decisions that depend on the new types; its exit code, else null.
          */
-        private Integer afterBuildChange(Applier.Result r, List<String> applied, List<String> changed, Map<String, String> rejected,
-                                         List<String> violations, List<String> header, long t0, List<dev.logast.Todo.Item> also)
-                throws IOException {
+        private Integer afterBuildChange(Outcome o, List<dev.logast.Todo.Item> also) throws IOException {
+            Applier.Result r = o.r();
+            List<String> applied = o.applied();
+            List<String> changed = o.changed();
+            Map<String, String> rejected = o.rejected();
+            List<String> violations = o.violations();
+            List<String> header = o.header();
+            long t0 = o.t0();
             boolean buildChanged = write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith(".gradle") || fn.endsWith(".gradle.kts"));
             if (buildChanged && classpathFile != null) {
                 // #122: the caller owns the classpath (the Gradle plugin's logastApply runs inside a build): no nested
@@ -602,12 +621,18 @@ public final class Main {
         }
 
         /** The run's summary: what was set up, the change counts, rejections and checks, then what is left (#126). */
-        private int summary(Applier.Result r, List<String> applied, List<String> changed, Map<String, String> rejected,
-                            List<String> violations, List<String> header, long t0, dev.logast.RoundScanner scanner, Policy policy,
-                            Written written, List<dev.logast.Todo.Item> also, dev.logast.apply.FillsFile.Update fu,
-                            dev.logast.apply.FillsFile.Update mu) {
+        private int summary(Outcome o, dev.logast.RoundScanner scanner, Policy policy, Written written, List<dev.logast.Todo.Item> also) {
+            Applier.Result r = o.r();
+            List<String> applied = o.applied();
+            List<String> changed = o.changed();
+            Map<String, String> rejected = o.rejected();
+            List<String> violations = o.violations();
+            List<String> header = o.header();
+            long t0 = o.t0();
             List<String> stepFiles = written.stepFiles();
             List<dev.logast.LogLedger.Entry> ledger = written.ledger();
+            dev.logast.apply.FillsFile.Update fu = written.fu();
+            dev.logast.apply.FillsFile.Update mu = written.mu();
             if (!header.isEmpty()) {
                 System.out.println(Ansi.bold("Set up: ") + String.join("; ", header));
                 System.out.println();
