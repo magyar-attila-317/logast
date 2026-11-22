@@ -84,15 +84,24 @@ class TracedSchedulesTest {
                 import org.quartz.Job;
 
                 @Getter
-                @RequiredArgsConstructor
                 public enum JobType {
                     LOAD("load", LoadJob.class, "Loads the data"),
-                    TOTALS("totals", TotalsJob.class, "Adds it up"),
+                    TOTALS("totals", TotalsJob.class),
                     REPORT("report", ReportJob.class, "Reports it");
 
                     private final String key;
                     private final Class<? extends Job> jobClass;
                     private final String description;
+
+                    JobType(String key, Class<? extends Job> jobClass) {
+                        this(key, jobClass, "Adds it up");
+                    }
+
+                    JobType(String key, Class<? extends Job> jobClass, String description) {
+                        this.key = key;
+                        this.jobClass = jobClass;
+                        this.description = description;
+                    }
                 }
                 """);
         write(root, "JobKeys", """
@@ -361,6 +370,46 @@ class TracedSchedulesTest {
                     }
                 }
                 """);
+        write(root, "CleanupJob", """
+                package com.example.batch;
+
+                import org.quartz.Job;
+                import org.quartz.JobExecutionContext;
+
+                public class CleanupJob implements Job {
+                    @Override
+                    public void execute(JobExecutionContext context) {
+                    }
+                }
+                """);
+        write(root, "CleanupConfig", """
+                package com.example.batch;
+
+                import org.quartz.JobDetail;
+                import org.springframework.context.annotation.Bean;
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.scheduling.quartz.CronTriggerFactoryBean;
+                import org.springframework.scheduling.quartz.JobDetailFactoryBean;
+
+                @Configuration
+                public class CleanupConfig {
+                    @Bean
+                    JobDetailFactoryBean cleanupJobDetail() {
+                        JobDetailFactoryBean f = new JobDetailFactoryBean();
+                        f.setJobClass(CleanupJob.class);
+                        return f;
+                    }
+
+                    @Bean
+                    CronTriggerFactoryBean cleanupTrigger(JobDetail cleanupJobDetail) {
+                        CronTriggerFactoryBean t = new CronTriggerFactoryBean();
+                        t.setJobDetail(cleanupJobDetail);
+                        t.setName("cleanup");
+                        t.setCronExpression("0 0 3 * * ?");
+                        return t;
+                    }
+                }
+                """);
         write(root, "QuartzConfig", """
                 package com.example.batch;
 
@@ -402,6 +451,9 @@ class TracedSchedulesTest {
                         "\"name\":\"daily-b\"", "\"cron\":\"0 30 2 * * ?\"");
         assertThat(report).as("the next plan's chain, after the first plan's").contains("\"position\":\"3 of 3\"",
                 "\"runsAfter\":\"TotalsJob\"", "\"country\":\"IE\"");
+        assertThat(jobs.stream().filter(l -> l.contains("job:batch:com.example.batch.CleanupJob\"")).findFirst().orElseThrow())
+                .as("#221: a trigger bean given the JobDetail its factory bean makes, by the parameter's name")
+                .contains("\"cron\":\"0 0 3 * * ?\"");
     }
 
     /** #217: the configuration's values are facts, a profile's where it differs; a secret never is. */
@@ -450,7 +502,8 @@ class TracedSchedulesTest {
             System.clearProperty("logast.trace");
         }
         String said = buf.toString(java.nio.charset.StandardCharsets.UTF_8);
-        assertThat(said).contains("trace: triggers built: 2", "trace: listeners: [ChainListener]",
-                "trace:   run weekly-a: [LoadJob, TotalsJob, ReportJob]", "TriggersConfig.register", "trace: not known, most often:");
+        assertThat(said).contains("trace: triggers built: 3", "trace: listeners: [ChainListener]",
+                "trace:   run weekly-a: [LoadJob, TotalsJob, ReportJob]", "TriggersConfig.register", "trace: not known, most often:",
+                "trace:   cleanup cron 0 0 3 * * ? job com.example.batch.CleanupJob");
     }
 }

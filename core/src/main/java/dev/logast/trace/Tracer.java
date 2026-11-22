@@ -119,7 +119,8 @@ public final class Tracer {
         List<Value> args = new ArrayList<>();
         for (Statement p : m.decl().getParameters()) {
             if (p instanceof J.VariableDeclarations vd) {
-                args.add(inject(vd.getTypeExpression() == null ? "" : vd.getTypeExpression().printTrimmed(), m.owner()));
+                args.add(inject(vd.getTypeExpression() == null ? "" : vd.getTypeExpression().printTrimmed(), m.owner(),
+                        qualifier(vd)));
             }
         }
         v = run(m, m.decl().hasModifier(J.Modifier.Type.Static) ? null : instance(m.owner()), args);
@@ -469,7 +470,7 @@ public final class Tracer {
         if (fd.var().getInitializer() != null) {
             v = eval(fd.var().getInitializer(), new Frame(o, fd.owner(), 0));
         } else if (isBean(c) || isBean(fd.owner())) {
-            v = inject(fd.type(), fd.owner());
+            v = inject(fd.type(), fd.owner(), qualifier(fd.decl()));
         } else {
             return new Value.Unknown("field " + name + " not set");
         }
@@ -477,8 +478,61 @@ public final class Tracer {
         return v;
     }
 
-    /** What Spring injects for a type written in {@code ctx}: every bean of T for a list, else the one bean of T. */
+    /** The bean name a parameter or field asks for: its {@code @Qualifier}, else its own name (Spring's fallback). */
+    private static String qualifier(J.VariableDeclarations vd) {
+        for (J.Annotation an : vd.getLeadingAnnotations()) {
+            if (an.getSimpleName().equals("Qualifier") && an.getArguments() != null && !an.getArguments().isEmpty()
+                    && an.getArguments().getFirst() instanceof J.Literal l && l.getValue() instanceof String s) {
+                return s;
+            }
+        }
+        return vd.getVariables().isEmpty() ? null : vd.getVariables().getFirst().getSimpleName();
+    }
+
+    /** The name a {@code @Bean} method's bean has: {@code @Bean(name = …)} / {@code @Bean("…")}, else the method's. */
+    private static String beanName(MethodInfo m) {
+        for (J.Annotation an : m.decl().getLeadingAnnotations()) {
+            if (an.getSimpleName().equals("Bean") && an.getArguments() != null) {
+                for (var arg : an.getArguments()) {
+                    var v = arg instanceof J.Assignment as ? as.getAssignment() : arg;
+                    if (v instanceof J.Literal l && l.getValue() instanceof String s) {
+                        return s;
+                    }
+                }
+            }
+        }
+        return m.name();
+    }
+
     private Value inject(String type, ClassInfo ctx) {
+        return inject(type, ctx, null);
+    }
+
+    /**
+     * What Spring injects for a type written in {@code ctx}: every bean of T for a list, else the bean of T (a
+     * {@code FactoryBean} of T's too, #221: a {@code JobDetailFactoryBean} gives a {@code JobDetail}); of several, the one
+     * named as asked.
+     */
+    private Value inject(String type, ClassInfo ctx, String name) {
+        String rawType = Types.raw(type);
+        if (!LISTS.contains(rawType)) {
+            List<MethodInfo> made = new ArrayList<>(beanMethods(rawType));
+            made.addAll(beanMethods(rawType + "FactoryBean"));
+            if (made.size() > 1 && name != null) {
+                for (MethodInfo m : made) {
+                    if (beanName(m).equals(name) || m.name().equals(name)) {
+                        return bean(m);
+                    }
+                }
+            }
+            if (!made.isEmpty()) {
+                return bean(made.getFirst());
+            }
+        }
+        return injectAny(type, ctx);
+    }
+
+    private Value injectAny(String type, ClassInfo ctx) {
         String raw = Types.raw(type);
         if (LISTS.contains(raw)) {
             Value.ListV l = new Value.ListV();
@@ -569,6 +623,23 @@ public final class Tracer {
     private Value invocation(J.MethodInvocation mi, Frame f) {
         String name = mi.getSimpleName();
         Expression sel = mi.getSelect();
+        if (sel == null && (name.equals("this") || name.equals("super")) && f.self != null && f.cls != null) {   // #221
+            List<Value> a = args(mi.getArguments(), f);
+            ClassInfo target = name.equals("this") ? f.cls
+                    : f.cls.decl().getExtends() == null ? null : types.resolve(f.cls.decl().getExtends().printTrimmed(), f.cls);
+            if (target != null) {
+                for (MethodInfo m : index.methodsOf(target.fqn())) {
+                    if (m.decl().isConstructor() && params(m).size() == a.size()) {
+                        invoke(m, f.self, a, f.depth);
+                        return Value.Lit.NULL;
+                    }
+                }
+                if (name.equals("super")) {
+                    assignInOrder(target, f.self, a);
+                }
+            }
+            return Value.Lit.NULL;
+        }
         if (sel == null) {
             List<Value> a = args(mi.getArguments(), f);
             ClassInfo c = f.self != null && index.clazz(f.self.type) != null ? index.clazz(f.self.type) : f.cls;
