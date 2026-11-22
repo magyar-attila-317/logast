@@ -276,12 +276,14 @@ changed since the newest tag (uncommitted changes are refused); push the tag. A 
 (`- fleet:<name>@policy-3`) applies that version's company.yaml, read from git at the tag, on every machine and in CI,
 whatever its clone of the fleet repo holds; an unpinned `fleet:<name>` still follows the fleet folder.
 
-**The rollout from your machine.** In the fleet repo, with your own git and gh logins:
+**The rollout from your machine.** In the fleet repo, with your own git and gh logins. Every stage is asked for:
 
 ```bash
 logast fleet tag-policy .                       # company.yaml changed: policy-4
-logast fleet rollout .                          # every repo of repos.yaml: commits on logast/rollout in .cache/repos/<repo>
-logast fleet rollout . --repos checkout --pr    # one repo, pushed, with its pull request
+logast fleet rollout .                          # the plan: per repo due or not, and why; changes nothing
+logast fleet rollout . --apply                  # a preview per repo in .cache/rollout/<repo>: review it there
+logast fleet rollout . --commit                 # commits exactly the preview on logast/rollout (local)
+logast fleet rollout . --repos checkout --pr    # pushes that commit and opens (or updates) the pull request
 ```
 
 For each repo of repos.yaml (cloned or fetched as `--refresh` does):
@@ -290,13 +292,21 @@ For each repo of repos.yaml (cloned or fetched as `--refresh` does):
    is up to date.
 2. **Its branch.** `logast/rollout`, regenerated from the default branch (never rebased: apply is deterministic).
    A branch whose newest commit lacks the `Logast-Rollout:` trailer has someone's commits on top: it is theirs, left
-   alone. The same policy on the same base commit: unchanged, nothing runs.
-3. **Pin, apply, build** in a work tree: the pin (joining the fleet when the repo has not), `logast apply`, then the
-   repo's `./gradlew build` (`--no-build` skips it). A failing apply or build is **blocked**: nothing committed, the
-   log in `.cache/rollout/<repo>.log`.
-4. **Commit** with trailers: `Logast-Rollout: policy-N`, `Logast-Base: <commit>`, `Logast-Version`.
-5. `--push` pushes with a lease (a branch someone moved meanwhile is not overwritten); `--pr` opens or updates the pull
-   request (`gh`).
+   alone.
+3. **`--apply`: the preview.** In a work tree: the pin (joining the fleet when the repo has not), `logast apply`, the
+   repo's `./gradlew build` (`--no-build` skips it). A failing apply or build is **blocked**, with its log in
+   `.cache/rollout/<repo>.log`. The result's git tree id is recorded with what made it (base commit, policy version,
+   logast version).
+4. **`--commit`** commits exactly that tree (`git commit-tree`), with trailers `Logast-Rollout: policy-N`,
+   `Logast-Base: <commit>`, `Logast-Version`. A preview whose files changed after apply is discarded, never committed:
+   logast commits only what apply produced; changes of your own go on the pull request, as a commit anyone can see.
+5. **`--push`** pushes that commit with a lease (a branch someone moved meanwhile is not overwritten); **`--pr`** opens
+   or updates the pull request (`gh`).
+
+A later stage reuses the earlier one's result while the base commit, the policy version and logast are the same
+(`--commit` after `--apply` does not apply again; `--pr` pushes the commit `--commit` made); when one of them moved,
+the stage makes it again and says so; `--fresh` always does. Each stage includes the ones before it when there is
+nothing to reuse.
 
 ```yaml
 # a service's logast.yaml

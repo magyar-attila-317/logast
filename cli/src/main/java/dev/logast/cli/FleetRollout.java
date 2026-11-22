@@ -78,8 +78,10 @@ final class FleetRollout {
     }
 
     @Command(name = "rollout", description = "Roll the fleet's policy out to the repos of repos.yaml, from this machine with your "
-            + "own git and gh logins (#236): per repo due or not by its own logast.yaml (rollout: mode/hold, its pinned policy), then on "
-            + "branch logast/rollout: pin, `logast apply`, build, commit; --push and --pr publish it")
+            + "own git and gh logins (#236). Without a stage: the plan (per repo due or not, by its own logast.yaml), nothing changes. "
+            + "--apply: pin, `logast apply`, build, a preview per repo to review; --commit: commits exactly that preview on "
+            + "logast/rollout; --push / --pr: publish it. A later stage reuses the earlier one's result for the same base, policy "
+            + "and logast")
     static final class Run implements Callable<Integer> {
         @Parameters(index = "0", defaultValue = ".", description = "The fleet: its name or its repo's folder (default: .)")
         String fleet;
@@ -89,12 +91,25 @@ final class FleetRollout {
         String policy;
         @Option(names = "--no-build", description = "Commit without running the repo's build after apply")
         boolean noBuild;
-        @Option(names = "--push", description = "Push logast/rollout (with a lease: a branch someone moved is not overwritten)")
+        @Option(names = "--apply", description = "Make the preview: a work tree per repo with the pin and what apply (and the build) "
+                + "produced, in <fleet>/.cache/rollout/<repo>; nothing is committed")
+        boolean apply;
+        @Option(names = "--commit", description = "Commit the preview on logast/rollout (made first when there is none); a preview "
+                + "whose files changed after apply is discarded, never committed")
+        boolean commit;
+        @Option(names = "--push", description = "Push logast/rollout (with a lease: a branch someone moved is not overwritten); implies --commit")
         boolean push;
         @Option(names = "--pr", description = "Open or update the pull request (gh); implies --push")
         boolean pr;
+        @Option(names = "--fresh", description = "Apply again even when a preview of the same base, policy and logast is there")
+        boolean fresh;
         @Mixin
         Fleet.FleetsDir fleetsDir;
+
+        Rollout.Stage stage() {
+            return pr ? Rollout.Stage.PR : push ? Rollout.Stage.PUSH : commit ? Rollout.Stage.COMMIT : apply ? Rollout.Stage.APPLY
+                    : Rollout.Stage.PLAN;
+        }
 
         @Override
         public Integer call() {
@@ -110,7 +125,7 @@ final class FleetRollout {
             }
             List<Rollout.Row> rows;
             try {
-                rows = Rollout.run(dir, name, new Rollout.Options(new LinkedHashSet<>(repos), policy, !noBuild, push || pr, pr,
+                rows = Rollout.run(dir, name, new Rollout.Options(new LinkedHashSet<>(repos), policy, !noBuild, stage(), fresh,
                         dev.logast.orders.Baseline.currentVersion()), new Subprocess());
             } catch (IllegalStateException e) {
                 Out.warn("fleet rollout: " + e.getMessage());

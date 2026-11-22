@@ -42,14 +42,18 @@ public final class Rollout {
         int build(Path work, Path log);
     }
 
+    /** How far a run goes; each stage includes the ones before it when there is nothing to reuse. */
+    public enum Stage { PLAN, APPLY, COMMIT, PUSH, PR }
+
     /**
      * @param only   members to work on (empty: all); naming one also takes a {@code mode: manual} repo
      * @param policy the policy version to roll out (null: the newest tag)
+     * @param fresh  apply again even when a preview of the same base, policy and logast is there
      */
-    public record Options(Set<String> only, String policy, boolean build, boolean push, boolean pr, String logastVersion) {
+    public record Options(Set<String> only, String policy, boolean build, Stage stage, boolean fresh, String logastVersion) {
     }
 
-    public enum State { COMMITTED, PUSHED, PR, UNCHANGED, UP_TO_DATE, SKIPPED, BLOCKED, FAILED }
+    public enum State { DUE, PREVIEW, COMMITTED, PUSHED, PR, UNCHANGED, UP_TO_DATE, SKIPPED, BLOCKED, FAILED }
 
     /** One member's outcome; {@code detail} says why or where. */
     public record Row(String repo, State state, String detail) {
@@ -110,64 +114,141 @@ public final class Rollout {
         if (intent.pin() != null && PolicyVersions.number(intent.pin()) >= PolicyVersions.number(target)) {
             return new Row(name, State.UP_TO_DATE, "runs " + intent.pin());
         }
-        // the branch: ours (newest commit says logast made it) or someone's; the same policy on the same base: nothing to do
-        String remote = o.push() ? remoteBranch(clone) : null;
-        if (o.push() && remote != null) {
+        // the branch: ours (its newest commit says logast made it) or someone's
+        String remote = remoteBranch(clone);
+        if (remote != null) {
             Git.run(clone, "fetch", "--quiet", "--depth", "1", "origin", "+refs/heads/" + BRANCH + ":refs/remotes/origin/" + BRANCH);
         }
         String ref = remote != null ? "refs/remotes/origin/" + BRANCH : localBranch(clone) ? "refs/heads/" + BRANCH : null;
+        boolean current = false;   // the branch already holds this policy applied to this base
         if (ref != null) {
             String message = Git.run(clone, "log", "-1", "--format=%B", ref).out();
             if (!message.contains(TRAILER + ":")) {
                 return new Row(name, State.SKIPPED, BRANCH + " has someone's commits on top: it is theirs now (`logast apply .` there updates it)");
             }
-            if (message.contains(TRAILER + ": " + target) && message.contains("Logast-Base: " + base)) {
-                return new Row(name, State.UNCHANGED, BRANCH + " already applies " + target + " to " + base.substring(0, 8));
-            }
+            current = message.contains(TRAILER + ": " + target) && message.contains("Logast-Base: " + base);
         }
-        Path logs = fleetDir.resolve(".cache/rollout");
-        Path work = logs.resolve(name);
+        if (!current && localBranch(clone)) {
+            String message = Git.run(clone, "log", "-1", "--format=%B", "refs/heads/" + BRANCH).out();
+            current = message.contains(TRAILER + ": " + target) && message.contains("Logast-Base: " + base);
+            ref = current ? "refs/heads/" + BRANCH : ref;
+        }
+        Path work = fleetDir.resolve(".cache/rollout").resolve(name);
+        Path stampFile = fleetDir.resolve(".cache/rollout").resolve(name + ".stamp");
+        Path log = fleetDir.resolve(".cache/rollout").resolve(name + ".log");
+        String key = base + " " + target + " " + o.logastVersion();
+        if (o.stage() == Stage.PLAN) {
+            if (current) {
+                return new Row(name, remote != null && ref.startsWith("refs/remotes") ? State.UNCHANGED : State.COMMITTED,
+                        BRANCH + " holds " + target + " on " + base.substring(0, 8) + (remote != null && ref.startsWith("refs/remotes") ? " (pushed)" : " (not pushed)"));
+            }
+            String stamped = readStamp(stampFile);
+            return stamped != null && stamped.startsWith(key + " ")
+                    ? new Row(name, State.PREVIEW, "preview of " + target + " ready: " + work + " (--commit commits it)")
+                    : new Row(name, State.DUE, "would apply " + target + " to " + base.substring(0, 8) + " (--apply to see it)");
+        }
         try {
-            Files.createDirectories(logs);
-            Git.run(clone, "worktree", "remove", "--force", work.toString());
-            Git.run(clone, "worktree", "prune");
-            Git.must(clone, "worktree", "add", "--quiet", "--force", "--detach", work.toString(), base);
-            pin(work.resolve("logast.yaml"), fleet, target);
-            Path log = logs.resolve(name + ".log");
-            Files.deleteIfExists(log);
-            if (steps.apply(work, log) != 0) {
-                return new Row(name, State.BLOCKED, "apply failed: " + log);
+            String commit;
+            if (current && o.stage().compareTo(Stage.COMMIT) >= 0) {
+                commit = Git.must(clone, "rev-parse", ref);
+                if (o.stage() == Stage.COMMIT) {
+                    return new Row(name, State.UNCHANGED, BRANCH + " already applies " + target + " to " + base.substring(0, 8));
+                }
+            } else {
+                String tree = preview(clone, work, stampFile, log, fleet, target, base, key, o, steps);
+                if (tree == null) {
+                    return new Row(name, State.BLOCKED, Files.exists(log) ? "failed: " + log : "the preview changed after apply: "
+                            + "discarded (logast commits only what apply produced); --apply makes it again");
+                }
+                if (o.stage() == Stage.APPLY) {
+                    return new Row(name, State.PREVIEW, "review it: git -C " + work + " diff --cached --stat (log: " + log + ")");
+                }
+                commit = commitTree(clone, tree, base, message(fleet, target, base, o.logastVersion()));
+                Git.must(clone, "branch", "--force", BRANCH, commit);
+                discard(clone, work, stampFile);
+                if (o.stage() == Stage.COMMIT) {
+                    return new Row(name, State.COMMITTED, BRANCH + " in " + clone);
+                }
             }
-            if (o.build() && steps.build(work, log) != 0) {
-                return new Row(name, State.BLOCKED, "the build failed after apply (nothing committed): " + log);
+            if (remote != null && remote.equals(commit)) {
+                if (o.stage() == Stage.PUSH) {
+                    return new Row(name, State.UNCHANGED, BRANCH + " is pushed");
+                }
+            } else {
+                Git.Result push = Git.run(clone, "push", "--quiet", "--force-with-lease=refs/heads/" + BRANCH + ":" + (remote == null ? "" : remote),
+                        "origin", commit + ":refs/heads/" + BRANCH);
+                if (!push.ok()) {
+                    return new Row(name, State.SKIPPED, "push refused (the branch moved since it was read: someone's now): " + push.out());
+                }
+                if (o.stage() == Stage.PUSH) {
+                    return new Row(name, State.PUSHED, BRANCH);
+                }
             }
-            Git.must(work, "add", "-A");
-            // the person's own identity; a machine without one (a CI runner) commits as logast
-            boolean identity = !Git.run(work, "config", "user.email").out().isBlank();
-            List<String> commit = new ArrayList<>(identity ? List.of() : List.of("-c", "user.name=logast", "-c",
-                    "user.email=logast@users.noreply.github.com"));
-            commit.addAll(List.of("commit", "--quiet", "--no-verify", "-m", message(fleet, target, base, o.logastVersion())));
-            Git.must(work, commit.toArray(String[]::new));
-            Git.must(clone, "branch", "--force", BRANCH, Git.must(work, "rev-parse", "HEAD"));
-            if (!o.push()) {
-                return new Row(name, State.COMMITTED, BRANCH + " in " + clone);
-            }
-            Git.Result push = Git.run(work, "push", "--quiet", "--force-with-lease=refs/heads/" + BRANCH + ":" + (remote == null ? "" : remote),
-                    "origin", "HEAD:refs/heads/" + BRANCH);
-            if (!push.ok()) {
-                return new Row(name, State.SKIPPED, "push refused (the branch moved since it was read: someone's now): " + push.out());
-            }
-            if (!o.pr()) {
-                return new Row(name, State.PUSHED, BRANCH);
-            }
-            String pr = PullRequests.openOrUpdate(work, BRANCH, title(target), body(fleet, target, base));
-            return new Row(name, State.PR, pr);
+            return new Row(name, State.PR, PullRequests.openOrUpdate(clone, BRANCH, title(target), body(fleet, target, base)));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         } catch (RuntimeException e) {
             return new Row(name, State.FAILED, e.getMessage());
-        } finally {
-            Git.run(clone, "worktree", "remove", "--force", work.toString());
+        }
+    }
+
+    /**
+     * The applied tree for {@code key} (base, policy, logast): the preview's, when one of the same key is there and its
+     * files are still exactly what apply produced; else made again (pin, apply, build) and stamped. A preview whose files
+     * changed after apply is discarded, never committed: null, and no log. A failing apply or build: null, with its log.
+     */
+    private static String preview(Path clone, Path work, Path stampFile, Path log, String fleet, String target, String base,
+                                  String key, Options o, Steps steps) throws IOException {
+        String stamped = readStamp(stampFile);
+        if (!o.fresh() && stamped != null && stamped.startsWith(key + " ") && Files.isDirectory(work)) {
+            String tree = stamped.substring(key.length() + 1).strip();
+            Git.must(work, "add", "-A");
+            if (tree.equals(Git.must(work, "write-tree"))) {
+                return tree;
+            }
+            discard(clone, work, stampFile);
+            Files.deleteIfExists(log);
+            return null;
+        }
+        discard(clone, work, stampFile);
+        Files.createDirectories(work.getParent());
+        Git.must(clone, "worktree", "add", "--quiet", "--force", "--detach", work.toString(), base);
+        pin(work.resolve("logast.yaml"), fleet, target);
+        Files.deleteIfExists(log);
+        Files.writeString(log, "");
+        if (steps.apply(work, log) != 0) {
+            return null;
+        }
+        if (o.build() && steps.build(work, log) != 0) {
+            Files.writeString(log, "\nthe build failed after apply: nothing committed\n", java.nio.file.StandardOpenOption.APPEND);
+            return null;
+        }
+        Git.must(work, "add", "-A");
+        String tree = Git.must(work, "write-tree");
+        Files.writeString(stampFile, key + " " + tree + "\n");
+        return tree;
+    }
+
+    /** A commit of exactly {@code tree} on {@code base}: the person's identity, else logast's (a machine without one). */
+    private static String commitTree(Path clone, String tree, String base, String message) {
+        boolean identity = !Git.run(clone, "config", "user.email").out().isBlank();
+        List<String> args = new ArrayList<>(identity ? List.of() : List.of("-c", "user.name=logast", "-c",
+                "user.email=logast@users.noreply.github.com"));
+        args.addAll(List.of("commit-tree", tree, "-p", base, "-m", message));
+        return Git.must(clone, args.toArray(String[]::new));
+    }
+
+    private static void discard(Path clone, Path work, Path stampFile) throws IOException {
+        Git.run(clone, "worktree", "remove", "--force", work.toString());
+        Git.run(clone, "worktree", "prune");
+        Files.deleteIfExists(stampFile);
+    }
+
+    private static String readStamp(Path stampFile) {
+        try {
+            return Files.isRegularFile(stampFile) ? Files.readString(stampFile).strip() : null;
+        } catch (IOException e) {
+            return null;
         }
     }
 

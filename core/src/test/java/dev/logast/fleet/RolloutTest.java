@@ -92,9 +92,13 @@ class RolloutTest {
         Files.writeString(fleet.resolve("repos.yaml"), sb.toString());
     }
 
-    Map<String, Rollout.Row> run(boolean push) {
-        List<Rollout.Row> rows = Rollout.run(fleet, "shop", new Rollout.Options(Set.of(), null, true, push, false, "test"), steps);
+    Map<String, Rollout.Row> run(Rollout.Stage stage) {
+        List<Rollout.Row> rows = Rollout.run(fleet, "shop", new Rollout.Options(Set.of(), null, true, stage, false, "test"), steps);
         return rows.stream().collect(Collectors.toMap(Rollout.Row::repo, r -> r));
+    }
+
+    Path preview(String name) {
+        return fleet.resolve(".cache/rollout").resolve(name);
     }
 
     Path clone(String name) {
@@ -104,7 +108,7 @@ class RolloutTest {
     @Test
     void dueReposGetTheirBranchWithThePinAndASecondRunChangesNothing() throws IOException {
         repos(member("checkout", Map.of()), member("payments", Map.of("logast.yaml", "packs: [logging]\n")));
-        Map<String, Rollout.Row> first = run(false);
+        Map<String, Rollout.Row> first = run(Rollout.Stage.COMMIT);
         assertThat(first.get("checkout").state()).isEqualTo(Rollout.State.COMMITTED);
         assertThat(first.get("payments").state()).isEqualTo(Rollout.State.COMMITTED);
         String yaml = Git.must(clone("payments"), "show", Rollout.BRANCH + ":logast.yaml");
@@ -115,7 +119,7 @@ class RolloutTest {
                 .contains(Rollout.TRAILER + ": policy-1").contains("Logast-Base: ");
 
         int before = applied;
-        Map<String, Rollout.Row> second = run(false);
+        Map<String, Rollout.Row> second = run(Rollout.Stage.COMMIT);
         assertThat(second.values()).as("same policy, same base: nothing to do").allMatch(r -> r.state() == Rollout.State.UNCHANGED);
         assertThat(applied).isEqualTo(before);
     }
@@ -127,7 +131,7 @@ class RolloutTest {
                 member("manual", Map.of("logast.yaml", "rollout:\n  mode: manual\n")),
                 member("current", Map.of("logast.yaml", "fleet: shop\nextends:\n  - fleet:shop@policy-1\n")),
                 member("broken", Map.of("BROKEN", "")));
-        Map<String, Rollout.Row> rows = run(false);
+        Map<String, Rollout.Row> rows = run(Rollout.Stage.COMMIT);
         assertThat(rows.get("held").state()).isEqualTo(Rollout.State.SKIPPED);
         assertThat(rows.get("held").detail()).contains("on hold");
         assertThat(rows.get("out").state()).isEqualTo(Rollout.State.SKIPPED);
@@ -136,7 +140,7 @@ class RolloutTest {
         assertThat(rows.get("broken").state()).as("the build fails: nothing committed").isEqualTo(Rollout.State.BLOCKED);
         assertThat(Git.run(clone("broken"), "rev-parse", "--verify", "--quiet", "refs/heads/" + Rollout.BRANCH).ok()).isFalse();
 
-        List<Rollout.Row> named = Rollout.run(fleet, "shop", new Rollout.Options(Set.of("manual"), null, true, false, false, "test"), steps);
+        List<Rollout.Row> named = Rollout.run(fleet, "shop", new Rollout.Options(Set.of("manual"), null, true, Rollout.Stage.COMMIT, false, "test"), steps);
         assertThat(named).singleElement().satisfies(r -> assertThat(r.state()).as("named: a manual repo is rolled out")
                 .isEqualTo(Rollout.State.COMMITTED));
     }
@@ -153,7 +157,7 @@ class RolloutTest {
     void aPushedBranchSomeoneTookOverIsLeftAlone() throws IOException {
         Path remote = member("checkout", Map.of());
         repos(remote);
-        assertThat(run(true).get("checkout").state()).isEqualTo(Rollout.State.PUSHED);
+        assertThat(run(Rollout.Stage.PUSH).get("checkout").state()).isEqualTo(Rollout.State.PUSHED);
         assertThat(Git.must(remote, "rev-parse", Rollout.BRANCH)).isNotBlank();
 
         // a person adds a commit on top of the rollout branch
@@ -170,9 +174,50 @@ class RolloutTest {
         Files.writeString(fleet.resolve("company.yaml"), "logging:\n  keyStyle: snake\n");
         git(fleet, "commit", "--quiet", "-am", "policy 2");
         assertThat(PolicyVersions.tag(fleet)).isEqualTo("policy-2");
-        Rollout.Row row = run(true).get("checkout");
+        Rollout.Row row = run(Rollout.Stage.PUSH).get("checkout");
         assertThat(row.state()).isEqualTo(Rollout.State.SKIPPED);
         assertThat(row.detail()).contains("someone's");
         assertThat(Git.must(remote, "rev-parse", Rollout.BRANCH)).as("not overwritten").isEqualTo(theirs);
+    }
+
+    /** The plan changes nothing; --apply leaves a preview; --commit commits exactly it, without applying again; --push reuses the commit. */
+    @Test
+    void eachStageReusesTheOneBefore() throws IOException {
+        Path remote = member("checkout", Map.of());
+        repos(remote);
+        assertThat(run(Rollout.Stage.PLAN).get("checkout").state()).isEqualTo(Rollout.State.DUE);
+        assertThat(applied).as("the plan runs nothing").isZero();
+        assertThat(preview("checkout")).doesNotExist();
+
+        assertThat(run(Rollout.Stage.APPLY).get("checkout").state()).isEqualTo(Rollout.State.PREVIEW);
+        assertThat(preview("checkout").resolve("Applied.java")).exists();
+        assertThat(Git.run(clone("checkout"), "rev-parse", "--verify", "--quiet", "refs/heads/" + Rollout.BRANCH).ok()).as("nothing committed").isFalse();
+        assertThat(run(Rollout.Stage.PLAN).get("checkout").state()).as("the plan sees the preview").isEqualTo(Rollout.State.PREVIEW);
+
+        assertThat(run(Rollout.Stage.COMMIT).get("checkout").state()).isEqualTo(Rollout.State.COMMITTED);
+        assertThat(applied).as("the preview is committed, not made again").isEqualTo(1);
+        assertThat(Git.must(clone("checkout"), "show", Rollout.BRANCH + ":Applied.java")).contains("class Applied");
+
+        assertThat(run(Rollout.Stage.PUSH).get("checkout").state()).isEqualTo(Rollout.State.PUSHED);
+        assertThat(applied).as("the commit is pushed as it is").isEqualTo(1);
+        assertThat(Git.must(remote, "rev-parse", Rollout.BRANCH)).isEqualTo(Git.must(clone("checkout"), "rev-parse", Rollout.BRANCH));
+        assertThat(run(Rollout.Stage.PUSH).get("checkout").state()).isEqualTo(Rollout.State.UNCHANGED);
+    }
+
+    /** A preview whose files changed after apply is discarded, never committed. */
+    @Test
+    void aPreviewChangedAfterApplyIsNeverCommitted() throws IOException {
+        repos(member("checkout", Map.of()));
+        run(Rollout.Stage.APPLY);
+        Files.writeString(preview("checkout").resolve("Applied.java"), "class Applied { /* changed by hand */ }\n");
+        Rollout.Row row = run(Rollout.Stage.COMMIT).get("checkout");
+        assertThat(row.state()).isEqualTo(Rollout.State.BLOCKED);
+        assertThat(row.detail()).contains("changed after apply");
+        assertThat(Git.run(clone("checkout"), "rev-parse", "--verify", "--quiet", "refs/heads/" + Rollout.BRANCH).ok()).isFalse();
+        assertThat(preview("checkout")).as("discarded").doesNotExist();
+
+        assertThat(run(Rollout.Stage.COMMIT).get("checkout").state()).as("made again from scratch, then committed")
+                .isEqualTo(Rollout.State.COMMITTED);
+        assertThat(Git.must(clone("checkout"), "show", Rollout.BRANCH + ":Applied.java")).doesNotContain("by hand");
     }
 }
