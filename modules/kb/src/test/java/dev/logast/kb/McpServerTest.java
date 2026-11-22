@@ -73,6 +73,27 @@ class McpServerTest {
         assertThat(kb.summary()).contains("2 facts files, 2 repos: audit, billing", "1 lines left out");
     }
 
+    /**
+     * Every tool tools/list declares has a handler: a declared tool without its case in the dispatch would compile and
+     * fail only when a client calls it ("unknown tool").
+     */
+    @Test
+    void everyListedToolIsHandled() throws IOException {
+        List<Path> files = files();
+        McpServer server = new McpServer(() -> files, "1.2.3", new PrintStream(new ByteArrayOutputStream(), true));
+        JsonNode tools = server.handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}").get("result").get("tools");
+        assertThat(tools.size()).isGreaterThan(10);
+        for (JsonNode t : tools) {
+            com.fasterxml.jackson.databind.node.ObjectNode args = McpServer.JSON.createObjectNode();
+            t.path("inputSchema").path("required").forEach(r -> args.put(r.asText(), "x"));
+            com.fasterxml.jackson.databind.node.ObjectNode req = McpServer.JSON.createObjectNode().put("jsonrpc", "2.0").put("id", 2)
+                    .put("method", "tools/call");
+            req.putObject("params").put("name", t.get("name").asText()).set("arguments", args);
+            JsonNode reply = server.handle(req.toString());
+            assertThat(reply.toString()).as(t.get("name").asText() + " is handled").doesNotContain("unknown tool");
+        }
+    }
+
     @Test
     void theServerSpeaksMcpOverStdio() throws IOException {
         List<Path> files = files();
