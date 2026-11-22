@@ -668,6 +668,53 @@ final class Fleet implements Callable<Integer> {
         }
         // #193: what the run does, a header per phase, a line per repo, a summary
         FleetLog log = refresh || kb ? new FleetLog() : null;
+        rowsToExport(dir);
+        List<FleetRepos.Repo> repos = refresh ? FleetRepos.list(dir).stream()
+                .filter(r -> service == null || r.name().equals(service)).toList() : List.of();
+        if (service != null && (refresh || kb) && !NamedFleet.members(dir).containsKey(service)
+                && FleetRepos.list(dir).stream().noneMatch(r -> r.name().equals(service))) {
+            Out.warn("fleet: no member " + service + " in " + name + ": " + String.join(", ", NamedFleet.members(dir).keySet()));
+            return 2;
+        }
+        Map<String, String> stale = refresh ? Map.of() : stale(dir, work(NamedFleet.members(dir)));   // #224
+        if (log != null) {
+            intro(name, dir, repos, stale, log);
+        }
+        if (refresh) {
+            update(dir, repos, log);
+        }
+        Map<String, Path> members = NamedFleet.members(dir);
+        Map<String, Path> added = NamedFleet.added(dir);
+        if (kb && flyway) {   // #205: what the last export knew of each member's tables, for the others' migrations
+            tablesMade = KbExport.tablesMade(dir.resolve("kb"));
+            tableOwners = KbExport.tableOwners(dir.resolve("kb"));
+        }
+        if (refresh) {
+            scanAll(dir, members, added, log);
+        }
+        if (!stale.isEmpty()) {
+            rescan(dir, stale, members, added, log);
+        }
+        if (kb) {
+            knowledgeBase(dir, members, log);
+        }
+        if (log != null) {
+            summary(dir, log);
+        }
+        if (service != null && !(refresh || kb)) {   // #223: with --refresh/--kb, --service only picks what is worked on
+            return service(name, dir, service, members, added);
+        }
+        Overview ov = overview(name, dir, members);
+        return json ? printJson(name, dir, members, added, ov) : printOverview(name, dir, members, added, ov);
+    }
+
+    /** What an overview shows, built once for the JSON and the text form. */
+    private record Overview(Map<String, NamedFleet.Snapshot> snaps, FleetLinks.Result links, CentralVocabulary.Result vocab,
+                            Path company, List<CompanyPolicy.Suggestion> suggestions, String agreed, List<String> next, Path page) {
+    }
+
+    /** The tables whose rows become facts: repos.yaml's per repo (#216) and what the fleet's mappings need (#215). */
+    private void rowsToExport(Path dir) {
         Map<String, List<String>> asked = new java.util.TreeMap<>();
         for (FleetRepos.Repo r : FleetRepos.list(dir)) {
             if (!r.rows().isEmpty()) {
@@ -684,163 +731,160 @@ final class Fleet implements Callable<Integer> {
             Out.warn("fleet: the mappings need rows of " + rows + ": add --flyway, or rows: to the repo that seeds them in repos.yaml");
         }
 
-        List<FleetRepos.Repo> repos = refresh ? FleetRepos.list(dir).stream()
-                .filter(r -> service == null || r.name().equals(service)).toList() : List.of();
-        if (service != null && (refresh || kb) && !NamedFleet.members(dir).containsKey(service)
-                && FleetRepos.list(dir).stream().noneMatch(r -> r.name().equals(service))) {
-            Out.warn("fleet: no member " + service + " in " + name + ": " + String.join(", ", NamedFleet.members(dir).keySet()));
-            return 2;
-        }
-        Map<String, String> stale = refresh ? Map.of() : stale(dir, work(NamedFleet.members(dir)));   // #224
-        if (log != null) {
-            java.util.Set<String> names = new java.util.TreeSet<>(NamedFleet.members(dir).keySet());
-            repos.forEach(r -> names.add(r.name()));
-            List<String[]> plan = new java.util.ArrayList<>();
-            if (!stale.isEmpty()) {
-                plan.add(new String[]{"rescan", "repos changed since their snapshot, or scanned by another logast: findings again"});
-            }
-            if (refresh) {
-                plan.add(new String[]{"update", "fetch each repo of repos.yaml (read-only clones)"});
-                plan.add(new String[]{"scan", "analyse each Java repo: findings and score" + (kb ? ", then its knowledge base" : "")
-                        + (noBuilds ? " (source only)" : "")});
-            }
-            if (kb) {
-                plan.add(new String[]{"knowledge base", "facts of the other repos into kb/" + (kbFull ? ", all of them"
-                        : ", unchanged ones kept") + (flyway ? ", tables from the migrations (Docker)" : "")});
-                if (flyway) {
-                    plan.add(new String[]{"dependencies", "migrations needing another repo's tables run again against them (when any)"});
-                }
-            }
-            plan.add(new String[]{"report", "the overview, report/fleet.html"});
-            log.intro("logast fleet " + name + " · " + names.size() + " repos", plan, names.stream().mapToInt(String::length).max().orElse(20));
-        }
-        if (refresh) {
-            // #147: the members repos.yaml lists by URL: cloned or updated, then added (read-only) like `fleet add`
-            FleetLog.Phase phase = log.phase("update", null, repos.size());
-            for (FleetRepos.Repo repo : repos) {
-                long t0 = System.nanoTime();
-                try (Out.Progress p = phase.working(repo.name(), "fetching " + repo.url())) {
-                    NamedFleet.add(dir, FleetRepos.sync(dir, repo));
-                    phase.done(repo.name(), FleetLog.Status.OK, System.nanoTime() - t0, "updated", List.of());
-                } catch (RuntimeException e) {
-                    phase.done(repo.name(), FleetLog.Status.FAILED, System.nanoTime() - t0, "not updated: "
-                            + FleetLog.oneLine(e.getMessage()) + "; its snapshot stays as it was", List.of());
-                }
-            }
-            phase.end();
-        }
-        Map<String, Path> members = NamedFleet.members(dir);
-        Map<String, Path> added = NamedFleet.added(dir);
-        if (kb && flyway) {   // #205: what the last export knew of each member's tables, for the others' migrations
-            tablesMade = KbExport.tablesMade(dir.resolve("kb"));
-            tableOwners = KbExport.tableOwners(dir.resolve("kb"));
-        }
-        if (refresh) {
-            FleetLog.Phase phase = log.phase("scan", threads > 1 ? Math.max(1, threads) + " at a time" : null, work(members).size());
-            List<java.util.concurrent.Callable<Void>> jobs = new java.util.ArrayList<>();
-            java.util.Set<String> running = java.util.concurrent.ConcurrentHashMap.newKeySet();
-            Out.Progress[] live = new Out.Progress[1];
-            for (var m : work(members).entrySet()) {
-                String svc = m.getKey();
-                Path root = m.getValue();
-                if (!Files.isDirectory(root)) {
-                    phase.done(svc, FleetLog.Status.SKIPPED, 0, "not on this machine (" + root + "); its snapshot stays as it was", List.of());
-                    continue;
-                }
-                if (dev.logast.export.RepoExport.roots(root).stream().noneMatch(r -> r.kind().equals("java"))) {
-                    phase.done(svc, FleetLog.Status.SKIPPED, 0, "no Java build to scan" + (kb ? ": its facts come with the knowledge base" : ""),
-                            List.of());
-                    continue;
-                }
-                jobs.add(() -> {
-                    if (threads <= 1) {
-                        Runnable done;
-                        try (Out.Progress p = phase.working(svc, "scanning")) {
-                            done = scanMember(dir, svc, root, added, phase, p);
-                        }
-                        done.run();
-                    } else {   // #226: one line for the repos being scanned; each repo's own output kept off the screen
-                        running.add(svc);
-                        live[0].update("~scanning " + String.join(", ", running));
-                        Runnable done = Out.Routing.capture(new java.util.ArrayList<>(), () -> scanMember(dir, svc, root, added, phase, null));
-                        running.remove(svc);
-                        live[0].update("~scanning " + String.join(", ", running));
-                        done.run();   // its line, outside the capture
-                    }
-                    return null;
-                });
-            }
-            if (threads <= 1) {
-                for (var j : jobs) {
-                    try {
-                        j.call();
-                    } catch (Exception e) {
-                        Out.warn("fleet --refresh: " + e);
-                    }
-                }
-            } else {
-                try (Out.Progress p = new Out.Progress("~scanning")) {
-                    live[0] = p;
-                    var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
-                    try {
-                        for (var f : pool.invokeAll(jobs)) {
-                            f.get();
-                        }
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    } catch (java.util.concurrent.ExecutionException e) {
-                        Out.warn("fleet --refresh: " + e.getCause());
-                    } finally {
-                        pool.shutdown();
-                    }
-                }
-            }
-            phase.end();
-        }
+    }
+
+    /** #193: the run's plan, before its phases. */
+    private void intro(String name, Path dir, List<FleetRepos.Repo> repos, Map<String, String> stale, FleetLog log) {
+        java.util.Set<String> names = new java.util.TreeSet<>(NamedFleet.members(dir).keySet());
+        repos.forEach(r -> names.add(r.name()));
+        List<String[]> plan = new java.util.ArrayList<>();
         if (!stale.isEmpty()) {
-            // #150: a member with commits since its snapshot is rescanned, so the overview never shows an old state of it;
-            // #195: so is one another logast scanned (its findings come from that logast's rules); #224: as a phase
-            FleetLog.Phase phase = log == null ? null : log.phase("rescan", null, stale.size());
-            for (var e : stale.entrySet()) {
-                String svc = e.getKey();
-                Path root = members.get(svc);
-                if (phase == null) {
-                    System.err.println("fleet: " + svc + (e.getValue().startsWith("new") ? " has " : "'s ") + e.getValue() + ": rescanning it");
-                    skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc)
-                            ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
-                    continue;
-                }
-                long t0 = System.nanoTime();
-                String error;
-                try (Out.Progress p = phase.working(svc, "rescanning")) {
-                    error = scanError(() -> NamedFleet.write(dir, added.containsKey(svc)
-                            ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
-                }
-                phase.done(svc, error == null ? FleetLog.Status.OK : FleetLog.Status.FAILED, System.nanoTime() - t0,
-                        error == null ? "rescanned: " + e.getValue() : "scan failed: " + FleetLog.oneLine(error)
-                                + " (its snapshot stays as it was)", List.of());
-            }
-            if (phase != null) {
-                phase.end();
-            }
+            plan.add(new String[]{"rescan", "repos changed since their snapshot, or scanned by another logast: findings again"});
+        }
+        if (refresh) {
+            plan.add(new String[]{"update", "fetch each repo of repos.yaml (read-only clones)"});
+            plan.add(new String[]{"scan", "analyse each Java repo: findings and score" + (kb ? ", then its knowledge base" : "")
+                    + (noBuilds ? " (source only)" : "")});
         }
         if (kb) {
-            knowledgeBase(dir, members, log);
-        }
-        if (log != null) {
-            List<String[]> next = new java.util.ArrayList<>();
-            if (kb) {
-                Path kbDir = dir.resolve("kb").toAbsolutePath().normalize();
-                Path cwd = Path.of("").toAbsolutePath();
-                String shown = kbDir.startsWith(cwd) ? (cwd.relativize(kbDir).toString().isEmpty() ? "." : cwd.relativize(kbDir).toString())
-                        : kbDir.toString();
-                next.add(new String[]{"logast mcp config --kb " + shown, "connects an MCP client to the knowledge base"});
+            plan.add(new String[]{"knowledge base", "facts of the other repos into kb/" + (kbFull ? ", all of them"
+                    : ", unchanged ones kept") + (flyway ? ", tables from the migrations (Docker)" : "")});
+            if (flyway) {
+                plan.add(new String[]{"dependencies", "migrations needing another repo's tables run again against them (when any)"});
             }
-            log.summary(next);
         }
-        if (service != null && !(refresh || kb)) {   // #223: with --refresh/--kb, --service only picks what is worked on
-            return service(name, dir, service, members, added);
+        plan.add(new String[]{"report", "the overview, report/fleet.html"});
+        log.intro("logast fleet " + name + " · " + names.size() + " repos", plan, names.stream().mapToInt(String::length).max().orElse(20));
+    }
+
+    /** #147: the members repos.yaml lists by URL: cloned or updated, then added (read-only) like `fleet add`. */
+    private void update(Path dir, List<FleetRepos.Repo> repos, FleetLog log) {
+        FleetLog.Phase phase = log.phase("update", null, repos.size());
+        for (FleetRepos.Repo repo : repos) {
+            long t0 = System.nanoTime();
+            try (Out.Progress p = phase.working(repo.name(), "fetching " + repo.url())) {
+                NamedFleet.add(dir, FleetRepos.sync(dir, repo));
+                phase.done(repo.name(), FleetLog.Status.OK, System.nanoTime() - t0, "updated", List.of());
+            } catch (RuntimeException e) {
+                phase.done(repo.name(), FleetLog.Status.FAILED, System.nanoTime() - t0, "not updated: "
+                        + FleetLog.oneLine(e.getMessage()) + "; its snapshot stays as it was", List.of());
+            }
         }
+        phase.end();
+    }
+
+    /** Every member scanned (#226: `--threads` at a time, each repo's own output kept off the screen). */
+    private void scanAll(Path dir, Map<String, Path> members, Map<String, Path> added, FleetLog log) {
+        FleetLog.Phase phase = log.phase("scan", threads > 1 ? Math.max(1, threads) + " at a time" : null, work(members).size());
+        List<java.util.concurrent.Callable<Void>> jobs = new java.util.ArrayList<>();
+        java.util.Set<String> running = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        Out.Progress[] live = new Out.Progress[1];
+        for (var m : work(members).entrySet()) {
+            String svc = m.getKey();
+            Path root = m.getValue();
+            if (!Files.isDirectory(root)) {
+                phase.done(svc, FleetLog.Status.SKIPPED, 0, "not on this machine (" + root + "); its snapshot stays as it was", List.of());
+                continue;
+            }
+            if (dev.logast.export.RepoExport.roots(root).stream().noneMatch(r -> r.kind().equals("java"))) {
+                phase.done(svc, FleetLog.Status.SKIPPED, 0, "no Java build to scan" + (kb ? ": its facts come with the knowledge base" : ""),
+                        List.of());
+                continue;
+            }
+            jobs.add(() -> {
+                if (threads <= 1) {
+                    Runnable done;
+                    try (Out.Progress p = phase.working(svc, "scanning")) {
+                        done = scanMember(dir, svc, root, added, phase, p);
+                    }
+                    done.run();
+                } else {   // #226: one line for the repos being scanned; each repo's own output kept off the screen
+                    running.add(svc);
+                    live[0].update("~scanning " + String.join(", ", running));
+                    Runnable done = Out.Routing.capture(new java.util.ArrayList<>(), () -> scanMember(dir, svc, root, added, phase, null));
+                    running.remove(svc);
+                    live[0].update("~scanning " + String.join(", ", running));
+                    done.run();   // its line, outside the capture
+                }
+                return null;
+            });
+        }
+        if (threads <= 1) {
+            for (var j : jobs) {
+                try {
+                    j.call();
+                } catch (Exception e) {
+                    Out.warn("fleet --refresh: " + e);
+                }
+            }
+        } else {
+            try (Out.Progress p = new Out.Progress("~scanning")) {
+                live[0] = p;
+                var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+                try {
+                    for (var f : pool.invokeAll(jobs)) {
+                        f.get();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (java.util.concurrent.ExecutionException e) {
+                    Out.warn("fleet --refresh: " + e.getCause());
+                } finally {
+                    pool.shutdown();
+                }
+            }
+        }
+        phase.end();
+    }
+
+    /**
+     * #150: a member with commits since its snapshot is rescanned, so the overview never shows an old state of it; #195:
+     * so is one another logast scanned (its findings come from that logast's rules); #224: as a phase.
+     */
+    private void rescan(Path dir, Map<String, String> stale, Map<String, Path> members, Map<String, Path> added, FleetLog log) {
+        FleetLog.Phase phase = log == null ? null : log.phase("rescan", null, stale.size());
+        for (var e : stale.entrySet()) {
+            String svc = e.getKey();
+            Path root = members.get(svc);
+            if (phase == null) {
+                System.err.println("fleet: " + svc + (e.getValue().startsWith("new") ? " has " : "'s ") + e.getValue() + ": rescanning it");
+                skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc)
+                        ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
+                continue;
+            }
+            long t0 = System.nanoTime();
+            String error;
+            try (Out.Progress p = phase.working(svc, "rescanning")) {
+                error = scanError(() -> NamedFleet.write(dir, added.containsKey(svc)
+                        ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
+            }
+            phase.done(svc, error == null ? FleetLog.Status.OK : FleetLog.Status.FAILED, System.nanoTime() - t0,
+                    error == null ? "rescanned: " + e.getValue() : "scan failed: " + FleetLog.oneLine(error)
+                            + " (its snapshot stays as it was)", List.of());
+        }
+        if (phase != null) {
+            phase.end();
+        }
+    }
+
+    /** The run's summary, with where the knowledge base is for an MCP client. */
+    private void summary(Path dir, FleetLog log) {
+        List<String[]> next = new java.util.ArrayList<>();
+        if (kb) {
+            Path kbDir = dir.resolve("kb").toAbsolutePath().normalize();
+            Path cwd = Path.of("").toAbsolutePath();
+            String shown = kbDir.startsWith(cwd) ? (cwd.relativize(kbDir).toString().isEmpty() ? "." : cwd.relativize(kbDir).toString())
+                    : kbDir.toString();
+            next.add(new String[]{"logast mcp config --kb " + shown, "connects an MCP client to the knowledge base"});
+        }
+        log.summary(next);
+    }
+
+    /**
+     * The overview's content from the snapshots: links between services, the vocabulary (#139: the worksheet and company.yaml
+     * kept current once a worksheet exists), company.yaml's suggestions (#129), the next steps (#149) and the page (#141).
+     */
+    private Overview overview(String name, Path dir, Map<String, Path> members) throws IOException {
         Map<String, NamedFleet.Snapshot> snaps = NamedFleet.snapshots(dir);
         List<FleetReport.Service> services = snaps.values().stream().map(NamedFleet.Snapshot::report).toList();
         FleetLinks.Result links = FleetLinks.of(services);
@@ -861,40 +905,59 @@ final class Fleet implements Callable<Integer> {
         // #141: every overview rewrites the page (--html only says so explicitly)
         Path page = FleetReport.writeDaily(out != null ? out : dir.resolve("report"), services, links,
                 suggestions.stream().map(CompanyPolicy.Suggestion::text).toList(), next);
-        Instant now = Instant.now();
-        if (json) {
-            Map<String, Object> o = new LinkedHashMap<>();
-            o.put("fleet", name);
-            o.put("dir", dir.toString());
-            List<Map<String, Object>> rows = new ArrayList<>();
-            Set<String> names = new java.util.TreeSet<>(members.keySet());
-            names.addAll(snaps.keySet());
-            for (String s : names) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("service", s);
-                row.put("root", members.containsKey(s) ? members.get(s).toString() : snaps.get(s).root());
-                row.put("member", !members.containsKey(s) ? "former" : added.containsKey(s) ? "added" : "joined");   // #132
-                NamedFleet.Snapshot snap = snaps.get(s);
-                if (snap != null) {
-                    row.put("score", snap.report().score());
-                    row.put("open", open(snap.report()));
-                    row.put("severity", snap.report().severity());
-                    row.put("snapshot", snap.created());
-                    row.put("commit", snap.commit());
-                }
-                rows.add(row);
+        return new Overview(snaps, links, vocab, company, suggestions, agreed, next, page);
+    }
+
+    private int printJson(String name, Path dir, Map<String, Path> members, Map<String, Path> added, Overview ov) throws IOException {
+        Map<String, NamedFleet.Snapshot> snaps = ov.snaps();
+        FleetLinks.Result links = ov.links();
+        CentralVocabulary.Result vocab = ov.vocab();
+        Path company = ov.company();
+        List<CompanyPolicy.Suggestion> suggestions = ov.suggestions();
+        List<String> next = ov.next();
+        Path page = ov.page();
+        Map<String, Object> o = new LinkedHashMap<>();
+        o.put("fleet", name);
+        o.put("dir", dir.toString());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Set<String> names = new java.util.TreeSet<>(members.keySet());
+        names.addAll(snaps.keySet());
+        for (String s : names) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("service", s);
+            row.put("root", members.containsKey(s) ? members.get(s).toString() : snaps.get(s).root());
+            row.put("member", !members.containsKey(s) ? "former" : added.containsKey(s) ? "added" : "joined");   // #132
+            NamedFleet.Snapshot snap = snaps.get(s);
+            if (snap != null) {
+                row.put("score", snap.report().score());
+                row.put("open", open(snap.report()));
+                row.put("severity", snap.report().severity());
+                row.put("snapshot", snap.created());
+                row.put("commit", snap.commit());
             }
-            o.put("services", rows);
-            o.put("links", links);
-            o.put("vocabulary", Map.of("summary", vocab.summary(), "conflicts", vocab.conflicts()));
-            o.put("company", Map.of("file", company.toString(), "suggestions", suggestions));
-            o.put("next", next);
-            if (page != null) {
-                o.put("report", page.toAbsolutePath().toString());
-            }
-            System.out.println(OrderJson.MAPPER.writeValueAsString(o));
-            return 0;
+            rows.add(row);
         }
+        o.put("services", rows);
+        o.put("links", links);
+        o.put("vocabulary", Map.of("summary", vocab.summary(), "conflicts", vocab.conflicts()));
+        o.put("company", Map.of("file", company.toString(), "suggestions", suggestions));
+        o.put("next", next);
+        if (page != null) {
+            o.put("report", page.toAbsolutePath().toString());
+        }
+        System.out.println(OrderJson.MAPPER.writeValueAsString(o));
+        return 0;
+    }
+
+    private int printOverview(String name, Path dir, Map<String, Path> members, Map<String, Path> added, Overview ov) {
+        Map<String, NamedFleet.Snapshot> snaps = ov.snaps();
+        FleetLinks.Result links = ov.links();
+        CentralVocabulary.Result vocab = ov.vocab();
+        Path company = ov.company();
+        String agreed = ov.agreed();
+        List<String> next = ov.next();
+        Path page = ov.page();
+        Instant now = Instant.now();
         section("fleet " + name);   // #225: the overview in the phases' style
         System.out.println("   " + Ansi.dim(dir + "  (" + members.size() + (members.size() == 1 ? " member)" : " members)")));
         Set<String> names = new java.util.TreeSet<>(members.keySet());
