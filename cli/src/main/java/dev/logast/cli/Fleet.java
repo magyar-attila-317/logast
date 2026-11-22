@@ -492,6 +492,21 @@ final class Fleet implements Callable<Integer> {
         return out;
     }
 
+    /** What the overview says of a member without a snapshot: #225: a repo without Java never has one. */
+    static String noSnapshot(String fleet, Path root, boolean added) {
+        boolean noJava = root != null && Files.isDirectory(root)
+                && dev.logast.export.RepoExport.roots(root).stream().noneMatch(x -> x.kind().equals("java"));
+        return noJava ? "no findings: no Java to scan (its facts come with the knowledge base)"
+                : added ? "no snapshot yet: `logast fleet " + fleet + " --refresh` scans it" : "no snapshot yet: run `logast scan` in " + root;
+    }
+
+    /** #225: a section of the overview, headed as the phases are. */
+    private static void section(String title) {
+        String head = "━━ " + title + " ";
+        System.out.println();
+        System.out.println(Ansi.bold(head + "━".repeat(Math.max(3, Math.min(Out.width(), 100) - head.length()))));
+    }
+
     /** #223: the members a run works on: the one --service names (with --refresh/--kb), else all. */
     private Map<String, Path> work(Map<String, Path> members) {
         if (service == null || !(refresh || kb)) {
@@ -818,25 +833,27 @@ final class Fleet implements Callable<Integer> {
             System.out.println(OrderJson.MAPPER.writeValueAsString(o));
             return 0;
         }
-        System.out.println(Ansi.bold("fleet " + name) + Ansi.dim("  " + dir + "  (" + members.size()
-                + (members.size() == 1 ? " member)" : " members)")));
+        section("fleet " + name);   // #225: the overview in the phases' style
+        System.out.println("   " + Ansi.dim(dir + "  (" + members.size() + (members.size() == 1 ? " member)" : " members)")));
         Set<String> names = new java.util.TreeSet<>(members.keySet());
         names.addAll(snaps.keySet());
-        int w = names.stream().mapToInt(String::length).max().orElse(8) + 2;
+        int w = Math.min(36, names.stream().mapToInt(String::length).max().orElse(8)) + 2;
         for (String s : names) {
             NamedFleet.Snapshot snap = snaps.get(s);
             // #132: added (the repo knows nothing of the fleet) or joined (fleet: in its logast.yaml)
-            String pad = String.format("  %-" + w + "s%-8s", s, !members.containsKey(s) ? "" : added.containsKey(s) ? "added" : "joined");
+            String pad = "  " + FleetLog.fit(s, w) + Ansi.dim(FleetLog.fit(!members.containsKey(s) ? "" : added.containsKey(s) ? "added" : "joined", 8));
             if (snap == null) {
-                System.out.println(pad + (added.containsKey(s) ? "no snapshot yet: `logast fleet " + name + " --refresh` scans it"
-                        : "no snapshot yet: run `logast scan` in " + members.get(s)));
+                System.out.println(pad + Ansi.dim(noSnapshot(name, members.get(s), added.containsKey(s))));
                 continue;
             }
             FleetReport.Service r = snap.report();
-            System.out.println(pad + String.format("score %5.1f  open %3d (high %d, medium %d, low %d)  snapshot %s%s%s", r.score(),
-                    open(r), r.severity().getOrDefault("high", 0), r.severity().getOrDefault("medium", 0),
-                    r.severity().getOrDefault("low", 0), age(snap.created(), now), snap.commit() == null ? "" : ", " + snap.commit(),
-                    members.containsKey(s) ? "" : " (not a member any more)"));
+            int high = r.severity().getOrDefault("high", 0);
+            String score = String.format("score %5.1f", r.score());
+            System.out.println(pad + (r.score() >= 80 ? Ansi.green(score) : r.score() >= 50 ? Ansi.yellow(score) : Ansi.red(score))
+                    + String.format("  open %3d (", open(r)) + (high > 0 ? Ansi.red("high " + high) : "high 0")
+                    + String.format(", medium %d, low %d)", r.severity().getOrDefault("medium", 0), r.severity().getOrDefault("low", 0))
+                    + Ansi.dim(String.format("  snapshot %s%s%s", age(snap.created(), now), snap.commit() == null ? "" : ", " + snap.commit(),
+                    members.containsKey(s) ? "" : " (not a member any more)")));
         }
         // #133: what `fleet tidy` would remove from each joined member's logast.yaml (read only)
         List<String> tidy = new ArrayList<>();
@@ -853,9 +870,13 @@ final class Fleet implements Callable<Integer> {
             System.out.println("Own settings next to company.yaml:");
             tidy.forEach(l -> System.out.println("  " + l));
         }
-        System.out.println();
-        System.out.print(FleetLinks.text(links));
-        System.out.println();
+        section("across services");
+        for (String l : FleetLinks.text(links).split("\n")) {   // #225: the heads bold, what breaks and its fix stand out
+            String t = l.strip();
+            System.out.println(!l.startsWith(" ") ? Ansi.bold(l) : t.startsWith("breaks at") ? Ansi.yellow(l)
+                    : t.startsWith("fix:") ? Ansi.cyan(l) : t.startsWith("call ") || t.startsWith("entry ") ? Ansi.dim(l) : l);
+        }
+        section("vocabulary");
         Path worksheet = dir.resolve(CentralVocabulary.WORKSHEET);
         System.out.println("Vocabulary: " + vocab.conflicts().size() + (vocab.conflicts().size() == 1 ? " conflict" : " conflicts")
                 + " between keys nobody decided yet");
@@ -873,16 +894,16 @@ final class Fleet implements Callable<Integer> {
         if (agreed != null) {
             System.out.println(agreed);
         }
-        System.out.println();
+        section("next");
         if (next.isEmpty()) {
-            System.out.println(Ansi.bold("Next:") + " nothing left: the members follow the company policy and nothing high is open");
+            System.out.println("  nothing left: the members follow the company policy and nothing high is open");
         } else {
-            System.out.println(Ansi.bold("Next:"));
             for (int i = 0; i < next.size(); i++) {
-                System.out.println("  " + (i + 1) + ". " + next.get(i));
+                System.out.println("  " + Ansi.cyan((i + 1) + ".") + " " + next.get(i));
             }
         }
         // #149: a file:// URL, clickable in a terminal; --open shows it in the browser
+        System.out.println();
         System.out.println("report: " + page.toAbsolutePath().toUri());
         if (openPage) {
             openInBrowser(page);

@@ -7175,7 +7175,7 @@ abstract class E2eGoldenTest {
                     .as("the vocabulary conflict").contains("Vocabulary: 1 conflict", "paymentId ~ payment_id: same type Long")
                     .as("#129").contains("4 settings all members agree on aren't company policy yet → " + shown + "/company.yaml");
             assertThat(overview).as("#149: what to do next, each with its command or file")
-                    .contains("\nNext:\n  1. Make 4 settings every member uses company policy (packs: [",
+                    .contains("━━ next ━", "\n  1. Make 4 settings every member uses company policy (packs: [",
                             "): uncomment them in `" + shown + "/company.yaml`",
                             "Decide 1 vocabulary conflict: `logast fleet payments-fleet --vocabulary` writes the worksheet",
                             "Close 1 trace break between services: `logast apply .` in checkout",
