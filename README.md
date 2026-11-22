@@ -66,6 +66,8 @@ explains itself, copies the few support classes the new code needs into your ser
 compiles. What it cannot decide alone (the wording of a message, whether to count an outcome) has a safe default and
 waits in `logast review` for when you get to it.
 
+<img src="docs/img/apply.gif" alt="logast apply on spring-petclinic with nothing set up: it reads the classpath, writes logast.yaml, adds the missing log lines and support code, and summarises what is optional; then git diff shows the added lines" width="100%">
+
 [Install](docs/install.md): `git clone … && ./install.sh` (Java 21+).
 
 ---
@@ -155,6 +157,8 @@ GitHub workflows. Every answer cites the repo, file and line it comes from, and 
 answering "never". With `--code-mode`, the LLM gets two tools instead of twenty: a typed API, and a read-only JavaScript
 sandbox where one program answers what would take a dozen lookups.
 [The MCP server](docs/mcp.md) · [What the facts are](docs/facts.md).
+
+<img src="docs/img/mcp-query.gif" alt="An assistant asks logast's query tool which jobs run on Monday in prod and what they write; logast answers per job, and lists the jobs whose schedule is not known instead of saying they never run" width="100%">
 
 ---
 
