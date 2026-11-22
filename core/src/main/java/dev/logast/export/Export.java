@@ -10,6 +10,7 @@ import dev.logast.policy.Policy;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -82,6 +83,44 @@ public final class Export {
                         .withElsewhere(flyway.elsewhere());   // #205: what other services' migrations create
                 fx.extract(r, w);
                 problems.addAll(fx.problems());
+            }
+        }
+        return problems;
+    }
+
+    /**
+     * #222: a Node.js package: its service, and (with {@code flyway}) the tables its TypeORM migrations create, run in
+     * PostgreSQL as a Java service's Flyway migrations are.
+     */
+    public static List<String> node(Path root, String repo, String version, FlywayOptions flyway, Writer out, String rootPrefix)
+            throws IOException {
+        List<String> problems = new java.util.ArrayList<>();
+        Path r = root.toAbsolutePath().normalize();
+        String service = TypeOrmMigrations.serviceName(r);
+        try (FactWriter fw = new FactWriter(out, Header.of("typeorm" + (flyway == null ? "" : "+" + FlywayExtractor.ID), version,
+                repo != null ? repo : service, NamedFleet.commit(r)))) {
+            dev.logast.facts.FactSink w = dev.logast.facts.FactSinks.rooted(fw, rootPrefix);
+            w.node(dev.logast.facts.Node.of("service", service, java.util.Map.of("runtime", "node"),
+                    dev.logast.facts.Evidence.at("package.json", null)));
+            List<TypeOrmMigrations.Migration> migrations = TypeOrmMigrations.find(r);
+            if (flyway == null || migrations.isEmpty()) {
+                return problems;
+            }
+            Path dir = Files.createTempDirectory("logast-typeorm");
+            try {
+                java.util.Map<Path, String> origin = new java.util.LinkedHashMap<>(TypeOrmMigrations.scripts(migrations, dir));
+                String folder = migrations.getFirst().rel();
+                origin.put(dir, folder.contains("/") ? folder.substring(0, folder.lastIndexOf('/')) : folder);
+                FlywayExtractor fx = new FlywayExtractor(service, flyway.rows(), flyway.image())
+                        .withElsewhere(flyway.elsewhere()).withScripts(dir, origin);
+                fx.extract(r, w);
+                problems.addAll(fx.problems());
+            } finally {
+                try (var s = Files.walk(dir)) {
+                    for (Path p : s.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                        Files.deleteIfExists(p);
+                    }
+                }
             }
         }
         return problems;

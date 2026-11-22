@@ -73,6 +73,11 @@ public final class RepoExport {
                 out.add(new Root(d, "helm"));
             }
         }
+        for (Path d : dirs) {   // #222: a Node.js package using TypeORM, not inside another one
+            if (TypeOrmMigrations.applies(d) && out.stream().noneMatch(x -> x.kind().equals("node") && d.startsWith(x.dir()))) {
+                out.add(new Root(d, "node"));
+            }
+        }
         if (TerraformExtractor.applies(r)) {
             out.add(new Root(r, "terraform"));
         }
@@ -129,6 +134,7 @@ public final class RepoExport {
                     case "helm" -> problems.addAll(prefixed(rel, Export.helm(root.dir(), repoName, version, opts.envs(), opts.helmRender(),
                             null, w, prefix, false)));
                     case "terraform" -> problems.addAll(Export.terraform(r, repoName, version, w, false));
+                    case "node" -> problems.addAll(prefixed(rel, Export.node(root.dir(), repoName, version, opts.flyway(), w, prefix)));
                     default -> {
                         if (!repoFactsDone) {
                             try (FactWriter fw = new FactWriter(w, Header.of(WorkflowExtractor.ID, version, repoName, NamedFleet.commit(r)))) {

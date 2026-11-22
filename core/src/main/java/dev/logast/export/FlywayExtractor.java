@@ -282,6 +282,19 @@ public final class FlywayExtractor implements Extractor {
     }
 
     /** The code's runs whose location is not one Spring Boot already runs, as runs (split by environment like those). */
+    private final List<Run> scriptRuns = new ArrayList<>();
+    private final Map<Path, String> scriptOrigin = new java.util.HashMap<>();
+
+    /**
+     * #222: migrations written elsewhere as Flyway scripts (a Node.js repo's TypeORM migrations): run with the others;
+     * evidence cites the file each script stands for ({@code origin}: script or folder → its path in the repo).
+     */
+    FlywayExtractor withScripts(Path folder, Map<Path, String> origin) {
+        scriptRuns.add(new Run(null, List.of(folder)));
+        origin.forEach((k, v) -> scriptOrigin.put(k.toAbsolutePath().normalize(), v));
+        return this;
+    }
+
     List<Run> codeRuns(Path root) {
         List<Run> out = new ArrayList<>();
         java.util.Set<Path> done = new java.util.HashSet<>(locations(root, config(root, null).get("spring.flyway.locations"), cp));
@@ -313,6 +326,7 @@ public final class FlywayExtractor implements Extractor {
     private void extractRuns(Path root, FactSink out) {
         List<Run> runs = new ArrayList<>(runs(root, cp));
         runs.addAll(codeRuns(root));
+        runs.addAll(scriptRuns);
         if (runs.isEmpty()) {
             return;
         }
@@ -791,6 +805,10 @@ public final class FlywayExtractor implements Extractor {
 
     /** A file's evidence name: {@code <jar>!/<entry>} for a library's migration, else its path in the repo. */
     private String name(Path root, Path p) {
+        String origin = scriptOrigin.get(p.toAbsolutePath().normalize());
+        if (origin != null) {
+            return origin;
+        }
         String jar = cp.name(p);
         return jar != null ? jar : rel(root, p);
     }

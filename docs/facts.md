@@ -157,6 +157,17 @@ migrations in a throwaway PostgreSQL (Testcontainers: needs Docker) and writes w
 - An environment whose migrations fail is named on stderr, with the placeholders that had no value; the others are
   still written.
 
+## A Node.js repo: its TypeORM migrations
+
+A folder whose `package.json` depends on TypeORM is a Node.js service (#222): `service:<package name>` (scope dropped,
+`runtime: node`). With `--flyway` (a fleet's `--flyway`, or `rows:` for it in `repos.yaml`), its migrations run in
+PostgreSQL like a Java service's: each class implementing `MigrationInterface`, in TypeORM's order (the timestamp in
+its name), runs the SQL its `up()` passes to `queryRunner.query(…)` (string or template literals; `down()` never
+runs). Its tables are `table:<schema>.<name>` with their `columns`, citing the migration's `.ts` file and the line of
+the statement, and seeded rows and the schemas it expects from outside work as for Flyway. Migrations that build the
+schema through TypeORM's API (`queryRunner.createTable(…)`) or SQL built elsewhere are not read, nor are entities
+synchronised without migrations. Another repo's migrations that need its tables run against them (#205).
+
 ## A Helm repo: what runs where
 
 `logast export <repo>` on a repo with a `helmfile.yaml` (or `.gotmpl`) writes what runs in each environment (#160):
