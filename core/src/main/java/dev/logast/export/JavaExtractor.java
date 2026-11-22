@@ -39,7 +39,6 @@ import java.util.regex.Pattern;
 public final class JavaExtractor implements Extractor {
     public static final String ID = "java";
 
-    private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}:]+)(?::([^}]*))?}");
     private static final Pattern QUOTED = Pattern.compile("\"((?:[^\"\\\\]|\\\\.)*)\"");
     /** Gradle's cache: .../files-2.1/group/artifact/version/hash/file.jar */
     private static final Pattern GRADLE_JAR = Pattern.compile(".*/files-2\\.1/([^/]+)/([^/]+)/([^/]+)/[^/]+/[^/]+\\.jar$");
@@ -327,43 +326,16 @@ public final class JavaExtractor implements Extractor {
         // #159: a ${…} in the cron from the service's base config, else the placeholder's default; as written stays in cron
         Object cron = attrs.get("cron");
         if (cron instanceof String c && c.contains("${")) {
-            Matcher pm = PLACEHOLDER.matcher(c);
-            StringBuilder sb = new StringBuilder();
-            boolean resolved = true;
-            while (pm.find()) {
-                String v = a.springProperties.get(pm.group(1).strip());
-                if (v == null) {
-                    v = pm.group(2);
-                }
-                if (v == null || v.contains("${")) {
-                    resolved = false;
-                    break;
-                }
-                pm.appendReplacement(sb, Matcher.quoteReplacement(v));
-            }
-            if (resolved) {
-                pm.appendTail(sb);
-                attrs.put("cronResolved", sb.toString());
+            String r = resolve(c);
+            if (r != null) {
+                attrs.put("cronResolved", r);
             }
         }
     }
 
     /** Placeholders from the base config, else their default; null when one has neither. */
     private String resolve(String text) {
-        Matcher pm = PLACEHOLDER.matcher(text);
-        StringBuilder sb = new StringBuilder();
-        while (pm.find()) {
-            String v = a.springProperties.get(pm.group(1).strip());
-            if (v == null) {
-                v = pm.group(2);
-            }
-            if (v == null || v.contains("${")) {
-                return null;
-            }
-            pm.appendReplacement(sb, Matcher.quoteReplacement(v));
-        }
-        pm.appendTail(sb);
-        return sb.toString();
+        return dev.logast.Placeholders.strict(text, a.springProperties::get);
     }
 
     private static String destination(String kind, String target) {
@@ -595,7 +567,7 @@ public final class JavaExtractor implements Extractor {
             }
             for (J.Annotation an : values) {
                 String raw = Annotations.rawAttribute(an, "value").map(JavaExtractor::unquote).orElse("");
-                Matcher m = PLACEHOLDER.matcher(raw);
+                Matcher m = dev.logast.Placeholders.PATTERN.matcher(raw);
                 while (m.find()) {
                     Map<String, Object> pa = new TreeMap<>();
                     if (m.group(2) != null) {

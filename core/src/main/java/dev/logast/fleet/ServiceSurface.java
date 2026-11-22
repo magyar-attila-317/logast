@@ -88,7 +88,6 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
             "PatchMapping", "PATCH", "DeleteMapping", "DELETE", "RequestMapping", "");
     private static final Map<String, String> EXCHANGES = Map.of("GetExchange", "GET", "PostExchange", "POST", "PutExchange", "PUT",
             "PatchExchange", "PATCH", "DeleteExchange", "DELETE", "HttpExchange", "");
-    private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}:]+)(?::([^}]*))?}");
     private static final Pattern URL = Pattern.compile("^((?:https?|lb)://[^/]*)(.*)$");   // lb://: an OpenFeign client name (#137)
     /** Marks a part of a URI the code does not know (a variable, a property without a value). */
     private static final String UNKNOWN = "\u0000";
@@ -223,22 +222,7 @@ public record ServiceSurface(List<Call> calls, List<Entry> entries, List<Metrics
      * is resolved too.
      */
     static String placeholders(Props props, String s) {
-        return placeholders(props, s, 0);
-    }
-
-    private static String placeholders(Props props, String s, int depth) {
-        Matcher pm = PLACEHOLDER.matcher(s);
-        StringBuilder sb = new StringBuilder();
-        while (pm.find()) {
-            String v = props.get(pm.group(1).strip());
-            v = v != null ? v : pm.group(2) != null ? pm.group(2) : UNKNOWN;
-            if (v.contains("${")) {
-                v = depth < 5 ? placeholders(props, v, depth + 1) : UNKNOWN;
-            }
-            pm.appendReplacement(sb, Matcher.quoteReplacement(v));
-        }
-        pm.appendTail(sb);
-        return sb.toString();
+        return dev.logast.Placeholders.nested(s, props::get, UNKNOWN);
     }
 
     // ---- outgoing calls ---------------------------------------------------------------------------------------------

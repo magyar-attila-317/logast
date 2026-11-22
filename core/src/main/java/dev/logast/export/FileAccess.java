@@ -47,7 +47,6 @@ final class FileAccess {
                     "rename", new int[]{1, 1}),
             "org.springframework.integration.file.remote.RemoteFileTemplate", Map.of("get", new int[]{0, 0}, "list", new int[]{0, 0},
                     "remove", new int[]{1, 0}, "exists", new int[]{0, 0}, "rename", new int[]{1, 1}));
-    private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}:]+)(?::([^}]*))?}");
 
     private final CodeIndex index;
     private final Map<String, String> config;
@@ -185,17 +184,7 @@ final class FileAccess {
 
     /** {@code ${key:default}} → the base config's value, else the default, else {@code ${key}}. */
     private String resolve(String s) {
-        Matcher m = PLACEHOLDER.matcher(s);
-        StringBuilder sb = new StringBuilder();
-        while (m.find()) {
-            String v = config.get(m.group(1).strip());
-            if (v == null) {
-                v = m.group(2) != null ? m.group(2) : "${" + m.group(1).strip() + "}";
-            }
-            m.appendReplacement(sb, Matcher.quoteReplacement(v));
-        }
-        m.appendTail(sb);
-        return sb.toString();
+        return dev.logast.Placeholders.keeping(s, config::get);
     }
 
     /** The {@code @Value("…")} of a field (or constructor parameter that assigns it), as written. */

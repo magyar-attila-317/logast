@@ -28,7 +28,6 @@ import java.util.regex.Pattern;
  */
 public final class ScheduleRate {
     private static final String SCHEDULED = "org.springframework.scheduling.annotation.Scheduled";
-    private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}:]+)(?::([^}]*))?}");
     /** A year without a leap day, so a yearly schedule counts once. */
     private static final int YEAR = 2027;
 
@@ -112,23 +111,7 @@ public final class ScheduleRate {
 
     /** {@code ${key:default}} from the configuration, else its default; null when one has neither. */
     static String resolve(String text, Map<String, String> config) {
-        if (text == null) {
-            return null;
-        }
-        Matcher pm = PLACEHOLDER.matcher(text);
-        StringBuilder sb = new StringBuilder();
-        while (pm.find()) {
-            String v = config.get(pm.group(1).strip());
-            if (v == null) {
-                v = pm.group(2);
-            }
-            if (v == null || v.contains("${")) {
-                return null;
-            }
-            pm.appendReplacement(sb, Matcher.quoteReplacement(v));
-        }
-        pm.appendTail(sb);
-        return sb.toString();
+        return dev.logast.Placeholders.strict(text, config::get);
     }
 
     /** A number of {@code unit}s, or an ISO-8601 duration ({@code PT5M}), as Spring reads the String attributes. */
