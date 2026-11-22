@@ -48,55 +48,35 @@ final class EntrypointRules {
         }
     }
 
+    /** One message or request per run: the wrapper's "completed" goes to DEBUG; failures stay ERROR. */
+    private static final Set<Entrypoint.Kind> DEBUG_ON_SUCCESS = EnumSet.of(Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS,
+            Entrypoint.Kind.RABBIT, Entrypoint.Kind.WEBSOCKET, Entrypoint.Kind.HTTP, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM,
+            Entrypoint.Kind.ITEM, Entrypoint.Kind.REDIS, Entrypoint.Kind.INTEGRATION, Entrypoint.Kind.GRPC);
+
+    /** The method body an order rewrites: its inner range, indentation, text and the names taken in it. */
+    private record Body(int[] inner, String indent, String unit, String text, Set<String> taken) {
+        String withTop(StringBuilder top) {
+            return (top.isEmpty() ? "" : indent + unit + top) + Text.reindent(text, unit);
+        }
+    }
+
     private void entrypoint(Entrypoint ep) {
         MethodInfo m = ep.method();
-        SourceFileInfo f = m.file();
-        String text = f.text();
-        int line = m.line();
-
-        boolean batch = dev.logast.graph.EntrypointFinder.batch(m, null)
-                || m.decl().getLeadingAnnotations().stream().anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(m, a));
-        boolean observed = ep.observedByFramework()
-                || ep.kind() == Entrypoint.Kind.KAFKA && ctx.kafkaListenerObservationPlanned && !batch
-                || ep.kind() == Entrypoint.Kind.RABBIT && ctx.rabbitListenerObservationPlanned && !batch;
         // a Mono/Flux method only assembles the pipeline: a wrapper or scope around it would be gone when it runs
         boolean reactive = ctx.reactive(m);
-        boolean notObserved = !observed && !reactive && ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED)
-                && !ctx.ignored(f, line, Rules.ENTRYPOINT_NOT_OBSERVED) && !alreadyObserved(m);
-        if (notObserved && ep.kind() == Entrypoint.Kind.GRPC && !completesInBody(m)) {
-            // a wrapper would stop its observation and log "completed" when the method returns, before onCompleted
-            notObserved = false;
-            ctx.order(Rules.ENTRYPOINT_NOT_OBSERVED, m, line, "entry-grpc")
-                    .title(ep.label() + " is not observed (Spring gRPC observation off or absent), and it answers through its "
-                            + "StreamObserver after the method returns")
-                    .suggestion("Register Spring gRPC's ObservationGrpcServerInterceptor (spring.grpc.server.observation.enabled: "
-                            + "true, the default) or io.micrometer.core.instrument.binder.grpc.ObservationGrpcServerInterceptor as a "
-                            + "server interceptor: it observes the call until it closes. Not wrapped automatically: an observation "
-                            + "around the method would end before onCompleted.")
-                    .doneWhen("the call is observed by an interceptor, or the line is marked // logast:ignore ENTRYPOINT_NOT_OBSERVED");
-        }
-        List<DomainValues.Value> missing = ctx.enabled(Rules.MISSING_DOMAIN_MDC) && !reactive
-                && !ctx.ignored(f, line, Rules.MISSING_DOMAIN_MDC) && !ctx.legacyMdc(m)
-                ? entryValues(ep, m).stream()
-                .filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).map(v -> nullSafe(m, v)).toList()
-                : List.of();
+        boolean notObserved = notObserved(ep, m, reactive);
+        List<DomainValues.Value> missing = missingMdc(ep, m, reactive);
         if (reactive) {
             reactiveMdc(ep, m);
         }
-        boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
-        // a run's started and outcome lines belong to JOB_OUTCOME_MISSING: split between two rules, the outcome line it adds
-        // ended the silence, the started line lost its owner, and the order came back after its own fix
-        boolean run = LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.RUN;
-        boolean silent = !readEndpoint && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
-                && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(f, line, Rules.ENTRYPOINT_SILENT)
-                && !LifecyclePlan.ownFlowLogs(ctx, m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
+        boolean silent = silent(ep, m);
         if (!notObserved && missing.isEmpty() && !silent) {
             return;
         }
-
+        String text = m.file().text();
         String rule = notObserved ? Rules.ENTRYPOINT_NOT_OBSERVED
                 : !missing.isEmpty() ? Rules.MISSING_DOMAIN_MDC : Rules.ENTRYPOINT_SILENT;
-        OrderBuilder b = ctx.order(rule, m, line, "entry");
+        OrderBuilder b = ctx.order(rule, m, m.line(), "entry");
         if (!missing.isEmpty()) {
             b.fix(Rules.MISSING_DOMAIN_MDC);
         }
@@ -112,93 +92,31 @@ final class EntrypointRules {
             return;
         }
         String unit = Text.indentUnit(text);
-        String indent = Text.indentAt(text, Pos.start(m.decl().getBody())) + unit;
-        String body = text.substring(inner[0], inner[1]);
-        Set<String> taken = ctx.taken(m, inner[0]);
-
-        StringBuilder top = new StringBuilder();
+        Body body = new Body(inner, Text.indentAt(text, Pos.start(m.decl().getBody())) + unit, unit,
+                text.substring(inner[0], inner[1]), ctx.taken(m, inner[0]));
         List<Edit> extra = new ArrayList<>();
-        if (silent) {
-            JavaEdits.LoggerPlan logger = ctx.logger(m);
-            if (logger.name() == null) {
-                b.suggestion("Cannot add a logger to " + m.owner().simpleName() + " (interface/enum).");
-                silent = false;
-            } else {
-                extra.addAll(logger.edits());
-                top.append(logger.name()).append('.').append(ctx.policy.logging().entryLevel()).append("(\"{{MSG}}\");\n");
-                String subject = Wording.entrySubject(ep);   // #231: written when nobody writes a text
-                if (subject != null) {
-                    // its family sees the line in this pass: siblings get theirs now, not on the rescan (LIFECYCLE_UNEVEN)
-                    ctx.generatedStart.put(m.key(), subject);
-                }
-                b.slot("MSG", new Slot("Entry log for " + ep.label() + " (" + m.label()
-                        + "): what is starting, in domain terms, e.g. 'Order shipment processing started'.",
-                        List.of(), ctx.glossary.terms(), null,
-                        ctx.phrasing.canonicalOf("started") == null ? null : "started", ctx.phrasing.canonicalOf("started"),
-                        subject == null ? null : Wording.event(ctx, subject, "started")));
-            }
-        }
+        StringBuilder top = new StringBuilder(silent ? startLine(ep, m, b, extra) : "");
 
         String replacement;
         if (notObserved) {
-            List<String> chain = new ArrayList<>();
-            String quartz = ep.kind() == Entrypoint.Kind.QUARTZ ? quartzContext(m) : null;
-            if (quartz != null) {
-                // #234: a job started with a trace in its data (a chain's previous step) continues it; in a chain, the
-                // job keeps its own trace where the JobListener that starts the next step finds it
-                chain.add(".remoteParent(TraceContextEnv.carrier(" + quartz + ".getMergedJobDataMap()))");
-                if (quartzChain()) {
-                    String put = quartz + ".put(TraceContextEnv.KEY, TraceContextEnv.current());\n";
-                    top.insert(0, top.isEmpty() ? put : put + indent + unit);
-                }
-                extra.addAll(JavaEdits.imports(f, ctx.support("TraceContextEnv")));
-            }
-            for (DomainValues.Value v : missing) {
-                chain.add(".mdc(\"" + v.key() + "\", " + v.expr() + ")");
-            }
-            if (ep.kind() == Entrypoint.Kind.KAFKA || ep.kind() == Entrypoint.Kind.JMS || ep.kind() == Entrypoint.Kind.RABBIT
-                    || ep.kind() == Entrypoint.Kind.WEBSOCKET || ep.kind() == Entrypoint.Kind.HTTP || ep.kind() == Entrypoint.Kind.SQS
-                    || ep.kind() == Entrypoint.Kind.STREAM || ep.kind() == Entrypoint.Kind.ITEM || ep.kind() == Entrypoint.Kind.REDIS
-                    || ep.kind() == Entrypoint.Kind.INTEGRATION || ep.kind() == Entrypoint.Kind.GRPC) {
-                chain.add(".debugOnSuccess()"); // one per message/request: "completed" at DEBUG; failures stay ERROR
-            }
-            if (ep.kind() == Entrypoint.Kind.EVENT && !m.hasAnnotation("org.springframework.scheduling.annotation.Async")
-                    && !m.owner().decl().getLeadingAnnotations().stream().anyMatch(a -> a.getSimpleName().equals("Async"))) {
-                // runs in the publisher's call: the exception goes back to code that logs it; one failure = one ERROR
-                chain.add(".failureLoggedByCaller()");
-            }
-            replacement = observedWrap(m, observationName(m), chain, (top.isEmpty() ? "" : indent + unit + top) + Text.reindent(body, unit),
-                    indent, unit, taken, ctx.supportHasRun());
-            extra.addAll(JavaEdits.imports(f, ctx.support("ObservedContext")));
-            ctx.dependOnStarter(b);
-            ctx.observedWrapped.add(m.key());   // its runtime line is the outcome; a plain MdcScope logs none
+            replacement = observed(ep, m, b, body, top, missing, extra);
         } else if (!missing.isEmpty() && top.isEmpty() && observedMdcAt(m, text, inner[0], inner[1]) >= 0) {
             // #20: the method is one ObservedContext: its MDC goes into the chain, not around it
             replacement = null;
-            b.edit(Edit.insert(f.relPath(), observedMdcAt(m, text, inner[0], inner[1]), observedMdc(m, text, missing)));
+            b.edit(Edit.insert(m.file().relPath(), observedMdcAt(m, text, inner[0], inner[1]), observedMdc(m, text, missing)));
             ctx.dependOnStarter(b);
         } else if (!missing.isEmpty()) {
-            String var = unique("mdc", taken);
-            replacement = indent + "try (var " + var + " = " + mdcScope(missing) + ") {\n"
-                    + (top.isEmpty() ? "" : indent + unit + top)
-                    + Text.reindent(body, unit)
-                    + indent + "}\n";
-            extra.addAll(JavaEdits.imports(f, ctx.support("MdcScope")));
+            replacement = body.indent() + "try (var " + unique("mdc", body.taken()) + " = " + mdcScope(missing) + ") {\n"
+                    + body.withTop(top) + body.indent() + "}\n";
+            extra.addAll(JavaEdits.imports(m.file(), ctx.support("MdcScope")));
             ctx.dependOnStarter(b);
         } else {
             replacement = null;
-            // inside the MDC scopes the body opens with, so the started line carries their keys (#12)
-            J.Block at = startBlock(m);
-            int[] atInner = JavaEdits.blockInner(text, at);
-            if (atInner == null) {
-                at = m.decl().getBody();
-                atInner = inner;
-            }
-            b.edit(Edit.insert(f.relPath(), atInner[0], Text.indentAt(text, Pos.start(at)) + unit + top));
+            startLineOnly(m, b, body, top);
         }
         if (replacement != null) {
             ctx.wrappedMethods.add(m.key());
-            b.edit(Edit.replace(f.relPath(), inner[0], inner[1], replacement));
+            b.edit(Edit.replace(m.file().relPath(), inner[0], inner[1], replacement));
         }
         b.edits(extra);
         b.context(ctx.context(m, inner[0], Text.oneLine(text.substring(Pos.start(m.decl()), Math.min(inner[0] + 200, text.length())), 200), null));
@@ -206,6 +124,121 @@ final class EntrypointRules {
             ctx.plannedEntryKeys.put(m.key(), new TreeSet<>(missing.stream().map(DomainValues.Value::key).toList()));
             ctx.entryOrders.put(m.key(), b.id());
         }
+    }
+
+    /**
+     * The framework opens no observation for it (nor will a listener property this scan plans), and none is in the code.
+     * A gRPC call answering after its method returns is reported instead: a wrapper would end before onCompleted.
+     */
+    private boolean notObserved(Entrypoint ep, MethodInfo m, boolean reactive) {
+        boolean batch = dev.logast.graph.EntrypointFinder.batch(m, null)
+                || m.decl().getLeadingAnnotations().stream().anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(m, a));
+        boolean observed = ep.observedByFramework()
+                || ep.kind() == Entrypoint.Kind.KAFKA && ctx.kafkaListenerObservationPlanned && !batch
+                || ep.kind() == Entrypoint.Kind.RABBIT && ctx.rabbitListenerObservationPlanned && !batch;
+        boolean notObserved = !observed && !reactive && ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED)
+                && !ctx.ignored(m.file(), m.line(), Rules.ENTRYPOINT_NOT_OBSERVED) && !alreadyObserved(m);
+        if (notObserved && ep.kind() == Entrypoint.Kind.GRPC && !completesInBody(m)) {
+            ctx.order(Rules.ENTRYPOINT_NOT_OBSERVED, m, m.line(), "entry-grpc")
+                    .title(ep.label() + " is not observed (Spring gRPC observation off or absent), and it answers through its "
+                            + "StreamObserver after the method returns")
+                    .suggestion("Register Spring gRPC's ObservationGrpcServerInterceptor (spring.grpc.server.observation.enabled: "
+                            + "true, the default) or io.micrometer.core.instrument.binder.grpc.ObservationGrpcServerInterceptor as a "
+                            + "server interceptor: it observes the call until it closes. Not wrapped automatically: an observation "
+                            + "around the method would end before onCompleted.")
+                    .doneWhen("the call is observed by an interceptor, or the line is marked // logast:ignore ENTRYPOINT_NOT_OBSERVED");
+            return false;
+        }
+        return notObserved;
+    }
+
+    /** The domain values its parameters carry that are not in MDC below it yet (none for a reactive method). */
+    private List<DomainValues.Value> missingMdc(Entrypoint ep, MethodInfo m, boolean reactive) {
+        if (!ctx.enabled(Rules.MISSING_DOMAIN_MDC) || reactive || ctx.ignored(m.file(), m.line(), Rules.MISSING_DOMAIN_MDC)
+                || ctx.legacyMdc(m)) {
+            return List.of();
+        }
+        return entryValues(ep, m).stream().filter(v -> !ctx.a.paths.mdcInside(m).contains(v.key())).map(v -> nullSafe(m, v)).toList();
+    }
+
+    /**
+     * Its own flow logs nothing at the entry level: not for a read endpoint (the access log is enough), not for a run
+     * when JOB_OUTCOME_MISSING owns its lines (split between two rules, the outcome line ended the silence, the started
+     * line lost its owner, and the order came back after its own fix).
+     */
+    private boolean silent(Entrypoint ep, MethodInfo m) {
+        boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
+        boolean run = LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.RUN;
+        return !readEndpoint && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
+                && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(m.file(), m.line(), Rules.ENTRYPOINT_SILENT)
+                && !LifecyclePlan.ownFlowLogs(ctx, m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
+    }
+
+    /** The started line (its text a slot, #231: generated wording when nobody writes one); "" when no logger can be added. */
+    private String startLine(Entrypoint ep, MethodInfo m, OrderBuilder b, List<Edit> extra) {
+        JavaEdits.LoggerPlan logger = ctx.logger(m);
+        if (logger.name() == null) {
+            b.suggestion("Cannot add a logger to " + m.owner().simpleName() + " (interface/enum).");
+            return "";
+        }
+        extra.addAll(logger.edits());
+        String subject = Wording.entrySubject(ep);
+        if (subject != null) {
+            // its family sees the line in this pass: siblings get theirs now, not on the rescan (LIFECYCLE_UNEVEN)
+            ctx.generatedStart.put(m.key(), subject);
+        }
+        b.slot("MSG", new Slot("Entry log for " + ep.label() + " (" + m.label()
+                + "): what is starting, in domain terms, e.g. 'Order shipment processing started'.",
+                List.of(), ctx.glossary.terms(), null,
+                ctx.phrasing.canonicalOf("started") == null ? null : "started", ctx.phrasing.canonicalOf("started"),
+                subject == null ? null : Wording.event(ctx, subject, "started")));
+        return logger.name() + "." + ctx.policy.logging().entryLevel() + "(\"{{MSG}}\");\n";
+    }
+
+    /** The body inside an ObservedContext with the entry's MDC, its quartz trace (#234) and its outcome level. */
+    private String observed(Entrypoint ep, MethodInfo m, OrderBuilder b, Body body, StringBuilder top,
+                            List<DomainValues.Value> missing, List<Edit> extra) {
+        List<String> chain = new ArrayList<>();
+        String quartz = ep.kind() == Entrypoint.Kind.QUARTZ ? quartzContext(m) : null;
+        if (quartz != null) {
+            // #234: a job started with a trace in its data (a chain's previous step) continues it; in a chain, the
+            // job keeps its own trace where the JobListener that starts the next step finds it
+            chain.add(".remoteParent(TraceContextEnv.carrier(" + quartz + ".getMergedJobDataMap()))");
+            if (quartzChain()) {
+                String put = quartz + ".put(TraceContextEnv.KEY, TraceContextEnv.current());\n";
+                top.insert(0, top.isEmpty() ? put : put + body.indent() + body.unit());
+            }
+            extra.addAll(JavaEdits.imports(m.file(), ctx.support("TraceContextEnv")));
+        }
+        for (DomainValues.Value v : missing) {
+            chain.add(".mdc(\"" + v.key() + "\", " + v.expr() + ")");
+        }
+        if (DEBUG_ON_SUCCESS.contains(ep.kind())) {
+            chain.add(".debugOnSuccess()");
+        }
+        if (ep.kind() == Entrypoint.Kind.EVENT && !m.hasAnnotation("org.springframework.scheduling.annotation.Async")
+                && !m.owner().decl().getLeadingAnnotations().stream().anyMatch(a -> a.getSimpleName().equals("Async"))) {
+            // runs in the publisher's call: the exception goes back to code that logs it; one failure = one ERROR
+            chain.add(".failureLoggedByCaller()");
+        }
+        String replacement = observedWrap(m, observationName(m), chain, body.withTop(top), body.indent(), body.unit(), body.taken(),
+                ctx.supportHasRun());
+        extra.addAll(JavaEdits.imports(m.file(), ctx.support("ObservedContext")));
+        ctx.dependOnStarter(b);
+        ctx.observedWrapped.add(m.key());   // its runtime line is the outcome; a plain MdcScope logs none
+        return replacement;
+    }
+
+    /** Only the started line, inside the MDC scopes the body opens with, so it carries their keys (#12). */
+    private void startLineOnly(MethodInfo m, OrderBuilder b, Body body, StringBuilder top) {
+        String text = m.file().text();
+        J.Block at = startBlock(m);
+        int[] atInner = JavaEdits.blockInner(text, at);
+        if (atInner == null) {
+            at = m.decl().getBody();
+            atInner = body.inner();
+        }
+        b.edit(Edit.insert(m.file().relPath(), atInner[0], Text.indentAt(text, Pos.start(at)) + body.unit() + top));
     }
 
     /**
