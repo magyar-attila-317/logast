@@ -37,14 +37,14 @@ public record Entrypoint(MethodInfo method, Kind kind, String label, boolean obs
         EVENT(Trait.JOB, Trait.ONE_OUTCOME, Trait.REQUEST),
         WEBSOCKET(Trait.JOB, Trait.ONE_OUTCOME, Trait.REQUEST, Trait.DEBUG_ON_SUCCESS, Trait.USER_FACING),
         BATCH(Trait.RUN, Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER, Trait.TIMED_BY_FRAMEWORK),
-        MAIN(Trait.RUN, Trait.ONE_OUTCOME, Trait.NO_USER),
+        MAIN(Trait.RUN, Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER),   // #240: a run JOB_OUTCOME_MISSING covers
         CUSTOM(Trait.JOB, Trait.REQUEST),
         STEP(Trait.RUN, Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER, Trait.TIMED_BY_FRAMEWORK),
         ITEM(Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER, Trait.TIMED_BY_FRAMEWORK, Trait.DEBUG_ON_SUCCESS),
         SQS(Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER, Trait.REQUEST, Trait.TIMED_BY_FRAMEWORK, Trait.DEBUG_ON_SUCCESS),
         STREAM(Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER, Trait.REQUEST, Trait.TIMED_BY_FRAMEWORK, Trait.DEBUG_ON_SUCCESS),
-        REDIS(Trait.JOB, Trait.DEBUG_ON_SUCCESS),
-        INTEGRATION(Trait.JOB, Trait.TIMED_BY_FRAMEWORK, Trait.DEBUG_ON_SUCCESS),
+        REDIS(Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER, Trait.DEBUG_ON_SUCCESS),   // #239: a message, no user behind it
+        INTEGRATION(Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER, Trait.TIMED_BY_FRAMEWORK, Trait.DEBUG_ON_SUCCESS),   // #239
         GRPC(Trait.TIMED_BY_FRAMEWORK, Trait.DEBUG_ON_SUCCESS, Trait.USER_FACING),
         QUARTZ(Trait.RUN, Trait.JOB, Trait.ONE_OUTCOME, Trait.NO_USER);
 

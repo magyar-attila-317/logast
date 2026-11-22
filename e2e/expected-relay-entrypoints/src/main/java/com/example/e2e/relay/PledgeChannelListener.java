@@ -9,9 +9,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class PledgeChannelListener implements MessageListener {
     private final RelayLog relayLog;
+    private final com.example.e2e.audit.AuditLog auditLog;
 
-    PledgeChannelListener(RelayLog relayLog) {
+    PledgeChannelListener(RelayLog relayLog, com.example.e2e.audit.AuditLog auditLog) {
         this.relayLog = relayLog;
+        this.auditLog = auditLog;
     }
 
     @Override
@@ -20,6 +22,8 @@ public class PledgeChannelListener implements MessageListener {
                 .debugOnSuccess()
                 .run(() -> {
                     relayLog.forward(message.getBody());
+                    String pledgeId = new String(message.getBody(), java.nio.charset.StandardCharsets.UTF_8);
+                    auditLog.record("pledge-relayed", pledgeId, "ok");
                 });
     }
 }

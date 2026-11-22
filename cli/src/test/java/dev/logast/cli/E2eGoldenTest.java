@@ -3798,6 +3798,35 @@ abstract class E2eGoldenTest {
                     }
                     """);
 
+    /**
+     * #240: with {@code entrypoints.includeMain}, a command-line tool's {@code main} is a run like a CommandLineRunner:
+     * a silent one gets its started and completed lines (JOB_OUTCOME_MISSING), not neither.
+     */
+    @Test
+    void aSilentMainGetsItsLifecycleLinesWithIncludeMain() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml) + "entrypoints:\n  includeMain: true\n");
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/tool"));
+            Files.writeString(dir.resolve("LedgerRebuildTool.java"), """
+                    package com.example.e2e.tool;
+
+                    /** Rebuilds the pledge ledger once, from the command line. */
+                    public class LedgerRebuildTool {
+                        public static void main(String[] args) {
+                            rebuild(args.length > 0 ? args[0] : "all");
+                        }
+
+                        static void rebuild(String scope) {
+                        }
+                    }
+                    """);
+        });
+        assertThat(actual.get("src/main/java/com/example/e2e/tool/LedgerRebuildTool.java"))
+                .as("#240: its started line; the outcome is the observation wrapper's runtime line, as for any wrapped run")
+                .contains("log.info(\"Ledger rebuild tool started\")").contains("ObservedContext.entrypoint(");
+    }
+
     /** Stand-ins for Quartz and Spring's QuartzJobBean, which are not on the e2e classpath (#232): the types the scenario uses. */
     private static final Map<String, String> QUARTZ_STUBS = Map.ofEntries(
             Map.entry("org/quartz/Job.java", """
@@ -4628,14 +4657,18 @@ abstract class E2eGoldenTest {
                 @Component
                 public class PledgeChannelListener implements MessageListener {
                     private final RelayLog relayLog;
+                    private final com.example.e2e.audit.AuditLog auditLog;
 
-                    PledgeChannelListener(RelayLog relayLog) {
+                    PledgeChannelListener(RelayLog relayLog, com.example.e2e.audit.AuditLog auditLog) {
                         this.relayLog = relayLog;
+                        this.auditLog = auditLog;
                     }
 
                     @Override
                     public void onMessage(Message message, byte[] pattern) {
                         relayLog.forward(message.getBody());
+                        String pledgeId = new String(message.getBody(), java.nio.charset.StandardCharsets.UTF_8);
+                        auditLog.record("pledge-relayed", pledgeId, "ok");
                     }
                 }
                 """);
@@ -4709,14 +4742,17 @@ abstract class E2eGoldenTest {
                 @Component
                 public class PledgeActivator {
                     private final RelayLog relayLog;
+                    private final com.example.e2e.audit.AuditLog auditLog;
 
-                    PledgeActivator(RelayLog relayLog) {
+                    PledgeActivator(RelayLog relayLog, com.example.e2e.audit.AuditLog auditLog) {
                         this.relayLog = relayLog;
+                        this.auditLog = auditLog;
                     }
 
                     @ServiceActivator(inputChannel = "pledgeRequests")
                     public void allot(String pledgeId) {
                         relayLog.record(pledgeId);
+                        auditLog.record("pledge-allotted", pledgeId, "ok");
                     }
 
                     @ServiceActivator(inputChannel = "pledgeReturns")
@@ -4864,6 +4900,9 @@ abstract class E2eGoldenTest {
                         + "MDC scope from the protobuf request's getter").doesNotContain("ObservedContext")
                 .contains("    public void lookup(PledgeRequest request, StreamObserver<PledgeReply> responseObserver) {\n"
                         + "        try (var mdc = MdcScope.of(\"pledgeId\", request.getPledgeId())) {\n");
+        assertThat(scoped("expected-relay-entrypoints", actual).get("FINDINGS.txt")).as("#239: no user is behind a pub/sub "
+                + "or integration message: its audit records are not asked for one")
+                .doesNotContain("AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/relay/");
         assertThat(actual.get(RELAY + "RelayLog.java")).as("RedisMessageListenerContainer logs a listener's exception: the "
                 + "logged-and-rethrown line goes").doesNotContain("Relay forward failed");
         String lifecycle = run(tmp.resolve("app"), "explain", "lifecycle", tmp.resolve("app").toString(), "--classpath-file", classpath);

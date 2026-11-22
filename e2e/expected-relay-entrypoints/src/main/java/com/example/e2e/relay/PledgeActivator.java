@@ -8,9 +8,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class PledgeActivator {
     private final RelayLog relayLog;
+    private final com.example.e2e.audit.AuditLog auditLog;
 
-    PledgeActivator(RelayLog relayLog) {
+    PledgeActivator(RelayLog relayLog, com.example.e2e.audit.AuditLog auditLog) {
         this.relayLog = relayLog;
+        this.auditLog = auditLog;
     }
 
     @ServiceActivator(inputChannel = "pledgeRequests")
@@ -20,6 +22,7 @@ public class PledgeActivator {
                 .debugOnSuccess()
                 .run(() -> {
                     relayLog.record(pledgeId);
+                    auditLog.record("pledge-allotted", pledgeId, "ok");
                 });
     }
 
