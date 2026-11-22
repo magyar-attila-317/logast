@@ -257,7 +257,57 @@ repos:
   Enterprise Cloud restricts it. The report names services, endpoints, hosts and file paths, so publishing is off until
   `LOGAST_PAGES` is set; the artifact is always there.
 - Service developers register a clone of the fleet repo (`logast fleet create <name> --dir <clone>`) and join it; the
-  README says how. Extending the fleet by its git URL, listing a GitHub org and rollout PRs: #146.
+  README says how. Extending the fleet by its git URL and listing a GitHub org: #146; rolling out: [below](#rolling-out-the-policy-236).
+
+## Rolling out the policy (#236)
+
+The fleet repo says what the policy is; each service repo says whether it takes part and which policy version it runs.
+Every fact has one writer, so the two cannot drift apart:
+
+| fact | written by | read by |
+|---|---|---|
+| company policy (company.yaml) | the fleet repo, as **tagged versions** `policy-N` | members, by tag |
+| which version a service runs | the service repo: `extends: [fleet:<name>@policy-N]` in its logast.yaml, changed only together with the code it produced | the fleet |
+| taking part, holds | the service repo: `rollout:` in its logast.yaml | the rollout |
+| PR open / merged | the forge | the fleet |
+
+**Policy versions.** `logast fleet tag-policy [fleet]` tags the fleet repo's HEAD `policy-<n+1>` when company.yaml
+changed since the newest tag (uncommitted changes are refused); push the tag. A member pinned to a version
+(`- fleet:<name>@policy-3`) applies that version's company.yaml, read from git at the tag, on every machine and in CI,
+whatever its clone of the fleet repo holds; an unpinned `fleet:<name>` still follows the fleet folder.
+
+**The rollout from your machine.** In the fleet repo, with your own git and gh logins:
+
+```bash
+logast fleet tag-policy .                       # company.yaml changed: policy-4
+logast fleet rollout .                          # every repo of repos.yaml: commits on logast/rollout in .cache/repos/<repo>
+logast fleet rollout . --repos checkout --pr    # one repo, pushed, with its pull request
+```
+
+For each repo of repos.yaml (cloned or fetched as `--refresh` does):
+1. **Due?** decided by the repo's own logast.yaml on its default branch: `rollout: { mode: off }` (opted out) and a
+   `hold` are skipped, `mode: manual` too unless `--repos` names it; a repo pinned to the target version (or newer)
+   is up to date.
+2. **Its branch.** `logast/rollout`, regenerated from the default branch (never rebased: apply is deterministic).
+   A branch whose newest commit lacks the `Logast-Rollout:` trailer has someone's commits on top: it is theirs, left
+   alone. The same policy on the same base commit: unchanged, nothing runs.
+3. **Pin, apply, build** in a work tree: the pin (joining the fleet when the repo has not), `logast apply`, then the
+   repo's `./gradlew build` (`--no-build` skips it). A failing apply or build is **blocked**: nothing committed, the
+   log in `.cache/rollout/<repo>.log`.
+4. **Commit** with trailers: `Logast-Rollout: policy-N`, `Logast-Base: <commit>`, `Logast-Version`.
+5. `--push` pushes with a lease (a branch someone moved meanwhile is not overwritten); `--pr` opens or updates the pull
+   request (`gh`).
+
+```yaml
+# a service's logast.yaml
+rollout:
+  mode: manual                        # pr (default) | manual | off
+  hold: "until 2026-12-15: freeze"    # skipped until that day; without a date until removed
+```
+
+A second run on an unchanged repo and policy does nothing. The fleet's own CI never rolls out: its token reads every
+repo and member builds never run next to it. Rollout states in the overview, a workflow per service repo and waves
+follow (#236).
 
 ## Which logast made it
 

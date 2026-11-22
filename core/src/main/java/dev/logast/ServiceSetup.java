@@ -134,8 +134,10 @@ public final class ServiceSetup {
         StringBuilder sb = new StringBuilder("extends:\n");
         for (String e : extendsList) {
             String fleet = dev.logast.fleet.FleetExtends.name(e);
-            sb.append(fleet == null ? "  - " + e : dev.logast.fleet.FleetExtends.item("  ", fleet,
-                    dev.logast.fleet.FleetExtends.company(fleet))).append('\n');
+            String pin = dev.logast.fleet.FleetExtends.pin(e);   // #236: a pinned policy version stays pinned
+            sb.append(fleet == null ? "  - " + e : pin != null ? "  - " + e.strip() + "    # = "
+                    + dev.logast.fleet.FleetExtends.company(fleet, pin) + " on this machine"
+                    : dev.logast.fleet.FleetExtends.item("  ", fleet, dev.logast.fleet.FleetExtends.company(fleet))).append('\n');
         }
         return sb.toString();
     }

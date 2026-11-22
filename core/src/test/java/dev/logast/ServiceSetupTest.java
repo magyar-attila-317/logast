@@ -220,4 +220,11 @@ class ServiceSetupTest {
         Files.writeString(dir.resolve("logast.yml"), "logging:\n  structuredFormat: logstash\n");
         assertThat(dev.logast.policy.Policy.resolve(dir, null).logging().structuredFormat()).isEqualTo("logstash");
     }
+
+    /** #236: apply's first-run template keeps a pinned fleet policy version (the rollout pins it before apply runs). */
+    @org.junit.jupiter.api.Test
+    void theTemplateKeepsAPinnedPolicyVersion() {
+        org.assertj.core.api.Assertions.assertThat(ServiceSetup.extendsYaml(java.util.List.of("fleet:shop@policy-3", "../area.yaml")))
+                .contains("  - fleet:shop@policy-3    # = ").contains("  - ../area.yaml");
+    }
 }

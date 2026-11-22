@@ -93,6 +93,7 @@ public final class PolicyLoader {
         SupportResolvable.decide(merged, project != null ? project : root);
         merged.remove("extends");
         merged.remove("fleet");
+        merged.remove("rollout");   // #236: the repo's own rollout intent, not policy
         merged.set("overrides", JsonNodeFactory.instance.arrayNode().addAll(loader.overrides.stream().map(TextNode::new).toList()));
         merged.remove("warnings");
         Policy policy;
@@ -282,7 +283,7 @@ public final class PolicyLoader {
             Map.Entry<String, JsonNode> e = it.next();
             String key = e.getKey();
             String p = path.isEmpty() ? key : path + "." + key;
-            if (path.isEmpty() && (key.equals("extends") || key.equals("fleet"))) {
+            if (path.isEmpty() && (key.equals("extends") || key.equals("fleet") || key.equals("rollout"))) {
                 continue;
             }
             JsonNode value = e.getValue();
@@ -331,7 +332,11 @@ public final class PolicyLoader {
      */
     private List<String> parents(JsonNode node) {
         List<String> out = new ArrayList<>();
-        String member = fleetLayer(node.path("fleet").asText(""), "fleet: ");
+        String fleet = node.path("fleet").asText("").strip();
+        // #236: a member pinned to a policy version takes that version only, not also the fleet folder's current file
+        boolean pinned = entries(node.path("extends")).stream().anyMatch(e -> fleet.equals(dev.logast.fleet.FleetExtends.name(e))
+                && dev.logast.fleet.FleetExtends.pin(e) != null);
+        String member = pinned ? null : fleetLayer(fleet, "fleet: ");
         if (member != null) {
             out.add(member);
         }
@@ -341,7 +346,9 @@ public final class PolicyLoader {
                 out.add(entry);
                 continue;
             }
-            String company = fleetLayer(name, "extends: " + dev.logast.fleet.FleetExtends.PREFIX);
+            String pin = dev.logast.fleet.FleetExtends.pin(entry);
+            String company = pin == null ? fleetLayer(name, "extends: " + dev.logast.fleet.FleetExtends.PREFIX)
+                    : pinnedLayer(name, pin);
             if (company != null && !out.contains(company)) {
                 out.add(company);
             }
@@ -379,6 +386,23 @@ public final class PolicyLoader {
             if (!unpinned.contains(w)) {
                 unpinned.add(w);
             }
+        }
+        return null;
+    }
+
+    /**
+     * #236: the company.yaml of the fleet's policy version {@code pin}, read from git at the tag; a version this machine
+     * cannot read is a warning, never another version: the service's own rules still apply.
+     */
+    private String pinnedLayer(String name, String pin) {
+        Path company = dev.logast.fleet.FleetExtends.company(name.strip(), pin);
+        if (Files.isRegularFile(company)) {
+            return company.toString();
+        }
+        String w = "extends: fleet:" + name.strip() + "@" + pin + " is not readable on this machine (the fleet's folder is "
+                + "no git repo with that tag): its company.yaml is not applied";
+        if (!unpinned.contains(w)) {
+            unpinned.add(w);
         }
         return null;
     }

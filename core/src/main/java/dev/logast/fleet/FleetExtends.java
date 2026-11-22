@@ -27,19 +27,66 @@ public final class FleetExtends {
     private FleetExtends() {
     }
 
-    /** The fleet an {@code extends:} entry names ({@code fleet:<name>}); null for any other entry. */
+    /** The fleet an {@code extends:} entry names ({@code fleet:<name>}, {@code fleet:<name>@policy-N}); null for any other entry. */
     public static String name(String entry) {
         String e = entry == null ? "" : entry.strip();
         if (!e.startsWith(PREFIX)) {
             return null;
         }
         String name = e.substring(PREFIX.length()).strip();
+        int at = name.indexOf('@');
+        name = at < 0 ? name : name.substring(0, at).strip();
         return name.isEmpty() ? null : name;
+    }
+
+    /** #236: the policy version an entry pins ({@code fleet:<name>@policy-N} → {@code policy-N}); null when unpinned. */
+    public static String pin(String entry) {
+        if (name(entry) == null) {
+            return null;
+        }
+        String e = entry.strip();
+        int at = e.indexOf('@');
+        String pin = at < 0 ? "" : e.substring(at + 1).strip();
+        return pin.isEmpty() ? null : pin;
     }
 
     /** Where {@code fleet:<name>} points on this machine: the fleet folder's company.yaml. */
     public static Path company(String name) {
         return FleetHome.fleetDir(FleetHome.Env.current(), name).dir().resolve(CentralVocabulary.COMPANY).toAbsolutePath().normalize();
+    }
+
+    /** #236: {@code fleet:<name>@<pin>}: the company.yaml of that policy version (from git at the tag); unpinned: {@link #company(String)}. */
+    public static Path company(String name, String pin) {
+        if (pin == null) {
+            return company(name);
+        }
+        Path dir = FleetHome.fleetDir(FleetHome.Env.current(), name).dir();
+        return PolicyVersions.company(dir, pin).toAbsolutePath().normalize();
+    }
+
+    /**
+     * #236: {@code fleet:<name>} pinned to {@code tag} in {@code extends:}: the entry is rewritten (or added first), the
+     * rest of the file stays.
+     */
+    public static List<String> pinTo(List<String> lines, String name, String tag) {
+        List<String> out = add(lines, name, company(name));
+        Extends e = find(out);
+        int i = e == null ? -1 : e.indexOf(name);
+        if (i < 0) {
+            return out;
+        }
+        String entry = PREFIX + name + "@" + tag;
+        if (e.inline()) {
+            List<String> values = new ArrayList<>(e.values());
+            values.set(i, entry);
+            out.set(e.at(), "extends: " + (e.value().startsWith("[") || values.size() > 1 ? "[" + String.join(", ", values) + "]"
+                    : values.getFirst()) + e.comment());
+            return out;
+        }
+        Matcher m = ITEM.matcher(out.get(e.items().get(i)));
+        String indent = m.matches() ? m.group(1) : "  ";
+        out.set(e.items().get(i), indent + "- " + entry + "    " + comment(company(name, tag)));
+        return out;
     }
 
     /** The list item for the fleet: {@code <indent>- fleet:<name>    # = <company> on this machine}. */
@@ -197,7 +244,9 @@ public final class FleetExtends {
             if (name == null || !m.matches() || m.group(3) != null && !m.group(3).strip().startsWith("# =")) {
                 continue;
             }
-            String line = item(m.group(1), name, company(name));
+            String pin = pin(e.values().get(k));   // #236: a pinned entry keeps its version
+            String line = pin == null ? item(m.group(1), name, company(name))
+                    : m.group(1) + "- " + PREFIX + name + "@" + pin + "    " + comment(company(name, pin));
             if (!line.equals(out.get(at))) {
                 out.set(at, line);
             }

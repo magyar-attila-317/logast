@@ -41,7 +41,7 @@ import java.util.concurrent.Callable;
         + "`logast fleet add <name> <repos…>` registers repos without touching them (#132): their scans write only to the "
         + "fleet folder. The earlier form `logast fleet <service roots…>` still scans the given roots.",
         subcommands = {Fleet.Create.class, Fleet.Init.class, Fleet.Join.class, Fleet.Leave.class, Fleet.Add.class, Fleet.Remove.class, Fleet.ListFleets.class,
-                Fleet.Tidy.class})
+                Fleet.Tidy.class, FleetRollout.TagPolicy.class, FleetRollout.Run.class})
 final class Fleet implements Callable<Integer> {
     @Parameters(description = "A fleet's name; or (the earlier form) service roots, or a text file with one root per line (prefix it with @)")
     List<String> services = new ArrayList<>();
@@ -1098,7 +1098,7 @@ final class Fleet implements Callable<Integer> {
 
         @Override
         public Integer call() {
-            if (!FleetHome.validName(name) || Set.of("create", "init", "join", "leave", "add", "remove", "list", "tidy").contains(name)) {
+            if (!FleetHome.validName(name) || Set.of("create", "init", "join", "leave", "add", "remove", "list", "tidy", "rollout", "tag-policy").contains(name)) {
                 Out.warn("fleet create: " + name + " is not a fleet name (letters, digits, '.', '-', '_'; not a subcommand)");
                 return 2;
             }

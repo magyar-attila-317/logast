@@ -263,6 +263,18 @@ public final class FleetScaffold {
                       - uses: gradle/actions/setup-gradle@v4
                       - name: The libraries to resolve the members' code against (classpath/build.gradle.kts)
                         run: gradle --quiet -p classpath writeClasspath
+                      - name: Tag the policy version
+                        # #236: every change of company.yaml becomes the next policy-N; members pin a version
+                        # (extends: [fleet:<name>@policy-N]), never "whatever main holds"
+                        if: github.event_name == 'push'
+                        env:
+                          GITHUB_TOKEN: ${{ github.token }}
+                          GIT_COMMITTER_NAME: logast
+                          GIT_COMMITTER_EMAIL: logast@users.noreply.github.com
+                        run: |
+                          git fetch --quiet --tags --unshallow 2>/dev/null || git fetch --quiet --tags
+                          logast fleet tag-policy .
+                          git push --quiet "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/policy-*:refs/tags/policy-*"
                       - name: Refresh the fleet
                         # --no-builds: the members' build scripts never run here, next to a token that reads every repo;
                         # the scan is source-only (survey quality). The overview goes to the run's summary page.
