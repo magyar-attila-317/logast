@@ -399,37 +399,9 @@ public final class Main {
             // #122: one command on a service with nothing set up; writing is the default, git is the safety net
             write = !dryRun;
             auto = auto || only.isEmpty();   // --only alone is a selection; texts in messages.yaml come with --auto
-            if (write && !force && !refreshed) {   // the internal re-run (#117) follows this run's own changes
-                List<String> dirty = uncommitted(root());
-                if (dirty != null && !dirty.isEmpty()) {
-                    Out.warn("logast apply: the git working tree has uncommitted changes (" + String.join(", ", dirty.stream().limit(5).toList())
-                            + (dirty.size() > 5 ? ", …" : "") + "). Commit or stash them first, so `git diff` shows only what logast "
-                            + "changes. Nothing applied; --force writes anyway, --dry-run previews.");
-                    return 2;
-                }
-            }
-            // #124: a logast.yaml with only `fleet:` / `extends:` (after `logast fleet join`) is not set up yet either
-            if (policyFile == null && dev.logast.ServiceSetup.needsSetup(root())) {
-                if (write) {
-                    dev.logast.ServiceSetup.Bootstrap set = dev.logast.ServiceSetup.bootstrap(root(), dev.logast.ServiceSetup.Choices.defaults(), false);
-                    header.add("logast.yaml written (" + set.summary() + "; edit it and apply again to change them)");
-                } else {
-                    Out.progress("no logast.yaml yet: previewing with the built-in defaults (apply without --dry-run writes one)");
-                }
-            }
-            // #119: a Gradle build without a classpath file would resolve no library type, and the compile gate would
-            // reject correct fixes with errors that look like a bug: fetch it now (#122), stop only when Gradle fails
-            boolean gradleBuild = Files.exists(root().resolve("build.gradle")) || Files.exists(root().resolve("build.gradle.kts"));
-            if (gradleBuild && classpathFile == null && !withoutClasspath && Logast.classpath(root(), null).isEmpty()) {
-                Main.Classpath.Result cpr = Main.Classpath.run(root(), "~reading the classpath with Gradle (nothing is compiled)");
-                if (cpr.exitCode() != 0) {
-                    Out.warn("no classpath (.logast/classpath*.txt): Gradle failed (exit " + cpr.exitCode() + "), its output is above "
-                            + "(often a JDK the build's toolchain asks for is not installed). Nothing applied; fix the build and run "
-                            + "again, or --without-classpath applies anyway, with library types unresolved.");
-                    return 2;
-                }
-                header.add("classpath read with Gradle (" + cpr.entries() + (cpr.entries() == 1 ? " entry)" : " entries)"));
-                supportHint(header);
+            Integer stop = setUp(header);
+            if (stop != null) {
+                return stop;
             }
             Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
             String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
@@ -491,6 +463,66 @@ public final class Main {
                 fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders());
                 mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders());
             }
+            Written written = writeReports(r, applied, changed, scanner, policy);
+            if (format.equals("json")) {
+                System.out.println(OrderJson.MAPPER.writeValueAsString(r));
+                return r.rejected().isEmpty() ? 0 : 1;
+            }
+            List<dev.logast.Todo.Item> also = new ArrayList<>();
+            Integer again = afterBuildChange(r, applied, changed, rejected, violations, header, t0, also);
+            if (again != null) {
+                return again;
+            }
+            return summary(r, applied, changed, rejected, violations, header, t0, scanner, policy, written, also, fu, mu);
+        }
+
+        /**
+         * #122: one command on a service with nothing set up: the dirty-tree guard, the first logast.yaml (#124), the
+         * classpath (#119); an exit code when the run stops here, else null.
+         */
+        private Integer setUp(List<String> header) throws IOException {
+            if (write && !force && !refreshed) {   // the internal re-run (#117) follows this run's own changes
+                List<String> dirty = uncommitted(root());
+                if (dirty != null && !dirty.isEmpty()) {
+                    Out.warn("logast apply: the git working tree has uncommitted changes (" + String.join(", ", dirty.stream().limit(5).toList())
+                            + (dirty.size() > 5 ? ", …" : "") + "). Commit or stash them first, so `git diff` shows only what logast "
+                            + "changes. Nothing applied; --force writes anyway, --dry-run previews.");
+                    return 2;
+                }
+            }
+            // #124: a logast.yaml with only `fleet:` / `extends:` (after `logast fleet join`) is not set up yet either
+            if (policyFile == null && dev.logast.ServiceSetup.needsSetup(root())) {
+                if (write) {
+                    dev.logast.ServiceSetup.Bootstrap set = dev.logast.ServiceSetup.bootstrap(root(), dev.logast.ServiceSetup.Choices.defaults(), false);
+                    header.add("logast.yaml written (" + set.summary() + "; edit it and apply again to change them)");
+                } else {
+                    Out.progress("no logast.yaml yet: previewing with the built-in defaults (apply without --dry-run writes one)");
+                }
+            }
+            // #119: a Gradle build without a classpath file would resolve no library type, and the compile gate would
+            // reject correct fixes with errors that look like a bug: fetch it now (#122), stop only when Gradle fails
+            boolean gradleBuild = Files.exists(root().resolve("build.gradle")) || Files.exists(root().resolve("build.gradle.kts"));
+            if (gradleBuild && classpathFile == null && !withoutClasspath && Logast.classpath(root(), null).isEmpty()) {
+                Main.Classpath.Result cpr = Main.Classpath.run(root(), "~reading the classpath with Gradle (nothing is compiled)");
+                if (cpr.exitCode() != 0) {
+                    Out.warn("no classpath (.logast/classpath*.txt): Gradle failed (exit " + cpr.exitCode() + "), its output is above "
+                            + "(often a JDK the build's toolchain asks for is not installed). Nothing applied; fix the build and run "
+                            + "again, or --without-classpath applies anyway, with library types unresolved.");
+                    return 2;
+                }
+                header.add("classpath read with Gradle (" + cpr.entries() + (cpr.entries() == 1 ? " entry)" : " entries)"));
+                supportHint(header);
+            }
+            return null;
+        }
+
+        /** What an apply wrote besides the code: the log-call ledger (#72) and the per-step diffs. */
+        private record Written(List<dev.logast.LogLedger.Entry> ledger, List<String> stepFiles) {
+        }
+
+        /** The last-apply record (#101), the applied hashes (#131), the ledger, the round trace and one diff per step. */
+        private Written writeReports(Applier.Result r, List<String> applied, List<String> changed, dev.logast.RoundScanner scanner,
+                                     Policy policy) throws IOException {
             // what the last apply that changed files did: a later scan starts with its first line ("Applied earlier",
             // #101); the ids and files follow (#126: the summary lists them only with --verbose)
             if (write && !applied.isEmpty() && !changed.isEmpty()) {
@@ -532,11 +564,16 @@ public final class Main {
                     stepFiles.add(file);
                 }
             }
-            if (format.equals("json")) {
-                System.out.println(OrderJson.MAPPER.writeValueAsString(r));
-                return r.rejected().isEmpty() ? 0 : 1;
-            }
-            List<dev.logast.Todo.Item> also = new ArrayList<>();
+            return new Written(ledger, stepFiles);
+        }
+
+        /**
+         * Dependencies changed (a build file, or a script it applies, #80): the classpath is refreshed and (#117) one more
+         * run with it settles the setup decisions that depend on the new types; its exit code, else null.
+         */
+        private Integer afterBuildChange(Applier.Result r, List<String> applied, List<String> changed, Map<String, String> rejected,
+                                         List<String> violations, List<String> header, long t0, List<dev.logast.Todo.Item> also)
+                throws IOException {
             boolean buildChanged = write && r.changedFiles().stream().anyMatch(fn -> fn.endsWith(".gradle") || fn.endsWith(".gradle.kts"));
             if (buildChanged && classpathFile != null) {
                 // #122: the caller owns the classpath (the Gradle plugin's logastApply runs inside a build): no nested
@@ -565,6 +602,16 @@ public final class Main {
                             + "): fix the build, then refresh the classpath"));
                 }
             }
+            return null;
+        }
+
+        /** The run's summary: what was set up, the change counts, rejections and checks, then what is left (#126). */
+        private int summary(Applier.Result r, List<String> applied, List<String> changed, Map<String, String> rejected,
+                            List<String> violations, List<String> header, long t0, dev.logast.RoundScanner scanner, Policy policy,
+                            Written written, List<dev.logast.Todo.Item> also, dev.logast.apply.FillsFile.Update fu,
+                            dev.logast.apply.FillsFile.Update mu) {
+            List<String> stepFiles = written.stepFiles();
+            List<dev.logast.LogLedger.Entry> ledger = written.ledger();
             if (!header.isEmpty()) {
                 System.out.println(Ansi.bold("Set up: ") + String.join("; ", header));
                 System.out.println();
