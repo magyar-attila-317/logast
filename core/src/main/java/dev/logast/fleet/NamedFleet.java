@@ -1,5 +1,6 @@
 package dev.logast.fleet;
 
+import dev.logast.Git;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -426,20 +427,7 @@ public final class NamedFleet {
     /** The short commit of {@code root}'s git checkout; null outside git. */
     /** The short HEAD commit of {@code root}, or null outside a git work tree. */
     public static String commit(Path root) {
-        try {
-            Process p = new ProcessBuilder("git", "rev-parse", "--short", "HEAD").directory(root.toFile())
-                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
-            String sha = new String(p.getInputStream().readAllBytes()).strip();
-            if (!p.waitFor(5, TimeUnit.SECONDS) || p.exitValue() != 0 || sha.isEmpty()) {
-                p.destroy();
-                return null;
-            }
-            return sha;
-        } catch (IOException e) {
-            return null;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return null;
-        }
+        String sha = Git.output(root, "rev-parse", "--short", "HEAD");
+        return sha == null || sha.isEmpty() ? null : sha;
     }
 }

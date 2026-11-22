@@ -1,5 +1,6 @@
 package dev.logast.fleet;
 
+import dev.logast.Git;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -103,9 +104,9 @@ public final class FleetRepos {
         Path dir = fleet.resolve(CACHE).resolve(repo.name());
         try {
             if (Files.isDirectory(dir.resolve(".git"))) {
-                git(dir, "fetch", "--quiet", "--depth", "1", "origin", repo.branch() != null ? repo.branch() : "HEAD");
-                git(dir, "reset", "--quiet", "--hard", "FETCH_HEAD");
-                git(dir, "clean", "--quiet", "-ffdx");
+                Git.must(dir, "fetch", "--quiet", "--depth", "1", "origin", repo.branch() != null ? repo.branch() : "HEAD");
+                Git.must(dir, "reset", "--quiet", "--hard", "FETCH_HEAD");
+                Git.must(dir, "clean", "--quiet", "-ffdx");
             } else {
                 Files.createDirectories(dir.getParent());
                 List<String> clone = new ArrayList<>(List.of("clone", "--quiet", "--depth", "1"));
@@ -113,31 +114,11 @@ public final class FleetRepos {
                     clone.addAll(List.of("--branch", repo.branch()));
                 }
                 clone.addAll(List.of(repo.url(), dir.toString()));
-                git(dir.getParent(), clone.toArray(String[]::new));
+                Git.must(dir.getParent(), clone.toArray(String[]::new));
             }
             return dir;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
-        }
-    }
-
-    private static void git(Path in, String... args) throws IOException {
-        List<String> cmd = new ArrayList<>(List.of("git"));
-        cmd.addAll(List.of(args));
-        Process p = new ProcessBuilder(cmd).directory(in.toFile()).redirectErrorStream(true).start();
-        p.getOutputStream().close();
-        String out = new String(p.getInputStream().readAllBytes()).strip();
-        try {
-            if (!p.waitFor(10, TimeUnit.MINUTES)) {
-                p.destroyForcibly();
-                throw new IOException("git " + args[0] + " took longer than 10 minutes");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("interrupted");
-        }
-        if (p.exitValue() != 0) {
-            throw new IOException("git " + args[0] + " failed: " + out);
         }
     }
 

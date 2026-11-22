@@ -1,5 +1,6 @@
 package dev.logast.fleet;
 
+import dev.logast.Git;
 import dev.logast.CentralVocabulary;
 
 import java.io.IOException;

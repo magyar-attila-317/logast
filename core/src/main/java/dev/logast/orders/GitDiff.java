@@ -20,8 +20,8 @@ public final class GitDiff {
     }
 
     public static GitDiff since(Path root, String ref) {
-        String top = run(root, "git", "rev-parse", "--show-toplevel").strip();
-        String diff = run(root, "git", "diff", "--unified=0", "--no-color", ref, "--", ".");
+        String top = dev.logast.Git.must(root, "rev-parse", "--show-toplevel");
+        String diff = dev.logast.Git.must(root, "diff", "--unified=0", "--no-color", ref, "--", ".");
         String prefix = Path.of(top).relativize(root.toAbsolutePath().normalize()).toString().replace('\\', '/');
         return parse(diff, prefix.isEmpty() ? "" : prefix + "/");
     }
@@ -56,21 +56,5 @@ public final class GitDiff {
     public List<WorkOrder> filter(List<WorkOrder> orders) {
         return orders.stream().filter(o -> touches(o.file(), o.line())
                 || o.locations().stream().anyMatch(l -> touches(l.file(), l.line()))).toList();
-    }
-
-    private static String run(Path dir, String... cmd) {
-        try {
-            Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true).start();
-            String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            if (p.waitFor() != 0) {
-                throw new IllegalStateException(String.join(" ", cmd) + " failed: " + out.strip());
-            }
-            return out;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(e);
-        }
     }
 }

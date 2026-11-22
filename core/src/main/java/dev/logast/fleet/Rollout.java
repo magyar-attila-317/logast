@@ -1,5 +1,6 @@
 package dev.logast.fleet;
 
+import dev.logast.Git;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;

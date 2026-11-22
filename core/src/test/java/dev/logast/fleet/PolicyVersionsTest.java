@@ -1,5 +1,6 @@
 package dev.logast.fleet;
 
+import dev.logast.Git;
 import dev.logast.policy.Policy;
 import dev.logast.policy.PolicyLoader;
 import org.junit.jupiter.api.AfterEach;

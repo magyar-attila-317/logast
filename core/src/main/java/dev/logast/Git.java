@@ -1,4 +1,4 @@
-package dev.logast.fleet;
+package dev.logast;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-/** #236: git in a folder, for policy versions and the rollout: the exit code and the output (stderr merged). */
+/** git in a folder: the exit code and the output (stderr merged). The one place logast runs git. */
 public final class Git {
     /** @param code git's exit code; {@code out} its output, stripped */
     public record Result(int code, String out) {
@@ -46,13 +46,23 @@ public final class Git {
     public static String must(Path in, String... args) {
         Result r = run(in, args);
         if (!r.ok()) {
-            throw new IllegalStateException("git " + String.join(" ", args) + " in " + in + ": " + r.out());
+            throw new IllegalStateException("git " + args[0] + " failed: " + r.out());
         }
         return r.out();
     }
 
+    /** git's output, or null when git fails or is not there at all (a question that may have no answer). */
+    public static String output(Path in, String... args) {
+        try {
+            Result r = run(in, args);
+            return r.ok() ? r.out() : null;
+        } catch (UncheckedIOException e) {
+            return null;
+        }
+    }
+
     /** The folder is inside a git work tree. */
     public static boolean repo(Path dir) {
-        return run(dir, "rev-parse", "--is-inside-work-tree").out().equals("true");
+        return "true".equals(output(dir, "rev-parse", "--is-inside-work-tree"));
     }
 }

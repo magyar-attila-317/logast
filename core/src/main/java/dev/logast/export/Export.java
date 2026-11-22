@@ -198,21 +198,9 @@ public final class Export {
 
     /** {@code owner/name} from the {@code origin} remote's URL (GitHub's https or ssh form), else the given name. */
     static String githubName(Path root, String fallback) {
-        try {
-            Process p = new ProcessBuilder("git", "-C", root.toString(), "remote", "get-url", "origin").redirectErrorStream(true).start();
-            String url = new String(p.getInputStream().readAllBytes()).strip();
-            if (p.waitFor() == 0) {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile("github\\.com[:/]([^/]+/[^/]+?)(?:\\.git)?$").matcher(url);
-                if (m.find()) {
-                    return m.group(1);
-                }
-            }
-        } catch (IOException e) {
-            // no git: the given name
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        return fallback;
+        String url = dev.logast.Git.output(root, "remote", "get-url", "origin");
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("github\\.com[:/]([^/]+/[^/]+?)(?:\\.git)?$").matcher(url == null ? "" : url);
+        return m.find() ? m.group(1) : fallback;
     }
 
     /** What {@code --flyway} asks for: the tables whose rows become facts, and the PostgreSQL image. */
