@@ -15,7 +15,6 @@ import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.merge.Merge;
 import net.sf.jsqlparser.statement.update.Update;
 import net.sf.jsqlparser.util.TablesNamesFinder;
-import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
@@ -97,24 +96,7 @@ final class DataAccess {
 
     List<Access> accesses() {
         List<Access> out = new ArrayList<>();
-        for (MethodInfo m : index.methods()) {
-            if (!m.hasBody()) {
-                continue;
-            }
-            new JavaIsoVisitor<Integer>() {
-                @Override
-                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
-                    J.MethodInvocation v = super.visitMethodInvocation(mi, p);
-                    access(m, mi, out);
-                    return v;
-                }
-
-                @Override
-                public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration cd, Integer p) {
-                    return cd;   // a local or anonymous class's methods are methods of their own
-                }
-            }.visit(m.decl().getBody(), 0);
-        }
+        index.eachCall((m, mi) -> access(m, mi, out));
         return out;
     }
 

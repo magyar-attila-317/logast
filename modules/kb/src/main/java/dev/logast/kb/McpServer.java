@@ -332,10 +332,11 @@ public final class McpServer {
                 .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
     }
 
-    private static ObjectNode tools() {
+    /** tools/list's answer for a set of tools: name, description and input schema of each. */
+    private static ObjectNode toolList(List<Tool> tools) {
         ObjectNode r = JSON.createObjectNode();
         ArrayNode list = r.putArray("tools");
-        for (Tool t : TOOLS) {
+        for (Tool t : tools) {
             ObjectNode o = list.addObject().put("name", t.name()).put("description", t.description());
             ObjectNode schema = o.putObject("inputSchema").put("type", "object");
             ObjectNode props = schema.putObject("properties");
@@ -352,6 +353,10 @@ public final class McpServer {
         return r;
     }
 
+    private static ObjectNode tools() {
+        return toolList(TOOLS);
+    }
+
     /** #201: the code-mode tools. */
     private static final List<Tool> CODE_TOOLS = List.of(
             new Tool("api", "Read this first: the facts API (a TypeScript declaration) for the query tool, what is loaded now "
@@ -363,23 +368,7 @@ public final class McpServer {
                     new String[][]{{"code", "string", "the program; end with `return <value>`"}}, new String[]{"code"}));
 
     private static ObjectNode codeTools() {
-        ObjectNode r = JSON.createObjectNode();
-        ArrayNode list = r.putArray("tools");
-        for (Tool t : CODE_TOOLS) {
-            ObjectNode o = list.addObject().put("name", t.name()).put("description", t.description());
-            ObjectNode schema = o.putObject("inputSchema").put("type", "object");
-            ObjectNode props = schema.putObject("properties");
-            for (String[] p : t.params()) {
-                props.putObject(p[0]).put("type", p[1]).put("description", p[2]);
-            }
-            if (t.required().length > 0) {
-                ArrayNode req = schema.putArray("required");
-                for (String q : t.required()) {
-                    req.add(q);
-                }
-            }
-        }
-        return r;
+        return toolList(CODE_TOOLS);
     }
 
     private ObjectNode codeCall(String name, JsonNode a) {

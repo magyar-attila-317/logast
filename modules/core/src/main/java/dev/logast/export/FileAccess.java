@@ -57,24 +57,7 @@ final class FileAccess {
 
     List<Access> accesses() {
         List<Access> out = new ArrayList<>();
-        for (MethodInfo m : index.methods()) {
-            if (!m.hasBody()) {
-                continue;
-            }
-            new JavaIsoVisitor<Integer>() {
-                @Override
-                public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
-                    J.MethodInvocation v = super.visitMethodInvocation(mi, p);
-                    access(m, mi, out);
-                    return v;
-                }
-
-                @Override
-                public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration cd, Integer p) {
-                    return cd;
-                }
-            }.visit(m.decl().getBody(), 0);
-        }
+        index.eachCall((m, mi) -> access(m, mi, out));
         return out;
     }
 

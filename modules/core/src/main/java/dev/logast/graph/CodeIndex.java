@@ -218,4 +218,29 @@ public final class CodeIndex {
     public ParsedProject project() {
         return project;
     }
+
+    /**
+     * Every method call in every method body, after the calls in its arguments (so {@code a(b())} gives b, then a); the
+     * methods of a local or anonymous class are methods of their own, not walked as part of the enclosing one.
+     */
+    public void eachCall(java.util.function.BiConsumer<MethodInfo, org.openrewrite.java.tree.J.MethodInvocation> each) {
+        for (MethodInfo m : methods()) {
+            if (!m.hasBody()) {
+                continue;
+            }
+            new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+                @Override
+                public org.openrewrite.java.tree.J.MethodInvocation visitMethodInvocation(org.openrewrite.java.tree.J.MethodInvocation mi, Integer p) {
+                    org.openrewrite.java.tree.J.MethodInvocation v = super.visitMethodInvocation(mi, p);
+                    each.accept(m, mi);
+                    return v;
+                }
+
+                @Override
+                public org.openrewrite.java.tree.J.ClassDeclaration visitClassDeclaration(org.openrewrite.java.tree.J.ClassDeclaration cd, Integer p) {
+                    return cd;
+                }
+            }.visit(m.decl().getBody(), 0);
+        }
+    }
 }

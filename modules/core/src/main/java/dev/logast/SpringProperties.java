@@ -114,22 +114,7 @@ public final class SpringProperties {
             boolean profileFile = p.getFileName().toString().startsWith("application-");
             try {
                 String text = dev.logast.parse.SourceText.read(p);
-                List<Map<String, String>> docs = new ArrayList<>();
-                if (p.toString().endsWith(".properties")) {
-                    for (String doc : text.split("(?m)^[#!]---\\s*$")) {
-                        Properties props = new Properties();
-                        props.load(new StringReader(doc));
-                        Map<String, String> flat = new TreeMap<>();
-                        props.forEach((k, v) -> flat.put(String.valueOf(k), String.valueOf(v).trim()));
-                        docs.add(flat);
-                    }
-                } else {
-                    for (JsonNode doc : new ObjectMapper(new YAMLFactory()).readerFor(JsonNode.class).<JsonNode>readValues(text).readAll()) {
-                        Map<String, String> flat = new TreeMap<>();
-                        flatten("", doc, flat);
-                        docs.add(flat);
-                    }
-                }
+                List<Map<String, String>> docs = documents(p, text);
                 for (Map<String, String> doc : docs) {
                     if (profileFile || doc.keySet().stream().anyMatch(k -> k.startsWith("spring.config.activate."))) {
                         doc.forEach((k, v) -> {
@@ -171,22 +156,7 @@ public final class SpringProperties {
             boolean profileFile = p.getFileName().toString().startsWith("application-");
             try {
                 String text = dev.logast.parse.SourceText.read(p);
-                List<Map<String, String>> docs = new ArrayList<>();
-                if (p.toString().endsWith(".properties")) {
-                    for (String doc : text.split("(?m)^[#!]---\\s*$")) {
-                        Properties props = new Properties();
-                        props.load(new StringReader(doc));
-                        Map<String, String> flat = new TreeMap<>();
-                        props.forEach((k, v) -> flat.put(String.valueOf(k), String.valueOf(v).trim()));
-                        docs.add(flat);
-                    }
-                } else {
-                    for (JsonNode doc : new ObjectMapper(new YAMLFactory()).readerFor(JsonNode.class).<JsonNode>readValues(text).readAll()) {
-                        Map<String, String> flat = new TreeMap<>();
-                        flatten("", doc, flat);
-                        docs.add(flat);
-                    }
-                }
+                List<Map<String, String>> docs = documents(p, text);
                 for (Map<String, String> doc : docs) {
                     String on = doc.get("spring.config.activate.on-profile");
                     boolean activated = on != null && java.util.Arrays.stream(on.split(",")).map(String::strip).anyMatch(profile::equals);
@@ -279,5 +249,29 @@ public final class SpringProperties {
         } else {
             out.put(prefix, node.asText());
         }
+    }
+
+    /**
+     * The documents of an application file, each flattened to dotted keys: a .properties file split at {@code #---} /
+     * {@code !---}, a YAML file at {@code ---}.
+     */
+    private static List<Map<String, String>> documents(Path p, String text) throws IOException {
+        List<Map<String, String>> docs = new ArrayList<>();
+        if (p.toString().endsWith(".properties")) {
+            for (String doc : text.split("(?m)^[#!]---\\s*$")) {
+                Properties props = new Properties();
+                props.load(new StringReader(doc));
+                Map<String, String> flat = new TreeMap<>();
+                props.forEach((k, v) -> flat.put(String.valueOf(k), String.valueOf(v).trim()));
+                docs.add(flat);
+            }
+        } else {
+            for (JsonNode doc : new ObjectMapper(new YAMLFactory()).readerFor(JsonNode.class).<JsonNode>readValues(text).readAll()) {
+                Map<String, String> flat = new TreeMap<>();
+                flatten("", doc, flat);
+                docs.add(flat);
+            }
+        }
+        return docs;
     }
 }

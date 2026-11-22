@@ -122,4 +122,18 @@ public final class DecisionYaml {
         out.remove(notes);
         return out;
     }
+
+    /** The entries of a decision file, in file order; none when it does not exist. */
+    static java.util.Map<String, com.fasterxml.jackson.databind.JsonNode> entries(java.nio.file.Path file) {
+        if (!java.nio.file.Files.exists(file)) {
+            return java.util.Map.of();
+        }
+        try {
+            java.util.Map<String, com.fasterxml.jackson.databind.JsonNode> out = new java.util.LinkedHashMap<>();
+            read(file).fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue()));
+            return out;
+        } catch (java.io.IOException ex) {
+            throw new java.io.UncheckedIOException("cannot read " + file + ": " + ex.getMessage(), ex);
+        }
+    }
 }

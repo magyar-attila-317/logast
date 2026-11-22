@@ -62,7 +62,7 @@ public final class FillsFile {
      */
     public static Update update(Path root, List<WorkOrder> orders) {
         Path file = root.resolve(PATH);
-        Map<String, JsonNode> previous = readRaw(file);
+        Map<String, JsonNode> previous = DecisionYaml.entries(file);
         Map<String, Object> template = template(orders);
         ObjectNode out = DecisionYaml.MAPPER.createObjectNode();
         // always says where things stand, so an empty file reads as "nothing to write", not as "something went wrong"
@@ -189,7 +189,7 @@ public final class FillsFile {
     /** Entries with text in every slot (empty ones are skipped, hints ignored). */
     public static Map<String, Fill> read(Path file) {
         Map<String, Fill> out = new LinkedHashMap<>();
-        readRaw(file).forEach((id, node) -> {
+        DecisionYaml.entries(file).forEach((id, node) -> {
             if (id.startsWith("_") || !node.isObject()) {
                 return;
             }
@@ -201,23 +201,10 @@ public final class FillsFile {
         return out;
     }
 
-    private static Map<String, JsonNode> readRaw(Path file) {
-        if (!Files.exists(file)) {
-            return Map.of();
-        }
-        try {
-            Map<String, JsonNode> out = new LinkedHashMap<>();
-            DecisionYaml.read(file).fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue()));
-            return out;
-        } catch (IOException ex) {
-            throw new UncheckedIOException("cannot read " + file + ": " + ex.getMessage(), ex);
-        }
-    }
-
     /** Stores texts written elsewhere (the review page) into the file, so scan and apply see them too. */
     public static void save(Path root, Map<String, Fill> fills) {
         Path file = root.resolve(PATH);
-        ObjectNode raw = DecisionYaml.withoutNotes(OrderJson.MAPPER.valueToTree(readRaw(file)));
+        ObjectNode raw = DecisionYaml.withoutNotes(OrderJson.MAPPER.valueToTree(DecisionYaml.entries(file)));
         fills.forEach((id, f) -> {
             ObjectNode node = raw.get(id) instanceof ObjectNode o ? o : raw.putObject(id);
             f.slots().forEach(node::put);

@@ -111,7 +111,7 @@ public final class MetricsFile {
     /** Every entry as written (id → its fields, hints included), for {@code logast review}. */
     public static Map<String, JsonNode> entries(Path root) {
         Map<String, JsonNode> out = new LinkedHashMap<>();
-        raw(root.resolve(PATH)).forEach((id, n) -> {
+        DecisionYaml.entries(root.resolve(PATH)).forEach((id, n) -> {
             if (!id.startsWith("_") && n.isObject()) {
                 out.put(id, n);
             }
@@ -121,7 +121,7 @@ public final class MetricsFile {
 
     public static Map<String, Decision> read(Path root) {
         Map<String, Decision> out = new LinkedHashMap<>();
-        raw(root.resolve(PATH)).forEach((id, n) -> {
+        DecisionYaml.entries(root.resolve(PATH)).forEach((id, n) -> {
             if (!id.startsWith("_") && n.isObject() && !n.path("count").asText("").isBlank()) {
                 out.put(id, decision(n));
             }
@@ -147,7 +147,7 @@ public final class MetricsFile {
     /** Created when missing, entries kept as written, new ones appended, finished ones removed. Null when nothing to do. */
     public static FillsFile.Update update(Path root, List<WorkOrder> orders) {
         Path file = root.resolve(PATH);
-        Map<String, JsonNode> previous = raw(file);
+        Map<String, JsonNode> previous = DecisionYaml.entries(file);
         Map<String, WorkOrder> current = new LinkedHashMap<>();
         // outcomes counted by default (metrics.defaults) are written by apply, not decided here
         orders.stream().filter(o -> o.rule().equals(RULE) && !Boolean.TRUE.equals(o.data().get("auto"))).forEach(o -> current.put(o.id(), o));
@@ -224,18 +224,5 @@ public final class MetricsFile {
                 || previous.keySet().stream().anyMatch(k -> k.startsWith("_"));   // the earlier "_readme" is the header now
         changed = changed && DecisionYaml.write(file, header, out);
         return new FillsFile.Update(current.size(), decided, added, removed, changed, problems);
-    }
-
-    private static Map<String, JsonNode> raw(Path file) {
-        if (!Files.exists(file)) {
-            return Map.of();
-        }
-        try {
-            Map<String, JsonNode> out = new LinkedHashMap<>();
-            DecisionYaml.read(file).fields().forEachRemaining(e -> out.put(e.getKey(), e.getValue()));
-            return out;
-        } catch (IOException ex) {
-            throw new UncheckedIOException("cannot read " + file + ": " + ex.getMessage(), ex);
-        }
     }
 }
