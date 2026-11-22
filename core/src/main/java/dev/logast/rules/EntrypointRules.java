@@ -78,7 +78,7 @@ final class EntrypointRules {
         }
         if (silent) {
             b.fix(Rules.ENTRYPOINT_SILENT);
-            ctx.silentPlanned.add(m.key());
+            ctx.entry.silent().add(m.key());
         }
         b.title(title(ep, notObserved, missing, silent));
 
@@ -111,14 +111,14 @@ final class EntrypointRules {
             startLineOnly(m, b, body, top);
         }
         if (replacement != null) {
-            ctx.wrappedMethods.add(m.key());
+            ctx.entry.wrapped().add(m.key());
             b.edit(Edit.replace(m.file().relPath(), inner[0], inner[1], replacement));
         }
         b.edits(extra);
         b.context(ctx.context(m, inner[0], Text.oneLine(text.substring(Pos.start(m.decl()), Math.min(inner[0] + 200, text.length())), 200), null));
         if (!missing.isEmpty()) {
-            ctx.plannedEntryKeys.put(m.key(), new TreeSet<>(missing.stream().map(DomainValues.Value::key).toList()));
-            ctx.entryOrders.put(m.key(), b.id());
+            ctx.entry.entryKeys().put(m.key(), new TreeSet<>(missing.stream().map(DomainValues.Value::key).toList()));
+            ctx.entry.entryOrders().put(m.key(), b.id());
         }
     }
 
@@ -130,8 +130,8 @@ final class EntrypointRules {
         boolean batch = dev.logast.graph.EntrypointFinder.batch(m, null)
                 || m.decl().getLeadingAnnotations().stream().anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(m, a));
         boolean observed = ep.observedByFramework()
-                || ep.kind() == Entrypoint.Kind.KAFKA && ctx.kafkaListenerObservationPlanned && !batch
-                || ep.kind() == Entrypoint.Kind.RABBIT && ctx.rabbitListenerObservationPlanned && !batch;
+                || ep.kind() == Entrypoint.Kind.KAFKA && ctx.entry.kafkaObservation() && !batch
+                || ep.kind() == Entrypoint.Kind.RABBIT && ctx.entry.rabbitObservation() && !batch;
         boolean notObserved = !observed && !reactive && ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED)
                 && !ctx.ignored(m.file(), m.line(), Rules.ENTRYPOINT_NOT_OBSERVED) && !alreadyObserved(m);
         if (notObserved && ep.kind() == Entrypoint.Kind.GRPC && !completesInBody(m)) {
@@ -181,7 +181,7 @@ final class EntrypointRules {
         String subject = Wording.entrySubject(ep);
         if (subject != null) {
             // its family sees the line in this pass: siblings get theirs now, not on the rescan (LIFECYCLE_UNEVEN)
-            ctx.generatedStart.put(m.key(), subject);
+            ctx.entry.generatedStart().put(m.key(), subject);
         }
         b.slot("MSG", new Slot("Entry log for " + ep.label() + " (" + m.label()
                 + "): what is starting, in domain terms, e.g. 'Order shipment processing started'.",
@@ -221,7 +221,7 @@ final class EntrypointRules {
                 ctx.supportHasRun());
         extra.addAll(JavaEdits.imports(m.file(), ctx.support("ObservedContext")));
         ctx.dependOnStarter(b);
-        ctx.observedWrapped.add(m.key());   // its runtime line is the outcome; a plain MdcScope logs none
+        ctx.entry.observedWrapped().add(m.key());   // its runtime line is the outcome; a plain MdcScope logs none
         return replacement;
     }
 
@@ -634,7 +634,7 @@ final class EntrypointRules {
     private boolean alreadyObserved(MethodInfo m) {
         String body = m.decl().getBody() == null ? "" : m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
         return body.contains("ObservedContext.") || body.contains("Observation.start(") || body.contains("Observation.createNotStarted(")
-                || ctx.observedAnnotationsActive && TracingRules.observedAnnotation(m);
+                || ctx.entry.observedAnnotationsActive() && TracingRules.observedAnnotation(m);
     }
 
     /** How deep a log may sit and still count as the entrypoint's own: the endpoint, its service, one level below. */

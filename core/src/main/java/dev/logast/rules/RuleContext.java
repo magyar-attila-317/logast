@@ -22,19 +22,10 @@ public final class RuleContext {
     public final Phrasing phrasing;
     final List<OrderBuilder> orders = new ArrayList<>();
     final Map<CatchInfo, String> swallowedOrders = new IdentityHashMap<>();
-    final Map<String, Set<String>> plannedEntryKeys = new HashMap<>();
-    /** Keys a planned wrap sets for a whole method body (passed on to callees). */
-    final Map<String, Set<String>> plannedOwnKeys = new HashMap<>();
-    /** Keys a planned wrap sets after a local declaration: valid inside the method only. */
-    final Map<String, Set<String>> plannedLocalKeys = new HashMap<>();
-    /** "methodKey|mdcKey" → id of the order that will put it in MDC (message rewrites that drop it depend on it). */
-    final Map<String, String> plannedBy = new HashMap<>();
-    /** Entrypoint method key → id of the order that scopes its domain MDC keys. */
-    final Map<String, String> entryOrders = new HashMap<>();
-    /** Entrypoints that ENTRYPOINT_SILENT gives a "started" line. */
-    final Set<String> silentPlanned = new HashSet<>();
-    /** #231: method key → the subject of the started line ENTRYPOINT_SILENT writes this pass with generated wording. */
-    final Map<String, String> generatedStart = new HashMap<>();
+    /** What the entry phase plans (Rules.scan freezes it when the phase ends). */
+    final Plans.Entry entry = new Plans.Entry();
+    /** What the MDC phase plans (frozen after it). */
+    final Plans.Mdc mdc = new Plans.Mdc();
     private LifecyclePlan lifecycle;
     /** File → rules its {@code logast:ignore-file} comments silence. */
     private final Map<String, Set<String>> fileIgnores = new HashMap<>();
@@ -49,21 +40,9 @@ public final class RuleContext {
 
     /** MDC placement decisions with reasons (REPEATED_LOG_VALUE), for `logast why <key>`. */
     public final List<RepeatedValueRules.Decision> mdcDecisions = new ArrayList<>();
-    /** Methods whose body an entrypoint order already rewraps. */
-    final Set<String> wrappedMethods = new HashSet<>();
-    /** Methods this scan wraps in ObservedContext (a subset of wrappedMethods: those also get an MdcScope only). */
-    final Set<String> observedWrapped = new HashSet<>();
     String supportOrderId;
     /** #123: SetupRules found no build file (vendor mode then copies the support classes on first use). */
     boolean noBuildFile;
-    /** TracingRules will switch on Kafka listener observation, so listeners count as observed. */
-    boolean kafkaListenerObservationPlanned;
-    boolean rabbitListenerObservationPlanned;
-    /**
-     * Spring Boot processes @Observed / @NewSpan / @Timed / @Counted (or an order of this scan makes it do so): only
-     * then does such an annotation count as observing or measuring its method (OBSERVED_ANNOTATION_INACTIVE).
-     */
-    boolean observedAnnotationsActive = true;
     private PathContext planned;
 
     RuleContext(Analysis a) {
@@ -96,7 +75,7 @@ public final class RuleContext {
     /** Called after the entrypoint rules: MDC context as it will be once their orders are applied. */
     void freezePlan() {
         planned = new PathContext(a.graph, a.entrypoints, new TreeSet<>(policy.mdc().ambientKeys()),
-                a.httpFilterKeys, decoratorPlanned(), plannedEntryKeys, plannedOwnKeys)
+                a.httpFilterKeys, decoratorPlanned(), entry.entryKeys(), mdc.ownKeys())
                 .withCanonicalKeys(dev.logast.Analysis.canonicalKeys(policy), new TreeSet<>(policy.mdc().ambientKeys()),
                         a.httpFilterKeys, decoratorPlanned());
     }
@@ -107,7 +86,7 @@ public final class RuleContext {
     }
 
     public Set<String> mdcInside(MethodInfo m) {
-        Set<String> local = plannedLocalKeys.get(m.key());
+        Set<String> local = mdc.localKeys().get(m.key());
         Set<String> s = (planned != null ? planned : a.paths).mdcInside(m);
         if (local == null) {
             return s;
@@ -119,7 +98,7 @@ public final class RuleContext {
 
     /** Id of the order planned to put {@code key} into MDC inside {@code m}, or null. */
     public String plannedBy(MethodInfo m, String key) {
-        return a.paths.mdcInside(m).contains(key) ? null : plannedBy.get(m.key() + "|" + key);
+        return a.paths.mdcInside(m).contains(key) ? null : mdc.by().get(m.key() + "|" + key);
     }
 
     public boolean plannedKey(MethodInfo m, String key) {

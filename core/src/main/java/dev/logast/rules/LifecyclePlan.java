@@ -67,7 +67,7 @@ public final class LifecyclePlan {
         boolean hasOutcome = roles.contains("completed") || m.facts().logs.stream()
                 .anyMatch(l -> event(l) != null && Set.of("completed", "failed", "skipped").contains(event(l)) && info(l));
         boolean wrapper = wrapperLogsOutcome(m);
-        boolean silent = ctx.silentPlanned.contains(m.key());
+        boolean silent = ctx.entry.silent().contains(m.key());
         String startOwner;
         String outcomeOwner;
         List<String> missing = new ArrayList<>();
@@ -139,8 +139,8 @@ public final class LifecyclePlan {
     Map<String, String> events(MethodInfo m) {
         Map<String, String> out = new LinkedHashMap<>();
         roles(m).forEach(role -> out.put(role, ""));
-        if (ctx.generatedStart.containsKey(m.key())) {
-            out.put("started", ctx.generatedStart.get(m.key()));   // #231: written in this pass
+        if (ctx.entry.generatedStart().containsKey(m.key())) {
+            out.put("started", ctx.entry.generatedStart().get(m.key()));   // #231: written in this pass
         }
         for (LogCall lc : m.facts().logs) {
             if (!info(lc) || lc.inCatch() != null || !(lc.template() instanceof J.Literal l) || !(l.getValue() instanceof String raw)) {
@@ -164,7 +164,7 @@ public final class LifecyclePlan {
     /** An ObservedContext wrapper (existing, or planned in this scan) logs the outcome itself, unless it is quiet. */
     boolean wrapperLogsOutcome(MethodInfo m) {
         String body = m.decl().getBody() == null ? "" : m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
-        return ctx.observedWrapped.contains(m.key()) || body.contains("ObservedContext.entrypoint(") && !body.contains(".quiet()");
+        return ctx.entry.observedWrapped().contains(m.key()) || body.contains("ObservedContext.entrypoint(") && !body.contains(".quiet()");
     }
 
     /**

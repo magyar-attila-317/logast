@@ -689,7 +689,7 @@ final class MdcRules {
                 if (!ctx.a.paths.mdcAtEntry(m).contains(effective)) {
                     // only planned: the entrypoint fixes that add it must be applied first
                     for (Entrypoint ep : ctx.a.paths.entrypointsReaching(m)) {
-                        String id = ctx.entryOrders.get(ep.method().key());
+                        String id = ctx.entry.entryOrders().get(ep.method().key());
                         if (id != null) {
                             b.dependsOn(id);
                         }

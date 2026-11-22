@@ -361,7 +361,7 @@ public final class Rules {
     private static void outcomeGaps(RuleContext ctx) {
         Map<String, Integer> seen = new HashMap<>();
         List<OrderBuilder> builders = new ArrayList<>();
-        List<MetricsMap.Gap> gaps = MetricsMap.of(ctx.a, ctx.observedAnnotationsActive).gaps();
+        List<MetricsMap.Gap> gaps = MetricsMap.of(ctx.a, ctx.entry.observedAnnotationsActive()).gaps();
         List<dev.logast.apply.MetricsFile.Spot> spots = new ArrayList<>();
         for (MetricsMap.Gap g : gaps) {
             MetricsMap.Unmeasured u = g.outcome();
@@ -679,8 +679,10 @@ public final class Rules {
         new TracingRules(ctx).run();
         new ReactiveRules(ctx).run();
         new EntrypointRules(ctx).run();
+        ctx.entry.freeze();   // the entry phase ends: what it planned is read by every later rule, written by none
         ctx.freezePlan();
         new RepeatedValueRules(ctx).run();
+        ctx.mdc.freeze();     // the MDC phase ends
         ctx.freezePlan();
         new ExceptionRules(ctx).run();
         new LogCallRules(ctx).run();

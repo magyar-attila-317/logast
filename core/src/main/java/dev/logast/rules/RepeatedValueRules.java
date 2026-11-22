@@ -54,7 +54,7 @@ public final class RepeatedValueRules {
         // phase 1: what every method would scope, under exactly the conditions that produce an order
         Map<String, Map<String, Plan>> plans = new LinkedHashMap<>();
         for (MethodInfo m : ctx.methods()) {
-            if (m.decl().getBody() != null && !ctx.wrappedMethods.contains(m.key())
+            if (m.decl().getBody() != null && !ctx.entry.wrapped().contains(m.key())
                     && !ctx.legacyMdc(m)) {   // MDC_NOT_CLOSEABLE / MDC_CLEAR come first
                 Map<String, Plan> p = plans(m, min);
                 if (!p.isEmpty()) {
@@ -143,7 +143,7 @@ public final class RepeatedValueRules {
 
     /** A plan for caller {@code c} that scopes the value it hands to {@code m}; null when it has no stable variable for it. */
     private Plan liftTo(MethodInfo c, MethodInfo m, String key, int total) {
-        if (c.decl().getBody() == null || ctx.wrappedMethods.contains(c.key()) || ctx.legacyMdc(c)
+        if (c.decl().getBody() == null || ctx.entry.wrapped().contains(c.key()) || ctx.legacyMdc(c)
                 || c.owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
             return null;
         }
@@ -531,8 +531,8 @@ public final class RepeatedValueRules {
         String id = b.id();
         for (Region r : regions) {
             for (Candidate c : byRegion.get(r)) {
-                (r.wholeBody() ? ctx.plannedOwnKeys : ctx.plannedLocalKeys).computeIfAbsent(m.key(), x -> new TreeSet<>()).add(c.key());
-                ctx.plannedBy.put(m.key() + "|" + c.key(), id);
+                (r.wholeBody() ? ctx.mdc.ownKeys() : ctx.mdc.localKeys()).computeIfAbsent(m.key(), x -> new TreeSet<>()).add(c.key());
+                ctx.mdc.by().put(m.key() + "|" + c.key(), id);
             }
         }
     }
@@ -563,8 +563,8 @@ public final class RepeatedValueRules {
         b.context(ctx.context(m, r.start(), Text.oneLine(body, 200), null));
         String id = b.id();
         for (String k : keys) {
-            (r.wholeBody() ? ctx.plannedOwnKeys : ctx.plannedLocalKeys).computeIfAbsent(m.key(), x -> new TreeSet<>()).add(k);
-            ctx.plannedBy.put(m.key() + "|" + k, id);
+            (r.wholeBody() ? ctx.mdc.ownKeys() : ctx.mdc.localKeys()).computeIfAbsent(m.key(), x -> new TreeSet<>()).add(k);
+            ctx.mdc.by().put(m.key() + "|" + k, id);
         }
     }
 

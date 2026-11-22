@@ -46,8 +46,8 @@ final class EventMetricRules {
             // observed by Spring, or will be once this scan's property fix (Kafka, RabbitMQ listeners) is in; batch listeners never
             boolean batch = ep.method().decl().getLeadingAnnotations().stream()
                     .anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(ep.method(), a));
-            boolean planned = !batch && (ep.kind() == Entrypoint.Kind.KAFKA && ctx.kafkaListenerObservationPlanned
-                    || ep.kind() == Entrypoint.Kind.RABBIT && ctx.rabbitListenerObservationPlanned);
+            boolean planned = !batch && (ep.kind() == Entrypoint.Kind.KAFKA && ctx.entry.kafkaObservation()
+                    || ep.kind() == Entrypoint.Kind.RABBIT && ctx.entry.rabbitObservation());
             if ((ep.observedByFramework() || planned || ep.kind() == Entrypoint.Kind.BATCH) && ep.kind().is(Entrypoint.Trait.TIMED_BY_FRAMEWORK)) {
                 timed.add(ep.method().key());
             }
@@ -57,7 +57,7 @@ final class EventMetricRules {
         Map<String, Event> candidates = new LinkedHashMap<>();
         for (MethodInfo m : ctx.methods()) {
             if (m.decl().getBody() == null || m.decl().isConstructor() || timed.contains(m.key())
-                    || ctx.observedWrapped.contains(m.key()) || measured(m) || ctx.legacyMdc(m) || ctx.reactive(m)) {
+                    || ctx.entry.observedWrapped().contains(m.key()) || measured(m) || ctx.legacyMdc(m) || ctx.reactive(m)) {
                 continue;
             }
             Event e = detect(m);
@@ -84,7 +84,7 @@ final class EventMetricRules {
         }
         for (CallGraph.Edge e : ctx.a.graph.in(m)) {
             MethodInfo caller = e.from();
-            if (candidates.containsKey(caller.key()) || timed.contains(caller.key()) || ctx.observedWrapped.contains(caller.key())
+            if (candidates.containsKey(caller.key()) || timed.contains(caller.key()) || ctx.entry.observedWrapped().contains(caller.key())
                     || caller.decl().getBody() != null && measured(caller)
                     || insideObservation(caller, candidates, timed, depth + 1, seen)) {
                 return true;
@@ -102,7 +102,7 @@ final class EventMetricRules {
         // @Observed / @Timed / @Counted measure only while Spring Boot processes them (OBSERVED_ANNOTATION_INACTIVE decides,
         // or plans it): one switch, management.observations.annotations.enabled plus aspectjweaver
         return MEASURED.matcher(body).find()
-                || ctx.observedAnnotationsActive && (TracingRules.observedAnnotation(m, false) || TracingRules.meterAnnotation(m));
+                || ctx.entry.observedAnnotationsActive() && (TracingRules.observedAnnotation(m, false) || TracingRules.meterAnnotation(m));
     }
 
     private static final Pattern PROCESSING = Pattern.compile("(?i)processing\\s+(.+)");

@@ -193,7 +193,7 @@ final class TracingRules {
         if (property && weaver) {
             return;
         }
-        ctx.observedAnnotationsActive = false;
+        ctx.entry.observedAnnotationsActive(false);
         if (!ctx.enabled(Rules.OBSERVED_ANNOTATION_INACTIVE)) {
             return;
         }
@@ -259,7 +259,7 @@ final class TracingRules {
                 + ". A method Spring observes already (controller, @Scheduled) gets a second "
                 + (observations ? "observation" : "timer") + ": remove the annotation there."
                 + (weaver ? "" : " Run `logast classpath .` afterwards."));
-        ctx.observedAnnotationsActive = true;   // planned: the annotated methods count as observed
+        ctx.entry.observedAnnotationsActive(true);   // planned: the annotated methods count as observed
     }
 
     // ---- manual spans and observations ----------------------------------------------------------------------------
@@ -1154,7 +1154,7 @@ final class TracingRules {
         templateUses.forEach(t -> b.location(t[0], Integer.parseInt(t[1]), Rules.KAFKA_OBSERVATION_DISABLED));
         listeners.forEach(ep -> b.location(ep.method().file().relPath(), ep.method().line(), Rules.KAFKA_OBSERVATION_DISABLED));
         if (missing.containsKey("listener")) {
-            ctx.kafkaListenerObservationPlanned = true;
+            ctx.entry.kafkaObservation(true);
         }
     }
 
@@ -1175,6 +1175,6 @@ final class TracingRules {
                 .title("RabbitMQ listeners without observation: the trace stops at the queue");
         ServiceYaml.merge(ctx, b, "spring:\n  rabbitmq:\n    listener:\n      " + type + ":\n        observation-enabled: true\n");
         listeners.forEach(ep -> b.location(ep.method().file().relPath(), ep.method().line(), Rules.RABBIT_OBSERVATION_DISABLED));
-        ctx.rabbitListenerObservationPlanned = true;
+        ctx.entry.rabbitObservation(true);
     }
 }
