@@ -93,6 +93,8 @@ final class Fleet implements Callable<Integer> {
     boolean json;
     @Mixin
     FleetsDir fleetsDir;
+    /** The knowledge-base export of this run (--kb). */
+    final FleetKnowledgeBase kbExport = new FleetKnowledgeBase(this);
 
     /** {@code --fleets-dir}: the fleets folder for this run, before LOGAST_FLEETS and the user config. */
     static final class FleetsDir {
@@ -159,41 +161,6 @@ final class Fleet implements Callable<Integer> {
         return 0;
     }
 
-    interface MemberScan {
-        void run() throws IOException;
-    }
-
-    /**
-     * #136: one member that fails to scan (a repo that is no Java service, a crash on its code) is reported and skipped;
-     * the other members are still scanned, and the failed one's snapshot stays as it was. True when it was scanned.
-     */
-    /** #193: a member's scan; null when it was scanned, else why not (the whole error with LOGAST_DEBUG). */
-    static String scanError(MemberScan scan) {
-        try {
-            scan.run();
-            return null;
-        } catch (IOException | RuntimeException e) {
-            if (System.getenv("LOGAST_DEBUG") != null) {
-                e.printStackTrace();
-            }
-            return String.valueOf(e);
-        }
-    }
-
-    static boolean skipOnFailure(String service, MemberScan scan) {
-        try {
-            scan.run();
-            return true;
-        } catch (IOException | RuntimeException e) {
-            Out.warn("fleet: " + service + " skipped, its scan failed: " + e
-                    + " (its snapshot stays as it was; `logast scan` in the repo shows the whole error)");
-            if (System.getenv("LOGAST_DEBUG") != null) {
-                e.printStackTrace();
-            }
-            return false;
-        }
-    }
-
     /** Scans one service as `logast scan` does; the result is what a member's snapshot holds. */
     private NamedFleet.Snapshot scan(Path r) {
         Main.migrate(r);
@@ -204,72 +171,9 @@ final class Fleet implements Callable<Integer> {
         }
         List<Path> cp = Logast.classpath(r, classpathFile);
         ScanResult scan = Logast.scan(r, cp, policy);
-        lastScanned.set(new dev.logast.export.Export.Analysed(Logast.LAST_ANALYSIS.get(), scan, cp));   // #184: the export reuses it
-        lastScannedRoot.set(r);
+        FleetScans.lastScanned.set(new dev.logast.export.Export.Analysed(Logast.LAST_ANALYSIS.get(), scan, cp));   // #184: the export reuses it
+        FleetScans.lastScannedRoot.set(r);
         return NamedFleet.snapshot(r, scan, Logast.LAST_ANALYSIS.get(), policy);
-    }
-
-    /** #184: the analysis of the member this thread scanned last, for its export (#226: per thread, scans run in parallel). */
-    static final ThreadLocal<dev.logast.export.Export.Analysed> lastScanned = new ThreadLocal<>();
-    static final ThreadLocal<Path> lastScannedRoot = new ThreadLocal<>();
-
-    /**
-     * #132: scans a member {@code fleet add} registered: the analysis of `logast scan`, with the policy defaults →
-     * the fleet's company.yaml → the repo's own logast.yaml if it has one. Every output (classpath, orders.json,
-     * coverage, reports) goes to {@code <fleet>/services/<service>/}, laid out like .logast; nothing is written into the
-     * repo (no .logast migration, no decision files, no traffic or retry worksheets). The classpath: {@code classpathFile},
-     * else the repo's own Gradle run with its output and project cache in the fleet folder.
-     */
-    static NamedFleet.Snapshot scanAdded(Path fleetDir, String service, Path root, Path classpathFile) throws IOException {
-        return scanAdded(fleetDir, service, root, classpathFile, false);
-    }
-
-    /** @param noBuilds #147: never run the member's Gradle; the classpath its last build left, if any */
-    static NamedFleet.Snapshot scanAdded(Path fleetDir, String service, Path root, Path classpathFile, boolean noBuilds)
-            throws IOException {
-        Path r = root.toAbsolutePath().normalize();
-        Path out = NamedFleet.outputDir(fleetDir, service);
-        Policy policy = dev.logast.policy.PolicyLoader.forFleet(r, fleetDir);
-        Main.warnOnce(policy);
-        List<Path> cp = classpathFile != null ? Logast.classpath(r, classpathFile)
-                : noBuilds ? Logast.classpathIn(out) : addedClasspath(service, r, out);
-        if (!Out.Progress.quiet) {
-            System.err.println("scanning " + r + " (read-only; results in " + out + ")");
-        }
-        ScanResult scan = Logast.scan(r, cp, policy);
-        Analysis a = Logast.LAST_ANALYSIS.get();
-        lastScanned.set(new dev.logast.export.Export.Analysed(a, scan, cp));   // #184: the export reuses it
-        lastScannedRoot.set(r);
-        Path orders = LogastDir.in(out, LogastDir.ORDERS);
-        Files.createDirectories(orders.getParent());
-        OrderJson.MAPPER.writeValue(orders.toFile(), scan);
-        if (policy.packSelected("logging")) {
-            a.ledger.writeTo(LogastDir.in(out, LogastDir.COVERAGE), a, scan.orders(), Map.of());
-        }
-        Reports.writeTo(out, a, dev.logast.rules.Rules.LAST_LIFECYCLE.get());
-        return NamedFleet.snapshot(r, scan, a, policy);
-    }
-
-    /** The added member's classpath from its own Gradle (reads only), written to {@code out}; the last one if Gradle fails. */
-    private static List<Path> addedClasspath(String service, Path r, Path out) throws IOException {
-        boolean gradle = Files.exists(r.resolve("gradlew")) || Files.exists(r.resolve("build.gradle"))
-                || Files.exists(r.resolve("build.gradle.kts"));
-        if (!gradle) {
-            Out.warn("fleet: " + service + " has no Gradle build at " + r + ": scanned without a classpath (--classpath-file gives one)");
-            return Logast.classpathIn(out);
-        }
-        Main.Classpath.Result res;
-        try (Out.Progress p = new Out.Progress("running Gradle in " + service + " to read the classpath (nothing is compiled)")) {
-            res = Main.Classpath.write(r, out);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            res = new Main.Classpath.Result(130, 0, false);
-        }
-        if (res.printIfFailed().exitCode() != 0) {
-            Out.warn("fleet: " + service + ": Gradle failed (exit " + res.exitCode() + "); "
-                    + (Logast.classpathIn(out).isEmpty() ? "scanned without a classpath" : "scanned with the classpath of its last scan"));
-        }
-        return Logast.classpathIn(out);
     }
 
     /** #132: {@code logast fleet <fleet> --service <name>}: what `logast scan` printed for the member, from its stored orders.json. */
@@ -290,7 +194,7 @@ final class Fleet implements Callable<Integer> {
         ScanResult r = OrderJson.MAPPER.copy().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .readValue(orders.toFile(), ScanResult.class);
         System.out.println(Ansi.bold(svc) + Ansi.dim("  " + root + "  " + (isAdded ? "added" : "joined")
-                + (snap == null ? "" : ", snapshot " + age(snap.created(), Instant.now()) + (snap.commit() == null ? "" : ", " + snap.commit()))));
+                + (snap == null ? "" : ", snapshot " + FleetOverview.age(snap.created(), Instant.now()) + (snap.commit() == null ? "" : ", " + snap.commit()))));
         System.out.print(dev.logast.orders.HumanFormat.render(r, r.orders(), snap == null ? null : snap.appPackage(), Out.width()));
         Path reports = orders.getParent();
         Main.printBlocks(List.of(Ansi.dim("reports: " + reports + "/ metrics.md queries.md lifecycle.txt coverage.txt")));
@@ -299,184 +203,7 @@ final class Fleet implements Callable<Integer> {
 
     /** #182: every member's facts into {@code <fleet>/kb/<member>/}, then the fleet's mappings into {@code kb/mapped/}. */
     /** #184: members exported during this run's refresh (with the scan's analysis). */
-    private final java.util.Set<String> kbDone = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
-    /** #205: the tables the members' migrations create, for the migrations of others that need them (stand-ins). */
-    private volatile Map<String, List<String>> tablesMade = Map.of();
-    /** #227: which member makes each table, to say whose tables a member's migrations ran against. */
-    private volatile Map<String, String> tableOwners = Map.of();
-
-    /** #215: the tables the fleet's mappings ({@code kb/mappings/*.yaml}) need the rows of ({@code needs: {rows: […]}}). */
-    static List<String> neededRows(Path kb) {
-        List<String> out = new java.util.ArrayList<>();
-        Path dir = kb.resolve("mappings");
-        if (!Files.isDirectory(dir)) {
-            return out;
-        }
-        try (var s = Files.list(dir)) {
-            for (Path f : s.filter(p -> p.getFileName().toString().matches(".*\\.ya?ml")).sorted().toList()) {
-                try {
-                    dev.logast.kb.FactMapping.load(f).neededRows().forEach(t -> {
-                        if (!out.contains(t)) {
-                            out.add(t);
-                        }
-                    });
-                } catch (IOException | IllegalArgumentException e) {
-                    // a broken mapping is reported when the mappings are applied
-                }
-            }
-        } catch (IOException e) {
-            return out;
-        }
-        return out;
-    }
-
-    /** #216: the rows each repo of repos.yaml asks for ({@code rows:}): repo name → tables. */
-    Map<String, List<String>> repoRows = Map.of();
-
-    /** A member's Flyway options: --flyway's, with the rows repos.yaml asks of it (which run its migrations alone too). */
-    dev.logast.export.Export.FlywayOptions flywayOptions(String member) {
-        List<String> own = repoRows.getOrDefault(member, List.of());
-        if (!flyway && own.isEmpty()) {
-            return null;
-        }
-        java.util.Set<String> all = new java.util.LinkedHashSet<>(rows);
-        all.addAll(own);
-        return new dev.logast.export.Export.FlywayOptions(List.copyOf(all), postgresImage, tablesMade);
-    }
-
-    private String kbOptions(String member) throws IOException {
-        return KbExport.optionsKey(McpCmd.build(), flywayOptions(member), classpathFile, noBuilds);   // a new logast build re-exports
-    }
-
-    /** One member's facts into {@code kb/<member>/}, unless its commit and the options are those of its last export. */
-    /** #193: what a member's export did, for its line. */
-    record KbOutcome(FleetLog.Status status, String detail, List<String> notes) {
-    }
-
-    private KbOutcome exportMember(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot) {
-        return exportMember(dir, name, root, analysed, analysedRoot, false);
-    }
-
-    private KbOutcome exportMember(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot,
-                                   boolean again) {
-        // #207: what the export prints (Flyway's notes, warnings) is kept: condensed under the repo's line, in full in a log
-        List<String> printed = new java.util.ArrayList<>();
-        KbOutcome o;
-        try {
-            o = Out.Routing.capture(printed, () -> exportMemberQuietly(dir, name, root, analysed, analysedRoot, again));
-        } catch (Exception e) {
-            o = new KbOutcome(FleetLog.Status.FAILED, "knowledge base not exported: " + e.getMessage(), List.of());
-        }
-        if (printed.isEmpty()) {
-            return o;
-        }
-        Path log = dir.resolve("kb").resolve(name).resolve("export.log");
-        try {
-            Files.createDirectories(log.getParent());
-            Files.write(log, printed);
-        } catch (IOException e) {
-            log = null;
-        }
-        List<String> notes = new java.util.ArrayList<>(o.notes());
-        notes.addAll(condense(printed, log == null ? null : dir.relativize(log).toString()));
-        return new KbOutcome(o.status(), o.detail(), notes);
-    }
-
-    private static final java.util.regex.Pattern MADE_OUTSIDE = java.util.regex.Pattern.compile(
-            "^flyway(?: \\S+)?: the migrations expect (schema|role) (\\S+) to exist");
-
-    /**
-     * #207: an export's printed lines as a few notes: the schemas and roles its migrations expect from outside in one
-     * line; Flyway's left-out and stand-in lines dropped (the repo's line says them, from the facts); the export's own
-     * problems dropped (they are the repo's notes already); the rest, the first three, then where the whole log is.
-     */
-    static List<String> condense(List<String> printed, String log) {
-        java.util.Set<String> outside = new java.util.TreeSet<>();
-        List<String> rest = new java.util.ArrayList<>();
-        for (String l : printed) {
-            java.util.regex.Matcher m = MADE_OUTSIDE.matcher(l);
-            if (m.find()) {
-                outside.add(m.group(1) + " " + m.group(2));
-            } else if (!(l.startsWith("flyway") && (l.contains(": left out ") || l.contains("stand-in") || l.contains("ran it against")))
-                    && !l.startsWith("export: ") && !l.startsWith("WARNING: ") && !rest.contains(l)) {
-                rest.add(l);
-            }
-        }
-        List<String> notes = new java.util.ArrayList<>();
-        if (!outside.isEmpty()) {
-            notes.add("its migrations expect from outside (created empty for the run): " + String.join(", ", outside));
-        }
-        rest.stream().limit(3).forEach(notes::add);
-        if (rest.size() > 3 && log != null) {
-            notes.add("… " + (rest.size() - 3) + " more line(s) in " + log);
-        }
-        return notes;
-    }
-
-    private KbOutcome exportMemberQuietly(Path dir, String name, Path root, dev.logast.export.Export.Analysed analysed, Path analysedRoot,
-                                          boolean again) {
-        Path out = dir.resolve("kb").resolve(name);
-        try {
-            String commit = dev.logast.fleet.NamedFleet.commit(root);
-            dev.logast.export.Export.FlywayOptions fly = flywayOptions(name);
-            String options = kbOptions(name);
-            if (!again && !kbFull && KbExport.upToDate(out, commit, options) && !(fly != null && KbExport.needsChanged(out, tablesMade))) {
-                return new KbOutcome(FleetLog.Status.SAME, "knowledge base unchanged since its last export (" + commit + "), kept", List.of());
-            }
-            Path ar = analysedRoot == null ? null : analysedRoot.toAbsolutePath().normalize();
-            dev.logast.export.RepoExport.Result r = KbExport.repo(root, name, out, dir.resolve(".cache/kb-classpath").resolve(name),
-                    classpathFile, noBuilds, fly, List.of(), List.of(),
-                    rootDir -> analysed != null && rootDir.toAbsolutePath().normalize().equals(ar) ? analysed : null);
-            String files = "knowledge base: " + r.files().size() + " facts file(s)";
-            if (r.problems().isEmpty()) {
-                // #205: what its migrations needed from other repos goes into the stamp: a change of that exports it again
-                List<KbExport.Need> needs = fly != null ? KbExport.needs(out) : List.of();
-                KbExport.stamp(out, commit, options, KbExport.resolved(needs, tablesMade));
-                List<KbExport.Need> left = needs.stream().filter(KbExport.Need::leftOut).toList();
-                long standIns = needs.stream().filter(n -> !n.leftOut()).count();
-                String withStandIns = standIns == 0 ? "" : ", " + standIns + " table(s) of other repos stood in for";
-                List<String> against = KbExport.ranAgainst(needs, tablesMade, tableOwners);   // #227: whose tables, said
-                String ranAgainst = against.isEmpty() ? null : "ran against other repos' tables: " + String.join(", ", against.stream().limit(8).toList())
-                        + (against.size() > 8 ? ", … " + (against.size() - 8) + " more" : "");
-                if (left.isEmpty()) {
-                    return new KbOutcome(FleetLog.Status.OK, files + withStandIns, ranAgainst == null ? List.of() : List.of(ranAgainst));
-                }
-                // #207: grouped by what they need, one line each
-                Map<String, java.util.Set<String>> byNeed = new java.util.TreeMap<>();
-                Map<String, java.util.Set<String>> lostByNeed = new java.util.TreeMap<>();
-                for (KbExport.Need n : left) {
-                    byNeed.computeIfAbsent(n.asked(), k -> new java.util.TreeSet<>()).add(n.via().replaceFirst("^migration ", "")
-                            .replaceFirst("__.*", ""));
-                    lostByNeed.computeIfAbsent(n.asked(), k -> new java.util.TreeSet<>()).addAll(n.lost());
-                }
-                List<String> notes = new java.util.ArrayList<>();
-                if (ranAgainst != null) {
-                    notes.add(ranAgainst);
-                }
-                byNeed.entrySet().stream().limit(6).forEach(e -> notes.add("needs " + e.getKey() + " (no repo of the fleet makes it): "
-                        + String.join(", ", e.getValue()) + " left out" + (lostByNeed.get(e.getKey()).isEmpty() ? ""
-                        : "; missing: " + String.join(", ", lostByNeed.get(e.getKey())))));
-                if (byNeed.size() > 6) {
-                    notes.add("… and " + (byNeed.size() - 6) + " more (logast mcp: describe service:" + name + ")");
-                }
-                long migrations = left.stream().map(KbExport.Need::via).distinct().count();
-                return new KbOutcome(FleetLog.Status.PROBLEM, files + withStandIns + ", " + migrations + " migration(s) left out (exported "
-                        + "again once a repo makes what they need)", notes);
-            }
-            // #187: a partial export is not done: the next run exports it again, once its cause is fixed
-            Files.deleteIfExists(out.resolve(KbExport.STAMP));
-            List<String> notes = new java.util.ArrayList<>(r.problems().stream().limit(5)
-                    .map(p -> p.length() > 220 ? p.substring(0, 219) + "…" : p).toList());
-            if (r.problems().size() > 5) {
-                notes.add("… and " + (r.problems().size() - 5) + " more");
-            }
-            return new KbOutcome(FleetLog.Status.PROBLEM, files + ", " + r.problems().size() + " problem(s), so it is exported again next run",
-                    notes);
-        } catch (IOException | RuntimeException e) {
-            return new KbOutcome(FleetLog.Status.FAILED, "knowledge base not exported: " + e.getMessage(), List.of());
-        }
-    }
+    final java.util.Set<String> kbDone = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * #150, #195: the members to rescan before the overview, with why: commits since their snapshot, or a snapshot another
@@ -502,31 +229,23 @@ final class Fleet implements Callable<Integer> {
         return out;
     }
 
-    /** What the overview says of a member without a snapshot: #225: a repo without Java never has one. */
-    static String noSnapshot(String fleet, Path root, boolean added) {
-        boolean noJava = root != null && Files.isDirectory(root)
-                && dev.logast.export.RepoExport.roots(root).stream().noneMatch(x -> x.kind().equals("java"));
-        return noJava ? "no findings: no Java to scan (its facts come with the knowledge base)"
-                : added ? "no snapshot yet: `logast fleet " + fleet + " --refresh` scans it" : "no snapshot yet: run `logast scan` in " + root;
-    }
-
     /** #226: scans one member (and exports its knowledge base with that analysis); what prints its line in the phase. */
     private Runnable scanMember(Path dir, String svc, Path root, Map<String, Path> added, FleetLog.Phase phase, Out.Progress p) {
         long t0 = System.nanoTime();
-        lastScanned.remove();
-        String error = scanError(() -> NamedFleet.write(dir, added.containsKey(svc) ? scanAdded(dir, svc, root, classpathFile, noBuilds)
+        FleetScans.lastScanned.remove();
+        String error = FleetScans.scanError(() -> NamedFleet.write(dir, added.containsKey(svc) ? FleetScans.scanAdded(dir, svc, root, classpathFile, noBuilds)
                 : scan(root)));
-        KbOutcome o = null;
-        if (kb && lastScanned.get() != null) {   // #184: exported now, with the analysis the scan just made
+        FleetKnowledgeBase.KbOutcome o = null;
+        if (kb && FleetScans.lastScanned.get() != null) {   // #184: exported now, with the analysis the scan just made
             if (p != null) {
                 p.update("~exporting its knowledge base");
             }
-            o = exportMember(dir, svc, root, lastScanned.get(), lastScannedRoot.get());
+            o = kbExport.exportMember(dir, svc, root, FleetScans.lastScanned.get(), FleetScans.lastScannedRoot.get());
             kbDone.add(svc);
         }
-        lastScanned.remove();
+        FleetScans.lastScanned.remove();
         long took = System.nanoTime() - t0;
-        KbOutcome out = o;
+        FleetKnowledgeBase.KbOutcome out = o;
         if (error != null) {
             return () -> phase.done(svc, FleetLog.Status.FAILED, took, "scan failed: " + FleetLog.oneLine(error) + " (its snapshot stays as it was; "
                     + "`logast scan` in the repo shows the whole error)", List.of());
@@ -537,113 +256,12 @@ final class Fleet implements Callable<Integer> {
                 "scanned · " + out.detail(), out.notes());
     }
 
-    /** #225: a section of the overview, headed as the phases are. */
-    private static void section(String title) {
-        String head = "━━ " + title + " ";
-        System.out.println();
-        System.out.println(Ansi.bold(head + "━".repeat(Math.max(3, Math.min(Out.width(), 100) - head.length()))));
-    }
-
     /** #223: the members a run works on: the one --service names (with --refresh/--kb), else all. */
-    private Map<String, Path> work(Map<String, Path> members) {
+    Map<String, Path> work(Map<String, Path> members) {
         if (service == null || !(refresh || kb)) {
             return members;
         }
         return members.containsKey(service) ? Map.of(service, members.get(service)) : Map.of();
-    }
-
-    private void knowledgeBase(Path dir, Map<String, Path> members, FleetLog log) throws IOException {
-        Map<String, Path> all = members;
-        members = work(members);
-        Path kbDir = dir.resolve("kb");
-        Files.createDirectories(kbDir);
-        Map<String, Path> todo = new java.util.LinkedHashMap<>();
-        List<String> away = new java.util.ArrayList<>();
-        for (var m : members.entrySet()) {
-            if (kbDone.contains(m.getKey())) {
-                continue;
-            }
-            if (!Files.isDirectory(m.getValue())) {
-                away.add(m.getKey());
-                continue;
-            }
-            todo.put(m.getKey(), m.getValue());
-        }
-        FleetLog.Phase phase = log.phase("knowledge base", todo.isEmpty() && away.isEmpty() ? "every repo was exported with its scan"
-                : "the repos not exported with a scan (infra, charts, workflows, unchanged ones kept), " + Math.max(1, kbThreads)
-                + " at a time" + (flyway ? "; each environment's migrations run in a throwaway PostgreSQL" : ""), todo.size() + away.size());
-        for (String a : away) {
-            phase.done(a, FleetLog.Status.SKIPPED, 0, "not on this machine (" + members.get(a) + "); its facts stay as they were", List.of());
-        }
-        java.util.Set<String> running = java.util.concurrent.ConcurrentHashMap.newKeySet();
-        List<java.util.concurrent.Callable<Void>> work = new java.util.ArrayList<>();
-        try (Out.Progress live = new Out.Progress("~exporting")) {
-            for (var m : todo.entrySet()) {
-                work.add(() -> {
-                    running.add(m.getKey());
-                    live.update("~exporting " + String.join(", ", running));
-                    long t0 = System.nanoTime();
-                    KbOutcome o = exportMember(dir, m.getKey(), m.getValue(), null, null);
-                    running.remove(m.getKey());
-                    live.update("~exporting " + String.join(", ", running));
-                    phase.done(m.getKey(), o.status(), System.nanoTime() - t0, o.detail(), o.notes());
-                    return null;
-                });
-            }
-            var pool = java.util.concurrent.Executors.newFixedThreadPool(Math.max(1, kbThreads));
-            try {
-                for (var f : pool.invokeAll(work)) {
-                    f.get();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } catch (java.util.concurrent.ExecutionException e) {
-                Out.warn("fleet --kb: " + e.getCause());
-            } finally {
-                pool.shutdown();
-            }
-        }
-        phase.end();
-        if (flyway) {
-            dependencyRounds(dir, all, log);   // #223: every member whose migrations need what was exported
-        }
-        List<String> mapped = KbExport.mappings(kbDir);
-        if (!mapped.isEmpty()) {
-            System.err.println("   " + Ansi.dim("kb/mappings:"));
-            mapped.forEach(l -> System.err.println("     " + l));
-        }
-    }
-
-    /**
-     * #205: a member's migrations that need another member's tables ran against what the knowledge base had when it
-     * started; once every member is exported, the ones whose needs resolve differently now run again, round by round
-     * (x needs y, y needs z), until none changes.
-     */
-    private void dependencyRounds(Path dir, Map<String, Path> members, FleetLog log) {
-        for (int round = 1; round <= 4; round++) {
-            tablesMade = KbExport.tablesMade(dir.resolve("kb"));
-            tableOwners = KbExport.tableOwners(dir.resolve("kb"));
-            Map<String, Path> again = new java.util.LinkedHashMap<>();
-            for (var m : members.entrySet()) {
-                if (Files.isDirectory(m.getValue()) && KbExport.needsChanged(dir.resolve("kb").resolve(m.getKey()), tablesMade)) {
-                    again.put(m.getKey(), m.getValue());
-                }
-            }
-            if (again.isEmpty()) {
-                return;
-            }
-            FleetLog.Phase phase = log.phase("dependencies" + (round == 1 ? "" : " " + round), "migrations needing tables other repos "
-                    + "make, run again now that those repos are exported", again.size());
-            for (var m : again.entrySet()) {
-                long t0 = System.nanoTime();
-                KbOutcome o;
-                try (Out.Progress p = phase.working(m.getKey(), "running its migrations again")) {
-                    o = exportMember(dir, m.getKey(), m.getValue(), null, null, true);
-                }
-                phase.done(m.getKey(), o.status(), System.nanoTime() - t0, o.detail(), o.notes());
-            }
-            phase.end();
-        }
     }
 
     // ---- logast fleet <name> -----------------------------------------------------------------------------------------
@@ -685,8 +303,8 @@ final class Fleet implements Callable<Integer> {
         Map<String, Path> members = NamedFleet.members(dir);
         Map<String, Path> added = NamedFleet.added(dir);
         if (kb && flyway) {   // #205: what the last export knew of each member's tables, for the others' migrations
-            tablesMade = KbExport.tablesMade(dir.resolve("kb"));
-            tableOwners = KbExport.tableOwners(dir.resolve("kb"));
+            kbExport.tablesMade = KbExport.tablesMade(dir.resolve("kb"));
+            kbExport.tableOwners = KbExport.tableOwners(dir.resolve("kb"));
         }
         if (refresh) {
             scanAll(dir, members, added, log);
@@ -695,7 +313,7 @@ final class Fleet implements Callable<Integer> {
             rescan(dir, stale, members, added, log);
         }
         if (kb) {
-            knowledgeBase(dir, members, log);
+            kbExport.knowledgeBase(dir, members, log);
         }
         if (log != null) {
             summary(dir, log);
@@ -703,13 +321,9 @@ final class Fleet implements Callable<Integer> {
         if (service != null && !(refresh || kb)) {   // #223: with --refresh/--kb, --service only picks what is worked on
             return service(name, dir, service, members, added);
         }
-        Overview ov = overview(name, dir, members);
-        return json ? printJson(name, dir, members, added, ov) : printOverview(name, dir, members, added, ov);
-    }
-
-    /** What an overview shows, built once for the JSON and the text form. */
-    private record Overview(Map<String, NamedFleet.Snapshot> snaps, FleetLinks.Result links, CentralVocabulary.Result vocab,
-                            Path company, List<CompanyPolicy.Suggestion> suggestions, String agreed, List<String> next, Path page) {
+        FleetOverview.Overview ov = FleetOverview.overview(name, dir, members, out, vocabulary);
+        return json ? FleetOverview.printJson(name, dir, members, added, ov)
+                : FleetOverview.printOverview(name, dir, members, added, ov, vocabulary, openPage);
     }
 
     /** The tables whose rows become facts: repos.yaml's per repo (#216) and what the fleet's mappings need (#215). */
@@ -720,8 +334,8 @@ final class Fleet implements Callable<Integer> {
                 asked.put(r.name(), r.rows());
             }
         }
-        repoRows = asked;
-        for (String t : neededRows(dir.resolve("kb"))) {   // #215: what the fleet's mappings say they need
+        kbExport.repoRows = asked;
+        for (String t : FleetKnowledgeBase.neededRows(dir.resolve("kb"))) {   // #215: what the fleet's mappings say they need
             if (!rows.contains(t)) {
                 rows.add(t);
             }
@@ -847,15 +461,15 @@ final class Fleet implements Callable<Integer> {
             Path root = members.get(svc);
             if (phase == null) {
                 System.err.println("fleet: " + svc + (e.getValue().startsWith("new") ? " has " : "'s ") + e.getValue() + ": rescanning it");
-                skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc)
-                        ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
+                FleetScans.skipOnFailure(svc, () -> NamedFleet.write(dir, added.containsKey(svc)
+                        ? FleetScans.scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
                 continue;
             }
             long t0 = System.nanoTime();
             String error;
             try (Out.Progress p = phase.working(svc, "rescanning")) {
-                error = scanError(() -> NamedFleet.write(dir, added.containsKey(svc)
-                        ? scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
+                error = FleetScans.scanError(() -> NamedFleet.write(dir, added.containsKey(svc)
+                        ? FleetScans.scanAdded(dir, svc, root, classpathFile, noBuilds) : scan(root)));
             }
             phase.done(svc, error == null ? FleetLog.Status.OK : FleetLog.Status.FAILED, System.nanoTime() - t0,
                     error == null ? "rescanned: " + e.getValue() : "scan failed: " + FleetLog.oneLine(error)
@@ -877,230 +491,6 @@ final class Fleet implements Callable<Integer> {
             next.add(new String[]{"logast mcp config --kb " + shown, "connects an MCP client to the knowledge base"});
         }
         log.summary(next);
-    }
-
-    /**
-     * The overview's content from the snapshots: links between services, the vocabulary (#139: the worksheet and company.yaml
-     * kept current once a worksheet exists), company.yaml's suggestions (#129), the next steps (#149) and the page (#141).
-     */
-    private Overview overview(String name, Path dir, Map<String, Path> members) throws IOException {
-        Map<String, NamedFleet.Snapshot> snaps = NamedFleet.snapshots(dir);
-        List<FleetReport.Service> services = snaps.values().stream().map(NamedFleet.Snapshot::report).toList();
-        FleetLinks.Result links = FleetLinks.of(services);
-        CentralVocabulary.Result vocab = NamedFleet.vocabulary(dir, snaps.values());
-        // #139: every overview keeps the worksheet and company.yaml's vocabulary current once a worksheet exists (decisions
-        // are kept), so deciding is: edit the worksheet, run `logast fleet <name>`; --vocabulary writes the first one
-        if (vocabulary || Files.exists(dir.resolve(CentralVocabulary.WORKSHEET))) {
-            Files.writeString(dir.resolve(CentralVocabulary.WORKSHEET), vocab.worksheet());
-            CentralVocabulary.writeSchema(dir);
-            CentralVocabulary.writeCompany(dir.resolve(CentralVocabulary.COMPANY), vocab.company());
-        }
-        // #129: what the members agree on, as commented suggestions in company.yaml
-        Path company = dir.resolve(CentralVocabulary.COMPANY);
-        List<CompanyPolicy.Suggestion> suggestions = CompanyPolicy.refresh(dir, name, snaps.values());
-        String agreed = CompanyPolicy.overviewLine(suggestions, company);
-        // #149: what to do next, on the page and at the end of the overview
-        List<String> next = dev.logast.fleet.FleetNext.steps(name, dir, members, NamedFleet.joined(dir), snaps, suggestions, links, vocab);
-        // #141: every overview rewrites the page (--html only says so explicitly)
-        Path page = FleetReport.writeDaily(out != null ? out : dir.resolve("report"), services, links,
-                suggestions.stream().map(CompanyPolicy.Suggestion::text).toList(), next);
-        return new Overview(snaps, links, vocab, company, suggestions, agreed, next, page);
-    }
-
-    private int printJson(String name, Path dir, Map<String, Path> members, Map<String, Path> added, Overview ov) throws IOException {
-        Map<String, NamedFleet.Snapshot> snaps = ov.snaps();
-        FleetLinks.Result links = ov.links();
-        CentralVocabulary.Result vocab = ov.vocab();
-        Path company = ov.company();
-        List<CompanyPolicy.Suggestion> suggestions = ov.suggestions();
-        List<String> next = ov.next();
-        Path page = ov.page();
-        Map<String, Object> o = new LinkedHashMap<>();
-        o.put("fleet", name);
-        o.put("dir", dir.toString());
-        List<Map<String, Object>> rows = new ArrayList<>();
-        Set<String> names = new java.util.TreeSet<>(members.keySet());
-        names.addAll(snaps.keySet());
-        for (String s : names) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("service", s);
-            row.put("root", members.containsKey(s) ? members.get(s).toString() : snaps.get(s).root());
-            row.put("member", !members.containsKey(s) ? "former" : added.containsKey(s) ? "added" : "joined");   // #132
-            NamedFleet.Snapshot snap = snaps.get(s);
-            if (snap != null) {
-                row.put("score", snap.report().score());
-                row.put("open", open(snap.report()));
-                row.put("severity", snap.report().severity());
-                row.put("snapshot", snap.created());
-                row.put("commit", snap.commit());
-            }
-            rows.add(row);
-        }
-        o.put("services", rows);
-        o.put("links", links);
-        o.put("vocabulary", Map.of("summary", vocab.summary(), "conflicts", vocab.conflicts()));
-        o.put("company", Map.of("file", company.toString(), "suggestions", suggestions));
-        o.put("next", next);
-        if (page != null) {
-            o.put("report", page.toAbsolutePath().toString());
-        }
-        System.out.println(OrderJson.MAPPER.writeValueAsString(o));
-        return 0;
-    }
-
-    private int printOverview(String name, Path dir, Map<String, Path> members, Map<String, Path> added, Overview ov) {
-        Map<String, NamedFleet.Snapshot> snaps = ov.snaps();
-        FleetLinks.Result links = ov.links();
-        CentralVocabulary.Result vocab = ov.vocab();
-        Path company = ov.company();
-        String agreed = ov.agreed();
-        List<String> next = ov.next();
-        Path page = ov.page();
-        Instant now = Instant.now();
-        section("fleet " + name);   // #225: the overview in the phases' style
-        System.out.println("   " + Ansi.dim(dir + "  (" + members.size() + (members.size() == 1 ? " member)" : " members)")));
-        Set<String> names = new java.util.TreeSet<>(members.keySet());
-        names.addAll(snaps.keySet());
-        int w = Math.min(36, names.stream().mapToInt(String::length).max().orElse(8)) + 2;
-        for (String s : names) {
-            NamedFleet.Snapshot snap = snaps.get(s);
-            // #132: added (the repo knows nothing of the fleet) or joined (fleet: in its logast.yaml)
-            String pad = "  " + FleetLog.fit(s, w) + Ansi.dim(FleetLog.fit(!members.containsKey(s) ? "" : added.containsKey(s) ? "added" : "joined", 8));
-            if (snap == null) {
-                System.out.println(pad + Ansi.dim(noSnapshot(name, members.get(s), added.containsKey(s))));
-                continue;
-            }
-            FleetReport.Service r = snap.report();
-            int high = r.severity().getOrDefault("high", 0);
-            String score = String.format("score %5.1f", r.score());
-            System.out.println(pad + (r.score() >= 80 ? Ansi.green(score) : r.score() >= 50 ? Ansi.yellow(score) : Ansi.red(score))
-                    + String.format("  open %3d (", open(r)) + (high > 0 ? Ansi.red("high " + high) : "high 0")
-                    + String.format(", medium %d, low %d)", r.severity().getOrDefault("medium", 0), r.severity().getOrDefault("low", 0))
-                    + Ansi.dim(String.format("  snapshot %s%s%s", age(snap.created(), now), snap.commit() == null ? "" : ", " + snap.commit(),
-                    members.containsKey(s) ? "" : " (not a member any more)")));
-        }
-        // #133: what `fleet tidy` would remove from each joined member's logast.yaml (read only)
-        List<String> tidy = new ArrayList<>();
-        for (var m : NamedFleet.joined(dir).entrySet()) {
-            if (Files.isDirectory(m.getValue())) {
-                String line = FleetTidy.plan(m.getValue(), company).overviewLine(m.getKey(), name);
-                if (line != null) {
-                    tidy.add(line);
-                }
-            }
-        }
-        if (!tidy.isEmpty()) {
-            System.out.println();
-            System.out.println("Own settings next to company.yaml:");
-            tidy.forEach(l -> System.out.println("  " + l));
-        }
-        section("across services");
-        for (String l : FleetLinks.text(links).split("\n")) {   // #225: the heads bold, what breaks and its fix stand out
-            String t = l.strip();
-            System.out.println(!l.startsWith(" ") ? Ansi.bold(l) : t.startsWith("breaks at") ? Ansi.yellow(l)
-                    : t.startsWith("fix:") ? Ansi.cyan(l) : t.startsWith("call ") || t.startsWith("entry ") ? Ansi.dim(l) : l);
-        }
-        section("vocabulary");
-        Path worksheet = dir.resolve(CentralVocabulary.WORKSHEET);
-        System.out.println("Vocabulary: " + vocab.conflicts().size() + (vocab.conflicts().size() == 1 ? " conflict" : " conflicts")
-                + " between keys nobody decided yet");
-        vocab.conflicts().forEach(c -> System.out.println("  " + c));
-        vocab.summary().stream().filter(l -> l.startsWith("to decide:") || l.startsWith("decisions to fix") || l.startsWith("  "))
-                .forEach(l -> System.out.println("  " + l.strip()));
-        if (vocabulary || Files.exists(worksheet)) {
-            System.out.println("worksheet: " + worksheet + " (uncomment a `# decide:` line per key, then run `logast fleet " + name + "`)");
-            System.out.println("company:   " + dir.resolve(CentralVocabulary.COMPANY) + " (" + vocab.terms()
-                    + (vocab.terms() == 1 ? " term" : " terms") + ", generated; every member extends it)");
-        } else {
-            System.out.println("  `logast fleet " + name + " --vocabulary` writes the worksheet " + worksheet
-                    + " to decide them in; from then on every `logast fleet " + name + "` keeps it and company.yaml current");
-        }
-        if (agreed != null) {
-            System.out.println(agreed);
-        }
-        section("next");
-        if (next.isEmpty()) {
-            System.out.println("  nothing left: the members follow the company policy and nothing high is open");
-        } else {
-            for (int i = 0; i < next.size(); i++) {
-                System.out.println("  " + Ansi.cyan((i + 1) + ".") + " " + next.get(i));
-            }
-        }
-        // #149: a file:// URL, clickable in a terminal; --open shows it in the browser
-        System.out.println();
-        System.out.println("report: " + page.toAbsolutePath().toUri());
-        if (openPage) {
-            openInBrowser(page);
-        }
-        return 0;
-    }
-
-    /** The system's opener (xdg-open, open, start); a failure is one warning, never the command's. */
-    static void openInBrowser(Path page) {
-        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
-        List<String> cmd = os.contains("mac") ? List.of("open", page.toString())
-                : os.contains("win") ? List.of("cmd", "/c", "start", "", page.toString()) : List.of("xdg-open", page.toString());
-        try {
-            new ProcessBuilder(cmd).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
-        } catch (IOException e) {
-            Out.warn("fleet: could not open the page (" + e.getMessage() + "); open " + page.toUri());
-        }
-    }
-
-    private static int open(FleetReport.Service s) {
-        return s.severity().values().stream().mapToInt(Integer::intValue).sum();
-    }
-
-    /** "just now", "12 min ago", "5 h ago", "3 days ago". */
-    static String age(String created, Instant now) {
-        try {
-            Duration d = Duration.between(Instant.parse(created), now);
-            if (d.toMinutes() < 1) {
-                return "just now";
-            }
-            if (d.toMinutes() < 60) {
-                return d.toMinutes() + " min ago";
-            }
-            return d.toHours() < 48 ? d.toHours() + " h ago" : d.toDays() + " days ago";
-        } catch (RuntimeException e) {
-            return created;
-        }
-    }
-
-    /**
-     * #124: a member's scan or apply leaves its snapshot in the fleet folder (and registers the service there when this
-     * machine's member list lacks it). Never fails the command: one warning line instead.
-     */
-    static void snapshot(Path root, ScanResult r, Analysis a, Policy policy) {
-        try {   // #133: the comment after `- fleet:<name>` says where it resolves on this machine
-            FleetExtends.refresh(dev.logast.policy.PolicyLoader.defaultFile(root));
-        } catch (RuntimeException e) {
-            Out.warn("fleet: " + e.getMessage());
-        }
-        String name = NamedFleet.of(root);
-        if (name == null || r == null || a == null) {
-            return;
-        }
-        try {
-            Path dir = FleetHome.fleetDir(FleetHome.Env.current(), name).dir();
-            if (!NamedFleet.exists(dir)) {
-                return;   // the policy's warning already says this machine does not know the fleet
-            }
-            if (!NamedFleet.members(dir).containsKey(NamedFleet.serviceName(root))) {
-                NamedFleet.join(dir, name, root);
-            }
-            NamedFleet.write(dir, NamedFleet.snapshot(root, r, a, policy));
-            Map<String, NamedFleet.Snapshot> snaps = NamedFleet.snapshots(dir);
-            List<CompanyPolicy.Suggestion> suggestions = CompanyPolicy.refresh(dir, name, snaps.values());   // #129
-            // #141: the fleet's page follows every member's snapshot
-            List<FleetReport.Service> services = snaps.values().stream().map(NamedFleet.Snapshot::report).toList();
-            FleetLinks.Result links = FleetLinks.of(services);
-            FleetReport.writeDaily(dir.resolve("report"), services, links, suggestions.stream().map(CompanyPolicy.Suggestion::text).toList(),
-                    dev.logast.fleet.FleetNext.steps(name, dir, NamedFleet.members(dir), NamedFleet.joined(dir), snaps, suggestions,
-                            links, NamedFleet.vocabulary(dir, snaps.values())));
-        } catch (RuntimeException e) {
-            Out.warn("fleet " + name + ": no snapshot written (" + e.getMessage() + "); the fleet overview shows the previous one");
-        }
     }
 
     /** #113: what each service's code would get renamed by the vocabulary (with --central: as if it extended company.yaml). */

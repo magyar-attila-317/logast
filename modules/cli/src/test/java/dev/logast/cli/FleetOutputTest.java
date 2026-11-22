@@ -90,7 +90,7 @@ class FleetOutputTest {
             System.setErr(before);
         }
         assertThat(bytes.toString(StandardCharsets.UTF_8)).isEqualTo("the run's own line\n");
-        assertThat(Fleet.condense(printed, "kb/x/export.log")).containsExactly(
+        assertThat(FleetKnowledgeBase.condense(printed, "kb/x/export.log")).containsExactly(
                 "its migrations expect from outside (created empty for the run): role reader, schema cache",
                 "something else 1", "something else 2", "something else 3", "… 2 more line(s) in kb/x/export.log");
     }

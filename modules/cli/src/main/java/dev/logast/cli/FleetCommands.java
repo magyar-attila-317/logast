@@ -320,7 +320,7 @@ final class FleetCommands {
                     + " → the repo's own logast.yaml, if it has one");
             if (scan) {
                 for (var e : toScan.entrySet()) {
-                    if (Fleet.skipOnFailure(e.getKey(), () -> NamedFleet.write(at.dir(), Fleet.scanAdded(at.dir(), e.getKey(), e.getValue(), classpathFile)))) {
+                    if (FleetScans.skipOnFailure(e.getKey(), () -> NamedFleet.write(at.dir(), FleetScans.scanAdded(at.dir(), e.getKey(), e.getValue(), classpathFile)))) {
                         System.out.println("  " + e.getKey() + ": scanned, results in " + NamedFleet.outputDir(at.dir(), e.getKey()));
                     }
                 }

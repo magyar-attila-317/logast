@@ -159,7 +159,7 @@ public final class Main {
             try (Out.Progress p = new Out.Progress("analysing the code (parsing dominates: about 30 s for 2,000 files)")) {
                 r = Logast.scan(root(), classpath(), policy, traffic);
             }
-            Fleet.snapshot(root(), r, Logast.lastAnalysis, policy);   // #124: a fleet member reports to its fleet
+            FleetScans.snapshot(root(), r, Logast.lastAnalysis, policy);   // #124: a fleet member reports to its fleet
             String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
             if (olderJdk != null) {
                 Out.warn(olderJdk);
@@ -449,7 +449,7 @@ public final class Main {
             List<String> violations = new ArrayList<>(earlier == null ? List.of() : earlier.violations());
             violations.addAll(r.violations());
             if (write) {   // #124: a fleet member reports what the code is now (a dry run changed nothing)
-                Fleet.snapshot(root(), r.after(), scanner.lastAnalysis, policy);
+                FleetScans.snapshot(root(), r.after(), scanner.lastAnalysis, policy);
             }
             dev.logast.apply.FillsFile.Update fu = null;
             dev.logast.apply.FillsFile.Update mu = null;

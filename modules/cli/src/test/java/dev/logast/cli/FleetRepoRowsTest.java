@@ -32,14 +32,14 @@ class FleetRepoRowsTest {
                 "orders []", "scheduler [scheduling.pipeline, scheduling.step]", "billing [billing.plan]");
 
         Fleet f = new Fleet();
-        f.repoRows = Map.of("scheduler", List.of("scheduling.pipeline"));
-        assertThat(f.flywayOptions("scheduler")).as("its rows run its migrations without --flyway").isNotNull()
+        f.kbExport.repoRows = Map.of("scheduler", List.of("scheduling.pipeline"));
+        assertThat(f.kbExport.flywayOptions("scheduler")).as("its rows run its migrations without --flyway").isNotNull()
                 .satisfies(o -> assertThat(o.rows()).containsExactly("scheduling.pipeline"));
-        assertThat(f.flywayOptions("orders")).as("the others: as the command line says (no --flyway: none)").isNull();
+        assertThat(f.kbExport.flywayOptions("orders")).as("the others: as the command line says (no --flyway: none)").isNull();
         f.flyway = true;
         f.rows = List.of("shared.lookup");
-        assertThat(f.flywayOptions("scheduler").rows()).containsExactly("shared.lookup", "scheduling.pipeline");
-        assertThat(f.flywayOptions("orders").rows()).containsExactly("shared.lookup");
+        assertThat(f.kbExport.flywayOptions("scheduler").rows()).containsExactly("shared.lookup", "scheduling.pipeline");
+        assertThat(f.kbExport.flywayOptions("orders").rows()).containsExactly("shared.lookup");
     }
 
     /** #215: the rows the fleet's mappings need, from kb/mappings. */
@@ -48,7 +48,7 @@ class FleetRepoRowsTest {
         Path maps = Files.createDirectories(tmp.resolve("kb/mappings"));
         Files.writeString(maps.resolve("a.yaml"), "needs: {rows: [sched.pipeline]}\nmappings:\n  - {name: a, match: {kind: row}, nodes: [{id: \"team:{x}\", kind: team}]}\n");
         Files.writeString(maps.resolve("b.yml"), "needs: {rows: [sched.pipeline, ref.country]}\nmappings:\n  - {name: b, match: {kind: row}, nodes: [{id: \"team:{x}\", kind: team}]}\n");
-        assertThat(Fleet.neededRows(tmp.resolve("kb"))).containsExactly("sched.pipeline", "ref.country");
+        assertThat(FleetKnowledgeBase.neededRows(tmp.resolve("kb"))).containsExactly("sched.pipeline", "ref.country");
     }
 
     /** #225: the overview says a repo without Java has no findings by design, not "no snapshot yet". */
@@ -56,9 +56,9 @@ class FleetRepoRowsTest {
     void aRepoWithoutJavaHasNoFindingsByDesign() throws IOException {
         Path node = Files.createDirectories(tmp.resolve("cache-svc"));
         Files.writeString(node.resolve("package.json"), "{\"name\": \"cache-svc\", \"dependencies\": {\"typeorm\": \"0.3.20\"}}\n");
-        assertThat(Fleet.noSnapshot("shop", node, true)).startsWith("no findings: no Java to scan");
+        assertThat(FleetOverview.noSnapshot("shop", node, true)).startsWith("no findings: no Java to scan");
         Path java = Files.createDirectories(tmp.resolve("orders/src/main/java"));
         Files.writeString(tmp.resolve("orders/build.gradle.kts"), "plugins { java }\n");
-        assertThat(Fleet.noSnapshot("shop", java.getParent().getParent().getParent(), true)).contains("--refresh` scans it");
+        assertThat(FleetOverview.noSnapshot("shop", java.getParent().getParent().getParent(), true)).contains("--refresh` scans it");
     }
 }
