@@ -70,6 +70,29 @@ class CodeModeTest {
     }
 
     @Test
+    void aLargeResultSaysWhatMakesItLarge() throws IOException {   // #229
+        String err = CodeMode.run(kb(), """
+                return Array.from({ length: 300 }, (_, i) => ({ id: "job:" + i, attrs: { text: "x".repeat(100) } }));
+                """).error();
+        assertThat(err).contains("more than " + CodeMode.MAX_RESULT, "a list of 300 items", "attrs ≈ 1", "return only the fields");
+        assertThat(CodeMode.run(kb(), "return { jobs: Array(5000).fill('job'), n: 1 }").error()).contains("an object; jobs ≈", "(5000 items)");
+    }
+
+    @Test
+    void anAnswerNamesTheSchedulesItDoesNotKnow() throws IOException {   // #228
+        Files.writeString(tmp.resolve("ops.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"java","repo":"ops"}}
+                {"node":{"id":"job:ops:com.example.CleanupJob","kind":"job","attrs":{"entrypoint":"quartz"},"evidence":{"file":"CleanupJob.java","line":3}}}
+                """);
+        CodeMode.Result r = CodeMode.run(kb(), "return nodes('job').filter(j => runs(j.id, '2026-11-23').length).map(j => j.id)");
+        assertThat(r.json()).contains("ExportJob").doesNotContain("CleanupJob");
+        assertThat(r.notes()).containsExactly("job:ops:com.example.CleanupJob: schedule not known (no schedule in the facts and nothing that runs it)");
+        assertThat(r.notesText()).startsWith("Not known (say so in the answer");
+        assertThat(CodeMode.run(kb(), "return runs('job:none', 'monday')").notes()).containsExactly("job:none: not in the facts");
+        assertThat(CodeMode.run(kb(), "return nodes('job').length").notes()).as("nothing asked, nothing noted").isEmpty();
+    }
+
+    @Test
     void theSandboxStaysClosed() throws IOException {
         KnowledgeBase kb = kb();
         assertThat(CodeMode.run(kb, "return [typeof Java, typeof Packages, typeof java, typeof print, typeof load, typeof Polyglot].join()").json())

@@ -38,7 +38,8 @@ import java.util.concurrent.TimeUnit;
 public final class CodeMode {
     static final long TIMEOUT_MS = 5_000;
     static final long STATEMENTS = 50_000_000;
-    static final int MAX_RESULT = 40_000;
+    static final int MAX_RESULT = 20_000;   // #229
+    static final int MAX_NOTES = 20;
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final ScheduledExecutorService WATCHDOG = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "logast-code-mode-watchdog");
@@ -71,7 +72,8 @@ public final class CodeMode {
                 /** "≥ 01:00 … after X": a later step of a chain starts after the job before it ends, not at the clock time */
                 declare function runs(jobId: string, day: string, env?: string, zone?: string): string[];
                 /** How a job is scheduled: each cron (and trigger), or what runs it, or "not known: …". An empty runs() is not
-                    "never": check schedule() for the jobs it returns nothing for, and say which schedules are not known. */
+                    "never": check schedule() for the jobs it returns nothing for, and say which schedules are not known (the
+                    query result lists them under "Not known"). */
                 declare function schedule(jobId: string, env?: string): string[];
                 /** What follows from a node (down: calls, messages, writes, readers, next steps) or leads to it (up), as text */
                 declare function lineage(id: string, direction?: "down" | "up", depth?: number): string;
@@ -140,6 +142,7 @@ public final class CodeMode {
     /** The program's result as JSON, or what went wrong with a hint (an error the agent can fix and run again). */
     public static Result run(KnowledgeBase kb, String code) {
         Set<String> kinds = kb.kindCounts().keySet();
+        Set<String> notes = new LinkedHashSet<>();   // #228: what the functions it called could not know
         try (Context ctx = Context.newBuilder("js").engine(engine())
                      .allowHostAccess(HostAccess.NONE).allowHostClassLookup(c -> false).allowIO(IOAccess.NONE)
                      .allowCreateThread(false).allowCreateProcess(false).allowNativeAccess(false)
@@ -156,8 +159,8 @@ public final class CodeMode {
             js.putMember("__out", (ProxyExecutable) a -> json(edges(kb.outgoing(str(a, 0)), str(a, 1))));
             js.putMember("__into", (ProxyExecutable) a -> json(edges(kb.incoming(str(a, 0)), str(a, 1))));
             js.putMember("__find", (ProxyExecutable) a -> json(find(kb, str(a, 0), str(a, 1))));
-            js.putMember("__runs", (ProxyExecutable) a -> json(runs(kb, str(a, 0), str(a, 1), str(a, 2), str(a, 3))));
-            js.putMember("__schedule", (ProxyExecutable) a -> json(schedule(kb, str(a, 0), str(a, 1))));
+            js.putMember("__runs", (ProxyExecutable) a -> json(runs(kb, str(a, 0), str(a, 1), str(a, 2), str(a, 3), notes)));
+            js.putMember("__schedule", (ProxyExecutable) a -> json(schedule(kb, str(a, 0), str(a, 1), notes)));
             js.putMember("__lineage", (ProxyExecutable) a -> Lineage.lineage(kb, str(a, 0), !"up".equalsIgnoreCase(str(a, 1)),
                     a.length > 2 && a[2].fitsInInt() ? a[2].asInt() : 6, 200));
             ctx.eval(Source.create("js", """
@@ -185,9 +188,9 @@ public final class CodeMode {
                 String out = v.asString();
                 if (out.length() > MAX_RESULT) {
                     return new Result(null, "the result is " + out.length() + " characters, more than " + MAX_RESULT
-                            + ": filter, map or count in the program and return less");
+                            + shape(out) + ": return only the fields the answer needs, filter, or count in the program", List.of());
                 }
-                return new Result(out, null);
+                return new Result(out, null, List.copyOf(notes));
             } finally {
                 timer.cancel(false);
             }
@@ -203,8 +206,61 @@ public final class CodeMode {
         }
     }
 
-    /** A program's JSON result, or why there is none. */
-    public record Result(String json, String error) {
+    /**
+     * A program's JSON result, or why there is none; {@code notes}: what the functions it called could not know (#228),
+     * to be said in the answer.
+     */
+    public record Result(String json, String error, List<String> notes) {
+        public Result(String json, String error) {
+            this(json, error, List.of());
+        }
+
+        /** The notes as text for the agent, at most {@link #MAX_NOTES} lines; empty when there are none. */
+        public String notesText() {
+            if (notes.isEmpty()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder("Not known (say so in the answer; an empty runs() for these is not \"never\"):");
+            notes.stream().limit(MAX_NOTES).forEach(n -> sb.append("\n- ").append(n));
+            if (notes.size() > MAX_NOTES) {
+                sb.append("\n- … and ").append(notes.size() - MAX_NOTES).append(" more");
+            }
+            return sb.toString();
+        }
+    }
+
+    /** #229: what makes a result large: a list's length and its heaviest fields, an object's heaviest keys. */
+    static String shape(String json) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = JSON.readTree(json);
+            Map<String, Long> size = new java.util.HashMap<>();
+            String what;
+            if (n.isArray()) {
+                for (var item : n) {
+                    if (item.isObject()) {
+                        item.properties().forEach(f -> size.merge(f.getKey(), (long) f.getValue().toString().length(), Long::sum));
+                    }
+                }
+                what = " (a list of " + n.size() + " items";
+                if (n.isEmpty() || size.isEmpty()) {
+                    return what + ")";
+                }
+                int items = n.size();
+                return what + "; per item: " + String.join(", ", size.entrySet().stream()
+                        .sorted((x, y) -> Long.compare(y.getValue(), x.getValue())).limit(3)
+                        .map(e -> e.getKey() + " ≈ " + e.getValue() / items + " characters").toList()) + ")";
+            }
+            if (n.isObject()) {
+                n.properties().forEach(f -> size.put(f.getKey(), (long) f.getValue().toString().length()));
+                return " (an object; " + String.join(", ", size.entrySet().stream()
+                        .sorted((x, y) -> Long.compare(y.getValue(), x.getValue())).limit(3)
+                        .map(e -> e.getKey() + " ≈ " + e.getValue() + " characters"
+                                + (n.get(e.getKey()).isArray() ? " (" + n.get(e.getKey()).size() + " items)" : "")).toList()) + ")";
+            }
+            return "";
+        } catch (java.io.IOException e) {
+            return "";
+        }
     }
 
     private static String str(Value[] a, int i) {
@@ -280,7 +336,7 @@ public final class CodeMode {
     }
 
     /** #218: how a job is scheduled, or that it is not known (and why). */
-    private static List<String> schedule(KnowledgeBase kb, String id, String env) {
+    private static List<String> schedule(KnowledgeBase kb, String id, String env, Set<String> notes) {
         List<String> out = new ArrayList<>();
         for (var f : kb.node(id)) {
             if (!env.isBlank() && f.fact().env() != null && !f.fact().env().equals(env)) {
@@ -292,6 +348,7 @@ public final class CodeMode {
                 var by = Schedules.scheduledRunner(kb, id, env.isBlank() ? f.fact().env() : env);
                 if (by == null) {
                     out.add("not known" + where + ": no schedule in the facts (started by another job, by hand, or by something logast does not read)");
+                    notes.add(unknownNote(id, where));
                     continue;
                 }
                 for (Schedules.Schedule s : Schedules.all(by, env.isBlank() ? null : env)) {
@@ -300,9 +357,11 @@ public final class CodeMode {
                 continue;
             }
             own.forEach(s -> out.add(describe(s) + where));
+            own.stream().filter(s -> s.problem() != null).forEach(s -> notes.add(id + where + ": " + s.problem()));
         }
         if (out.isEmpty()) {
             out.add("not known: no job " + id);
+            notes.add(id + ": not in the facts");
         }
         return out;
     }
@@ -313,10 +372,17 @@ public final class CodeMode {
                 : s.job().fact().attrs().get("zone") != null ? " " + s.job().fact().attrs().get("zone") : "") + s.triggerLabel();
     }
 
-    private static List<String> runs(KnowledgeBase kb, String id, String dayText, String env, String zoneText) {
+    private static String unknownNote(String id, String where) {
+        return id + where + ": schedule not known (no schedule in the facts and nothing that runs it)";
+    }
+
+    private static List<String> runs(KnowledgeBase kb, String id, String dayText, String env, String zoneText, Set<String> notes) {
         ZoneId zone = ZoneId.of(zoneText.isBlank() ? "UTC" : zoneText);
         LocalDate day = Schedules.day(dayText, LocalDate.now(zone));
         Set<String> out = new LinkedHashSet<>();
+        if (kb.node(id).isEmpty()) {
+            notes.add(id + ": not in the facts");
+        }
         for (var f : kb.node(id)) {
             if (!env.isBlank() && f.fact().env() != null && !f.fact().env().equals(env)) {
                 continue;
@@ -325,8 +391,14 @@ public final class CodeMode {
             if (own.isEmpty()) {   // #218: run by a pipeline or a workload: its times
                 var by = Schedules.scheduledRunner(kb, id, env.isBlank() ? f.fact().env() : env);
                 own = by == null ? List.of() : Schedules.all(by, env.isBlank() ? null : env);
+                if (by == null) {
+                    notes.add(unknownNote(id, f.fact().env() == null ? "" : " [" + f.fact().env() + "]"));
+                }
             }
             for (Schedules.Schedule s : own) {
+                if (s.problem() != null) {
+                    notes.add(id + (f.fact().env() == null ? "" : " [" + f.fact().env() + "]") + ": " + s.problem());
+                }
                 if (s.cron() != null) {
                     s.cron().on(day, s.zone(zone)).forEach(t -> out.add(s.at(String.valueOf(t.withZoneSameInstant(zone).toLocalTime())) + s.triggerLabel()));
                 } else if (s.every() != null) {

@@ -55,8 +55,11 @@ becomes part of the argument before it. At startup the server names any `--kb` p
   `into(id, kind?)`, `find(text, kind?)`, `runs(jobId, day, env?, zone?)`, `schedule(jobId, env?)` (how a job is
   scheduled, what runs it, or "not known: …": an empty `runs()` is not "never", #218), `lineage(id, direction?, depth?)`), what is
   loaded (repos, counts per kind, environments, edge kinds, attributes per kind) and worked examples;
-- **`query`**: a read-only JavaScript program over the facts; its `return` value comes back as JSON (at most 40,000
-  characters). A question that takes many lookups is one program: filter, follow edges, join and count in it.
+- **`query`**: a read-only JavaScript program over the facts; its `return` value comes back as JSON (at most 20,000
+  characters; a larger result comes back as an error that says its shape, e.g. the list's length and the fields that
+  take the most room, #229). A question that takes many lookups is one program: filter, follow edges, join and count
+  in it. After the JSON, a **Not known** list names what the functions the program called could not know: jobs whose
+  schedule is not in the facts (so their empty `runs()` is not "never"), ids not in the facts (#228).
 
 Every node and edge carries its `source` (repo/file:line) to cite. A mistake comes back as an error with a hint (an
 unknown kind lists the kinds). The program runs in GraalJS with no host access, no I/O, no output (stdout is MCP's), a

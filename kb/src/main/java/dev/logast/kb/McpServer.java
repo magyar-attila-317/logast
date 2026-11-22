@@ -397,7 +397,7 @@ public final class McpServer {
                 log.printf("logast mcp: query %d ms, %s%n", (System.nanoTime() - t0) / 1_000_000, r.error() != null
                         ? "error: " + r.error().lines().findFirst().orElse("") : r.json().length() + " characters");
                 yield r.error() != null ? text(r.error() + "\n(the api tool lists the functions, kinds and attributes)", true)
-                        : text(r.json(), false);
+                        : text(r.notes().isEmpty() ? r.json() : r.json() + "\n\n" + r.notesText(), false);   // #228
             }
             default -> throw new IllegalArgumentException("unknown tool: " + name + " (code mode: api, query)");
         };
