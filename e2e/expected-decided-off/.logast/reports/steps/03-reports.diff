@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 5f70c44..11df3aa 100644
+index 5f70c44..2746e44 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
 @@ -1,6 +1,7 @@ 
@@ -26,11 +26,80 @@ index 5f70c44..11df3aa 100644
          }
          orders.forEach(payments::charge);
          log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
-+        Outcomes.count("orders", "shipped", "items", orders.size());
++        Outcomes.record("orders", "shipped", "items", orders.size());
      }
  }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+index 35921a9..7ca0172 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.pledge;
+ 
+ import com.example.e2e.logging.AfterCommit;
++import com.example.e2e.logging.Outcomes;
+ import java.util.List;
+ import lombok.extern.slf4j.Slf4j;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -25,11 +26,13 @@
+     public void close(String pledgeId) {
+         int rows = jdbcTemplate.update(CLOSE, pledgeId);
+         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
++        Outcomes.count("pledges", "updated", "rows", rows);
+     }
+ 
+     public int countUse(String pledgeId) {
+         int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
+         AfterCommit.log(() -> log.info("Pledge usage saved [uses={}]", uses)); // logast:wording
++        Outcomes.count("pledge.usage", "saved", "uses", uses);
+         return uses;
+     }
+ 
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 61074e8..49a7767 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.edge;
+ 
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.logging.Outcomes;
+ import com.example.e2e.stipend.PledgeCheck;
+ import com.example.e2e.stipend.PledgeDetails;
+ import com.example.e2e.stipend.KioskTotals;
+@@ -49,8 +50,10 @@
+                             }
+                         });
+                 log.info("Pledge parsed"); // a transformed value
++                Outcomes.count("pledge", "parsed");
+                 new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
+                 log.info("Edge processing completed");
++                Outcomes.count("edge.processing", "completed");
+             }
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index cce7d50..af8ed9e 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.order;
+ 
+ import com.example.e2e.logging.ObservedContext;
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.event.EventListener;
+@@ -15,6 +16,7 @@
+     @EventListener
+     public void onPlaced(OrderPlaced event) {
+         log.info("Order confirmation sent");
++        Outcomes.count("order.confirmation", "sent");
+         log.debug("Confirmation amount [amountCents={}]", event.amountCents());
+     }
+ 
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index c2e743a..5259e5c 100644
+index c8a4563..779f455 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 @@ -1,6 +1,7 @@ 
@@ -57,124 +126,8 @@ index c2e743a..5259e5c 100644
                  return false;
              }
          }
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-index e2c3a76..c3aaae8 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.pledge;
- 
-+import com.example.e2e.logging.Outcomes;
- import java.util.Map;
- import java.util.concurrent.ConcurrentHashMap;
- import org.slf4j.Logger;
-@@ -20,6 +21,7 @@
-             return load(pledgeId);
-         } catch (IllegalStateException e) {
-             log.warn("Pledge lookup failed", e);
-+            Outcomes.tag("failed");
-             throw new PledgeMissing(pledgeId, e);
-         }
-     }
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-index 436af48..35ee033 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-@@ -1,6 +1,7 @@ 
- package com.example.e2e.pledge;
- 
- import com.example.e2e.logging.AfterCommit;
-+import com.example.e2e.logging.Outcomes;
- import java.util.List;
- import lombok.extern.slf4j.Slf4j;
- import org.springframework.jdbc.core.JdbcTemplate;
-@@ -25,11 +26,13 @@
-     public void close(String pledgeId) {
-         int rows = jdbcTemplate.update(CLOSE, pledgeId);
-         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
-+        Outcomes.record("pledges", "updated", "rows", rows);
-     }
- 
-     public int countUse(String pledgeId) {
-         int uses = jdbcTemplate.queryForObject(COUNT_USE, Integer.class, pledgeId);
-         AfterCommit.log(() -> log.info("Pledge usage saved [uses={}]", uses)); // logast:wording
-+        Outcomes.count("pledge.usage", "saved", "uses", uses);
-         return uses;
-     }
- 
-diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 9d7cd6b..50c80d4 100644
---- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
-+++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-@@ -4,6 +4,7 @@ 
- import com.example.e2e.stipend.PledgeDetails;
- import com.example.e2e.stipend.KioskTotals;
- import com.example.e2e.logging.MdcScope;
-+import com.example.e2e.logging.Outcomes;
- import java.util.List;
- import java.util.Optional;
- import java.util.UUID;
-@@ -49,8 +50,10 @@
-                             }
-                         });
-                 log.info("Pledge parsed"); // a transformed value
-+                Outcomes.count("pledge", "parsed");
-                 new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
-                 log.info("Edge processing completed");
-+                Outcomes.count("edge.processing", "completed");
-             }
-         }
-     }
-diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 7f7bb77..9262ec4 100644
---- a/src/main/java/com/example/e2e/order/OrderNotifications.java
-+++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -1,6 +1,7 @@ 
- package com.example.e2e.order;
- 
- import com.example.e2e.logging.ObservedContext;
-+import com.example.e2e.logging.Outcomes;
- import org.slf4j.Logger;
- import org.slf4j.LoggerFactory;
- import org.springframework.context.event.EventListener;
-@@ -15,6 +16,7 @@
-     @EventListener
-     public void onPlaced(OrderPlaced event) {
-         log.info("Order confirmation sent");
-+        Outcomes.count("order.confirmation", "sent");
-         log.debug("Confirmation amount [amountCents={}]", event.amountCents());
-     }
- 
-diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 059d4d5..5a44b0f 100644
---- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-+++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-@@ -2,6 +2,7 @@ 
- 
- import com.example.e2e.logging.MdcScope;
- import com.example.e2e.logging.ObservedContext;
-+import com.example.e2e.logging.Outcomes;
- import java.util.List;
- import org.slf4j.Logger;
- import org.slf4j.LoggerFactory;
-@@ -29,6 +30,7 @@
-         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-             log.info("Pledge return received");
-             log.info("Pledge sweep completed");
-+            Outcomes.count("pledge.messages", "completed");
-         }
-     }
- 
-@@ -37,6 +39,7 @@
-         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-             log.info("Pledge audit received");
-             log.info("Pledge sweep completed");
-+            Outcomes.count("pledge.messages", "completed");
-         }
-     }
- }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index f09cb1c..ebd2b05 100644
+index 8117e82..ba48df7 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
 @@ -1,5 +1,6 @@ 
@@ -191,8 +144,44 @@ index f09cb1c..ebd2b05 100644
 +        Outcomes.count("export.job", "completed");
      }
  }
+diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
+index 8c7e3d5..8e60661 100644
+--- a/src/main/java/com/example/e2e/edge/Audited.java
++++ b/src/main/java/com/example/e2e/edge/Audited.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.edge;
+ 
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+@@ -9,5 +10,6 @@
+ 
+     default void audit(String pledgeId) {
+         AUDIT_LOG.info("Pledge audited");
++        Outcomes.tag("audited");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
+index 64835f7..e30279f 100644
+--- a/src/main/java/com/example/e2e/job/PreloadJob.java
++++ b/src/main/java/com/example/e2e/job/PreloadJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.job;
+ 
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.context.annotation.Profile;
+@@ -14,5 +15,6 @@
+     protected void doExecute() {
+         log.info("Preload export started");
+         log.info("Preload export completed");
++        Outcomes.count("preload.export", "completed");
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeService.java b/src/main/java/com/example/e2e/pledge/PledgeService.java
-index 28ad1c7..6834120 100644
+index 36ff109..2a6a4d0 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeService.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeService.java
 @@ -2,6 +2,7 @@ 
@@ -219,44 +208,55 @@ index 28ad1c7..6834120 100644
          }
      }
  }
-diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
-index c6871f8..8b0bf16 100644
---- a/src/main/java/com/example/e2e/edge/Audited.java
-+++ b/src/main/java/com/example/e2e/edge/Audited.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.edge;
+diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+index 3005ac6..4092c27 100644
+--- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
++++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+@@ -2,6 +2,7 @@ 
  
+ import com.example.e2e.logging.MdcScope;
+ import com.example.e2e.logging.ObservedContext;
 +import com.example.e2e.logging.Outcomes;
+ import java.util.List;
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
+@@ -29,6 +30,7 @@
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+             log.info("Pledge return received");
+             log.info("Pledge sweep completed");
++            Outcomes.count("pledge.messages", "completed");
+         }
+     }
  
-@@ -9,5 +10,6 @@
- 
-     default void audit(String pledgeId) {
-         AUDIT_LOG.info("Pledge audited");
-+        Outcomes.count("pledge", "audited");
+@@ -37,6 +39,7 @@
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+             log.info("Pledge audit received");
+             log.info("Pledge sweep completed");
++            Outcomes.count("pledge.messages", "completed");
+         }
      }
  }
-diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
-index 64835f7..e30279f 100644
---- a/src/main/java/com/example/e2e/job/PreloadJob.java
-+++ b/src/main/java/com/example/e2e/job/PreloadJob.java
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+index ee13ea4..10ff4be 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 @@ -1,5 +1,6 @@ 
- package com.example.e2e.job;
+ package com.example.e2e.pledge;
  
 +import com.example.e2e.logging.Outcomes;
+ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
  import org.slf4j.Logger;
- import org.slf4j.LoggerFactory;
- import org.springframework.context.annotation.Profile;
-@@ -14,5 +15,6 @@
-     protected void doExecute() {
-         log.info("Preload export started");
-         log.info("Preload export completed");
-+        Outcomes.count("preload.export", "completed");
+@@ -20,6 +21,7 @@
+             return load(pledgeId);
+         } catch (IllegalStateException e) {
+             log.warn("Pledge lookup failed", e);
++            Outcomes.count("pledge.lookup", "failed");
+             throw new PledgeMissing(pledgeId, e);
+         }
      }
- }
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index 2edc8f7..1a1d218 100644
+index d616b2f..46d9e68 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -1,5 +1,6 @@ 

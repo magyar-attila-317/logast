@@ -11,7 +11,7 @@ public class PledgeSender {
 
     public void send(String pledgeId) {
         log.debug("Sending pledge to the channel");
-        log.info("Pledge sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-027987
+        log.info("Pledge sent"); // logast: METRIC_OUTCOME_UNMEASURED OUM-e7708e
     }
 
     /** A failure logged and handled here: an outcome worth counting by default. */

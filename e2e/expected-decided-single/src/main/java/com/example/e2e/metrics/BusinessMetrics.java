@@ -24,14 +24,69 @@ public final class BusinessMetrics {
     /** Observation (timer and span) name. */
     public static final String ORDER_NOTIFICATIONS = "order.notifications";
 
-    /** outcome="failed" on the timer already running (same thread). */
-    public static void tagFailed() {
-        Outcomes.tag("failed");
+    /** outcome="audited" on the timer already running (same thread). */
+    public static void tagAudited() {
+        Outcomes.tag("audited");
     }
 
-    /** pledges{outcome="updated"} +1; rows is one sample of the distribution pledges.rows{outcome="updated"}. */
+    /** pledge{outcome="parsed"} +1. */
+    public static void pledgeParsed() {
+        Outcomes.count("pledge", "parsed");
+    }
+
+    /** edge.processing{outcome="completed"} +1. */
+    public static void edgeProcessingCompleted() {
+        Outcomes.count("edge.processing", "completed");
+    }
+
+    /** export.job{outcome="completed"} +1. */
+    public static void exportJobCompleted() {
+        Outcomes.count("export.job", "completed");
+    }
+
+    /** preload.export{outcome="completed"} +1. */
+    public static void preloadExportCompleted() {
+        Outcomes.count("preload.export", "completed");
+    }
+
+    /** tally{outcome="completed"} +1. */
+    public static void tallyCompleted() {
+        Outcomes.count("tally", "completed");
+    }
+
+    /** pledge.messages{outcome="completed"} +1. */
+    public static void pledgeMessagesCompleted() {
+        Outcomes.count("pledge.messages", "completed");
+    }
+
+    /** order.confirmation{outcome="sent"} +1. */
+    public static void orderConfirmationSent() {
+        Outcomes.count("order.confirmation", "sent");
+    }
+
+    /** order{outcome="placed"} +1. */
+    public static void orderPlaced() {
+        Outcomes.count("order", "placed");
+    }
+
+    /** order.shipment{outcome="skipped"} +1. */
+    public static void orderShipmentSkipped() {
+        Outcomes.count("order.shipment", "skipped");
+    }
+
+    /** orders{outcome="shipped"} +1; items is one sample of the distribution orders.items{outcome="shipped"}. */
+    public static void ordersShipped(Number items) {
+        Outcomes.record("orders", "shipped", "items", items);
+    }
+
+    /** pledge.lookup{outcome="failed"} +1. */
+    public static void pledgeLookupFailed() {
+        Outcomes.count("pledge.lookup", "failed");
+    }
+
+    /** pledges{outcome="updated"} +1; pledges.rows{outcome="updated"} grows by rows. */
     public static void pledgesUpdated(Number rows) {
-        Outcomes.record("pledges", "updated", "rows", rows);
+        Outcomes.count("pledges", "updated", "rows", rows);
     }
 
     /** pledge.usage{outcome="saved"} +1; pledge.usage.uses{outcome="saved"} grows by uses. */
@@ -59,83 +114,28 @@ public final class BusinessMetrics {
         Outcomes.count("pledge.allotment", "completed");
     }
 
-    /** pledge{outcome="audited"} +1. */
-    public static void pledgeAudited() {
-        Outcomes.count("pledge", "audited");
-    }
-
-    /** pledge{outcome="parsed"} +1. */
-    public static void pledgeParsed() {
-        Outcomes.count("pledge", "parsed");
-    }
-
-    /** edge.processing{outcome="completed"} +1. */
-    public static void edgeProcessingCompleted() {
-        Outcomes.count("edge.processing", "completed");
-    }
-
-    /** tally{outcome="completed"} +1. */
-    public static void tallyCompleted() {
-        Outcomes.count("tally", "completed");
-    }
-
-    /** export.job{outcome="completed"} +1. */
-    public static void exportJobCompleted() {
-        Outcomes.count("export.job", "completed");
-    }
-
-    /** preload.export{outcome="completed"} +1. */
-    public static void preloadExportCompleted() {
-        Outcomes.count("preload.export", "completed");
-    }
-
-    /** pledge.messages{outcome="completed"} +1. */
-    public static void pledgeMessagesCompleted() {
-        Outcomes.count("pledge.messages", "completed");
-    }
-
-    /** order.confirmation{outcome="sent"} +1. */
-    public static void orderConfirmationSent() {
-        Outcomes.count("order.confirmation", "sent");
-    }
-
-    /** order{outcome="placed"} +1. */
-    public static void orderPlaced() {
-        Outcomes.count("order", "placed");
-    }
-
-    /** order.shipment{outcome="skipped"} +1. */
-    public static void orderShipmentSkipped() {
-        Outcomes.count("order.shipment", "skipped");
-    }
-
-    /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */
-    public static void ordersShipped(Number items) {
-        Outcomes.count("orders", "shipped", "items", items);
-    }
-
     /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
     @org.springframework.stereotype.Component
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
         @Override
         public void afterSingletonsInstantiated() {
-            Outcomes.registerPerRun("pledges", "updated", "rows");
+            Outcomes.register("pledge", "parsed");
+            Outcomes.register("edge.processing", "completed");
+            Outcomes.register("export.job", "completed");
+            Outcomes.register("preload.export", "completed");
+            Outcomes.register("tally", "completed");
+            Outcomes.register("pledge.messages", "completed");
+            Outcomes.register("order.confirmation", "sent");
+            Outcomes.register("order", "placed");
+            Outcomes.register("order.shipment", "skipped");
+            Outcomes.registerPerRun("orders", "shipped", "items");
+            Outcomes.register("pledge.lookup", "failed");
+            Outcomes.registerTotal("pledges", "updated", "rows");
             Outcomes.registerTotal("pledge.usage", "saved", "uses");
             Outcomes.register("pledge", "sent");
             Outcomes.register("pledge.resend", "failed");
             Outcomes.register("pledge", "published");
             Outcomes.register("pledge.allotment", "completed");
-            Outcomes.register("pledge", "audited");
-            Outcomes.register("pledge", "parsed");
-            Outcomes.register("edge.processing", "completed");
-            Outcomes.register("tally", "completed");
-            Outcomes.register("export.job", "completed");
-            Outcomes.register("preload.export", "completed");
-            Outcomes.register("pledge.messages", "completed");
-            Outcomes.register("order.confirmation", "sent");
-            Outcomes.register("order", "placed");
-            Outcomes.register("order.shipment", "skipped");
-            Outcomes.registerTotal("orders", "shipped", "items");
         }
     }
 }

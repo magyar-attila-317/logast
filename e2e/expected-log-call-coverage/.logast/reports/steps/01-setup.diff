@@ -1158,7 +1158,7 @@ index 0000000..5a8f49f
 +}
 diff --git a/src/main/java/com/example/e2e/logging/Outcomes.java b/src/main/java/com/example/e2e/logging/Outcomes.java
 new file mode 100644
-index 0000000..e6a2751
+index 0000000..747b9ea
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/Outcomes.java
 @@ -0,0 +1,101 @@ 

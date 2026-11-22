@@ -12,9 +12,9 @@ public final class EdgeMetrics {
     private EdgeMetrics() {
     }
 
-    /** pledge{outcome="audited"} +1. */
-    public static void pledgeAudited() {
-        Outcomes.count("pledge", "audited");
+    /** outcome="audited" on the timer already running (same thread). */
+    public static void tagAudited() {
+        Outcomes.tag("audited");
     }
 
     /** pledge{outcome="parsed"} +1. */
@@ -32,7 +32,6 @@ public final class EdgeMetrics {
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
         @Override
         public void afterSingletonsInstantiated() {
-            Outcomes.register("pledge", "audited");
             Outcomes.register("pledge", "parsed");
             Outcomes.register("edge.processing", "completed");
         }

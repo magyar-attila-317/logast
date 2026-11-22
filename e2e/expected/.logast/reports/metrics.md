@@ -8,7 +8,7 @@ Identity
 Measured without code: 16 entrypoints
   1 by Spring Kafka, e.g. spring.kafka.listener{…}  (listener OrderEvents.onOrder)
   12 by Spring MVC, e.g. http.server.requests{method="DELETE", uri="/pledges/{pledgeId}"}
-  3 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.pledge.PledgeCleanupJob", code.function="cleanup"}
+  3 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.edge.EdgeJob", code.function="run"}
   1 Spring Data repositories, e.g. spring.data.repository.invocations{repository="OrderRecordRepository", method=…}
 
 Entrypoints no metric covers: 5
@@ -26,18 +26,6 @@ Meters in code: 4   (logast explain metrics . --format table lists them)
 
 Outcomes logged but not counted: 12  failed 2, sent 2, archived 1, audited 1, completed 1, parsed 1, placed 1, published 1, saved 1, shipped 1
   pick the ones a dashboard or alert needs; snippets (tag or counter) in --format json and in the METRIC_OUTCOME_UNMEASURED findings
-  src/main/java/com/example/e2e/pledge/PledgeRepository.java:33  PledgeRepository.countUse
-    INFO "Pledge usage saved"  outcome=saved  frequency unknown: no rate for "POST /pledges/{pledgeId}/use" in .logast/decisions/traffic.yaml
-    from http POST /pledges/{pledgeId}/use
-  src/main/java/com/example/e2e/pledge/PledgeSender.java:14  PledgeSender.send
-    INFO "Pledge sent"  outcome=sent  frequency unknown: no rate for "POST /pledges/allot" in .logast/decisions/traffic.yaml
-    from http POST /pledges/allot; http POST /pledges/{pledgeId}/publish
-  src/main/java/com/example/e2e/pledge/PledgeService.java:44  PledgeService.publish
-    INFO "Pledge published"  outcome=published  frequency unknown: no rate for "POST /pledges/{pledgeId}/publish" in .logast/decisions/traffic.yaml
-    from http POST /pledges/{pledgeId}/publish
-  src/main/java/com/example/e2e/pledge/PledgeService.java:51  PledgeService.allot
-    INFO "Pledge allotment completed"  outcome=completed  frequency unknown: no rate for "POST /pledges/allot" in .logast/decisions/traffic.yaml
-    from http POST /pledges/allot
   src/main/java/com/example/e2e/edge/Audited.java:11  Audited.audit
     INFO "Pledge audited"  outcome=audited  frequency low
     from scheduled @Scheduled EdgeJob.run
@@ -60,3 +48,15 @@ Outcomes logged but not counted: 12  failed 2, sent 2, archived 1, audited 1, co
     from http POST /orders
   src/main/java/com/example/e2e/order/OrderService.java:48  OrderService.ship
     INFO "Orders shipped"  outcome=shipped  frequency unknown: no entrypoint is known to reach it
+  src/main/java/com/example/e2e/pledge/PledgeRepository.java:33  PledgeRepository.countUse
+    INFO "Pledge usage saved"  outcome=saved  frequency unknown: no rate for "POST /pledges/{pledgeId}/use" in .logast/decisions/traffic.yaml
+    from http POST /pledges/{pledgeId}/use
+  src/main/java/com/example/e2e/pledge/PledgeSender.java:14  PledgeSender.send
+    INFO "Pledge sent"  outcome=sent  frequency unknown: no rate for "POST /pledges/allot" in .logast/decisions/traffic.yaml
+    from http POST /pledges/allot; http POST /pledges/{pledgeId}/publish
+  src/main/java/com/example/e2e/pledge/PledgeService.java:44  PledgeService.publish
+    INFO "Pledge published"  outcome=published  frequency unknown: no rate for "POST /pledges/{pledgeId}/publish" in .logast/decisions/traffic.yaml
+    from http POST /pledges/{pledgeId}/publish
+  src/main/java/com/example/e2e/pledge/PledgeService.java:51  PledgeService.allot
+    INFO "Pledge allotment completed"  outcome=completed  frequency unknown: no rate for "POST /pledges/allot" in .logast/decisions/traffic.yaml
+    from http POST /pledges/allot

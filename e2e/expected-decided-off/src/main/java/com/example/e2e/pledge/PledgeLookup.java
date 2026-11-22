@@ -21,7 +21,7 @@ public class PledgeLookup {
             return load(pledgeId);
         } catch (IllegalStateException e) {
             log.warn("Pledge lookup failed", e);
-            Outcomes.tag("failed");
+            Outcomes.count("pledge.lookup", "failed");
             throw new PledgeMissing(pledgeId, e);
         }
     }

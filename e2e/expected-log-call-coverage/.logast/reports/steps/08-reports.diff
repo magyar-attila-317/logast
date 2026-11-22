@@ -1,6 +1,6 @@
 diff --git a/src/main/java/com/example/e2e/job/JobMetrics.java b/src/main/java/com/example/e2e/job/JobMetrics.java
 new file mode 100644
-index 0000000..bfc5e69
+index 0000000..7d5b8c5
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/job/JobMetrics.java
 @@ -0,0 +1,46 @@ 
@@ -24,11 +24,6 @@ index 0000000..bfc5e69
 +    /** Observation (timer and span) name. */
 +    public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
 +
-+    /** tally{outcome="completed"} +1. */
-+    public static void tallyCompleted() {
-+        Outcomes.count("tally", "completed");
-+    }
-+
 +    /** export.job{outcome="completed"} +1. */
 +    public static void exportJobCompleted() {
 +        Outcomes.count("export.job", "completed");
@@ -39,20 +34,25 @@ index 0000000..bfc5e69
 +        Outcomes.count("preload.export", "completed");
 +    }
 +
++    /** tally{outcome="completed"} +1. */
++    public static void tallyCompleted() {
++        Outcomes.count("tally", "completed");
++    }
++
 +    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
 +    @org.springframework.stereotype.Component
 +    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
 +        @Override
 +        public void afterSingletonsInstantiated() {
-+            Outcomes.register("tally", "completed");
 +            Outcomes.register("export.job", "completed");
 +            Outcomes.register("preload.export", "completed");
++            Outcomes.register("tally", "completed");
 +        }
 +    }
 +}
 diff --git a/src/main/java/com/example/e2e/messaging/MessagingMetrics.java b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
 new file mode 100644
-index 0000000..47811f3
+index 0000000..77391a0
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
 @@ -0,0 +1,31 @@ 
@@ -125,7 +125,7 @@ index 0000000..7e712ec
 +    }
 +}
 diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
-index fd83167..c5a3469 100644
+index 94ecffb..49f146d 100644
 --- a/src/main/java/com/example/e2e/job/PublishRunJob.java
 +++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
 @@ -15,7 +15,7 @@ 
@@ -151,7 +151,7 @@ index 8e05f57..28908c9 100644
                  .run(() -> {
                      job.execute();
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 3655c4c..70d0891 100644
+index 00dafb6..79f37e7 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -17,7 +17,7 @@ 
@@ -192,20 +192,20 @@ index 4ee3a0a..63b548d 100644
                  .mdc("orderId", event.orderId())
                  .quiet()
                  .run(() -> {
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-index e2c3a76..c36d6cd 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-@@ -20,6 +20,7 @@ 
-             return load(pledgeId);
-         } catch (IllegalStateException e) {
-             log.warn("Pledge lookup failed", e);
-+            PledgeMetrics.pledgeLookupFailed(); // logast:metric review, confidence: medium
-             throw new PledgeMissing(pledgeId, e);
-         }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+index 35921a9..b71454a 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
+@@ -25,6 +25,7 @@ 
+     public void close(String pledgeId) {
+         int rows = jdbcTemplate.update(CLOSE, pledgeId);
+         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
++        PledgeMetrics.pledgesUpdated(rows); // logast:metric review, confidence: low
      }
+ 
+     public int countUse(String pledgeId) {
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 6f18f77..c9408d9 100644
+index 7445ba3..af22602 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -51,6 +51,7 @@ 
@@ -228,6 +228,18 @@ index 5f70c44..8537b6b 100644
              return;
          }
          orders.forEach(payments::charge);
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+index c8a4563..4e115ac 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+@@ -22,6 +22,7 @@ 
+                 return true;
+             } catch (IllegalStateException e) {
+                 log.warn("Pledge resend failed", e);
++                PledgeMetrics.pledgeResendFailed(); // logast:metric review, confidence: medium
+                 return false;
+             }
+         }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
 index 4f47def..8e84b9d 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
@@ -250,20 +262,20 @@ index 64835f7..6948134 100644
 +        JobMetrics.preloadExportCompleted(); // logast:metric review, confidence: medium
      }
  }
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-index 436af48..b9f74c9 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-@@ -25,6 +25,7 @@ 
-     public void close(String pledgeId) {
-         int rows = jdbcTemplate.update(CLOSE, pledgeId);
-         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
-+        PledgeMetrics.pledgesUpdated(rows); // logast:metric review, confidence: low
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+index ee13ea4..5fa1ff3 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+@@ -20,6 +20,7 @@ 
+             return load(pledgeId);
+         } catch (IllegalStateException e) {
+             log.warn("Pledge lookup failed", e);
++            PledgeMetrics.pledgeLookupFailed(); // logast:metric review, confidence: medium
+             throw new PledgeMissing(pledgeId, e);
+         }
      }
- 
-     public int countUse(String pledgeId) {
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index 35ea6d0..2fdcf6e 100644
+index c682b53..21f4832 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -14,5 +14,6 @@ 
@@ -273,21 +285,43 @@ index 35ea6d0..2fdcf6e 100644
 +        JobMetrics.tallyCompleted(); // logast:metric review, confidence: medium
      }
  }
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index c2e743a..5b04172 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-@@ -22,6 +22,7 @@ 
-                 return true;
-             } catch (IllegalStateException e) {
-                 log.warn("Pledge resend failed", e);
-+                PledgeMetrics.pledgeResendFailed(); // logast:metric review, confidence: medium
-                 return false;
-             }
-         }
+diff --git a/src/main/java/com/example/e2e/edge/EdgeMetrics.java b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
+new file mode 100644
+index 0000000..703cf1b
+--- /dev/null
++++ b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
+@@ -0,0 +1,28 @@ 
++package com.example.e2e.edge;
++
++import com.example.e2e.logging.Outcomes;
++
++/**
++ * Metric names of com.example.e2e.edge, in one place: call sites call a member here and never name a metric.
++ * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
++ * ones at the end.
++ */
++// logast:metrics-catalog
++public final class EdgeMetrics {
++    private EdgeMetrics() {
++    }
++
++    /** edge.processing{outcome="completed"} +1. */
++    public static void edgeProcessingCompleted() {
++        Outcomes.count("edge.processing", "completed");
++    }
++
++    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
++    @org.springframework.stereotype.Component
++    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
++        @Override
++        public void afterSingletonsInstantiated() {
++            Outcomes.register("edge.processing", "completed");
++        }
++    }
++}
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeMetrics.java b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 new file mode 100644
-index 0000000..699417f
+index 0000000..2f6df31
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 @@ -0,0 +1,40 @@ 
@@ -328,40 +362,6 @@ index 0000000..699417f
 +            Outcomes.register("pledge.lookup", "failed");
 +            Outcomes.registerTotal("pledges", "updated", "rows");
 +            Outcomes.register("pledge.resend", "failed");
-+        }
-+    }
-+}
-diff --git a/src/main/java/com/example/e2e/edge/EdgeMetrics.java b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
-new file mode 100644
-index 0000000..703cf1b
---- /dev/null
-+++ b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
-@@ -0,0 +1,28 @@ 
-+package com.example.e2e.edge;
-+
-+import com.example.e2e.logging.Outcomes;
-+
-+/**
-+ * Metric names of com.example.e2e.edge, in one place: call sites call a member here and never name a metric.
-+ * Generated by logast (metrics.catalog). Rename or document members freely; logast keeps them and adds new
-+ * ones at the end.
-+ */
-+// logast:metrics-catalog
-+public final class EdgeMetrics {
-+    private EdgeMetrics() {
-+    }
-+
-+    /** edge.processing{outcome="completed"} +1. */
-+    public static void edgeProcessingCompleted() {
-+        Outcomes.count("edge.processing", "completed");
-+    }
-+
-+    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
-+    @org.springframework.stereotype.Component
-+    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
-+        @Override
-+        public void afterSingletonsInstantiated() {
-+            Outcomes.register("edge.processing", "completed");
 +        }
 +    }
 +}

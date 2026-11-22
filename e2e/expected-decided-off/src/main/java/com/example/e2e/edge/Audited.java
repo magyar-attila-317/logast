@@ -10,6 +10,6 @@ public interface Audited {
 
     default void audit(String pledgeId) {
         AUDIT_LOG.info("Pledge audited");
-        Outcomes.count("pledge", "audited");
+        Outcomes.tag("audited");
     }
 }

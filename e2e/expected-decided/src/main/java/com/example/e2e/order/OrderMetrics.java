@@ -30,9 +30,9 @@ public final class OrderMetrics {
         Outcomes.count("order.shipment", "skipped");
     }
 
-    /** orders{outcome="shipped"} +1; orders.items{outcome="shipped"} grows by items. */
+    /** orders{outcome="shipped"} +1; items is one sample of the distribution orders.items{outcome="shipped"}. */
     public static void ordersShipped(Number items) {
-        Outcomes.count("orders", "shipped", "items", items);
+        Outcomes.record("orders", "shipped", "items", items);
     }
 
     /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
@@ -43,7 +43,7 @@ public final class OrderMetrics {
             Outcomes.register("order.confirmation", "sent");
             Outcomes.register("order", "placed");
             Outcomes.register("order.shipment", "skipped");
-            Outcomes.registerTotal("orders", "shipped", "items");
+            Outcomes.registerPerRun("orders", "shipped", "items");
         }
     }
 }

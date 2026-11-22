@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-index a15b6b1..e2c3a76 100644
+index 70533b8..ee13ea4 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 @@ -29,7 +29,6 @@ 

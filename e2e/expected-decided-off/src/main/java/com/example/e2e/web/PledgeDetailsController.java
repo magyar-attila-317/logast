@@ -1,8 +1,8 @@
 package com.example.e2e.web;
 
+import com.example.e2e.logging.MdcScope;
 import com.example.e2e.pledge.PledgeId;
 import com.example.e2e.pledge.PledgeLookup;
-import com.example.e2e.logging.MdcScope;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

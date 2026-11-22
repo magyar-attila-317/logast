@@ -12,14 +12,14 @@ public final class PledgeMetrics {
     private PledgeMetrics() {
     }
 
-    /** outcome="failed" on the timer already running (same thread). */
-    public static void tagFailed() {
-        Outcomes.tag("failed");
+    /** pledge.lookup{outcome="failed"} +1. */
+    public static void pledgeLookupFailed() {
+        Outcomes.count("pledge.lookup", "failed");
     }
 
-    /** pledges{outcome="updated"} +1; rows is one sample of the distribution pledges.rows{outcome="updated"}. */
+    /** pledges{outcome="updated"} +1; pledges.rows{outcome="updated"} grows by rows. */
     public static void pledgesUpdated(Number rows) {
-        Outcomes.record("pledges", "updated", "rows", rows);
+        Outcomes.count("pledges", "updated", "rows", rows);
     }
 
     /** pledge.usage{outcome="saved"} +1; pledge.usage.uses{outcome="saved"} grows by uses. */
@@ -52,7 +52,8 @@ public final class PledgeMetrics {
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
         @Override
         public void afterSingletonsInstantiated() {
-            Outcomes.registerPerRun("pledges", "updated", "rows");
+            Outcomes.register("pledge.lookup", "failed");
+            Outcomes.registerTotal("pledges", "updated", "rows");
             Outcomes.registerTotal("pledge.usage", "saved", "uses");
             Outcomes.register("pledge", "sent");
             Outcomes.register("pledge.resend", "failed");

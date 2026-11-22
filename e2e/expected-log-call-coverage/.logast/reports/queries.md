@@ -45,11 +45,11 @@ For one of them, add its labels to the selector:
 | GET /quotes/{productId} | `method="GET", uri="/quotes/{productId}"` |
 | GET /quotes/{productId}/refresh | `method="GET", uri="/quotes/{productId}/refresh"` |
 | POST /admin/pledges/{pledgeId}/revoke | `method="POST", uri="/admin/pledges/{pledgeId}/revoke"` |
+| POST /orders | `method="POST", uri="/orders"` |
 | POST /pledges/allot | `method="POST", uri="/pledges/allot"` |
 | POST /pledges/{pledgeId}/hold | `method="POST", uri="/pledges/{pledgeId}/hold"` |
 | POST /pledges/{pledgeId}/publish | `method="POST", uri="/pledges/{pledgeId}/publish"` |
 | POST /pledges/{pledgeId}/use | `method="POST", uri="/pledges/{pledgeId}/use"` |
-| POST /orders | `method="POST", uri="/orders"` |
 
 ### Scheduled jobs (`tasks.scheduled.execution`)
 
@@ -83,9 +83,9 @@ For one of them, add its labels to the selector:
 
 | entrypoint | labels |
 |---|---|
+| @Scheduled EdgeJob.run | `code_namespace="com.example.e2e.edge.EdgeJob", code_function="run"` |
 | @Scheduled PledgeCleanupJob.cleanup | `code_namespace="com.example.e2e.pledge.PledgeCleanupJob", code_function="cleanup"` |
 | @Scheduled PledgeReloadJob.run | `code_namespace="com.example.e2e.pledge.PledgeReloadJob", code_function="run"` |
-| @Scheduled EdgeJob.run | `code_namespace="com.example.e2e.edge.EdgeJob", code_function="run"` |
 
 ### Kafka listeners (`spring.kafka.listener`)
 
@@ -119,32 +119,6 @@ histogram_quantile(0.95, sum by (le, spring_kafka_listener_id) (rate(spring_kafk
 
 `error` is the exception's class name, `none` when the call succeeded.
 
-#### pledge-messages.on-batch (kafka @KafkaListener pledge-batches)
-
-Calls per second:
-
-```promql
-sum(rate(pledge_messages_on_batch_seconds_count{application="e2e-shop"}[5m]))
-```
-
-Failures per second, by exception:
-
-```promql
-sum by (error) (rate(pledge_messages_on_batch_seconds_count{application="e2e-shop", error!="none"}[5m]))
-```
-
-Average duration (seconds):
-
-```promql
-sum(rate(pledge_messages_on_batch_seconds_sum{application="e2e-shop"}[5m])) / sum(rate(pledge_messages_on_batch_seconds_count{application="e2e-shop"}[5m]))
-```
-
-Slowest call in the last minutes (seconds):
-
-```promql
-max(pledge_messages_on_batch_seconds_max{application="e2e-shop"})
-```
-
 #### order.notifications (event @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced))
 
 Calls per second:
@@ -169,6 +143,32 @@ Slowest call in the last minutes (seconds):
 
 ```promql
 max(order_notifications_seconds_max{application="e2e-shop"})
+```
+
+#### pledge-messages.on-batch (kafka @KafkaListener pledge-batches)
+
+Calls per second:
+
+```promql
+sum(rate(pledge_messages_on_batch_seconds_count{application="e2e-shop"}[5m]))
+```
+
+Failures per second, by exception:
+
+```promql
+sum by (error) (rate(pledge_messages_on_batch_seconds_count{application="e2e-shop", error!="none"}[5m]))
+```
+
+Average duration (seconds):
+
+```promql
+sum(rate(pledge_messages_on_batch_seconds_sum{application="e2e-shop"}[5m])) / sum(rate(pledge_messages_on_batch_seconds_count{application="e2e-shop"}[5m]))
+```
+
+Slowest call in the last minutes (seconds):
+
+```promql
+max(pledge_messages_on_batch_seconds_max{application="e2e-shop"})
 ```
 
 #### publishing
@@ -225,11 +225,25 @@ max(settlement_job_executor_on_ready_seconds_max{application="e2e-shop"})
 
 ### Business outcomes
 
-**tally** (outcome: completed), per hour  
+**edge.processing** (outcome: completed), per hour  
+`src/main/java/com/example/e2e/edge/EdgeMetrics.java:17`
+
+```promql
+sum by (outcome) (increase(edge_processing_total{application="e2e-shop"}[1h]))
+```
+
+**export.job** (outcome: completed), per hour  
 `src/main/java/com/example/e2e/job/JobMetrics.java:23`
 
 ```promql
-sum by (outcome) (increase(tally_total{application="e2e-shop"}[1h]))
+sum by (outcome) (increase(export_job_total{application="e2e-shop"}[1h]))
+```
+
+**order.shipment** (outcome: skipped), per hour  
+`src/main/java/com/example/e2e/order/OrderMetrics.java:20`
+
+```promql
+sum by (outcome) (increase(order_shipment_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.lookup** (outcome: failed), per hour  
@@ -267,32 +281,18 @@ sum by (outcome) (increase(pledges_total{application="e2e-shop"}[1h]))
 sum by (outcome) (increase(pledges_rows_total{application="e2e-shop"}[1h]))
 ```
 
-**edge.processing** (outcome: completed), per hour  
-`src/main/java/com/example/e2e/edge/EdgeMetrics.java:17`
-
-```promql
-sum by (outcome) (increase(edge_processing_total{application="e2e-shop"}[1h]))
-```
-
-**export.job** (outcome: completed), per hour  
+**preload.export** (outcome: completed), per hour  
 `src/main/java/com/example/e2e/job/JobMetrics.java:28`
 
 ```promql
-sum by (outcome) (increase(export_job_total{application="e2e-shop"}[1h]))
+sum by (outcome) (increase(preload_export_total{application="e2e-shop"}[1h]))
 ```
 
-**order.shipment** (outcome: skipped), per hour  
-`src/main/java/com/example/e2e/order/OrderMetrics.java:20`
-
-```promql
-sum by (outcome) (increase(order_shipment_total{application="e2e-shop"}[1h]))
-```
-
-**preload.export** (outcome: completed), per hour  
+**tally** (outcome: completed), per hour  
 `src/main/java/com/example/e2e/job/JobMetrics.java:33`
 
 ```promql
-sum by (outcome) (increase(preload_export_total{application="e2e-shop"}[1h]))
+sum by (outcome) (increase(tally_total{application="e2e-shop"}[1h]))
 ```
 
 ## New Relic (NRQL)
@@ -343,16 +343,16 @@ FROM Metric SELECT rate(count(spring.kafka.listener), 1 minute) WHERE service.na
 
 ### Observed flows and timers
 
-**pledge-messages.on-batch** (kafka @KafkaListener pledge-batches): calls, failures, average and slowest duration
-
-```sql
-FROM Metric SELECT count(`pledge-messages.on-batch`), filter(count(`pledge-messages.on-batch`), WHERE error != 'none') AS 'failed', average(`pledge-messages.on-batch`), max(`pledge-messages.on-batch`) WHERE service.name = 'e2e-shop' TIMESERIES
-```
-
 **order.notifications** (event @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)): calls, failures, average and slowest duration
 
 ```sql
 FROM Metric SELECT count(order.notifications), filter(count(order.notifications), WHERE error != 'none') AS 'failed', average(order.notifications), max(order.notifications) WHERE service.name = 'e2e-shop' TIMESERIES
+```
+
+**pledge-messages.on-batch** (kafka @KafkaListener pledge-batches): calls, failures, average and slowest duration
+
+```sql
+FROM Metric SELECT count(`pledge-messages.on-batch`), filter(count(`pledge-messages.on-batch`), WHERE error != 'none') AS 'failed', average(`pledge-messages.on-batch`), max(`pledge-messages.on-batch`) WHERE service.name = 'e2e-shop' TIMESERIES
 ```
 
 **publishing**: calls, failures, average and slowest duration
@@ -369,10 +369,22 @@ FROM Metric SELECT count(`settlement-job-executor.on-ready`), filter(count(`sett
 
 ### Business outcomes
 
-**tally** (outcome: completed), per hour
+**edge.processing** (outcome: completed), per hour
 
 ```sql
-FROM Metric SELECT sum(tally) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+FROM Metric SELECT sum(edge.processing) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
+
+**export.job** (outcome: completed), per hour
+
+```sql
+FROM Metric SELECT sum(export.job) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
+
+**order.shipment** (outcome: skipped), per hour
+
+```sql
+FROM Metric SELECT sum(order.shipment) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```
 
 **pledge.lookup** (outcome: failed), per hour
@@ -405,26 +417,14 @@ FROM Metric SELECT sum(pledges) WHERE service.name = 'e2e-shop' FACET outcome TI
 FROM Metric SELECT sum(pledges.rows) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```
 
-**edge.processing** (outcome: completed), per hour
-
-```sql
-FROM Metric SELECT sum(edge.processing) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
-```
-
-**export.job** (outcome: completed), per hour
-
-```sql
-FROM Metric SELECT sum(export.job) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
-```
-
-**order.shipment** (outcome: skipped), per hour
-
-```sql
-FROM Metric SELECT sum(order.shipment) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
-```
-
 **preload.export** (outcome: completed), per hour
 
 ```sql
 FROM Metric SELECT sum(preload.export) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
+
+**tally** (outcome: completed), per hour
+
+```sql
+FROM Metric SELECT sum(tally) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```

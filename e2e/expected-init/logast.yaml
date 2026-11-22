@@ -66,17 +66,17 @@ logging:
 #     mdc: { key: approverUserId }     # so its own term, never an alias of it
 # Delete the keys that are not business terms (technical ones like retryCount).
 vocabulary:
-  pledgeId:    # 0 / 31 / 26, 21 files
+  pledgeId:      # 0 / 31 / 26, 21 files
     mdc: { key: pledgeId, sources: { params: [pledgeId] } }
-  runCode:     # 1 / 5 / 0, 2 files
+  runCode:       # 1 / 5 / 0, 2 files
     mdc: { key: runCode }
-  orderId:     # 0 / 3 / 2, 3 files
+  orderId:       # 0 / 3 / 2, 3 files
     mdc: { key: orderId, sources: { params: [orderId] } }
   sponsorshipId: # 0 / 2 / 1, 2 files
     mdc: { key: sponsorshipId, sources: { params: [sponsorshipId] } }
-  tableId:     # 0 / 1 / 1, 2 files
+  tableId:       # 0 / 1 / 1, 2 files
     mdc: { key: tableId, sources: { params: [tableId] } }
-  batchNumber: # 0 / 1 / 0, 1 file
+  batchNumber:   # 0 / 1 / 0, 1 file
     mdc: { key: batchNumber }
 
 # ---------------------------------------------------------------------------------------------

@@ -4,22 +4,22 @@ REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:27
 REPORT-ONLY DB_NO_TIMEOUT src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/audit/AuditLog.java:18
+REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/edge/Audited.java:10
+REPORT-ONLY LOG_HELPER src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13
+REPORT-ONLY RABBIT_NO_ERROR_HANDLER src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
+NEEDS TEXT SWALLOWED_EXCEPTION src/main/java/com/example/e2e/order/LoyaltyClient.java:20
+REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:21
+REPORT-ONLY KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/order/OrderEvents.java:15
+REPORT-ONLY REMOTE_CALL_IN_TRANSACTION src/main/java/com/example/e2e/order/OrderService.java:26
+REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/order/PaymentClient.java:18
+REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/order/PaymentClient.java:38
+REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentException.java:3
 REPORT-ONLY SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
 REPORT-ONLY ROW_BY_ROW_WRITE src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:25
 REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/pledge/PledgeLookup.java:22
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:26
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:33
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
-REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/edge/Audited.java:10
-REPORT-ONLY LOG_HELPER src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13
-REPORT-ONLY KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/messaging/PledgeMessages.java:19
-REPORT-ONLY RABBIT_NO_ERROR_HANDLER src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
-NEEDS TEXT SWALLOWED_EXCEPTION src/main/java/com/example/e2e/order/LoyaltyClient.java:20
-REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:21
-REPORT-ONLY REMOTE_CALL_IN_TRANSACTION src/main/java/com/example/e2e/order/OrderService.java:26
-REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/order/PaymentClient.java:18
-REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/order/PaymentClient.java:38
-REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentException.java:3
 REPORT-ONLY AUDIT_SECURITY_EVENTS src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:16
 REPORT-ONLY AUDIT_SECURITY_EVENTS src/main/java/com/example/e2e/shelf/ShelfAuditing.java:19
 REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
@@ -29,6 +29,30 @@ REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteContr
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_LOG_MIXED src/main/java/com/example/e2e/audit/AuditLog.java:8
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/Audited.java:11
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:45
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:48
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/edge/EdgeFlow.java:48
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:51
+REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/edge/EdgeFlow.java:60
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/edge/EdgeJob.java:23
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/edge/EdgeJob.java:28
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/ExportJob.java:13
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/ExportJob.java:14
+REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:21
+REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:25
+REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:27
+REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:33
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/TallyJob.java:15
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:31
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:40
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:17
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/order/OrderNotifications.java:29
+REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/order/OrderRecord.java:6
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:37
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:48
+NEEDS TEXT LOG_FORMAT src/main/java/com/example/e2e/order/PaymentClient.java:15
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:18
@@ -41,30 +65,6 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/Audited.java:11
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:45
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:48
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/edge/EdgeFlow.java:48
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:51
-REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/edge/EdgeFlow.java:60
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/edge/EdgeJob.java:23
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/edge/EdgeJob.java:28
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/TallyJob.java:15
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/ExportJob.java:13
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/ExportJob.java:14
-REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:21
-REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:25
-REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:27
-REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:33
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:31
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:40
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:17
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/order/OrderNotifications.java:29
-REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/order/OrderRecord.java:6
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:37
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:48
-NEEDS TEXT LOG_FORMAT src/main/java/com/example/e2e/order/PaymentClient.java:15
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:18
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/shelf/ShelfSlotRepository.java:9
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/shelf/ShelfSlotWriter.java:23

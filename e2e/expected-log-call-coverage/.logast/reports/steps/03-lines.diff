@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
-index fcbeedd..6e6c5af 100644
+index b8de35d..d2e6686 100644
 --- a/src/main/java/com/example/e2e/job/PublishRunJob.java
 +++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
 @@ -1,5 +1,6 @@ 
@@ -34,6 +34,24 @@ index fcbeedd..6e6c5af 100644
      }
  
      /** Every caller passes the run code: the parameter is the value MDC already carries. */
+diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+index 65fac35..1c941f2 100644
+--- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
++++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
+@@ -39,7 +39,12 @@ 
+         audit(kioskData.pledgeId());                                               // default method of an interface
+         EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
+         CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
+-                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
++                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
++                .whenComplete((result, error) -> {
++                    if (error != null) {
++                        log.error("Edge flow async work failed", error); // logast:wording
++                    }
++                });
+         log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
+         new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
+         log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());
 diff --git a/src/main/java/com/example/e2e/web/QuoteController.java b/src/main/java/com/example/e2e/web/QuoteController.java
 index 93796ad..17cde43 100644
 --- a/src/main/java/com/example/e2e/web/QuoteController.java
@@ -66,26 +84,8 @@ index 93796ad..17cde43 100644
          return result;
      }
  }
-diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 953396f..2e68061 100644
---- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
-+++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-@@ -39,7 +39,12 @@ 
-         audit(kioskData.pledgeId());                                               // default method of an interface
-         EdgeLogHelper.info("Pledge processed [pledgeId={}]", kioskData.pledgeId()); // a home-made log helper
-         CompletableFuture.runAsync(() ->                                           // another thread: MDC does not follow
--                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()));
-+                log.info("Pledge archived [pledgeId={}]", kioskData.pledgeId()))
-+                .whenComplete((result, error) -> {
-+                    if (error != null) {
-+                        log.error("Edge flow async work failed", error); // logast:wording
-+                    }
-+                });
-         log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
-         new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
-         log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-index 0d60ea5..436af48 100644
+index f3c016e..35921a9 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 @@ -1,10 +1,13 @@ 
@@ -126,7 +126,7 @@ index 0d60ea5..436af48 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index 6f153ca..3103ead 100644
+index 5e5551f..5379f9d 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -12,6 +12,7 @@ 
@@ -158,32 +158,8 @@ index 7fb069d..4f47def 100644
 +        log.info("Export job completed"); // logast:wording
      }
  }
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
-index 535e1fe..7bba83c 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
-@@ -1,8 +1,10 @@ 
- package com.example.e2e.pledge;
- 
-+import lombok.extern.slf4j.Slf4j;
- import org.springframework.scheduling.annotation.Scheduled;
- import org.springframework.stereotype.Component;
- 
-+@Slf4j
- @Component
- public class PledgeReloadJob {
-     private final PledgeLookup lookup;
-@@ -13,6 +15,8 @@
- 
-     @Scheduled(fixedDelay = 600000)
-     public void run() {
-+        log.info("Pledge reload started"); // logast:wording
-         lookup.reload();
-+        log.info("Pledge reload completed"); // logast:wording
-     }
- }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index d5cf243..c2e5489 100644
+index 0b03fbc..0bb0415 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -26,10 +26,12 @@ 
@@ -199,8 +175,33 @@ index d5cf243..c2e5489 100644
 +        log.info("Pledge messages completed"); // logast:wording
      }
  }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+index 5c91397..c90ac3d 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.AfterCommit;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.scheduling.annotation.Scheduled;
+@@ -19,9 +20,12 @@
+     @Scheduled(cron = "0 0 2 * * *")
+     @Transactional
+     public void cleanup() {
+-        for (String pledgeId : repository.findOpen()) {
++        log.info("Pledge cleanup started"); // logast:wording
++        var pledgeIds = repository.findOpen();
++        for (String pledgeId : pledgeIds) {
+             log.info("Closing stale pledge {}", pledgeId);
+             repository.close(pledgeId);
+         }
++        AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeJob.java b/src/main/java/com/example/e2e/edge/EdgeJob.java
-index 19fd1cc..7334819 100644
+index 06086f0..642d6f3 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeJob.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeJob.java
 @@ -2,11 +2,13 @@ 
@@ -231,29 +232,28 @@ index 19fd1cc..7334819 100644
      }
  
      private List<KioskTotals> pending() {
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
-index 20a83cc..08f9ee6 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
-@@ -1,5 +1,6 @@ 
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
+index 7d271be..811a059 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
+@@ -1,8 +1,10 @@ 
  package com.example.e2e.pledge;
  
-+import com.example.e2e.logging.AfterCommit;
- import org.slf4j.Logger;
- import org.slf4j.LoggerFactory;
++import lombok.extern.slf4j.Slf4j;
  import org.springframework.scheduling.annotation.Scheduled;
-@@ -19,9 +20,12 @@
-     @Scheduled(cron = "0 0 2 * * *")
-     @Transactional
-     public void cleanup() {
--        for (String pledgeId : repository.findOpen()) {
-+        log.info("Pledge cleanup started"); // logast:wording
-+        var pledgeIds = repository.findOpen();
-+        for (String pledgeId : pledgeIds) {
-             log.info("Closing stale pledge {}", pledgeId);
-             repository.close(pledgeId);
-         }
-+        AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
+ import org.springframework.stereotype.Component;
+ 
++@Slf4j
+ @Component
+ public class PledgeReloadJob {
+     private final PledgeLookup lookup;
+@@ -13,6 +15,8 @@
+ 
+     @Scheduled(fixedDelay = 600000)
+     public void run() {
++        log.info("Pledge reload started"); // logast:wording
+         lookup.reload();
++        log.info("Pledge reload completed"); // logast:wording
      }
  }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java

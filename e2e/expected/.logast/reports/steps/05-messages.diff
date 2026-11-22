@@ -15,8 +15,44 @@ index ee77169..5f70c44 100644
      }
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+index 3fd26f3..c8a4563 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
+@@ -10,8 +10,8 @@ 
+     private static final Logger log = LoggerFactory.getLogger(PledgeSender.class);
+ 
+     public void send(String pledgeId) {
+-        log.debug("Sending pledge {} to the channel", pledgeId);
+-        log.info("Pledge sent, pledgeId={}", pledgeId);
++        log.debug("Sending pledge to the channel");
++        log.info("Pledge sent");
+     }
+ 
+     /** A failure logged and handled here: an outcome worth counting by default. */
+@@ -21,7 +21,7 @@
+                 send(pledgeId);
+                 return true;
+             } catch (IllegalStateException e) {
+-                log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
++                log.warn("Pledge resend failed", e);
+                 return false;
+             }
+         }
+diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
+index b2fb984..8c7e3d5 100644
+--- a/src/main/java/com/example/e2e/edge/Audited.java
++++ b/src/main/java/com/example/e2e/edge/Audited.java
+@@ -8,6 +8,6 @@ 
+     Logger AUDIT_LOG = LoggerFactory.getLogger("audit");
+ 
+     default void audit(String pledgeId) {
+-        AUDIT_LOG.info("Pledge audited [pledgeId={}]", pledgeId);
++        AUDIT_LOG.info("Pledge audited");
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 31e6c43..6f18f77 100644
+index 09afebd..7445ba3 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -17,7 +17,7 @@ 
@@ -63,20 +99,22 @@ index 31e6c43..6f18f77 100644
 +        log.debug("Publishing pledge");
      }
  }
-diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
-index 52e0cde..c6871f8 100644
---- a/src/main/java/com/example/e2e/edge/Audited.java
-+++ b/src/main/java/com/example/e2e/edge/Audited.java
-@@ -8,6 +8,6 @@ 
-     Logger AUDIT_LOG = LoggerFactory.getLogger("audit");
+diff --git a/src/main/java/com/example/e2e/edge/PledgeTask.java b/src/main/java/com/example/e2e/edge/PledgeTask.java
+index fab9cbf..f6b322d 100644
+--- a/src/main/java/com/example/e2e/edge/PledgeTask.java
++++ b/src/main/java/com/example/e2e/edge/PledgeTask.java
+@@ -12,7 +12,7 @@ 
+     }
  
-     default void audit(String pledgeId) {
--        AUDIT_LOG.info("Pledge audited [pledgeId={}]", pledgeId);
-+        AUDIT_LOG.info("Pledge audited");
+     public void run() {
+-        log.info("Task step one [pledgeId={}]", pledgeId);
+-        log.info("Task step two [pledgeId={}]", pledgeId);
++        log.info("Task step one");
++        log.info("Task step two");
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeService.java b/src/main/java/com/example/e2e/pledge/PledgeService.java
-index c0b7c84..28ad1c7 100644
+index 3423e6d..36ff109 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeService.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeService.java
 @@ -38,17 +38,17 @@ 
@@ -101,8 +139,140 @@ index c0b7c84..28ad1c7 100644
          }
      }
  }
+diff --git a/src/main/java/com/example/e2e/stipend/PledgeChecks.java b/src/main/java/com/example/e2e/stipend/PledgeChecks.java
+index 4e8ffa8..a445896 100644
+--- a/src/main/java/com/example/e2e/stipend/PledgeChecks.java
++++ b/src/main/java/com/example/e2e/stipend/PledgeChecks.java
+@@ -22,7 +22,7 @@ 
+         public Optional<String> validate(PledgeDetails pledge, KioskTotals kioskData) {
+             log.trace(CHECK_LOG_MESSAGE, "approved", pledge.pledgeId(), pledge.sponsorshipId(), kioskData.kioskDay());
+             if (pledge.sponsorshipId() == null) {
+-                log.debug("Sponsorship missing [pledgeId={}, sponsorshipId={}]", pledge.pledgeId(), pledge.sponsorshipId());
++                log.debug("Sponsorship missing");
+                 return Optional.of("NO_SPONSORSHIP");
+             }
+             return Optional.empty();
+@@ -34,7 +34,7 @@
+         public Optional<String> validate(PledgeDetails pledge, KioskTotals kioskData) {
+             log.trace(CHECK_LOG_MESSAGE, "subsidy", pledge.pledgeId(), pledge.sponsorshipId(), kioskData.kioskDay());
+             if (pledge.subsidyPercentage() == null) {
+-                log.debug("No subsidy found [pledgeId={}, sponsorshipId={}]", pledge.pledgeId(), pledge.sponsorshipId());
++                log.debug("No subsidy found");
+                 return Optional.of("NO_SUBSIDY");
+             }
+             return Optional.empty();
+diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
+index 06eccf0..4ee3a0a 100644
+--- a/src/main/java/com/example/e2e/order/OrderNotifications.java
++++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
+@@ -14,8 +14,8 @@ 
+ 
+     @EventListener
+     public void onPlaced(OrderPlaced event) {
+-        log.info("Order confirmation sent [orderId={}]", event.orderId());
+-        log.debug("Confirmation amount [orderId={}, amountCents={}]", event.orderId(), event.amountCents());
++        log.info("Order confirmation sent");
++        log.debug("Confirmation amount [amountCents={}]", event.amountCents());
+     }
+ 
+     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
+@@ -25,8 +25,8 @@
+                 .mdc("orderId", event.orderId())
+                 .quiet()
+                 .run(() -> {
+-                    log.info("Order audit recorded [orderId={}]", event.orderId());
+-                    log.info("Order notifications completed [orderId={}]", event.orderId()); // logast:wording
++                    log.info("Order audit recorded");
++                    log.info("Order notifications completed"); // logast:wording
+                 });
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+index 2b8b4e7..00dafb6 100644
+--- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
++++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
+@@ -27,7 +27,7 @@ 
+     @RabbitListener(queues = "pledge-returns")
+     public void onReturn(String pledgeId) {
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+-            log.info("Pledge return received [pledgeId={}]", pledgeId);
++            log.info("Pledge return received");
+             log.info("Pledge messages completed"); // logast:wording
+         }
+     }
+@@ -35,7 +35,7 @@
+     @JmsListener(destination = "pledge-audits")
+     public void onAudit(String pledgeId) {
+         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
+-            log.info("Pledge audit received [pledgeId={}]", pledgeId);
++            log.info("Pledge audit received");
+             log.info("Pledge messages completed"); // logast:wording
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
+index d2e6686..94ecffb 100644
+--- a/src/main/java/com/example/e2e/job/PublishRunJob.java
++++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
+@@ -18,23 +18,23 @@ 
+         ObservedContext.entrypoint("publishing")
+                 .quiet()
+                 .run(() -> {
+-                    log.info("Publishing started [runCode={}]", runCode);
++                    log.info("Publishing started");
+                     var summary = RunSummary.of(runCode, week);
+                     report(summary);   // overloaded: the var's type picks report(RunSummary)
+                     String current = runCode;                                       // the same value under another name
+-                    log.debug("Publishing batch [runCode={}]", current);
++                    log.debug("Publishing batch");
+                     notifyDone(runCode);
+-                    log.info("Publishing completed [runCode={}]", runCode);
++                    log.info("Publishing completed");
+                 });
+     }
+ 
+     /** Every caller passes the run code: the parameter is the value MDC already carries. */
+     private void notifyDone(String code) {
+-        log.debug("Publishing notified [runCode={}]", code);
++        log.debug("Publishing notified");
+     }
+ 
+     private void report(RunSummary summary) {
+-        log.debug("Run summary [runCode={}, items={}]", summary.runCode(), summary.items());
++        log.debug("Run summary [items={}]", summary.items());
+     }
+ 
+     private void report(String line) {
+diff --git a/src/main/java/com/example/e2e/stipend/TallyService.java b/src/main/java/com/example/e2e/stipend/TallyService.java
+index 17818a5..3e0ae5d 100644
+--- a/src/main/java/com/example/e2e/stipend/TallyService.java
++++ b/src/main/java/com/example/e2e/stipend/TallyService.java
+@@ -19,7 +19,7 @@ 
+ 
+     private StipendOutcome processRow(KioskTotals kioskData, List<PledgeDetails> allPledgeDetails) {
+         try (var mdc = MdcScope.of("pledgeId", kioskData.pledgeId())) {
+-            log.trace("Processing pledge [pledgeId={}]", kioskData.pledgeId());
++            log.trace("Processing pledge");
+             List<PledgeDetails> matchingPledges = filterMatchingPledges(allPledgeDetails, kioskData.pledgeId());
+             return StipendCalculator.calculate(kioskData, matchingPledges);
+         }
+diff --git a/src/main/java/com/example/e2e/edge/PledgeRules.java b/src/main/java/com/example/e2e/edge/PledgeRules.java
+index fa34344..d513454 100644
+--- a/src/main/java/com/example/e2e/edge/PledgeRules.java
++++ b/src/main/java/com/example/e2e/edge/PledgeRules.java
+@@ -8,9 +8,9 @@ 
+ @UtilityClass
+ public class PledgeRules {
+     public void check(String pledgeId) {
+-        log.debug("Checking rules [pledgeId={}]", pledgeId);
++        log.debug("Checking rules");
+         if (pledgeId.isBlank()) {
+-            log.debug("No rules apply [pledgeId={}]", pledgeId);
++            log.debug("No rules apply");
+         }
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/stipend/StipendCalculator.java b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
-index a82b3b1..5153ba7 100644
+index 0ae3a0b..fc4ed6c 100644
 --- a/src/main/java/com/example/e2e/stipend/StipendCalculator.java
 +++ b/src/main/java/com/example/e2e/stipend/StipendCalculator.java
 @@ -15,10 +15,9 @@ 
@@ -136,140 +306,21 @@ index a82b3b1..5153ba7 100644
          return new StipendOutcome(false, result);
      }
  }
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index 6178d15..c2e743a 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-@@ -10,8 +10,8 @@ 
-     private static final Logger log = LoggerFactory.getLogger(PledgeSender.class);
- 
-     public void send(String pledgeId) {
--        log.debug("Sending pledge {} to the channel", pledgeId);
--        log.info("Pledge sent, pledgeId={}", pledgeId);
-+        log.debug("Sending pledge to the channel");
-+        log.info("Pledge sent");
-     }
- 
-     /** A failure logged and handled here: an outcome worth counting by default. */
-@@ -21,7 +21,7 @@
-                 send(pledgeId);
-                 return true;
+diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
+index ffe162d..f6790d6 100644
+--- a/src/main/java/com/example/e2e/order/PaymentClient.java
++++ b/src/main/java/com/example/e2e/order/PaymentClient.java
+@@ -15,7 +15,7 @@ 
+                 log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
+                 gateway(order);
              } catch (IllegalStateException e) {
--                log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
-+                log.warn("Pledge resend failed", e);
-                 return false;
+-                log.error("Charge failed for order {}", order.id(), e);
++                log.error("Charge failed for order", e);
+                 throw new PaymentException("charge failed", e);
              }
          }
-diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 06eccf0..4ee3a0a 100644
---- a/src/main/java/com/example/e2e/order/OrderNotifications.java
-+++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -14,8 +14,8 @@ 
- 
-     @EventListener
-     public void onPlaced(OrderPlaced event) {
--        log.info("Order confirmation sent [orderId={}]", event.orderId());
--        log.debug("Confirmation amount [orderId={}, amountCents={}]", event.orderId(), event.amountCents());
-+        log.info("Order confirmation sent");
-+        log.debug("Confirmation amount [amountCents={}]", event.amountCents());
-     }
- 
-     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
-@@ -25,8 +25,8 @@
-                 .mdc("orderId", event.orderId())
-                 .quiet()
-                 .run(() -> {
--                    log.info("Order audit recorded [orderId={}]", event.orderId());
--                    log.info("Order notifications completed [orderId={}]", event.orderId()); // logast:wording
-+                    log.info("Order audit recorded");
-+                    log.info("Order notifications completed"); // logast:wording
-                 });
-     }
- }
-diff --git a/src/main/java/com/example/e2e/edge/PledgeTask.java b/src/main/java/com/example/e2e/edge/PledgeTask.java
-index b5b44e5..c942299 100644
---- a/src/main/java/com/example/e2e/edge/PledgeTask.java
-+++ b/src/main/java/com/example/e2e/edge/PledgeTask.java
-@@ -12,7 +12,7 @@ 
-     }
- 
-     public void run() {
--        log.info("Task step one [pledgeId={}]", pledgeId);
--        log.info("Task step two [pledgeId={}]", pledgeId);
-+        log.info("Task step one");
-+        log.info("Task step two");
-     }
- }
-diff --git a/src/main/java/com/example/e2e/stipend/PledgeChecks.java b/src/main/java/com/example/e2e/stipend/PledgeChecks.java
-index 81fe38b..43456d4 100644
---- a/src/main/java/com/example/e2e/stipend/PledgeChecks.java
-+++ b/src/main/java/com/example/e2e/stipend/PledgeChecks.java
-@@ -22,7 +22,7 @@ 
-         public Optional<String> validate(PledgeDetails pledge, KioskTotals kioskData) {
-             log.trace(CHECK_LOG_MESSAGE, "approved", pledge.pledgeId(), pledge.sponsorshipId(), kioskData.kioskDay());
-             if (pledge.sponsorshipId() == null) {
--                log.debug("Sponsorship missing [pledgeId={}, sponsorshipId={}]", pledge.pledgeId(), pledge.sponsorshipId());
-+                log.debug("Sponsorship missing");
-                 return Optional.of("NO_SPONSORSHIP");
-             }
-             return Optional.empty();
-@@ -34,7 +34,7 @@
-         public Optional<String> validate(PledgeDetails pledge, KioskTotals kioskData) {
-             log.trace(CHECK_LOG_MESSAGE, "subsidy", pledge.pledgeId(), pledge.sponsorshipId(), kioskData.kioskDay());
-             if (pledge.subsidyPercentage() == null) {
--                log.debug("No subsidy found [pledgeId={}, sponsorshipId={}]", pledge.pledgeId(), pledge.sponsorshipId());
-+                log.debug("No subsidy found");
-                 return Optional.of("NO_SUBSIDY");
-             }
-             return Optional.empty();
-diff --git a/src/main/java/com/example/e2e/stipend/TallyService.java b/src/main/java/com/example/e2e/stipend/TallyService.java
-index 49d439e..1b7afce 100644
---- a/src/main/java/com/example/e2e/stipend/TallyService.java
-+++ b/src/main/java/com/example/e2e/stipend/TallyService.java
-@@ -19,7 +19,7 @@ 
- 
-     private StipendOutcome processRow(KioskTotals kioskData, List<PledgeDetails> allPledgeDetails) {
-         try (var mdc = MdcScope.of("pledgeId", kioskData.pledgeId())) {
--            log.trace("Processing pledge [pledgeId={}]", kioskData.pledgeId());
-+            log.trace("Processing pledge");
-             List<PledgeDetails> matchingPledges = filterMatchingPledges(allPledgeDetails, kioskData.pledgeId());
-             return StipendCalculator.calculate(kioskData, matchingPledges);
-         }
-diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java
-index 6e6c5af..fd83167 100644
---- a/src/main/java/com/example/e2e/job/PublishRunJob.java
-+++ b/src/main/java/com/example/e2e/job/PublishRunJob.java
-@@ -18,23 +18,23 @@ 
-         ObservedContext.entrypoint("publishing")
-                 .quiet()
-                 .run(() -> {
--                    log.info("Publishing started [runCode={}]", runCode);
-+                    log.info("Publishing started");
-                     var summary = RunSummary.of(runCode, week);
-                     report(summary);   // overloaded: the var's type picks report(RunSummary)
-                     String current = runCode;                                       // the same value under another name
--                    log.debug("Publishing batch [runCode={}]", current);
-+                    log.debug("Publishing batch");
-                     notifyDone(runCode);
--                    log.info("Publishing completed [runCode={}]", runCode);
-+                    log.info("Publishing completed");
-                 });
-     }
- 
-     /** Every caller passes the run code: the parameter is the value MDC already carries. */
-     private void notifyDone(String code) {
--        log.debug("Publishing notified [runCode={}]", code);
-+        log.debug("Publishing notified");
-     }
- 
-     private void report(RunSummary summary) {
--        log.debug("Run summary [runCode={}, items={}]", summary.runCode(), summary.items());
-+        log.debug("Run summary [items={}]", summary.items());
-     }
- 
-     private void report(String line) {
 diff --git a/src/main/java/com/example/e2e/edge/Exclusion.java b/src/main/java/com/example/e2e/edge/Exclusion.java
-index fa0d2df..92efeb4 100644
+index aec7560..e4c4d40 100644
 --- a/src/main/java/com/example/e2e/edge/Exclusion.java
 +++ b/src/main/java/com/example/e2e/edge/Exclusion.java
 @@ -10,14 +10,14 @@ 
@@ -289,50 +340,8 @@ index fa0d2df..92efeb4 100644
              return Optional.empty();
          }
      };
-diff --git a/src/main/java/com/example/e2e/edge/PledgeRules.java b/src/main/java/com/example/e2e/edge/PledgeRules.java
-index fd9932e..2271611 100644
---- a/src/main/java/com/example/e2e/edge/PledgeRules.java
-+++ b/src/main/java/com/example/e2e/edge/PledgeRules.java
-@@ -8,9 +8,9 @@ 
- @UtilityClass
- public class PledgeRules {
-     public void check(String pledgeId) {
--        log.debug("Checking rules [pledgeId={}]", pledgeId);
-+        log.debug("Checking rules");
-         if (pledgeId.isBlank()) {
--            log.debug("No rules apply [pledgeId={}]", pledgeId);
-+            log.debug("No rules apply");
-         }
-     }
- }
-diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
-index 08f9ee6..7704c24 100644
---- a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
-+++ b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
-@@ -23,7 +23,7 @@ 
-         log.info("Pledge cleanup started"); // logast:wording
-         var pledgeIds = repository.findOpen();
-         for (String pledgeId : pledgeIds) {
--            log.info("Closing stale pledge {}", pledgeId);
-+            log.info("Closing stale pledge [pledgeId={}]", pledgeId);
-             repository.close(pledgeId);
-         }
-         AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
-diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
-index ffe162d..f6790d6 100644
---- a/src/main/java/com/example/e2e/order/PaymentClient.java
-+++ b/src/main/java/com/example/e2e/order/PaymentClient.java
-@@ -15,7 +15,7 @@ 
-                 log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
-                 gateway(order);
-             } catch (IllegalStateException e) {
--                log.error("Charge failed for order {}", order.id(), e);
-+                log.error("Charge failed for order", e);
-                 throw new PaymentException("charge failed", e);
-             }
-         }
 diff --git a/src/main/java/com/example/e2e/edge/OriginCheck.java b/src/main/java/com/example/e2e/edge/OriginCheck.java
-index 75a07b2..dbee97b 100644
+index e25c60f..a788478 100644
 --- a/src/main/java/com/example/e2e/edge/OriginCheck.java
 +++ b/src/main/java/com/example/e2e/edge/OriginCheck.java
 @@ -8,7 +8,7 @@ 
@@ -344,30 +353,21 @@ index 75a07b2..dbee97b 100644
          return Optional.empty();
      }
  }
-diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index e59f84e..3655c4c 100644
---- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-+++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-@@ -27,7 +27,7 @@ 
-     @RabbitListener(queues = "pledge-returns")
-     public void onReturn(String pledgeId) {
-         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
--            log.info("Pledge return received [pledgeId={}]", pledgeId);
-+            log.info("Pledge return received");
-             log.info("Pledge messages completed"); // logast:wording
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+index c90ac3d..9f00c37 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+@@ -23,7 +23,7 @@ 
+         log.info("Pledge cleanup started"); // logast:wording
+         var pledgeIds = repository.findOpen();
+         for (String pledgeId : pledgeIds) {
+-            log.info("Closing stale pledge {}", pledgeId);
++            log.info("Closing stale pledge [pledgeId={}]", pledgeId);
+             repository.close(pledgeId);
          }
-     }
-@@ -35,7 +35,7 @@
-     @JmsListener(destination = "pledge-audits")
-     public void onAudit(String pledgeId) {
-         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
--            log.info("Pledge audit received [pledgeId={}]", pledgeId);
-+            log.info("Pledge audit received");
-             log.info("Pledge messages completed"); // logast:wording
-         }
-     }
+         AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index 3103ead..35ea6d0 100644
+index 5379f9d..c682b53 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -13,6 +13,6 @@ 

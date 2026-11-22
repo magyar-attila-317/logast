@@ -6,55 +6,6 @@
 # empty as takes metrics.amounts from logast.yaml. Leave amount empty to count how often only. Then: logast apply .
 # `logast explain metrics . --format json` has the context. Keys starting with _ are hints (_where and _event find
 # the line again when its id changes: keep them).
-OUM-03f513:
-  count: ""
-  name: pledge.usage
-  outcome: saved
-  amount: ""
-  as: ""
-  _amounts:
-    - uses
-  _event: saved
-  _message: INFO "Pledge usage saved"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.countUse
-  _frequency: "unknown: no rate for \"POST /pledges/{pledgeId}/use\" in .logast/decisions/traffic.yaml"
-  _paths:
-    - "http POST /pledges/{pledgeId}/use"
-  _tag: available
-OUM-027987:
-  count: ""
-  name: pledge
-  outcome: sent
-  _event: sent
-  _message: INFO "Pledge sent"
-  _where: src/main/java/com/example/e2e/pledge/PledgeSender.java:14 PledgeSender.send
-  _frequency: "unknown: no rate for \"POST /pledges/allot\" in .logast/decisions/traffic.yaml"
-  _paths:
-    - http POST /pledges/allot
-    - "http POST /pledges/{pledgeId}/publish"
-  _tag: available
-OUM-773d35:
-  count: ""
-  name: pledge
-  outcome: published
-  _event: published
-  _message: INFO "Pledge published"
-  _where: src/main/java/com/example/e2e/pledge/PledgeService.java:44 PledgeService.publish
-  _frequency: "unknown: no rate for \"POST /pledges/{pledgeId}/publish\" in .logast/decisions/traffic.yaml"
-  _paths:
-    - "http POST /pledges/{pledgeId}/publish"
-  _tag: available
-OUM-4809f0:
-  count: ""
-  name: pledge.allotment
-  outcome: completed
-  _event: completed
-  _message: INFO "Pledge allotment completed"
-  _where: src/main/java/com/example/e2e/pledge/PledgeService.java:51 PledgeService.allot
-  _frequency: "unknown: no rate for \"POST /pledges/allot\" in .logast/decisions/traffic.yaml"
-  _paths:
-    - http POST /pledges/allot
-  _tag: available
 OUM-49d3bd:
   count: ""
   name: pledge
@@ -99,7 +50,7 @@ OUM-be530b:
   _paths:
     - scheduled @Scheduled EdgeJob.run
   _tag: available
-OUM-4284aa:
+OUM-798439:
   count: ""
   name: pledge.lookup
   outcome: failed
@@ -145,3 +96,52 @@ OUM-00f4c0:
   _frequency: "unknown: no entrypoint is known to reach it"
   _paths: []
   _tag: not available here (no observation known to run)
+OUM-3dfc51:
+  count: ""
+  name: pledge.usage
+  outcome: saved
+  amount: ""
+  as: ""
+  _amounts:
+    - uses
+  _event: saved
+  _message: INFO "Pledge usage saved"
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.countUse
+  _frequency: "unknown: no rate for \"POST /pledges/{pledgeId}/use\" in .logast/decisions/traffic.yaml"
+  _paths:
+    - "http POST /pledges/{pledgeId}/use"
+  _tag: available
+OUM-e7708e:
+  count: ""
+  name: pledge
+  outcome: sent
+  _event: sent
+  _message: INFO "Pledge sent"
+  _where: src/main/java/com/example/e2e/pledge/PledgeSender.java:14 PledgeSender.send
+  _frequency: "unknown: no rate for \"POST /pledges/allot\" in .logast/decisions/traffic.yaml"
+  _paths:
+    - http POST /pledges/allot
+    - "http POST /pledges/{pledgeId}/publish"
+  _tag: available
+OUM-98314f:
+  count: ""
+  name: pledge
+  outcome: published
+  _event: published
+  _message: INFO "Pledge published"
+  _where: src/main/java/com/example/e2e/pledge/PledgeService.java:44 PledgeService.publish
+  _frequency: "unknown: no rate for \"POST /pledges/{pledgeId}/publish\" in .logast/decisions/traffic.yaml"
+  _paths:
+    - "http POST /pledges/{pledgeId}/publish"
+  _tag: available
+OUM-632668:
+  count: ""
+  name: pledge.allotment
+  outcome: completed
+  _event: completed
+  _message: INFO "Pledge allotment completed"
+  _where: src/main/java/com/example/e2e/pledge/PledgeService.java:51 PledgeService.allot
+  _frequency: "unknown: no rate for \"POST /pledges/allot\" in .logast/decisions/traffic.yaml"
+  _paths:
+    - http POST /pledges/allot
+  _tag: available

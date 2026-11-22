@@ -9,6 +9,6 @@ public interface Audited {
 
     default void audit(String pledgeId) {
         AUDIT_LOG.info("Pledge audited");
-        EdgeMetrics.pledgeAudited();
+        EdgeMetrics.tagAudited();
     }
 }

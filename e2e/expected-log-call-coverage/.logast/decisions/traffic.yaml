@@ -11,18 +11,18 @@ entrypoints:
   "GET /quotes/{productId}":     # http, QuoteController.quote
   "GET /quotes/{productId}/refresh":     # http, QuoteController.refresh
   "POST /admin/pledges/{pledgeId}/revoke":     # http, PledgeController.revoke
+  "POST /orders":     # http, PledgeController.place
   "POST /pledges/allot":     # http, PledgeController.allot
   "POST /pledges/{pledgeId}/hold":     # http, PledgeDetailsController.hold
   "POST /pledges/{pledgeId}/publish":     # http, PledgeController.publish
   "POST /pledges/{pledgeId}/use":     # http, PledgeController.use
-  "POST /orders":     # http, PledgeController.place
   # scheduled
+  "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
   "@Scheduled PledgeCleanupJob.cleanup":     # scheduled, PledgeCleanupJob.cleanup
   "@Scheduled PledgeReloadJob.run":     # scheduled, PledgeReloadJob.run
-  "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
   # kafka
-  "@KafkaListener pledge-batches":     # kafka, PledgeMessages.onBatch
   "@KafkaListener orders":     # kafka, OrderEvents.onOrder
+  "@KafkaListener pledge-batches":     # kafka, PledgeMessages.onBatch
   # jms
   "@JmsListener pledge-audits":     # jms, PledgeMessages.onAudit
   # rabbit

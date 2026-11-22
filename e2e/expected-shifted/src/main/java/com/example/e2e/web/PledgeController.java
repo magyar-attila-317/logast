@@ -1,8 +1,8 @@
 package com.example.e2e.web;
 
+import com.example.e2e.logging.MdcScope;
 import com.example.e2e.pledge.PledgeRepository;
 import com.example.e2e.pledge.PledgeService;
-import com.example.e2e.logging.MdcScope;
 import com.example.e2e.order.Order;
 import com.example.e2e.order.OrderService;
 import java.util.List;

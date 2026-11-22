@@ -1,11 +1,11 @@
 diff --git a/src/main/java/com/example/e2e/web/PledgeDetailsController.java b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
-index 74714ec..b05acc6 100644
+index 82c929b..dc097a8 100644
 --- a/src/main/java/com/example/e2e/web/PledgeDetailsController.java
 +++ b/src/main/java/com/example/e2e/web/PledgeDetailsController.java
 @@ -3,11 +3,13 @@ 
+ import com.example.e2e.logging.MdcScope;
  import com.example.e2e.pledge.PledgeId;
  import com.example.e2e.pledge.PledgeLookup;
- import com.example.e2e.logging.MdcScope;
 +import lombok.extern.slf4j.Slf4j;
  import org.springframework.web.bind.annotation.GetMapping;
  import org.springframework.web.bind.annotation.PathVariable;
@@ -28,7 +28,7 @@ index 74714ec..b05acc6 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/web/PledgeController.java b/src/main/java/com/example/e2e/web/PledgeController.java
-index 644a8d2..523c830 100644
+index 557bc44..b399ced 100644
 --- a/src/main/java/com/example/e2e/web/PledgeController.java
 +++ b/src/main/java/com/example/e2e/web/PledgeController.java
 @@ -6,8 +6,10 @@ 

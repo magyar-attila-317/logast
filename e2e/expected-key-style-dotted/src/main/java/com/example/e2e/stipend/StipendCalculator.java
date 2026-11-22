@@ -15,7 +15,7 @@ public final class StipendCalculator {
     }
 
     public static StipendOutcome calculate(KioskTotals kioskData, List<PledgeDetails> matchingPledges) {
-        log.debug("Calculating stipend [sale.day={}, matching.pledges={}]", kioskData.kioskDay(), matchingPledges.size());
+        log.debug("Calculating stipend [kiosk.day={}, matching.pledges={}]", kioskData.kioskDay(), matchingPledges.size());
         if (matchingPledges.isEmpty()) {
             log.debug("Pledge not found in the pledge list");
             return new StipendOutcome(true, BigDecimal.ZERO);
@@ -48,7 +48,7 @@ public final class StipendCalculator {
 
     private static StipendOutcome calculateStipend(KioskTotals kioskData, PledgeDetails pledge) {
         BigDecimal result = kioskData.totalDiscount().multiply(pledge.subsidyPercentage());
-        log.debug("Stipend calculated [sale.day={}, result={}]", kioskData.kioskDay(), result);
+        log.debug("Stipend calculated [kiosk.day={}, result={}]", kioskData.kioskDay(), result);
         return new StipendOutcome(false, result);
     }
 }

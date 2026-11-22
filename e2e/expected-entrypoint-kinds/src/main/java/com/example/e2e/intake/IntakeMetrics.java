@@ -13,6 +13,12 @@ public final class IntakeMetrics {
     }
 
     /** Observation (timer and span) name. */
+    public static final String ORDER_LEDGER = "order.ledger";
+
+    /** Observation (timer and span) name. */
+    public static final String ORDER_LINE_PROCESSOR_PROCESS = "order-line-processor.process";
+
+    /** Observation (timer and span) name. */
     public static final String PLEDGE_IMPORT_TASKLET_EXECUTE = "pledge-import-tasklet.execute";
 
     /** Observation (timer and span) name. */
@@ -20,12 +26,6 @@ public final class IntakeMetrics {
 
     /** Observation (timer and span) name. */
     public static final String PLEDGE_QUEUE_LISTENER_ON_BULK = "pledge-queue-listener.on-bulk";
-
-    /** Observation (timer and span) name. */
-    public static final String ORDER_LEDGER = "order.ledger";
-
-    /** Observation (timer and span) name. */
-    public static final String ORDER_LINE_PROCESSOR_PROCESS = "order-line-processor.process";
 
     /** code.normalizer{outcome="completed"} +1. */
     public static void codeNormalizerCompleted() {

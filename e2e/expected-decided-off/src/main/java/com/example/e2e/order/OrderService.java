@@ -48,6 +48,6 @@ public class OrderService {
         }
         orders.forEach(payments::charge);
         log.info("Orders shipped [items={}, batchNumber={}]", orders.size(), batchNumber);
-        Outcomes.count("orders", "shipped", "items", orders.size());
+        Outcomes.record("orders", "shipped", "items", orders.size());
     }
 }

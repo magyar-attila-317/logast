@@ -9,7 +9,7 @@ Measured without code: 19 entrypoints
   3 by ObservedContext, e.g. settlement-job-executor.on-ready{error=…}  (timer from the observation; also settlement-job-executor.on-ready.active)
   1 by Spring Kafka, e.g. spring.kafka.listener{…}  (listener OrderEvents.onOrder)
   12 by Spring MVC, e.g. http.server.requests{method="DELETE", uri="/pledges/{pledgeId}"}
-  3 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.pledge.PledgeCleanupJob", code.function="cleanup"}
+  3 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.edge.EdgeJob", code.function="run"}
   1 Spring Data repositories, e.g. spring.data.repository.invocations{repository="OrderRecordRepository", method=…}
 
 Entrypoints no metric covers: 2

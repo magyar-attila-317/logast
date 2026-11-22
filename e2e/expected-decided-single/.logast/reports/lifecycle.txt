@@ -13,6 +13,8 @@ http (12)
     start: none (not needed)   outcome: present (access log / http.server.requests)
   POST /admin/pledges/{pledgeId}/revoke  src/main/java/com/example/e2e/web/PledgeController.java:57
     start: present (not needed)   outcome: present (access log / http.server.requests)
+  POST /orders  src/main/java/com/example/e2e/web/PledgeController.java:65
+    start: none (not needed)   outcome: present (access log / http.server.requests)
   POST /pledges/allot  src/main/java/com/example/e2e/web/PledgeController.java:45
     start: none (not needed)   outcome: present (access log / http.server.requests)
   POST /pledges/{pledgeId}/hold  src/main/java/com/example/e2e/web/PledgeDetailsController.java:29
@@ -21,30 +23,28 @@ http (12)
     start: none (not needed)   outcome: present (access log / http.server.requests)
   POST /pledges/{pledgeId}/use  src/main/java/com/example/e2e/web/PledgeController.java:38
     start: none (not needed)   outcome: present (access log / http.server.requests)
-  POST /orders  src/main/java/com/example/e2e/web/PledgeController.java:65
-    start: none (not needed)   outcome: present (access log / http.server.requests)
 message (6)
   @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)  src/main/java/com/example/e2e/job/SettlementJobExecutor.java:18
     start: none (not needed (one outcome per message))   outcome: present (observation wrapper (runtime line))
   @JmsListener pledge-audits  src/main/java/com/example/e2e/messaging/PledgeMessages.java:38
     start: present (not needed (one outcome per message))   outcome: present (the method)
-  @KafkaListener pledge-batches  src/main/java/com/example/e2e/messaging/PledgeMessages.java:20
-    start: none (not needed (one outcome per message))   outcome: present (observation wrapper (runtime line))
   @KafkaListener orders  src/main/java/com/example/e2e/order/OrderEvents.java:15
     start: none (not needed (one outcome per message))   outcome: present (the method)
+  @KafkaListener pledge-batches  src/main/java/com/example/e2e/messaging/PledgeMessages.java:20
+    start: none (not needed (one outcome per message))   outcome: present (observation wrapper (runtime line))
   @RabbitListener pledge-returns  src/main/java/com/example/e2e/messaging/PledgeMessages.java:29
     start: present (not needed (one outcome per message))   outcome: present (the method)
   @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:25
     start: present (not needed (one outcome per message))   outcome: present (the method)
 run (3)
+  @Scheduled EdgeJob.run  src/main/java/com/example/e2e/edge/EdgeJob.java:22
+    start: present (the method)   outcome: present (the method)
   @Scheduled PledgeCleanupJob.cleanup  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
     start: present (the method)   outcome: present (the method)
   @Scheduled PledgeReloadJob.run  src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:17
     start: present (the method)   outcome: present (the method)
-  @Scheduled EdgeJob.run  src/main/java/com/example/e2e/edge/EdgeJob.java:22
-    start: present (the method)   outcome: present (the method)
 implementation families (1)
   SettlementJob.doExecute
-    TallyJob.doExecute: started, completed
     ExportJob.doExecute: started, completed
     PreloadJob.doExecute: started, completed
+    TallyJob.doExecute: started, completed

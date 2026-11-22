@@ -1,10 +1,10 @@
 package com.example.e2e.edge;
 
+import com.example.e2e.logging.MdcScope;
+import com.example.e2e.logging.Outcomes;
 import com.example.e2e.stipend.PledgeCheck;
 import com.example.e2e.stipend.PledgeDetails;
 import com.example.e2e.stipend.KioskTotals;
-import com.example.e2e.logging.MdcScope;
-import com.example.e2e.logging.Outcomes;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

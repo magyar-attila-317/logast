@@ -9,43 +9,15 @@ SWA-91b292:
   MSG: ""
   _MSG: "What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri(\"/balances/{customerId}\", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as: {subject} failed"
   _where: src/main/java/com/example/e2e/order/LoyaltyClient.java:20 LoyaltyClient.balance
-DOM-a2969a:
+DOM-663b01:
   MSG: ""
   _MSG: "Entry log for POST /admin/pledges/{pledgeId}/revoke (PledgeController.revoke): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started"
   _where: src/main/java/com/example/e2e/web/PledgeController.java:55 PledgeController.revoke
-DOM-1a500b:
+DOM-12a856:
   MSG: ""
   _MSG: "Entry log for POST /pledges/{pledgeId}/hold (PledgeDetailsController.hold): what is starting, in domain terms, e.g. 'Order shipment processing started'. | must read as: {subject} started"
   _where: src/main/java/com/example/e2e/web/PledgeDetailsController.java:27 PledgeDetailsController.hold
-SUG-bc8896:
-  MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge cleanup started | must read as: {subject} started"
-  _where: src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23 PledgeCleanupJob.cleanup
-SUG-44443e:
-  MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge cleanup completed | must read as: {subject} completed | suffix keys added by the tool: [pledgeCount]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29 PledgeCleanupJob.cleanup
-SUG-a4b461:
-  MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge reload started | must read as: {subject} started"
-  _where: src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:18 PledgeReloadJob.run
-SUG-dd88b2:
-  MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge reload completed | must read as: {subject} completed"
-  _where: src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:20 PledgeReloadJob.run
-SUG-d99e11:
-  MSG: ""
-  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges updated | suffix keys added by the tool: [rows]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:27 PledgeRepository.close
-SUG-3b5d90:
-  MSG: ""
-  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledge usage saved | suffix keys added by the tool: [uses]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.countUse
-SUG-56cdac:
-  MSG: ""
-  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges read | suffix keys added by the tool: [count]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:39 PledgeRepository.findOpen
-SUG-6b173f:
+SUG-059333:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: Edge flow async work failed | must read as: {subject} failed"
   _where: src/main/java/com/example/e2e/edge/EdgeFlow.java:48 EdgeFlow.process
@@ -57,10 +29,6 @@ SUG-bd5779:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Edge completed | must read as: {subject} completed | suffix keys added by the tool: [kioskTotalsCount]"
   _where: src/main/java/com/example/e2e/edge/EdgeJob.java:28 EdgeJob.run
-SUG-a2a43c:
-  MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Tally started | must read as: {subject} started"
-  _where: src/main/java/com/example/e2e/job/TallyJob.java:15 TallyJob.doExecute
 SUG-4dc17a:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Export job started | must read as: {subject} started"
@@ -69,11 +37,15 @@ SUG-7055a3:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Export job completed | must read as: {subject} completed"
   _where: src/main/java/com/example/e2e/job/ExportJob.java:14 ExportJob.doExecute
-SUG-1fede7:
+SUG-49c990:
+  MSG: ""
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Tally started | must read as: {subject} started"
+  _where: src/main/java/com/example/e2e/job/TallyJob.java:15 TallyJob.doExecute
+SUG-7b6956:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages completed | must read as: {subject} completed"
   _where: src/main/java/com/example/e2e/messaging/PledgeMessages.java:31 PledgeMessages.onReturn
-SUG-15854c:
+SUG-4918d8:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages completed | must read as: {subject} completed"
   _where: src/main/java/com/example/e2e/messaging/PledgeMessages.java:40 PledgeMessages.onAudit
@@ -85,6 +57,34 @@ FMT-93dcb8:
   MSG: ""
   _MSG: "Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: Charging order with {} cents | suffix keys added by the tool: [amountCents]"
   _where: src/main/java/com/example/e2e/order/PaymentClient.java:15 PaymentClient.charge
+SUG-3fd65d:
+  MSG: ""
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge cleanup started | must read as: {subject} started"
+  _where: src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23 PledgeCleanupJob.cleanup
+SUG-bc7bc4:
+  MSG: ""
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge cleanup completed | must read as: {subject} completed | suffix keys added by the tool: [pledgeCount]"
+  _where: src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29 PledgeCleanupJob.cleanup
+SUG-b07418:
+  MSG: ""
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge reload started | must read as: {subject} started"
+  _where: src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:18 PledgeReloadJob.run
+SUG-9c3080:
+  MSG: ""
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge reload completed | must read as: {subject} completed"
+  _where: src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:20 PledgeReloadJob.run
+SUG-69e349:
+  MSG: ""
+  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges updated | suffix keys added by the tool: [rows]"
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:27 PledgeRepository.close
+SUG-05aa8d:
+  MSG: ""
+  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledge usage saved | suffix keys added by the tool: [uses]"
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.countUse
+SUG-6fe694:
+  MSG: ""
+  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges read | suffix keys added by the tool: [count]"
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:39 PledgeRepository.findOpen
 SUG-08dd18:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: Quote controller async work failed | must read as: {subject} failed"
