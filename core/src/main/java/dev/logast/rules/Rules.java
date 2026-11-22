@@ -512,7 +512,7 @@ public final class Rules {
         if (ctx.jobFlow == null) {
             Set<String> out = new HashSet<>();
             Deque<Map.Entry<dev.logast.model.MethodInfo, Integer>> todo = new ArrayDeque<>();
-            ctx.a.entrypoints.stream().filter(ep -> JOB_KINDS.contains(ep.kind())).forEach(ep -> todo.add(Map.entry(ep.method(), 0)));
+            ctx.a.entrypoints.stream().filter(ep -> ep.kind().is(dev.logast.model.Entrypoint.Trait.ONE_OUTCOME)).forEach(ep -> todo.add(Map.entry(ep.method(), 0)));
             while (!todo.isEmpty()) {
                 var cur = todo.poll();
                 if (!out.add(cur.getKey().key()) || cur.getValue() >= EntrypointRules.OWN_FLOW_DEPTH) {
@@ -525,12 +525,6 @@ public final class Rules {
         return ctx.jobFlow;
     }
 
-    /** Jobs and listeners: one outcome per run or message. HTTP has http.server.requests already. */
-    private static final Set<dev.logast.model.Entrypoint.Kind> JOB_KINDS = EnumSet.of(dev.logast.model.Entrypoint.Kind.SCHEDULED,
-            dev.logast.model.Entrypoint.Kind.BATCH, dev.logast.model.Entrypoint.Kind.MAIN, dev.logast.model.Entrypoint.Kind.KAFKA,
-            dev.logast.model.Entrypoint.Kind.JMS, dev.logast.model.Entrypoint.Kind.RABBIT, dev.logast.model.Entrypoint.Kind.EVENT,
-            dev.logast.model.Entrypoint.Kind.WEBSOCKET, dev.logast.model.Entrypoint.Kind.STEP, dev.logast.model.Entrypoint.Kind.ITEM,
-            dev.logast.model.Entrypoint.Kind.SQS, dev.logast.model.Entrypoint.Kind.STREAM, dev.logast.model.Entrypoint.Kind.QUARTZ);
 
     /**
      * How sure the metric name is: high when every word of it is a vocabulary term, low when the log line's wording was

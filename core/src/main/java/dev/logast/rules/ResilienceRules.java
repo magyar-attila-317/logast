@@ -38,9 +38,6 @@ import java.util.stream.Stream;
  * Method bodies and field initializers are both scanned (executors and clients usually live in fields).
  */
 final class ResilienceRules {
-    private static final Set<Entrypoint.Kind> REQUEST_KINDS = EnumSet.of(Entrypoint.Kind.HTTP, Entrypoint.Kind.KAFKA,
-            Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.WEBSOCKET, Entrypoint.Kind.EVENT, Entrypoint.Kind.CUSTOM,
-            Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM);
 
     /** Where a construct sits: a method body, or a field initializer of {@code owner}. */
     private record Site(SourceFileInfo file, MethodInfo method, ClassInfo owner, String text) {
@@ -125,7 +122,7 @@ final class ResilienceRules {
         }
         Set<String> onRequestPath = new HashSet<>();
         for (Entrypoint ep : ctx.a.entrypoints) {
-            if (REQUEST_KINDS.contains(ep.kind())) {
+            if (ep.kind().is(Entrypoint.Trait.REQUEST)) {
                 onRequestPath.addAll(ctx.a.paths.reachableFrom(ep));
             }
         }

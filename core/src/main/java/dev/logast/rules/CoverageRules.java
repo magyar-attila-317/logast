@@ -36,10 +36,6 @@ import java.util.stream.Stream;
  * HTTP requests are left out of the job rules: access logs and http.server.requests cover them.
  */
 final class CoverageRules {
-    private static final Set<Entrypoint.Kind> JOBS = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
-            Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.EVENT,
-            Entrypoint.Kind.CUSTOM, Entrypoint.Kind.WEBSOCKET, Entrypoint.Kind.STEP, Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS,
-            Entrypoint.Kind.STREAM, Entrypoint.Kind.REDIS, Entrypoint.Kind.INTEGRATION, Entrypoint.Kind.QUARTZ);
     private static final Set<String> REPO_WRITES = Set.of("save", "saveAll", "saveAndFlush", "saveAllAndFlush", "delete",
             "deleteById", "deleteAll", "deleteAllById", "deleteAllInBatch");
     private static final Set<String> EM_WRITES = Set.of("persist", "merge", "remove");
@@ -59,10 +55,9 @@ final class CoverageRules {
         Set<String> anyPath = new HashSet<>();
         for (Entrypoint ep : ctx.a.entrypoints) {
             anyPath.addAll(ctx.a.paths.reachableFrom(ep));
-            if (JOBS.contains(ep.kind()) && !ep.method().owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
+            if (ep.kind().is(Entrypoint.Trait.JOB) && !ep.method().owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
                 jobMethods.add(ep.method().key());
-                if (ep.kind() == Entrypoint.Kind.SCHEDULED || ep.kind() == Entrypoint.Kind.BATCH || ep.kind() == Entrypoint.Kind.STEP
-                        || ep.kind() == Entrypoint.Kind.QUARTZ) {
+                if (ep.kind().is(Entrypoint.Trait.RUN)) {
                     runMethods.add(ep.method().key());
                 }
                 nearJob.add(ep.method().key());

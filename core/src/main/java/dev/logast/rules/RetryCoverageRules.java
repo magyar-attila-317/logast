@@ -47,10 +47,6 @@ final class RetryCoverageRules {
     private static final Set<String> IDEMPOTENT_TEMPLATE = Set.of("getForObject", "getForEntity", "headForHeaders", "put",
             "delete", "optionsForAllow");
     private static final Set<String> UNSAFE_TEMPLATE = Set.of("postForObject", "postForEntity", "postForLocation", "patchForObject");
-    /** Entrypoints whose framework redelivers a failed message (Kafka's DefaultErrorHandler, RabbitMQ's requeue). */
-    private static final Set<Entrypoint.Kind> REDELIVERED = EnumSet.of(Entrypoint.Kind.KAFKA, Entrypoint.Kind.RABBIT);
-    private static final Set<Entrypoint.Kind> USER_FACING = EnumSet.of(Entrypoint.Kind.HTTP, Entrypoint.Kind.WEBSOCKET,
-            Entrypoint.Kind.GRPC);
 
     /** What one method body does. */
     private record Body(Http http, boolean clientRetry) {
@@ -99,7 +95,7 @@ final class RetryCoverageRules {
             if (callers.isEmpty()) {
                 continue;
             }
-            boolean request = callers.stream().anyMatch(ep -> USER_FACING.contains(ep.kind()));
+            boolean request = callers.stream().anyMatch(ep -> ep.kind().is(Entrypoint.Trait.USER_FACING));
             String from = String.join(", ", callers.stream().map(ep -> ep.label() + " (" + kind(ep) + ")").distinct().limit(3).toList())
                     + (callers.size() > 3 ? " and " + (callers.size() - 3) + " more" : "");
             // a retry annotation works only through the Spring proxy: where it can go (#109, self-invocation)
@@ -199,7 +195,7 @@ final class RetryCoverageRules {
                 continue;
             }
             for (Entrypoint ep : entrypoints.getOrDefault(cur.key(), List.of())) {
-                if (!REDELIVERED.contains(ep.kind())) {
+                if (!ep.kind().is(Entrypoint.Trait.REDELIVERED)) {
                     out.add(ep);
                 }
             }

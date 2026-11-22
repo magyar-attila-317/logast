@@ -47,8 +47,10 @@ public final class LifecyclePlan {
     }
 
     public static Kind kindOf(Entrypoint ep) {
+        if (ep.kind().is(Entrypoint.Trait.RUN)) {
+            return Kind.RUN;
+        }
         return switch (ep.kind()) {
-            case SCHEDULED, BATCH, MAIN, STEP, QUARTZ -> Kind.RUN;
             // gRPC: the call ends with onCompleted, which may come later than the method; its status and the server
             // observation are the outcome, like an HTTP access log (#15)
             case HTTP, GRPC -> Kind.HTTP;

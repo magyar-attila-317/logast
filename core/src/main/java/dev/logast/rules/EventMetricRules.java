@@ -27,9 +27,6 @@ final class EventMetricRules {
      * Already observed: by Spring (HTTP, @Scheduled, Kafka, Spring Batch steps and items, @SqsListener, Cloud Stream
      * functions; each only while {@link Entrypoint#observedByFramework()}), or by the starter's BatchTraceListener (runners).
      */
-    private static final Set<Entrypoint.Kind> TIMED_BY_FRAMEWORK = EnumSet.of(Entrypoint.Kind.HTTP, Entrypoint.Kind.SCHEDULED,
-            Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.BATCH, Entrypoint.Kind.STEP,
-            Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM, Entrypoint.Kind.INTEGRATION, Entrypoint.Kind.GRPC);
     private static final Pattern MEASURED = Pattern.compile(
             "ObservedContext|Observation\\.|MeterRegistry|meterRegistry|\\bCounter\\.|\\bTimer\\.|\\.counter\\(|\\.timer\\(");
     private static final Pattern NAME = Pattern.compile("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,3}");
@@ -51,7 +48,7 @@ final class EventMetricRules {
                     .anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(ep.method(), a));
             boolean planned = !batch && (ep.kind() == Entrypoint.Kind.KAFKA && ctx.kafkaListenerObservationPlanned
                     || ep.kind() == Entrypoint.Kind.RABBIT && ctx.rabbitListenerObservationPlanned);
-            if ((ep.observedByFramework() || planned || ep.kind() == Entrypoint.Kind.BATCH) && TIMED_BY_FRAMEWORK.contains(ep.kind())) {
+            if ((ep.observedByFramework() || planned || ep.kind() == Entrypoint.Kind.BATCH) && ep.kind().is(Entrypoint.Trait.TIMED_BY_FRAMEWORK)) {
                 timed.add(ep.method().key());
             }
         }

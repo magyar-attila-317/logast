@@ -624,10 +624,6 @@ final class AuditRules {
             "org.springframework.web.bind.annotation.RequestParam", "org.springframework.web.bind.annotation.RequestBody",
             "org.springframework.web.bind.annotation.PathVariable", "org.springframework.web.bind.annotation.CookieValue",
             "org.springframework.web.bind.annotation.RequestPart", "org.springframework.web.bind.annotation.ModelAttribute");
-    /** Entrypoints with no user behind them: a job, a batch step, a message, startup. */
-    private static final Set<Entrypoint.Kind> NO_USER = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
-            Entrypoint.Kind.MAIN, Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS, Entrypoint.Kind.RABBIT, Entrypoint.Kind.STEP,
-            Entrypoint.Kind.ITEM, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM, Entrypoint.Kind.QUARTZ);
 
     /** Audit methods (in the code) that read the security context themselves. */
     private final Set<String> selfActor = new HashSet<>();
@@ -762,7 +758,7 @@ final class AuditRules {
     /** Only jobs, batches or messages reach the method: there is no user to record. */
     private boolean noUser(MethodInfo m) {
         List<Entrypoint> eps = ctx.a.paths.entrypointsReaching(m);
-        return !eps.isEmpty() && eps.stream().allMatch(ep -> NO_USER.contains(ep.kind()));
+        return !eps.isEmpty() && eps.stream().allMatch(ep -> ep.kind().is(Entrypoint.Trait.NO_USER));
     }
 
     /** Where a value comes from, as far as it tells who acts: the security context, or the client (and how). */

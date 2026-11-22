@@ -43,8 +43,6 @@ final class DbRules {
     private static final Set<String> TEMPLATE_CALLS = Set.of("update", "batchUpdate", "query", "queryForObject", "queryForList",
             "queryForMap", "queryForRowSet");
     private static final Set<String> CLIENT_TERMINALS = Set.of("update", "list", "single", "optional", "set");
-    private static final Set<Entrypoint.Kind> LOW_FREQUENCY = EnumSet.of(Entrypoint.Kind.SCHEDULED, Entrypoint.Kind.BATCH,
-            Entrypoint.Kind.MAIN, Entrypoint.Kind.STEP, Entrypoint.Kind.QUARTZ);
 
     private final RuleContext ctx;
     private final Map<String, List<int[]>> loopRanges = new HashMap<>();
@@ -338,7 +336,7 @@ final class DbRules {
         }
         double budget = ctx.policy.levels().volumeBudget();
         for (Entrypoint ep : eps) {
-            if (LOW_FREQUENCY.contains(ep.kind()) || MetricsMap.lowFrequency(ep)) {
+            if (ep.kind().is(Entrypoint.Trait.RUN) || MetricsMap.lowFrequency(ep)) {
                 continue;
             }
             Double rate = ctx.a.traffic.known() ? ctx.a.traffic.perDay(ep.label()) : null;

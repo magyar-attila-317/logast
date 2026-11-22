@@ -48,10 +48,6 @@ final class EntrypointRules {
         }
     }
 
-    /** One message or request per run: the wrapper's "completed" goes to DEBUG; failures stay ERROR. */
-    private static final Set<Entrypoint.Kind> DEBUG_ON_SUCCESS = EnumSet.of(Entrypoint.Kind.KAFKA, Entrypoint.Kind.JMS,
-            Entrypoint.Kind.RABBIT, Entrypoint.Kind.WEBSOCKET, Entrypoint.Kind.HTTP, Entrypoint.Kind.SQS, Entrypoint.Kind.STREAM,
-            Entrypoint.Kind.ITEM, Entrypoint.Kind.REDIS, Entrypoint.Kind.INTEGRATION, Entrypoint.Kind.GRPC);
 
     /** The method body an order rewrites: its inner range, indentation, text and the names taken in it. */
     private record Body(int[] inner, String indent, String unit, String text, Set<String> taken) {
@@ -213,7 +209,7 @@ final class EntrypointRules {
         for (DomainValues.Value v : missing) {
             chain.add(".mdc(\"" + v.key() + "\", " + v.expr() + ")");
         }
-        if (DEBUG_ON_SUCCESS.contains(ep.kind())) {
+        if (ep.kind().is(Entrypoint.Trait.DEBUG_ON_SUCCESS)) {
             chain.add(".debugOnSuccess()");
         }
         if (ep.kind() == Entrypoint.Kind.EVENT && !m.hasAnnotation("org.springframework.scheduling.annotation.Async")
