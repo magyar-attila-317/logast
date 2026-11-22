@@ -125,210 +125,134 @@ public final class Applier {
     static final int MAX_PASSES = 3;
 
     private Result run(Path root, Path work, Selection sel, boolean write) {
-        List<String> applied = new ArrayList<>();
-        Map<String, String> rejected = new LinkedHashMap<>();
-        List<String> indirect = new ArrayList<>();
-        Set<String> everSelected = new HashSet<>();
+        return new Run(work, sel).go(root, write);
+    }
 
-        progress.accept("analysing the code");
-        ScanResult scan = scanner.apply(work);
-        // written texts go to the lines they were written for, also when a line's id shifted since
-        if (!sel.fills().isEmpty()) {
-            sel = new Selection(sel.auto(), sel.only(), FillsFile.match(sel.fills(), scan.orders()), sel.lenientFills());
+    /**
+     * One apply on the scratch copy: the passes over the pipeline (docs/pipeline-plan.md), each step's rounds, and what
+     * they record. Each step works on what the previous steps really produced; the pipeline repeats until a pass applies
+     * nothing, as a fix in a later step can open up one in an earlier step (a scope moved up makes a lower one redundant,
+     * then its messages can drop the key). One run = the end state.
+     */
+    private final class Run {
+        private final Path work;
+        private Selection sel;
+        private ScanResult scan;
+        private final List<String> applied = new ArrayList<>();
+        private final Map<String, String> rejected = new LinkedHashMap<>();
+        private final List<String> indirect = new ArrayList<>();
+        private final Set<String> everSelected = new HashSet<>();
+        private int round = 0;
+        private boolean first = true;
+        /** Orders waiting for a dependency of a later step. */
+        private final Set<String> carried = new LinkedHashSet<>();
+        private final Map<String, String> stepDiffs = new LinkedHashMap<>();
+        private final Set<String> appliedInPass = new HashSet<>();
+        /**
+         * Guards: an order that is back unchanged right after its own edit did not see that edit (it would only add the
+         * same lines again: blocked and reported); a pass that ends where an earlier one ended undoes itself (stopped).
+         */
+        private final List<String> selfCheck = new ArrayList<>();
+        private final Set<String> stuck = new HashSet<>();
+        private final Set<String> passEnds = new HashSet<>();
+        /** What apply did and what each round's rescan brought up: .logast/reports/apply-trace.txt. */
+        private final List<String> trace = new ArrayList<>();
+        /** An id applied in an earlier pass runs again only if another order changed one of its files since. */
+        private final Map<String, Integer> appliedAt = new HashMap<>();
+        /** file -> id -> the round it was last edited. */
+        private final Map<String, Map<String, Integer>> touches = new HashMap<>();
+        /** Where each applied order sits, followed through the later rounds' edits to the line in the result (#72). */
+        private final Map<String, TreeMap<Integer, Set<String>>> fixed = new TreeMap<>();
+        private int seq = 0;
+
+        Run(Path work, Selection sel) {
+            this.work = work;
+            this.sel = sel;
         }
-        ScanResult before = scan;
-        int round = 0;
-        boolean first = true;
-        Set<String> carried = new LinkedHashSet<>();
-        // the pipeline (docs/pipeline-plan.md): each step works on what the previous steps really produced
-        Map<String, String> stepDiffs = new LinkedHashMap<>();
-        // the pipeline repeats until a pass applies nothing: a fix in a later step can open up one in an earlier step
-        // (a scope moved up makes a lower one redundant, then its messages can drop the key). One run = the end state.
-        Set<String> appliedInPass = new HashSet<>();
-        // guards: an order that is back unchanged right after its own edit did not see that edit (it would only add the
-        // same lines again: blocked and reported); a pass that ends where an earlier one ended undoes itself (stopped)
-        List<String> selfCheck = new ArrayList<>();
-        Set<String> stuck = new HashSet<>();
-        Set<String> passEnds = new HashSet<>(List.of(treeHash(work)));
-        // what apply did and what each round's rescan brought up: .logast/reports/apply-trace.txt, to find where rounds come from
-        List<String> trace = new ArrayList<>();
-        // an id applied in an earlier pass runs again only if another order changed one of its files since
-        Map<String, Integer> appliedAt = new HashMap<>();
-        Map<String, Map<String, Integer>> touches = new HashMap<>();   // file -> id -> round it was last edited
-        // where each applied order sits, followed through the later rounds' edits to the line in the result (#72)
-        Map<String, TreeMap<Integer, Set<String>>> fixed = new TreeMap<>();
-        int seq = 0;
-        trace.add("scan: " + scan.orders().size() + " orders");
-        for (int pass = 1; pass <= MAX_PASSES; pass++) {
-        // an order applied in an earlier pass may come back when a later fix changed its code again (a scope unwrapped,
-        // then another one put there): within a pass an id is applied once, a new pass may apply it again
-        appliedInPass.clear();
-        everSelected.clear();
-        boolean announced = pass == 1;
-        trace.add("== pass " + pass);
-        for (Rules.Step step : Rules.Step.values()) {
-            if (until != null && step.ordinal() > until.ordinal()) {
-                break;
+
+        Result go(Path root, boolean write) {
+            progress.accept("analysing the code");
+            scan = scanner.apply(work);
+            // written texts go to the lines they were written for, also when a line's id shifted since
+            if (!sel.fills().isEmpty()) {
+                sel = new Selection(sel.auto(), sel.only(), FillsFile.match(sel.fills(), scan.orders()), sel.lenientFills());
             }
+            ScanResult before = scan;
+            passEnds.add(treeHash(work));
+            trace.add("scan: " + scan.orders().size() + " orders");
+            for (int pass = 1; pass <= MAX_PASSES; pass++) {
+                if (!pass(pass)) {
+                    break;
+                }
+            }
+            carried.forEach(id -> rejected.put(id, "waits for a fix that was not applied"));
+
+            progress.accept("~comparing with the original (" + plural(applied.size(), "fix") + " in " + plural(round, "round") + ")");
+            List<String> changed = new ArrayList<>();
+            StringBuilder diff = new StringBuilder();
+            compare(root, work, changed, diff);
+            progress.accept("~checking the result");
+            List<String> violations = new ArrayList<>(selfCheck);
+            if (!changed.isEmpty()) {
+                violations.addAll(invariants.apply(work, changed));
+            }
+            if (write) {
+                copyBack(root, work, changed);
+            }
+            return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs, trace, fixed);
+        }
+
+        /** One pass over the steps; false when the passes stop (nothing applied, --until, or a pass undoing another). */
+        private boolean pass(int pass) {
+            // an order applied in an earlier pass may come back when a later fix changed its code again (a scope unwrapped,
+            // then another one put there): within a pass an id is applied once, a new pass may apply it again
+            appliedInPass.clear();
+            everSelected.clear();
+            boolean[] announced = {pass == 1};
+            trace.add("== pass " + pass);
+            for (Rules.Step step : Rules.Step.values()) {
+                if (until != null && step.ordinal() > until.ordinal()) {
+                    break;
+                }
+                step(step, pass, announced);
+            }
+            if (appliedInPass.isEmpty() || until != null) {
+                return false;
+            }
+            if (!passEnds.add(treeHash(work))) {
+                selfCheck.add("pass " + pass + " ended where an earlier pass ended: its fixes undo each other " + new TreeSet<>(appliedInPass));
+                return false;
+            }
+            if (pass == MAX_PASSES) {
+                progress.accept("still changing after " + MAX_PASSES + " passes: the rest is left for the next run");
+            }
+            return true;
+        }
+
+        /** A step's rounds: apply what is selected, rescan, select what the rescan brought up, until nothing is left. */
+        private void step(Rules.Step step, int pass, boolean[] announced) {
             Map<String, String> beforeStep = new LinkedHashMap<>();   // content of each file before this step touched it
             Set<String> pending = new LinkedHashSet<>(carried);
             carried.clear();
             Set<String> skip = new HashSet<>(appliedInPass);
             skip.addAll(stuck);
             if (pass > 1) {
-                for (WorkOrder o : scan.orders()) {
-                    Integer at = appliedAt.get(o.id());
-                    if (at == null || stuck.contains(o.id()) || Rules.stepOf(o.rule()) != step) {
-                        continue;
-                    }
-                    boolean touchedByOthers = o.edits().stream().map(Edit::file).distinct().anyMatch(f -> touches.getOrDefault(f, Map.of())
-                            .entrySet().stream().anyMatch(t -> !t.getKey().equals(o.id()) && t.getValue() >= at));
-                    if (!touchedByOthers) {
-                        skip.add(o.id());
-                        if (stuck.add(o.id())) {
-                            selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + o.id() + ") is back although "
-                                    + "nothing else changed its code: it did not see its own fix (applied once, not repeated)");
-                        }
-                    }
-                }
+                skipUnseenOwnFix(step, skip);
             }
             select(scan, sel, pending, everSelected, rejected, skip, step, first);
             if (pending.isEmpty()) {
-                continue;
+                return;
             }
-            if (!announced) {
+            if (!announced[0]) {
                 progress.accept("pass " + pass + ": earlier fixes opened up new ones");
-                announced = true;
+                announced[0] = true;
             }
             String name = step.name().toLowerCase(Locale.ROOT);
             int stepRounds = 0;
             while (!pending.isEmpty() && stepRounds < MAX_ROUNDS) {
                 stepRounds++;
-                round++;
-                progress.accept("~" + name + ", round " + stepRounds + ": " + plural(pending.size(), "fix") + " to apply, " + applied.size() + " done");
-                Map<String, WorkOrder> byId = new LinkedHashMap<>();
-                scan.orders().forEach(o -> byId.put(o.id(), o));
-                for (Iterator<String> it = pending.iterator(); it.hasNext(); ) {
-                    String id = it.next();
-                    if (!byId.containsKey(id)) {
-                        it.remove();
-                        if (first && stepRounds == 1) {
-                            rejected.put(id, "no such order in a fresh scan (stale orders file? rescan)");
-                        } else {
-                            indirect.add(id);   // an earlier fix took care of it
-                        }
-                    }
-                }
-                first = false;
-                List<WorkOrder> batch = pending.stream().map(byId::get)
-                        .sorted(Comparator.comparingInt(Applier::priority).thenComparing(WorkOrder::id)).toList();
-
-                List<Edit> accepted = new ArrayList<>();
-                List<String> acceptedIds = new ArrayList<>();
-                Map<String, List<Edit>> editsOf = new HashMap<>();
-                for (WorkOrder o : batch) {
-                    List<String> problems = validator.validate(o, sel.fills().get(o.id()));
-                    if (!problems.isEmpty()) {
-                        rejected.put(o.id(), String.join("; ", problems));
-                        pending.remove(o.id());
-                        continue;
-                    }
-                    List<String> missingDeps = o.dependsOn().stream()
-                            .filter(d -> !applied.contains(d) && !pending.contains(d) && !acceptedIds.contains(d)).toList();
-                    if (!missingDeps.isEmpty()) {
-                        // a dependency of a later step: this order waits for that step
-                        boolean later = missingDeps.stream().allMatch(d -> byId.containsKey(d)
-                                && Rules.stepOf(byId.get(d).rule()).ordinal() > step.ordinal());
-                        if (later) {
-                            carried.add(o.id());
-                        } else {
-                            rejected.put(o.id(), "depends on " + missingDeps + ": select it in the same apply");
-                        }
-                        pending.remove(o.id());
-                        continue;
-                    }
-                    if (o.dependsOn().stream().anyMatch(d -> pending.contains(d) && !acceptedIds.contains(d))) {
-                        continue; // dependency not applied yet: next round
-                    }
-                    List<Edit> rendered = render(o, sel.fills().get(o.id()));
-                    if (rendered.stream().anyMatch(e -> accepted.stream().anyMatch(a -> !a.equals(e) && a.overlaps(e)))) {
-                        continue; // conflicts with an earlier order this round: retry after rescan
-                    }
-                    rendered.stream().filter(e -> !accepted.contains(e)).forEach(accepted::add);
-                    acceptedIds.add(o.id());
-                    editsOf.put(o.id(), rendered);
-                }
-                if (acceptedIds.isEmpty()) {
+                if (!round(step, name, stepRounds, pending, beforeStep)) {
                     break;
-                }
-                progress.accept(name + ", round " + stepRounds + ": applying " + plural(acceptedIds.size(), "fix") + " to "
-                        + plural((int) accepted.stream().map(Edit::file).distinct().count(), "file") + " (" + applied.size() + " done so far)");
-                for (Edit e : accepted) {
-                    if (!beforeStep.containsKey(e.file())) {   // null = the step creates the file
-                        Path p = work.resolve(e.file());
-                        beforeStep.put(e.file(), Files.exists(p) ? text(bytes(p)) : null);
-                    }
-                }
-                trace.add(name + " round " + stepRounds + ": applying " + acceptedIds.stream().map(id -> describe(byId.get(id))).toList());
-                Map<String, String> signatures = new HashMap<>();
-                acceptedIds.forEach(id -> signatures.put(id, signature(byId.get(id))));
-                seq++;
-                Map<String, String> roundBefore = new HashMap<>();
-                accepted.stream().map(Edit::file).filter(f -> f.endsWith(".java")).distinct().forEach(f -> {
-                    Path p = work.resolve(f);
-                    roundBefore.put(f, Files.exists(p) ? text(bytes(p)) : null);
-                });
-                Map<String, String> failed = applyRound(work, acceptedIds, editsOf);
-                failed.forEach((id, why) -> {
-                    WorkOrder o = byId.get(id);
-                    selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + id + ") " + why);
-                });
-                List<String> broken = failed.keySet().stream().flatMap(id -> editsOf.get(id).stream().map(Edit::file)).distinct().toList();
-                for (String id : acceptedIds) {
-                    WorkOrder o = byId.get(id);
-                    if (failed.containsKey(id)) {
-                        rejected.put(id, failed.get(id));
-                    } else {
-                        appliedInPass.add(id);
-                        appliedAt.put(id, seq);
-                        for (Edit e : o.edits()) {
-                            touches.computeIfAbsent(e.file(), k -> new HashMap<>()).put(id, seq);
-                        }
-                        if (!applied.contains(id)) {
-                            applied.add(id);
-                        }
-                    }
-                    pending.remove(id);
-                }
-                for (String id : acceptedIds) {
-                    WorkOrder o = byId.get(id);
-                    if (!failed.containsKey(id) && o.file() != null && o.file().endsWith(".java") && o.line() > 0) {
-                        fixed.computeIfAbsent(o.file(), k -> new TreeMap<>()).computeIfAbsent(o.line(), k -> new LinkedHashSet<>())
-                                .add(o.rule() + " " + o.id());
-                    }
-                }
-                roundBefore.forEach((f, old) -> {
-                    Path p = work.resolve(f);
-                    LineMap.follow(fixed, f, old, Files.exists(p) ? text(bytes(p)) : null);
-                });
-                progress.accept("~" + name + ", round " + stepRounds + ": checking the changed code (" + applied.size() + " done)");
-                Set<String> previous = new HashSet<>();
-                scan.orders().forEach(o -> previous.add(o.id()));
-                scan = scanner.apply(work);
-                for (WorkOrder o : scan.orders()) {
-                    if (signatures.containsKey(o.id()) && !broken.contains(o.file()) && signature(o).equals(signatures.get(o.id()))
-                            && stuck.add(o.id())) {
-                        selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + o.id() + ") did not see its own fix: "
-                                + "applied once, not repeated");
-                    }
-                }
-                List<String> appeared = scan.orders().stream().filter(o -> !previous.contains(o.id()) && o.mechanical())
-                        .map(Applier::describe).toList();
-                if (!appeared.isEmpty()) {
-                    trace.add("  rescan: new " + appeared);
-                }
-                if (sel.auto()) {
-                    select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied), step, false);
                 }
             }
             int rounds = stepRounds;
@@ -338,32 +262,178 @@ public final class Applier {
                 stepDiffs.merge(name, d, String::concat);
             }
         }
-        if (appliedInPass.isEmpty() || until != null) {
-            break;
-        }
-        if (!passEnds.add(treeHash(work))) {
-            selfCheck.add("pass " + pass + " ended where an earlier pass ended: its fixes undo each other " + new TreeSet<>(appliedInPass));
-            break;
-        }
-        if (pass == MAX_PASSES) {
-            progress.accept("still changing after " + MAX_PASSES + " passes: the rest is left for the next run");
-        }
-        }
-        carried.forEach(id -> rejected.put(id, "waits for a fix that was not applied"));
 
-        progress.accept("~comparing with the original (" + plural(applied.size(), "fix") + " in " + plural(round, "round") + ")");
-        List<String> changed = new ArrayList<>();
-        StringBuilder diff = new StringBuilder();
-        compare(root, work, changed, diff);
-        progress.accept("~checking the result");
-        List<String> violations = new ArrayList<>(selfCheck);
-        if (!changed.isEmpty()) {
-            violations.addAll(invariants.apply(work, changed));
+        /** An order applied in an earlier pass whose files nothing else changed since is back: it did not see its own fix. */
+        private void skipUnseenOwnFix(Rules.Step step, Set<String> skip) {
+            for (WorkOrder o : scan.orders()) {
+                Integer at = appliedAt.get(o.id());
+                if (at == null || stuck.contains(o.id()) || Rules.stepOf(o.rule()) != step) {
+                    continue;
+                }
+                boolean touchedByOthers = o.edits().stream().map(Edit::file).distinct().anyMatch(f -> touches.getOrDefault(f, Map.of())
+                        .entrySet().stream().anyMatch(t -> !t.getKey().equals(o.id()) && t.getValue() >= at));
+                if (!touchedByOthers) {
+                    skip.add(o.id());
+                    if (stuck.add(o.id())) {
+                        selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + o.id() + ") is back although "
+                                + "nothing else changed its code: it did not see its own fix (applied once, not repeated)");
+                    }
+                }
+            }
         }
-        if (write) {
-            copyBack(root, work, changed);
+
+        /** What a round applies: the orders that validate, whose dependencies are met and whose edits do not conflict. */
+        private record Batch(List<Edit> accepted, List<String> ids, Map<String, List<Edit>> editsOf) {
         }
-        return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs, trace, fixed);
+
+        private Batch batch(Rules.Step step, Set<String> pending, Map<String, WorkOrder> byId) {
+            List<WorkOrder> batch = pending.stream().map(byId::get)
+                    .sorted(Comparator.comparingInt(Applier::priority).thenComparing(WorkOrder::id)).toList();
+            List<Edit> accepted = new ArrayList<>();
+            List<String> acceptedIds = new ArrayList<>();
+            Map<String, List<Edit>> editsOf = new HashMap<>();
+            for (WorkOrder o : batch) {
+                List<String> problems = validator.validate(o, sel.fills().get(o.id()));
+                if (!problems.isEmpty()) {
+                    rejected.put(o.id(), String.join("; ", problems));
+                    pending.remove(o.id());
+                    continue;
+                }
+                List<String> missingDeps = o.dependsOn().stream()
+                        .filter(d -> !applied.contains(d) && !pending.contains(d) && !acceptedIds.contains(d)).toList();
+                if (!missingDeps.isEmpty()) {
+                    // a dependency of a later step: this order waits for that step
+                    boolean later = missingDeps.stream().allMatch(d -> byId.containsKey(d)
+                            && Rules.stepOf(byId.get(d).rule()).ordinal() > step.ordinal());
+                    if (later) {
+                        carried.add(o.id());
+                    } else {
+                        rejected.put(o.id(), "depends on " + missingDeps + ": select it in the same apply");
+                    }
+                    pending.remove(o.id());
+                    continue;
+                }
+                if (o.dependsOn().stream().anyMatch(d -> pending.contains(d) && !acceptedIds.contains(d))) {
+                    continue; // dependency not applied yet: next round
+                }
+                List<Edit> rendered = render(o, sel.fills().get(o.id()));
+                if (rendered.stream().anyMatch(e -> accepted.stream().anyMatch(a -> !a.equals(e) && a.overlaps(e)))) {
+                    continue; // conflicts with an earlier order this round: retry after rescan
+                }
+                rendered.stream().filter(e -> !accepted.contains(e)).forEach(accepted::add);
+                acceptedIds.add(o.id());
+                editsOf.put(o.id(), rendered);
+            }
+            return new Batch(accepted, acceptedIds, editsOf);
+        }
+
+        /** One round of a step: apply a batch, record it, rescan and select again; false when nothing could be applied. */
+        private boolean round(Rules.Step step, String name, int stepRounds, Set<String> pending, Map<String, String> beforeStep) {
+            round++;
+            progress.accept("~" + name + ", round " + stepRounds + ": " + plural(pending.size(), "fix") + " to apply, " + applied.size() + " done");
+            Map<String, WorkOrder> byId = new LinkedHashMap<>();
+            scan.orders().forEach(o -> byId.put(o.id(), o));
+            for (Iterator<String> it = pending.iterator(); it.hasNext(); ) {
+                String id = it.next();
+                if (!byId.containsKey(id)) {
+                    it.remove();
+                    if (first && stepRounds == 1) {
+                        rejected.put(id, "no such order in a fresh scan (stale orders file? rescan)");
+                    } else {
+                        indirect.add(id);   // an earlier fix took care of it
+                    }
+                }
+            }
+            first = false;
+            Batch b = batch(step, pending, byId);
+            List<Edit> accepted = b.accepted();
+            List<String> acceptedIds = b.ids();
+            Map<String, List<Edit>> editsOf = b.editsOf();
+            if (acceptedIds.isEmpty()) {
+                return false;
+            }
+            progress.accept(name + ", round " + stepRounds + ": applying " + plural(acceptedIds.size(), "fix") + " to "
+                    + plural((int) accepted.stream().map(Edit::file).distinct().count(), "file") + " (" + applied.size() + " done so far)");
+            for (Edit e : accepted) {
+                if (!beforeStep.containsKey(e.file())) {   // null = the step creates the file
+                    Path p = work.resolve(e.file());
+                    beforeStep.put(e.file(), Files.exists(p) ? text(bytes(p)) : null);
+                }
+            }
+            trace.add(name + " round " + stepRounds + ": applying " + acceptedIds.stream().map(id -> describe(byId.get(id))).toList());
+            Map<String, String> signatures = new HashMap<>();
+            acceptedIds.forEach(id -> signatures.put(id, signature(byId.get(id))));
+            seq++;
+            Map<String, String> roundBefore = new HashMap<>();
+            accepted.stream().map(Edit::file).filter(f -> f.endsWith(".java")).distinct().forEach(f -> {
+                Path p = work.resolve(f);
+                roundBefore.put(f, Files.exists(p) ? text(bytes(p)) : null);
+            });
+            Map<String, String> failed = applyRound(work, acceptedIds, editsOf);
+            failed.forEach((id, why) -> {
+                WorkOrder o = byId.get(id);
+                selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + id + ") " + why);
+            });
+            List<String> broken = failed.keySet().stream().flatMap(id -> editsOf.get(id).stream().map(Edit::file)).distinct().toList();
+            record(acceptedIds, byId, failed, pending);
+            roundBefore.forEach((f, old) -> {
+                Path p = work.resolve(f);
+                LineMap.follow(fixed, f, old, Files.exists(p) ? text(bytes(p)) : null);
+            });
+            rescan(step, name, stepRounds, pending, signatures, broken);
+            return true;
+        }
+
+        /** What a round applied: the ids, when and where (for the next passes and the ledger), or why one failed. */
+        private void record(List<String> acceptedIds, Map<String, WorkOrder> byId, Map<String, String> failed, Set<String> pending) {
+            for (String id : acceptedIds) {
+                WorkOrder o = byId.get(id);
+                if (failed.containsKey(id)) {
+                    rejected.put(id, failed.get(id));
+                } else {
+                    appliedInPass.add(id);
+                    appliedAt.put(id, seq);
+                    for (Edit e : o.edits()) {
+                        touches.computeIfAbsent(e.file(), k -> new HashMap<>()).put(id, seq);
+                    }
+                    if (!applied.contains(id)) {
+                        applied.add(id);
+                    }
+                }
+                pending.remove(id);
+            }
+            for (String id : acceptedIds) {
+                WorkOrder o = byId.get(id);
+                if (!failed.containsKey(id) && o.file() != null && o.file().endsWith(".java") && o.line() > 0) {
+                    fixed.computeIfAbsent(o.file(), k -> new TreeMap<>()).computeIfAbsent(o.line(), k -> new LinkedHashSet<>())
+                            .add(o.rule() + " " + o.id());
+                }
+            }
+        }
+
+        /** The scan after a round: an order back unchanged did not see its own fix; what appeared is traced and selected. */
+        private void rescan(Rules.Step step, String name, int stepRounds, Set<String> pending, Map<String, String> signatures,
+                            List<String> broken) {
+            progress.accept("~" + name + ", round " + stepRounds + ": checking the changed code (" + applied.size() + " done)");
+            Set<String> previous = new HashSet<>();
+            scan.orders().forEach(o -> previous.add(o.id()));
+            scan = scanner.apply(work);
+            for (WorkOrder o : scan.orders()) {
+                if (signatures.containsKey(o.id()) && !broken.contains(o.file()) && signature(o).equals(signatures.get(o.id()))
+                        && stuck.add(o.id())) {
+                    selfCheck.add(o.file() + ":" + o.line() + "  " + o.rule() + " (" + o.id() + ") did not see its own fix: "
+                            + "applied once, not repeated");
+                }
+            }
+            List<String> appeared = scan.orders().stream().filter(o -> !previous.contains(o.id()) && o.mechanical())
+                    .map(Applier::describe).toList();
+            if (!appeared.isEmpty()) {
+                trace.add("  rescan: new " + appeared);
+            }
+            if (sel.auto()) {
+                select(scan, sel, pending, everSelected, rejected, new HashSet<>(applied), step, false);
+            }
+        }
     }
 
     /** "RULE id file:line" for the trace. */
