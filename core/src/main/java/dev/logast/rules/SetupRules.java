@@ -30,6 +30,7 @@ public final class SetupRules {
             "org\\.springframework\\.boot:spring-boot-gradle-plugin:([0-9][^\\s\\\"']*)");
     private static final Pattern BOOT_CORE_JAR = Pattern.compile("^spring-boot-([0-9]+\\..*)\\.jar$");
     private static final String BOOT4_OTEL_STARTER = "spring-boot-starter-opentelemetry";
+    private static final String OTLP_METRICS = "management.otlp.metrics.export";
     private static final String ACTUATOR_STARTER = "spring-boot-starter-actuator";
     private static final String OTEL_BRIDGE = "micrometer-tracing-bridge-otel";
     private static final String BRAVE_BRIDGE = "micrometer-tracing-bridge-brave";
@@ -133,6 +134,15 @@ public final class SetupRules {
                     b.suggestion("No top-level dependencies {} block found: add them manually." + scripts.unresolvedNote());
                 } else {
                     b.edit(e.edit()).at(e.file(), e.line());
+                    // #230: the Boot 4 starter brings micrometer-registry-otlp, whose export is on by default and pushes
+                    // to localhost:4318: without a collector every push logs a stack trace. Traces and logs go out only
+                    // when an endpoint is set, so metrics wait for one too.
+                    if (missing.contains("org.springframework.boot:" + BOOT4_OTEL_STARTER)
+                            && dev.logast.SpringProperties.read(root).keySet().stream().noneMatch(k -> k.startsWith(OTLP_METRICS))) {
+                        ServiceYaml.merge(ctx, b, "management:\n  otlp:\n    metrics:\n      export:\n        enabled: false\n");
+                        b.suggestion("OTLP metrics export stays off until a collector is configured: set " + OTLP_METRICS
+                                + ".enabled=true and " + OTLP_METRICS + ".url (or MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true).");
+                    }
                 }
             } else if (coordinates.isEmpty()) {
                 ctx.order(Rules.SETUP_OTEL_STARTER, "otel|" + rel).at(rel, 1)

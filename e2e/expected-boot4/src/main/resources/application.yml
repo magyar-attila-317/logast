@@ -25,18 +25,11 @@ logging:
         service:
           name: ${spring.application.name}
           version: ${spring.application.version}
-logging-support:
-  log-defaults:
-    enabled: true
-  mdc-hygiene:
-    enabled: true
-  context-propagation:
-    enabled: true
-  batch-trace:
-    enabled: true
-  problem-trace-id:
-    enabled: true
 management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
   metrics:
     tags:
       application: ${spring.application.name}
@@ -48,3 +41,14 @@ management:
   tracing:
     sampling:
       probability: 1.0
+logging-support:
+  log-defaults:
+    enabled: true
+  mdc-hygiene:
+    enabled: true
+  context-propagation:
+    enabled: true
+  batch-trace:
+    enabled: true
+  problem-trace-id:
+    enabled: true
