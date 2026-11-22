@@ -13,8 +13,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The repo's Quartz job classes (#187, #208), for the export and for apply's entrypoints (#232): classes that are an
@@ -25,8 +23,6 @@ import java.util.regex.Pattern;
 public final class QuartzJobs {
     public static final Set<String> TYPES = Set.of("org.quartz.Job", "org.quartz.InterruptableJob", "org.quartz.StatefulJob",
             "org.springframework.scheduling.quartz.QuartzJobBean");
-    private static final Pattern SCHEDULES_CLASS = Pattern.compile("(?:setJobClass|newJob)\\(\\s*([A-Z]\\w*)\\.class\\s*\\)");
-    private static final Pattern JOB_CLASS_PARAM = Pattern.compile("(?:setJobClass|newJob|ofType)\\(\\s*([a-z]\\w*)\\s*\\)");
 
     private QuartzJobs() {
     }
@@ -109,26 +105,36 @@ public final class QuartzJobs {
         return out;
     }
 
+    /** The calls that take a job class: {@code JobDetailFactoryBean.setJobClass}, {@code JobBuilder.newJob}, {@code ofType}. */
+    private static final Set<String> TAKES_JOB_CLASS = Set.of("setJobClass", "newJob", "ofType");
+
     /** #208: methods that build a JobDetail of the class they are given ({@code setJobClass(type)} of a parameter). */
     public static Set<String> helpers(CodeIndex index) {
         Set<String> out = new LinkedHashSet<>();
         for (MethodInfo m : index.methods()) {
-            String body = m.decl().getBody() == null ? "" : m.decl().getBody().printTrimmed();
-            Matcher p = JOB_CLASS_PARAM.matcher(body);
-            while (p.find()) {
-                String param = p.group(1);
-                if (m.decl().getParameters().stream().anyMatch(x -> x instanceof J.VariableDeclarations vd
-                        && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(param)))) {
+            if (m.decl().getBody() == null) {
+                continue;
+            }
+            Set<String> params = new java.util.HashSet<>();
+            m.decl().getParameters().forEach(x -> {
+                if (x instanceof J.VariableDeclarations vd) {
+                    vd.getVariables().forEach(v -> params.add(v.getSimpleName()));
+                }
+            });
+            calls(m.decl().getBody(), mi -> {
+                if (TAKES_JOB_CLASS.contains(mi.getSimpleName()) && mi.getArguments().size() == 1
+                        && mi.getArguments().getFirst() instanceof J.Identifier id && params.contains(id.getSimpleName())) {
                     out.add(m.name());
                 }
-            }
+            });
         }
         return out;
     }
 
     /**
-     * #208: the classes Quartz code schedules ({@code setJobClass(X.class)}, {@code newJob(X.class)}, a helper's argument)
-     * in a file that imports Quartz; {@code X} as that file sees it (imported, same package, else the only class so named).
+     * #208: the classes Quartz code schedules ({@code setJobClass(X.class)}, {@code newJob(X.class)}, a helper's first
+     * argument) in a file that imports Quartz; {@code X} as that file sees it (imported, same package, else the only class
+     * so named).
      */
     private static Set<ClassInfo> scheduledJobClasses(CodeIndex index, List<ClassInfo> classes) {
         Set<ClassInfo> out = new LinkedHashSet<>();
@@ -138,21 +144,21 @@ public final class QuartzJobs {
             if (m.decl().getBody() == null || !quartzFile(file)) {
                 continue;
             }
-            String body = m.decl().getBody().printTrimmed();
-            List<String> names = new ArrayList<>();
-            Matcher sc = SCHEDULES_CLASS.matcher(body);
-            while (sc.find()) {
-                names.add(sc.group(1));
-            }
             if (helpers == null) {
                 helpers = helpers(index);
             }
-            for (String h : helpers) {
-                Matcher hc = Pattern.compile("\\b" + Pattern.quote(h) + "\\(\\s*([A-Z]\\w*)\\.class").matcher(body);
-                while (hc.find()) {
-                    names.add(hc.group(1));
+            Set<String> via = helpers;
+            List<String> names = new ArrayList<>();
+            calls(m.decl().getBody(), mi -> {
+                boolean direct = TAKES_JOB_CLASS.contains(mi.getSimpleName()) && !mi.getSimpleName().equals("ofType")
+                        && mi.getArguments().size() == 1;
+                if ((direct || via.contains(mi.getSimpleName())) && !mi.getArguments().isEmpty()) {
+                    String n = classLiteral(mi.getArguments().getFirst());
+                    if (n != null) {
+                        names.add(n);
+                    }
                 }
-            }
+            });
             String pkg = m.owner().fqn().contains(".") ? m.owner().fqn().substring(0, m.owner().fqn().lastIndexOf('.')) : "";
             for (String n : names) {
                 List<ClassInfo> named = classes.stream().filter(c -> c.simpleName().equals(n)).toList();
@@ -165,5 +171,22 @@ public final class QuartzJobs {
             }
         }
         return out;
+    }
+
+    /** {@code X.class} → X (a simple name, as the code writes it); null for anything else. */
+    private static String classLiteral(org.openrewrite.java.tree.Expression e) {
+        return e instanceof J.FieldAccess fa && fa.getSimpleName().equals("class") && fa.getTarget() instanceof J.Identifier id
+                && !id.getSimpleName().isEmpty() && Character.isUpperCase(id.getSimpleName().charAt(0)) ? id.getSimpleName() : null;
+    }
+
+    /** Every method call in {@code tree}, lambdas included. */
+    private static void calls(J tree, java.util.function.Consumer<J.MethodInvocation> each) {
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                each.accept(mi);
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(tree, 0);
     }
 }
