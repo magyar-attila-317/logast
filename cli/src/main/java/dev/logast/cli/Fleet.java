@@ -66,6 +66,9 @@ final class Fleet implements Callable<Integer> {
     @Option(names = "--kb-full", description = "Export every member's knowledge base, also those unchanged since their last export, "
             + "with everything (implies --kb and --flyway)")
     boolean kbFull;
+    @Option(names = "--threads", defaultValue = "1", description = "With --refresh: repos scanned (and exported) at a time "
+            + "(#226; each analysis can take a few GB: raise it as memory allows; default: ${DEFAULT-VALUE})")
+    int threads;
     @Option(names = "--kb-threads", defaultValue = "2", description = "With --kb: members exported at a time (one analysis can "
             + "take a few GB; default: ${DEFAULT-VALUE})")
     int kbThreads;
@@ -202,14 +205,14 @@ final class Fleet implements Callable<Integer> {
         }
         List<Path> cp = Logast.classpath(r, classpathFile);
         ScanResult scan = Logast.scan(r, cp, policy);
-        lastScanned = new dev.logast.export.Export.Analysed(Logast.lastAnalysis, scan, cp);   // #184: the export reuses it
-        lastScannedRoot = r;
-        return NamedFleet.snapshot(r, scan, Logast.lastAnalysis, policy);
+        lastScanned.set(new dev.logast.export.Export.Analysed(Logast.LAST_ANALYSIS.get(), scan, cp));   // #184: the export reuses it
+        lastScannedRoot.set(r);
+        return NamedFleet.snapshot(r, scan, Logast.LAST_ANALYSIS.get(), policy);
     }
 
-    /** #184: the analysis of the member scanned last (the refresh goes one member at a time), for its export. */
-    static dev.logast.export.Export.Analysed lastScanned;
-    static Path lastScannedRoot;
+    /** #184: the analysis of the member this thread scanned last, for its export (#226: per thread, scans run in parallel). */
+    static final ThreadLocal<dev.logast.export.Export.Analysed> lastScanned = new ThreadLocal<>();
+    static final ThreadLocal<Path> lastScannedRoot = new ThreadLocal<>();
 
     /**
      * #132: scans a member {@code fleet add} registered: the analysis of `logast scan`, with the policy defaults →
@@ -235,16 +238,16 @@ final class Fleet implements Callable<Integer> {
             System.err.println("scanning " + r + " (read-only; results in " + out + ")");
         }
         ScanResult scan = Logast.scan(r, cp, policy);
-        Analysis a = Logast.lastAnalysis;
-        lastScanned = new dev.logast.export.Export.Analysed(a, scan, cp);   // #184: the export reuses it
-        lastScannedRoot = r;
+        Analysis a = Logast.LAST_ANALYSIS.get();
+        lastScanned.set(new dev.logast.export.Export.Analysed(a, scan, cp));   // #184: the export reuses it
+        lastScannedRoot.set(r);
         Path orders = LogastDir.in(out, LogastDir.ORDERS);
         Files.createDirectories(orders.getParent());
         OrderJson.MAPPER.writeValue(orders.toFile(), scan);
         if (policy.packSelected("logging")) {
             a.ledger.writeTo(LogastDir.in(out, LogastDir.COVERAGE), a, scan.orders(), Map.of());
         }
-        Reports.writeTo(out, a, dev.logast.rules.Rules.lastLifecycle);
+        Reports.writeTo(out, a, dev.logast.rules.Rules.LAST_LIFECYCLE.get());
         return NamedFleet.snapshot(r, scan, a, policy);
     }
 
@@ -500,6 +503,33 @@ final class Fleet implements Callable<Integer> {
                 : added ? "no snapshot yet: `logast fleet " + fleet + " --refresh` scans it" : "no snapshot yet: run `logast scan` in " + root;
     }
 
+    /** #226: scans one member (and exports its knowledge base with that analysis); what prints its line in the phase. */
+    private Runnable scanMember(Path dir, String svc, Path root, Map<String, Path> added, FleetLog.Phase phase, Out.Progress p) {
+        long t0 = System.nanoTime();
+        lastScanned.remove();
+        String error = scanError(() -> NamedFleet.write(dir, added.containsKey(svc) ? scanAdded(dir, svc, root, classpathFile, noBuilds)
+                : scan(root)));
+        KbOutcome o = null;
+        if (kb && lastScanned.get() != null) {   // #184: exported now, with the analysis the scan just made
+            if (p != null) {
+                p.update("~exporting its knowledge base");
+            }
+            o = exportMember(dir, svc, root, lastScanned.get(), lastScannedRoot.get());
+            kbDone.add(svc);
+        }
+        lastScanned.remove();
+        long took = System.nanoTime() - t0;
+        KbOutcome out = o;
+        if (error != null) {
+            return () -> phase.done(svc, FleetLog.Status.FAILED, took, "scan failed: " + FleetLog.oneLine(error) + " (its snapshot stays as it was; "
+                    + "`logast scan` in the repo shows the whole error)", List.of());
+        } else if (out == null) {
+            return () -> phase.done(svc, FleetLog.Status.OK, took, "scanned", List.of());
+        }
+        return () -> phase.done(svc, out.status() == FleetLog.Status.SAME ? FleetLog.Status.OK : out.status(), took,
+                "scanned · " + out.detail(), out.notes());
+    }
+
     /** #225: a section of the overview, headed as the phases are. */
     private static void section(String title) {
         String head = "━━ " + title + " ";
@@ -696,7 +726,10 @@ final class Fleet implements Callable<Integer> {
             tablesMade = KbExport.tablesMade(dir.resolve("kb"));
         }
         if (refresh) {
-            FleetLog.Phase phase = log.phase("scan", null, work(members).size());
+            FleetLog.Phase phase = log.phase("scan", threads > 1 ? Math.max(1, threads) + " at a time" : null, work(members).size());
+            List<java.util.concurrent.Callable<Void>> jobs = new java.util.ArrayList<>();
+            java.util.Set<String> running = java.util.concurrent.ConcurrentHashMap.newKeySet();
+            Out.Progress[] live = new Out.Progress[1];
             for (var m : work(members).entrySet()) {
                 String svc = m.getKey();
                 Path root = m.getValue();
@@ -709,28 +742,47 @@ final class Fleet implements Callable<Integer> {
                             List.of());
                     continue;
                 }
-                long t0 = System.nanoTime();
-                lastScanned = null;
-                String error;
-                KbOutcome o = null;
-                try (Out.Progress p = phase.working(svc, "scanning")) {
-                    error = scanError(() -> NamedFleet.write(dir, added.containsKey(svc) ? scanAdded(dir, svc, root, classpathFile, noBuilds)
-                            : scan(root)));
-                    if (kb && lastScanned != null) {   // #184: exported now, with the analysis the scan just made
-                        p.update("~exporting its knowledge base");
-                        o = exportMember(dir, svc, root, lastScanned, lastScannedRoot);
-                        kbDone.add(svc);
+                jobs.add(() -> {
+                    if (threads <= 1) {
+                        Runnable done;
+                        try (Out.Progress p = phase.working(svc, "scanning")) {
+                            done = scanMember(dir, svc, root, added, phase, p);
+                        }
+                        done.run();
+                    } else {   // #226: one line for the repos being scanned; each repo's own output kept off the screen
+                        running.add(svc);
+                        live[0].update("~scanning " + String.join(", ", running));
+                        Runnable done = Out.Routing.capture(new java.util.ArrayList<>(), () -> scanMember(dir, svc, root, added, phase, null));
+                        running.remove(svc);
+                        live[0].update("~scanning " + String.join(", ", running));
+                        done.run();   // its line, outside the capture
+                    }
+                    return null;
+                });
+            }
+            if (threads <= 1) {
+                for (var j : jobs) {
+                    try {
+                        j.call();
+                    } catch (Exception e) {
+                        Out.warn("fleet --refresh: " + e);
                     }
                 }
-                lastScanned = null;
-                long took = System.nanoTime() - t0;
-                if (error != null) {
-                    phase.done(svc, FleetLog.Status.FAILED, took, "scan failed: " + FleetLog.oneLine(error) + " (its snapshot stays as it was; "
-                            + "`logast scan` in the repo shows the whole error)", List.of());
-                } else if (o == null) {
-                    phase.done(svc, FleetLog.Status.OK, took, "scanned", List.of());
-                } else {
-                    phase.done(svc, o.status() == FleetLog.Status.SAME ? FleetLog.Status.OK : o.status(), took, "scanned · " + o.detail(), o.notes());
+            } else {
+                try (Out.Progress p = new Out.Progress("~scanning")) {
+                    live[0] = p;
+                    var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+                    try {
+                        for (var f : pool.invokeAll(jobs)) {
+                            f.get();
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    } catch (java.util.concurrent.ExecutionException e) {
+                        Out.warn("fleet --refresh: " + e.getCause());
+                    } finally {
+                        pool.shutdown();
+                    }
                 }
             }
             phase.end();

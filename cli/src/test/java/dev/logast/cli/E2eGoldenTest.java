@@ -7472,8 +7472,10 @@ abstract class E2eGoldenTest {
                     stock.resolve("src/main/java/com/example/stock/StockController.java")).replace("/holds/{id}", "/blocks/{id}"));
             git(stock, "commit", "--quiet", "-am", "renamed again");
             STDERR.setLength(0);
-            run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--kb", "--no-builds", "--classpath-file", cpFile);
-            assertThat(STDERR.toString()).as(STDERR.toString()).containsPattern(line("orders", "knowledge base unchanged since its last export")).containsPattern(line("stock", "knowledge base: 1 facts file(s)"));
+            // #226: two repos scanned at a time, each exported with its own analysis
+            run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--kb", "--no-builds", "--classpath-file", cpFile, "--threads", "2");
+            assertThat(STDERR.toString()).as(STDERR.toString()).contains("2 at a time")
+                    .containsPattern(line("orders", "knowledge base unchanged since its last export")).containsPattern(line("stock", "knowledge base: 1 facts file(s)"));
             assertThat(STDERR.toString()).containsPattern(line("stock", "scanned · knowledge base: 1 facts file(s)"));   // exported right after its scan, with that analysis
             assertThat(Files.readString(fleetRepo.resolve("kb/stock/repo.jsonl"))).contains("endpoint:stock:POST /blocks/{id}");
             STDERR.setLength(0);

@@ -670,6 +670,8 @@ public final class Rules {
 
     /** The lifecycle plan of the latest scan (for `logast lifecycle`). */
     public static volatile LifecyclePlan lastLifecycle;
+    /** #226: this thread's last lifecycle plan (scans run in parallel in a fleet refresh). */
+    public static final ThreadLocal<LifecyclePlan> LAST_LIFECYCLE = new ThreadLocal<>();
 
     /** MDC decisions of the latest scan (for `logast why`). */
     public static volatile List<RepeatedValueRules.Decision> lastMdcDecisions = List.of();
@@ -678,6 +680,7 @@ public final class Rules {
         RuleContext ctx = new RuleContext(a);
         lastMdcDecisions = ctx.mdcDecisions;
         lastLifecycle = ctx.lifecycle();
+        LAST_LIFECYCLE.set(ctx.lifecycle());
         new SetupRules(ctx).run();
         new TracingRules(ctx).run();
         new ReactiveRules(ctx).run();

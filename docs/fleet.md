@@ -295,7 +295,8 @@ records both, with logast's build: a new logast re-exports every member once); `
 needs no Docker). An export with problems (Terragrunt or Flyway that could not run, a file
 logast could not read) is not recorded, so the next run exports it again once the cause is fixed. With `--refresh`, a member is exported right
 after its scan, with that scan's classpath and analysis; the others go `--kb-threads` at a time (default 2: one
-analysis can take a few GB). `--flyway` (with `--rows`, `--postgres-image`) adds the tables each member's migrations
+analysis can take a few GB). `--threads n` does the same for `--refresh`'s scan: n repos scanned (and each exported
+with its own analysis) at a time, one live line for the repos in progress (#226); raise either as memory allows. `--flyway` (with `--rows`, `--postgres-image`) adds the tables each member's migrations
 create, per environment, as `logast export --flyway` (needs Docker); changing it re-exports every member once (#184).
 A migration needing a table another member creates runs against a stand-in with that table's columns (#205,
 docs/facts.md); after the knowledge base phase, a **dependencies** phase runs the members whose needs resolve

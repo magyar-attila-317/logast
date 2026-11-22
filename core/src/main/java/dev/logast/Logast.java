@@ -50,6 +50,8 @@ public final class Logast {
 
     /** The analysis behind the most recent {@link #scan} (for CLI diagnostics). */
     public static Analysis lastAnalysis;
+    /** #226: the analysis behind this thread's most recent {@link #scan}: scans run in parallel in a fleet refresh. */
+    public static final ThreadLocal<Analysis> LAST_ANALYSIS = new ThreadLocal<>();
 
     public static Analysis analyse(Path root, List<Path> classpath, Policy policy) {
         return Analysis.run(root, classpath, policy);
@@ -64,6 +66,7 @@ public final class Logast {
         long t0 = System.nanoTime();
         Analysis a = analyse(root, classpath, policy).withTraffic(Traffic.load(root.toAbsolutePath().normalize(), trafficFile));
         lastAnalysis = a;
+        LAST_ANALYSIS.set(a);
         long t1 = System.nanoTime();
         ScanResult r = Rules.scan(a);
         if (System.getenv("LOGAST_TIMING") != null) {
