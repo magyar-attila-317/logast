@@ -2552,12 +2552,163 @@ abstract class E2eGoldenTest {
         assertThat(actual.get(weekly + "WeeklyCloseRunner.java")).as("the job scopes the values of its run")
                 .contains("try (var mdc = MdcScope.of(\"countryCode\", countryCodeResolver.countryCode(), \"targetWeek\", "
                         + "targetWeekResolver.targetWeek())) {").doesNotContain("MDC.clear()");
-        assertThat(actual.get(weekly + "WeeklyReportStarter.java")).as("the startup hook scopes its own run; #20: in the "
-                        + "ObservedContext chain, not in an MdcScope inside it")
-                .contains("        ObservedContext.entrypoint(WeeklyMetrics.WEEKLY_REPORT_STARTER_ON_READY)\n"
-                        + "                .mdc(\"targetWeek\", targetWeekResolver.targetWeek())\n")
-                .doesNotContain("MdcScope.of");
+        assertThat(actual.get(weekly + "WeeklyReportStarter.java")).as("the startup hook scopes its own run; #272: it runs once "
+                        + "per boot, so in an MdcScope, not an ObservedContext")
+                .contains("        try (var mdc = MdcScope.of(\"targetWeek\", targetWeekResolver.targetWeek())) {\n")
+                .doesNotContain("ObservedContext");
         golden(EXPECTED.resolveSibling("expected-resolver-context"), actual);
+    }
+
+    /**
+     * #272: a method that runs once per boot and only does local work (a ready-event listener priming a cache) gets no
+     * ObservedContext: a timer and span for one run per boot is noise, and so is its metrics-catalog constant. A ready
+     * listener that starts work of the service (it may be the application's only entrypoint) is observed as that work,
+     * named after the callee; the callee itself, also run by an hourly job, is not wrapped. A scheduled sweep that runs more
+     * often than once a minute ({@code fixedDelay = 5000}, a {@code scheduleWithFixedDelay} every 5 seconds) logs no
+     * INFO line per run: its outcome goes to DEBUG; an hourly job keeps its INFO lines.
+     */
+    @Test
+    void oneShotAndFrequentJobsLogNoNoisePerRun() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = app.resolve("src/main/java/com/example/e2e/gate");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("GateWarmup.java"), """
+                    package com.example.e2e.gate;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.boot.context.event.ApplicationReadyEvent;
+                    import org.springframework.context.event.ContextRefreshedEvent;
+                    import org.springframework.context.event.EventListener;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class GateWarmup {
+                        private static final Logger log = LoggerFactory.getLogger(GateWarmup.class);
+
+                        @EventListener(ApplicationReadyEvent.class)
+                        public void warmUp() {
+                            prime();
+                        }
+
+                        @EventListener
+                        public void onRefresh(ContextRefreshedEvent event) {
+                            prime();
+                        }
+
+                        private void prime() {
+                            log.debug("Gate cache primed");
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("GateLoader.java"), """
+                    package com.example.e2e.gate;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class GateLoader {
+                        private static final Logger log = LoggerFactory.getLogger(GateLoader.class);
+
+                        public void reload() {
+                            log.info("Gate rules reloaded");
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("GateBoot.java"), """
+                    package com.example.e2e.gate;
+
+                    import org.springframework.boot.context.event.ApplicationReadyEvent;
+                    import org.springframework.context.event.EventListener;
+                    import org.springframework.scheduling.annotation.Scheduled;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class GateBoot {
+                        private final GateLoader loader;
+
+                        public GateBoot(GateLoader loader) {
+                            this.loader = loader;
+                        }
+
+                        @EventListener(ApplicationReadyEvent.class)
+                        public void onReady() {
+                            loader.reload();
+                        }
+
+                        @Scheduled(cron = "0 15 * * * *")
+                        public void refresh() {
+                            loader.reload();
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("GateSweeper.java"), """
+                    package com.example.e2e.gate;
+
+                    import java.util.Map;
+                    import java.util.concurrent.ConcurrentHashMap;
+                    import java.util.concurrent.Executors;
+                    import java.util.concurrent.ScheduledExecutorService;
+                    import java.util.concurrent.TimeUnit;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.scheduling.annotation.Scheduled;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class GateSweeper {
+                        private static final Logger log = LoggerFactory.getLogger(GateSweeper.class);
+                        private final Map<String, Long> buckets = new ConcurrentHashMap<>();
+                        private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
+
+                        public GateSweeper() {
+                            timer.scheduleWithFixedDelay(this::trim, 5, 5, TimeUnit.SECONDS);
+                            timer.scheduleAtFixedRate(this::audit, 1, 1, TimeUnit.HOURS);
+                        }
+
+                        @Scheduled(fixedDelay = 5000)
+                        public void evictIdle() {
+                            buckets.entrySet().removeIf(e -> e.getValue() < System.currentTimeMillis() - 60_000);
+                        }
+
+                        @Scheduled(cron = "0 0 * * * *")
+                        public void compact() {
+                            buckets.clear();
+                        }
+
+                        void trim() {
+                            log.debug("Gate buckets trimmed [count={}]", buckets.size());
+                        }
+
+                        void audit() {
+                            log.debug("Gate buckets audited [count={}]", buckets.size());
+                        }
+                    }
+                    """);
+        });
+        String gate = "src/main/java/com/example/e2e/gate/";
+        assertThat(actual.get(gate + "GateWarmup.java")).as("a ready-event and a refresh listener run once per boot: no timer, "
+                        + "no span, no catalog constant, no counter")
+                .doesNotContain("ObservedContext").doesNotContain("GateMetrics")
+                .as("they are still entrypoints: their run says it started").contains("log.info(\"Warm up started\");");
+        assertThat(actual.get(gate + "GateBoot.java")).as("a ready listener that starts work is observed as that work")
+                .contains("    public void onReady() {\n        ObservedContext.entrypoint(GateMetrics.GATE_LOADER_RELOAD)\n");
+        assertThat(actual.get(gate + "GateLoader.java")).as("the work itself, reached by the hourly job too, is not wrapped")
+                .doesNotContain("ObservedContext");
+        String sweeper = actual.get(gate + "GateSweeper.java");
+        assertThat(sweeper).as("fixedDelay = 5000: no started/completed INFO line per run (the scheduler observes it)")
+                .contains("    @Scheduled(fixedDelay = 5000)\n    public void evictIdle() {\n        buckets.entrySet()")
+                .as("an hourly job keeps its lines")
+                .contains("    public void compact() {\n        log.info(\"Gate sweeper started\");");
+        assertThat(sweeper).as("an executor task every 5 seconds: traced, its success line at DEBUG")
+                .contains("timer.scheduleWithFixedDelay(() -> ObservedContext.entrypoint(GateMetrics.GATE_SWEEPER_TRIM).debugOnSuccess()"
+                        + ".run(this::trim), 5, 5, TimeUnit.SECONDS);")
+                .as("an hourly task keeps the INFO outcome")
+                .contains("timer.scheduleAtFixedRate(ObservedContext.observed(\"gate-sweeper.audit\", this::audit), 1, 1, TimeUnit.HOURS);");
+        assertThat(actual.get(gate + "GateMetrics.java")).as("the catalog has the sweeper's task, not the one-shots")
+                .doesNotContain("WARM_UP").doesNotContain("ON_REFRESH");
     }
 
     /**
@@ -3397,17 +3548,45 @@ abstract class E2eGoldenTest {
                 .doesNotContain("StockRouting.plan")
                 .contains("Traces are exported nowhere");
 
-        // with the annotations left inactive (the rule switched off), @Observed no longer counts as observing: the
-        // listener gets its ObservedContext
+        // with the annotations left inactive (the rule switched off), @Observed no longer counts as observing: an
+        // entrypoint of the team's own annotation gets its ObservedContext; the ready listener does not (#272: one-shot)
         Map<String, String> inactive = migrate(tmp.resolve("annotations-inactive"), CLASSPATH, app -> {
             STOCK_TRACING.run(app);
             Path yml = app.resolve("logast.yml");
             Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [tracing]")
-                    + "rules:\n  OBSERVED_ANNOTATION_INACTIVE:\n    enabled: false\n");
+                    + "rules:\n  OBSERVED_ANNOTATION_INACTIVE:\n    enabled: false\n"
+                    + "entrypoints:\n  extraAnnotations: [com.example.e2e.stock.StockTrigger]\n");
+            Path dir = app.resolve("src/main/java/com/example/e2e/stock");
+            Files.writeString(dir.resolve("StockTrigger.java"), """
+                    package com.example.e2e.stock;
+
+                    import java.lang.annotation.Retention;
+                    import java.lang.annotation.RetentionPolicy;
+
+                    @Retention(RetentionPolicy.RUNTIME)
+                    @interface StockTrigger {
+                    }
+                    """);
+            Files.writeString(dir.resolve("StockRecount.java"), """
+                    package com.example.e2e.stock;
+
+                    import io.micrometer.observation.annotation.Observed;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    class StockRecount {
+                        @StockTrigger
+                        @Observed(name = "stock.recount")
+                        void recount() {
+                            System.out.println("recount");
+                        }
+                    }
+                    """);
         });
         assertThat(inactive.get("build.gradle.kts")).doesNotContain("spring-boot-starter-aspectj");
-        assertThat(inactive.get("src/main/java/com/example/e2e/stock/StockTracker.java"))
-                .contains("ObservedContext.entrypoint(\"stock-tracker.warm-up\")");
+        assertThat(inactive.get("src/main/java/com/example/e2e/stock/StockRecount.java"))
+                .contains("ObservedContext.entrypoint(\"stock-recount.recount\")");
+        assertThat(inactive.get("src/main/java/com/example/e2e/stock/StockTracker.java")).doesNotContain("ObservedContext");
     }
 
     /** #89: observation and span names built from ids, ids as low-cardinality key values, a log pattern without the trace id. */

@@ -50,7 +50,7 @@ can end either way, the finding's note says why.
 | AREA_MDC_MISSING | medium | a key an `areas` entry requires, missing in logging methods of that area | report |
 | **Log coverage** (see [below](#log-coverage)) | | | |
 | ENTRYPOINT_SILENT | medium | an entrypoint whose own flow logs nothing at INFO on the normal path | AUTO with generated wording from the path or method (`POST /owners/{ownerId}/pets/new` → "Pet creation started"), marked `// logast:wording` (#231); a text in messages.yaml wins; NEEDS TEXT when there are no words to use |
-| JOB_OUTCOME_MISSING | medium | a job or listener without an outcome line | AUTO |
+| JOB_OUTCOME_MISSING | medium | a job or listener without an outcome line; not a `@Scheduled` sweep that runs more often than once a minute by its schedule or traffic.yaml (#272): the scheduler's observation times and traces each run, an INFO line per run would say nothing (no started line from ENTRYPOINT_SILENT either, its skips at DEBUG) | AUTO |
 | SKIP_UNLOGGED | low | an early `return` in a job that says nothing | NEEDS TEXT |
 | STATE_CHANGE_UNLOGGED | medium | a repository save/delete in a method that logs nothing | AUTO with generated wording from the entity and the verb ("Owner saved", "Pets deleted"), marked `// logast:wording` (#231); NEEDS TEXT when the entity is not known |
 | BATCH_SUMMARY_MISSING | low | a loop on a job path doing I/O per item, without a total | NEEDS TEXT |

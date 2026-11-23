@@ -515,7 +515,9 @@ public final class Rules {
         if (ctx.jobFlow == null) {
             Set<String> out = new HashSet<>();
             Deque<Map.Entry<dev.logast.model.MethodInfo, Integer>> todo = new ArrayDeque<>();
-            ctx.a.entrypoints.stream().filter(ep -> ep.kind().is(dev.logast.model.Entrypoint.Trait.ONE_OUTCOME)).forEach(ep -> todo.add(Map.entry(ep.method(), 0)));
+            // #272: a one-shot that starts no work completes once per boot: nothing a counter would show
+            ctx.a.entrypoints.stream().filter(ep -> ep.kind().is(dev.logast.model.Entrypoint.Trait.ONE_OUTCOME)
+                    && !ctx.idleOneShot(ep)).forEach(ep -> todo.add(Map.entry(ep.method(), 0)));
             while (!todo.isEmpty()) {
                 var cur = todo.poll();
                 if (!out.add(cur.getKey().key()) || cur.getValue() >= EntrypointRules.OWN_FLOW_DEPTH) {

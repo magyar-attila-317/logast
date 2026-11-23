@@ -71,6 +71,12 @@ public final class LifecyclePlan {
         String startOwner;
         String outcomeOwner;
         List<String> missing = new ArrayList<>();
+        if (frequentRun(ep)) {
+            // #272: a sweep running more often than once a minute logs no line per run: the scheduler's observation
+            // (tasks.scheduled.execution, a span per run) is its outcome, its failures are logged by the scheduler
+            return new Flow(ep.label(), m.label(), m.file().relPath() + ":" + m.line(), kind, true, true,
+                    "not needed (runs more often than once a minute)", "scheduler observation (tasks.scheduled.execution)", List.of());
+        }
         switch (kind) {
             case RUN -> {
                 startOwner = silent ? "ENTRYPOINT_SILENT" : "the method";
@@ -97,6 +103,11 @@ public final class LifecyclePlan {
         return new Flow(ep.label(), m.label(), m.file().relPath() + ":" + m.line(), kind, hasStart,
                 hasOutcome || wrapper || kind == Kind.HTTP,   // HTTP: the access log is the outcome
                 startOwner, outcomeOwner, missing);
+    }
+
+    /** #272: a {@code @Scheduled} job that runs more often than once a minute ({@link dev.logast.ScheduleRate#FREQUENT_PER_DAY}). */
+    boolean frequentRun(Entrypoint ep) {
+        return ep.kind() == Entrypoint.Kind.SCHEDULED && dev.logast.ScheduleRate.frequent(ctx.a.traffic.perDay(ep));
     }
 
     /** Implementation families whose members log their lifecycle unevenly. */

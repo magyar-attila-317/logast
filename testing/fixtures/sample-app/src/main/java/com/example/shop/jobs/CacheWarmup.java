@@ -6,20 +6,20 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
-/** Startup work: Spring publishes ApplicationReadyEvent outside any trace, so these logs have no trace id. */
+/** Startup work: runs once per boot, so no observation of its own (#272), though Spring publishes the event outside any trace. */
 @Component
 public class CacheWarmup {
     private static final Logger log = LoggerFactory.getLogger(CacheWarmup.class);
 
     @EventListener(ApplicationReadyEvent.class)
-    public void warmUp() { // expect: ENTRYPOINT_NOT_OBSERVED
+    public void warmUp() {
         log.info("Cache warm-up started");
         load();
         log.info("Cache warm-up completed"); // expect: METRIC_OUTCOME_UNMEASURED
     }
 
     @EventListener
-    public void onReady(ApplicationReadyEvent event) { // expect: ENTRYPOINT_NOT_OBSERVED
+    public void onReady(ApplicationReadyEvent event) { // expect: JOB_OUTCOME_MISSING
         log.info("Price list refresh started");
     }
 

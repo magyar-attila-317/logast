@@ -20,6 +20,14 @@ class ScheduleRateTest {
     }
 
     @Test
+    void aSweepRunsMoreOftenThanOnceAMinute() {   // #272
+        assertThat(ScheduleRate.frequent(86_400_000d / 5_000)).as("fixedDelay = 5000").isTrue();
+        assertThat(ScheduleRate.frequent(86_400_000d / 60_000)).as("once a minute: not yet").isFalse();
+        assertThat(ScheduleRate.frequent(ScheduleRate.cronPerDay("0 */5 * * * *", Cron.Format.SPRING))).isFalse();
+        assertThat(ScheduleRate.frequent(null)).as("rate unknown").isFalse();
+    }
+
+    @Test
     void placeholdersComeFromTheConfigurationElseTheirDefault() {
         assertThat(ScheduleRate.resolve("${jobs.sweep:0 0 * * * *}", Map.of())).isEqualTo("0 0 * * * *");
         assertThat(ScheduleRate.resolve("${jobs.sweep:0 0 * * * *}", Map.of("jobs.sweep", "0 */10 * * * *"))).isEqualTo("0 */10 * * * *");

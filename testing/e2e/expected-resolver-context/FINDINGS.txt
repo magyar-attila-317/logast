@@ -67,4 +67,6 @@ NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.j
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/weekly/CountryCodeResolver.java:15
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/weekly/TargetWeekResolver.java:18
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/weekly/TargetWeekResolver.java:22
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/weekly/WeeklyReportStarter.java:23
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/weekly/WeeklyReportStarter.java:23
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

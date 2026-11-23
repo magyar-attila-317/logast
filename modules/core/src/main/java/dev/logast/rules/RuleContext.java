@@ -30,6 +30,30 @@ public final class RuleContext {
     /** File → rules its {@code logast:ignore-file} comments silence. */
     private final Map<String, Set<String>> fileIgnores = new HashMap<>();
 
+    /**
+     * #272: the work a startup one-shot starts: the first command (a void method) of another class of the service it
+     * calls directly ({@code job.execute()}), or null when it only does local or setup work (its own helpers, getters).
+     */
+    public MethodInfo startedWork(MethodInfo m) {
+        for (var e : a.graph.out(m)) {
+            MethodInfo to = e.to();
+            if (!to.owner().fqn().equals(m.owner().fqn()) && !to.owner().fqn().startsWith(a.supportPackage + ".")
+                    && to.type().getReturnType() == JavaType.Primitive.Void) {
+                return to;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * #272: a startup one-shot ({@link dev.logast.graph.EntrypointFinder#oneShot}) that starts no work of the service: no
+     * observation, catalog constant or counter of its own. One that starts work is observed, named after that work: an
+     * application whose only entrypoint is a ready listener is still traced and timed.
+     */
+    public boolean idleOneShot(dev.logast.model.Entrypoint ep) {
+        return dev.logast.graph.EntrypointFinder.oneShot(ep) && startedWork(ep.method()) == null;
+    }
+
     /** Who owns which lifecycle line of every flow (built after the entrypoint rules, which plan wrappers and start lines). */
     public LifecyclePlan lifecycle() {
         if (lifecycle == null) {

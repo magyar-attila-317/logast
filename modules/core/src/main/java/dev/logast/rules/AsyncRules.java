@@ -147,7 +147,8 @@ final class AsyncRules {
     private void scheduledTask(MethodInfo m, J.MethodInvocation call) {
         Expression task = call.getArguments().stream().filter(a -> !(a instanceof J.Empty)).findFirst().orElse(null);
         if (task == null || task instanceof J.MethodInvocation w && w.getSimpleName().equals("observed")
-                && w.getSelect() instanceof J.Identifier sel && sel.getSimpleName().equals("ObservedContext")) {
+                && w.getSelect() instanceof J.Identifier sel && sel.getSimpleName().equals("ObservedContext")
+                || task instanceof J.Lambda l && l.getBody().printTrimmed().startsWith("ObservedContext.entrypoint(")) {
             return;
         }
         String taskName = task instanceof J.MemberReference ref ? ref.getReference().getSimpleName()
@@ -159,9 +160,62 @@ final class AsyncRules {
                 .title(call.getSimpleName() + " runs '" + Text.oneLine(src, 60) + "' periodically outside any trace: "
                         + "its logs have no trace id")
                 .context(ctx.context(m, Pos.start(call), Text.oneLine(call.printTrimmed(), 160), null));
-        b.edit(Edit.replace(m.file().relPath(), Pos.start(task), Pos.end(task), "ObservedContext.observed(\"" + name + "\", " + src + ")"));
+        Long period = periodMillis(call);
+        String wrapped;
+        if (period != null && dev.logast.ScheduleRate.frequent(86_400_000d / period) && ctx.supportHasRun()) {
+            // #272: more often than once a minute: each run still gets its trace and timer, its success line goes to DEBUG
+            String work = task instanceof J.Lambda || task instanceof J.MemberReference ? src
+                    : task instanceof J.Identifier || task instanceof J.FieldAccess ? src + "::run" : "(" + src + ")::run";
+            wrapped = "() -> ObservedContext.entrypoint(\"" + name + "\").debugOnSuccess().run(" + work + ")";
+        } else {
+            wrapped = "ObservedContext.observed(\"" + name + "\", " + src + ")";
+        }
+        b.edit(Edit.replace(m.file().relPath(), Pos.start(task), Pos.end(task), wrapped));
         b.edits(JavaEdits.imports(m.file(), ctx.support("ObservedContext")));
         ctx.dependOnStarter(b);
+    }
+
+    /**
+     * #272: the period of a periodic task in milliseconds, from literals: {@code scheduleAtFixedRate(task, 5, 5, SECONDS)}
+     * on an executor, {@code Duration.ofSeconds(5)} (or a long of milliseconds) as the last argument of a Spring
+     * TaskScheduler; null when it is not written as a literal or the call has a Trigger.
+     */
+    static Long periodMillis(J.MethodInvocation call) {
+        List<Expression> args = call.getArguments().stream().filter(a -> !(a instanceof J.Empty)).toList();
+        if (call.getSimpleName().equals("schedule") || args.size() < 2) {
+            return null;
+        }
+        if (args.size() == 4) {
+            Long n = literal(args.get(2));
+            String u = args.get(3).printTrimmed();
+            try {
+                return n == null ? null : java.util.concurrent.TimeUnit.valueOf(u.substring(u.lastIndexOf('.') + 1)).toMillis(n);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        }
+        Expression last = args.getLast();
+        if (last instanceof J.MethodInvocation d && d.getSelect() != null && d.getSelect().printTrimmed().endsWith("Duration")
+                && d.getArguments().size() == 1) {
+            Long n = literal(d.getArguments().getFirst());
+            if (n == null) {
+                return null;
+            }
+            return switch (d.getSimpleName()) {
+                case "ofMillis" -> n;
+                case "ofSeconds" -> n * 1_000;
+                case "ofMinutes" -> n * 60_000;
+                case "ofHours" -> n * 3_600_000;
+                case "ofDays" -> n * 86_400_000;
+                default -> null;
+            };
+        }
+        return args.size() == 2 ? literal(last) : null;
+    }
+
+    private static Long literal(Expression e) {
+        Long n = e instanceof J.Literal l && l.getValue() instanceof Number v ? v.longValue() : null;
+        return n == null || n <= 0 ? null : n;
     }
 
     /** {@code emitter.onCompletion(() -> ..)}: the callback runs on a container thread; give it the registering request's context. */

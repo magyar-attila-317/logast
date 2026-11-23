@@ -56,7 +56,7 @@ final class CoverageRules {
             anyPath.addAll(ctx.a.paths.reachableFrom(ep));
             if (ep.kind().is(Entrypoint.Trait.JOB) && !ep.method().owner().fqn().startsWith(ctx.a.supportPackage + ".")) {
                 jobMethods.add(ep.method().key());
-                if (ep.kind().is(Entrypoint.Trait.RUN)) {
+                if (ep.kind().is(Entrypoint.Trait.RUN) && !ctx.lifecycle().frequentRun(ep)) {   // #272: a sweep's skips at DEBUG
                     runMethods.add(ep.method().key());
                 }
                 nearJob.add(ep.method().key());

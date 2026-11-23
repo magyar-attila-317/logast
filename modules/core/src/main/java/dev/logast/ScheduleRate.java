@@ -29,6 +29,18 @@ public final class ScheduleRate {
     /** A year without a leap day, so a yearly schedule counts once. */
     private static final int YEAR = 2027;
 
+    /**
+     * #272: more runs a day than this (more often than once a minute) make a job a sweep: a started/completed INFO line
+     * or an INFO outcome line per run would be thousands of lines a day saying nothing. Its runs are timed and traced
+     * by the scheduler's observation; failures still log at ERROR.
+     */
+    public static final double FREQUENT_PER_DAY = 24 * 60;
+
+    /** #272: more often than once a minute ({@link #FREQUENT_PER_DAY}); false when the rate is not known. */
+    public static boolean frequent(Double perDay) {
+        return perDay != null && perDay > FREQUENT_PER_DAY;
+    }
+
     /** Runs per day and the schedule it was computed from. */
     public record Rate(double perDay, String from) {
     }

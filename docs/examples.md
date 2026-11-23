@@ -372,7 +372,9 @@ try (var mdc = MdcScope.of("runCode", runCode)) {
 
 ### An entrypoint Spring does not observe gets its own observation
 
-An `@EventListener` that starts a flow of its own had no trace id in its logs and recorded no span.
+An `@EventListener` that starts a flow of its own had no trace id in its logs and recorded no span. A ready listener runs
+once per boot, but it can be the application's only entrypoint: it is observed as the work it starts, named after the
+called method (#272); one that only does local work gets no observation.
 *`testing/e2e/before` → `testing/e2e/expected`, `SettlementJobExecutor.java`.*
 
 <table>
@@ -393,7 +395,7 @@ public void onReady() {
 ```java
 @EventListener(ApplicationReadyEvent.class)
 public void onReady() {
-    ObservedContext.entrypoint(JobMetrics.SETTLEMENT_JOB_EXECUTOR_ON_READY)
+    ObservedContext.entrypoint(JobMetrics.SETTLEMENT_JOB_EXECUTE)
             .failureLoggedByCaller()
             .run(() -> {
                 job.execute();

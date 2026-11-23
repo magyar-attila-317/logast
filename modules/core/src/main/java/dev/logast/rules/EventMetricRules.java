@@ -48,8 +48,9 @@ final class EventMetricRules {
                     .anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(ep.method(), a));
             boolean planned = !batch && (ep.kind() == Entrypoint.Kind.KAFKA && ctx.entry.kafkaObservation()
                     || ep.kind() == Entrypoint.Kind.RABBIT && ctx.entry.rabbitObservation());
-            if ((ep.observedByFramework() || planned || ep.kind() == Entrypoint.Kind.BATCH) && ep.kind().is(Entrypoint.Trait.TIMED_BY_FRAMEWORK)) {
-                timed.add(ep.method().key());
+            if ((ep.observedByFramework() || planned || ep.kind() == Entrypoint.Kind.BATCH) && ep.kind().is(Entrypoint.Trait.TIMED_BY_FRAMEWORK)
+                    || ctx.idleOneShot(ep)) {
+                timed.add(ep.method().key());   // #272: a one-shot without work gets no timer of its own either
             }
         }
         // candidates first: a business event called from another observed method is part of that observation. Only an

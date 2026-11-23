@@ -1,6 +1,6 @@
 package com.example.e2e.weekly;
 
-import com.example.e2e.logging.ObservedContext;
+import com.example.e2e.logging.MdcScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -18,11 +18,9 @@ public class WeeklyReportStarter {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
-        ObservedContext.entrypoint(WeeklyMetrics.WEEKLY_REPORT_STARTER_ON_READY)
-                .mdc("targetWeek", targetWeekResolver.targetWeek())
-                .failureLoggedByCaller()
-                .run(() -> {
-                    log.info("Weekly report started");
-                });
+        try (var mdc = MdcScope.of("targetWeek", targetWeekResolver.targetWeek())) {
+            log.info("Weekly report started");
+            log.info("Weekly report starter completed"); // logast:wording
+        }
     }
 }

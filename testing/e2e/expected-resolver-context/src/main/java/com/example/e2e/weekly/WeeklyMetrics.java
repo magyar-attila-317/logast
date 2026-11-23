@@ -12,9 +12,6 @@ public final class WeeklyMetrics {
     private WeeklyMetrics() {
     }
 
-    /** Observation (timer and span) name. */
-    public static final String WEEKLY_REPORT_STARTER_ON_READY = "weekly-report-starter.on-ready";
-
     /** weekly.close{outcome="completed"} +1. */
     public static void weeklyCloseCompleted() {
         Outcomes.count("weekly.close", "completed");

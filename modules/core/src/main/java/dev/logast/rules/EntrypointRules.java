@@ -127,7 +127,8 @@ final class EntrypointRules {
     private boolean notObserved(Entrypoint ep, MethodInfo m, boolean reactive) {
         boolean batch = dev.logast.graph.EntrypointFinder.batch(m, null)
                 || m.decl().getLeadingAnnotations().stream().anyMatch(a -> dev.logast.graph.EntrypointFinder.batch(m, a));
-        boolean observed = ep.observedByFramework()
+        // #272: a one-shot (startup listener, @PostConstruct) that starts no work gets no timer and span for its one run
+        boolean observed = ep.observedByFramework() || ctx.idleOneShot(ep)
                 || ep.kind() == Entrypoint.Kind.KAFKA && ctx.entry.kafkaObservation() && !batch
                 || ep.kind() == Entrypoint.Kind.RABBIT && ctx.entry.rabbitObservation() && !batch;
         boolean notObserved = !observed && !reactive && ctx.enabled(Rules.ENTRYPOINT_NOT_OBSERVED)
@@ -163,7 +164,8 @@ final class EntrypointRules {
     private boolean silent(Entrypoint ep, MethodInfo m) {
         boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
         boolean run = LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.RUN;
-        return !readEndpoint && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
+        return !readEndpoint && !ctx.lifecycle().frequentRun(ep)   // #272: no INFO line per run of a sweep
+                && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
                 && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(m.file(), m.line(), Rules.ENTRYPOINT_SILENT)
                 && !LifecyclePlan.ownFlowLogs(ctx, m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
     }
@@ -215,7 +217,9 @@ final class EntrypointRules {
             // runs in the publisher's call: the exception goes back to code that logs it; one failure = one ERROR
             chain.add(".failureLoggedByCaller()");
         }
-        String replacement = observedWrap(m, observationName(m), chain, body.withTop(top), body.indent(), body.unit(), body.taken(),
+        // #272: a startup one-shot is observed as the work it starts (settlement-job.execute), not as the listener
+        MethodInfo work = dev.logast.graph.EntrypointFinder.oneShot(ep) ? ctx.startedWork(m) : null;
+        String replacement = observedWrap(m, observationName(work != null ? work : m), chain, body.withTop(top), body.indent(), body.unit(), body.taken(),
                 ctx.supportHasRun());
         extra.addAll(JavaEdits.imports(m.file(), ctx.support("ObservedContext")));
         ctx.dependOnStarter(b);

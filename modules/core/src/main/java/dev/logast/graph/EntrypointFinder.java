@@ -524,6 +524,26 @@ public final class EntrypointFinder {
             "WebServerInitializedEvent", "ServletWebServerInitializedEvent", "ReactiveWebServerInitializedEvent",
             "AvailabilityChangeEvent");
 
+    /**
+     * #272: runs once per boot (or shutdown): a listener of Spring's own lifecycle events ({@code ApplicationReadyEvent},
+     * {@code ContextRefreshedEvent}, …), a {@code @PostConstruct} method. Not a {@code CommandLineRunner}: a runner is the
+     * run of a batch application, traced at runtime by the starter's BatchTraceListener and counted like any job.
+     * A one-shot stays an entrypoint (its MDC, its started line, coverage). One that only does local or setup work gets
+     * no observation: a timer and a span for one run per boot are noise, and so is a metrics-catalog constant. One that
+     * starts work of the service ({@code job.execute()}) is observed as that work (RuleContext.startedWork): a ready
+     * listener can be an application's only entrypoint.
+     */
+    public static boolean oneShot(Entrypoint ep) {
+        MethodInfo m = ep.method();
+        if (m.decl().getLeadingAnnotations().stream().anyMatch(a ->
+                Annotations.is(a, "jakarta.annotation.PostConstruct") || Annotations.is(a, "javax.annotation.PostConstruct"))) {
+            return true;
+        }
+        return ep.kind() == Kind.EVENT && m.decl().getLeadingAnnotations().stream()
+                .anyMatch(a -> (Annotations.is(a, "org.springframework.context.event.EventListener")
+                        || Annotations.is(a, "org.springframework.transaction.event.TransactionalEventListener")) && lifecycleEvent(m, a));
+    }
+
     static boolean lifecycleEvent(MethodInfo m, J.Annotation a) {
         java.util.List<String> types = new java.util.ArrayList<>();
         m.type().getParameterTypes().stream().findFirst().map(t -> Types.erasure(t)).ifPresent(types::add);
