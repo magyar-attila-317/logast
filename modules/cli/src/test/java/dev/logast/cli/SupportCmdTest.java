@@ -81,7 +81,7 @@ class SupportCmdTest {
                 .contains("<groupId>com.example.platform</groupId>", "<artifactId>logging-support</artifactId>\n  <version>1.0.0</version>",
                         "<groupId>org.slf4j</groupId>", "<version>2.0.17</version>")
                 .as("no .module goes with it: Gradle reads the POM").doesNotContain("published-with-gradle-metadata", "richer model");
-        assertThat(repo.resolve("com/example/platform/test-capture/1.0.0/test-capture-1.0.0.jar")).exists();
+        assertThat(repo.resolve("com/example/platform/test-capture")).as("services do not depend on it: verify takes it from logast").doesNotExist();
 
         // a second version: the metadata lists both, the newer as latest
         assertThat(run("publish", "--from", dir.toString(), "--repo", repo.toUri().toString(), "--group", "com.example.platform",
@@ -116,7 +116,7 @@ class SupportCmdTest {
         }
         assertThat(put).containsKeys("/maven/releases/dev/logast/logging-support/0.9.0/logging-support-0.9.0.jar",
                 "/maven/releases/dev/logast/logging-support/0.9.0/logging-support-0.9.0.pom.sha1",
-                "/maven/releases/dev/logast/test-capture/maven-metadata.xml");
+                "/maven/releases/dev/logast/logging-support/maven-metadata.xml");
         assertThat(new String(put.get("/maven/releases/dev/logast/logging-support/0.9.0/logging-support-0.9.0.jar"), StandardCharsets.UTF_8))
                 .as("the shipped version by default").isEqualTo("jar of logging-support");
         String basic = "Basic " + java.util.Base64.getEncoder().encodeToString("ci-bot:s3cret".getBytes(StandardCharsets.UTF_8));

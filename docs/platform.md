@@ -17,8 +17,8 @@ services: one starter, one company policy, one vocabulary, one report and one CI
 By default (`support.mode: vendor`) logast copies the `logging-support` classes into each service. To have services
 depend on the starter instead:
 
-1. Publish it to your repository, from the logast you installed (#256): it ships the support library and the test
-   capture (jars, sources, POMs) and uploads them as Maven repositories take them, with checksums and
+1. Publish it to your repository, from the logast you installed (#256): it ships the support library (jar, sources,
+   POM) and uploads it as Maven repositories take them, with checksums and
    `maven-metadata.xml`. No checkout, no Gradle:
 
    ```bash
@@ -67,7 +67,7 @@ support:
   repository: https://maven.pkg.github.com/<owner>/<repo>
 ```
 
-For trying it out, every logast release also publishes `dev.logast:logging-support` and `dev.logast:test-capture` to
+For trying it out, every logast release also publishes `dev.logast:logging-support` to
 logast's own `https://maven.pkg.github.com/<owner of logast>/logast`; for services you run, publish to your own.
 
 GitHub Packages wants a token even for a public package. `apply` writes the repository with GitHub's credentials

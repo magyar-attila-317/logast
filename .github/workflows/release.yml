@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: write   # creates the release
-  packages: write   # publishes the support library and the test capture to GitHub Packages
+  packages: write   # publishes the support library to GitHub Packages
 
 jobs:
   release:
@@ -44,7 +44,7 @@ jobs:
           # generated notes are made from
           scripts/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
           gh release create "$GITHUB_REF_NAME" "$zip" --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --title "logast ${GITHUB_REF_NAME#v}" $prerelease
-      - name: Support library and test capture to GitHub Packages
+      - name: Support library to GitHub Packages
         # after the release, so a failure here never leaves a tag without its release; services in dependency mode resolve dev.logast:logging-support:<version> from
         # https://maven.pkg.github.com/<owner>/logast (docs/platform.md: a token with read:packages, or the package's
         # Actions access for another repository's workflow)
@@ -52,4 +52,4 @@ jobs:
           REPO_URL: https://maven.pkg.github.com/${{ github.repository }}
           REPO_USER: ${{ github.actor }}
           REPO_PASSWORD: ${{ github.token }}
-        run: ./gradlew :logging-support:publishAllPublicationsToCompanyRepository :test-capture:publishAllPublicationsToCompanyRepository --console=plain
+        run: ./gradlew :logging-support:publishAllPublicationsToCompanyRepository --console=plain

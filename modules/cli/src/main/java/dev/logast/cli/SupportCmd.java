@@ -28,17 +28,18 @@ import java.util.regex.Pattern;
 
 /**
  * #256: the support library is the team's once it runs in its services: {@code logast support publish} puts the one this
- * logast ships ({@code lib/support/}: logging-support and test-capture, jars, sources, POMs) into the team's own Maven
+ * logast ships ({@code lib/support/}: the logging-support jar, sources and POM) into the team's own Maven
  * repository, under the version and group it chooses, with what a Maven repository takes (HTTP PUT, checksums,
  * maven-metadata.xml). No checkout, no Gradle.
  */
 @Command(name = "support", hidden = true, description = "The support library logast ships, for the team's own repository (docs/platform.md)",
         subcommands = {SupportCmd.Publish.class})
 final class SupportCmd {
-    static final List<String> ARTIFACTS = List.of("logging-support", "test-capture");
+    /** What services depend on; test-capture is not among them: logast verify takes it from logast's own lib/. */
+    static final List<String> ARTIFACTS = List.of("logging-support");
 
     @Command(name = "publish", mixinStandardHelpOptions = true,
-            description = "Publish the support library and the test capture to a Maven repository (dependency mode)")
+            description = "Publish the support library to a Maven repository (dependency mode)")
     static final class Publish implements Callable<Integer> {
         @Option(names = "--repo", required = true, description = "github.com/<owner>/<repo> (GitHub Packages), or a Maven repository URL")
         String repo;
