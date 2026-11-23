@@ -1638,8 +1638,12 @@ abstract class E2eGoldenTest {
         });
         String build = actual.get("build.gradle.kts");
         assertThat(build).as(build).contains("dev.logast:logging-support", "url = uri(\"https://maven.pkg.github.com/example/logast\")",
-                "providers.gradleProperty(\"gpr.user\").orElse(providers.environmentVariable(\"GITHUB_ACTOR\"))",
-                "providers.gradleProperty(\"gpr.key\").orElse(providers.environmentVariable(\"GITHUB_TOKEN\"))");
+                "name = \"githubExampleLogast\"",
+                // #257: the repository's own pair first, so one machine reads packages of several owners
+                "providers.gradleProperty(\"githubExampleLogastUsername\").orElse(providers.gradleProperty(\"gpr.user\"))"
+                        + ".orElse(providers.environmentVariable(\"GITHUB_ACTOR\"))",
+                "providers.gradleProperty(\"githubExampleLogastPassword\").orElse(providers.gradleProperty(\"gpr.key\"))"
+                        + ".orElse(providers.environmentVariable(\"GITHUB_TOKEN\"))");
     }
 
     @Test

@@ -73,8 +73,18 @@ logast's own `https://maven.pkg.github.com/<owner of logast>/logast`; for servic
 GitHub Packages wants a token even for a public package. `apply` writes the repository with GitHub's credentials
 convention:
 
-- on a developer's machine: `gpr.user` (the GitHub user) and `gpr.key` (a token with `read:packages`) in
-  `~/.gradle/gradle.properties`;
+- on a developer's machine, in `~/.gradle/gradle.properties` (never in a build file: that one is committed): the
+  repository's own pair, named after it (#257), else `gpr.user` / `gpr.key`. One machine can so read packages of
+  several owners, each with its own account:
+
+  ```properties
+  # https://maven.pkg.github.com/acme/platform-libs
+  githubAcmePlatformLibsUsername=acme-dev
+  githubAcmePlatformLibsPassword=<token with read:packages>
+  # every other GitHub Packages repository
+  gpr.user=<your GitHub user>
+  gpr.key=<token with read:packages>
+  ```
 - in a GitHub Actions workflow: `GITHUB_ACTOR` and `GITHUB_TOKEN` (pass them as `env:` to the Gradle step, with
   `permissions: packages: read`). The repository's own packages are readable with its workflow token; a package of
   another repository first needs that repository granted read access in the package settings (*Manage Actions access*).

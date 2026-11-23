@@ -314,14 +314,18 @@ public final class SetupRules {
         String entry = kts ? "maven { url = uri(\"" + repo + "\") }" : "maven { url '" + repo + "' }";
         if (repo.matches("https://maven\\.pkg\\.github\\.com/.*")) {
             // #254: GitHub Packages wants a token even for public packages: GitHub's convention, gpr.user / gpr.key in
-            // ~/.gradle/gradle.properties on a machine, GITHUB_ACTOR / GITHUB_TOKEN in a workflow
-            entry = kts ? "maven {\n        url = uri(\"" + repo + "\")\n        credentials {\n"
-                    + "            username = providers.gradleProperty(\"gpr.user\").orElse(providers.environmentVariable(\"GITHUB_ACTOR\")).orNull\n"
-                    + "            password = providers.gradleProperty(\"gpr.key\").orElse(providers.environmentVariable(\"GITHUB_TOKEN\")).orNull\n"
+            // ~/.gradle/gradle.properties on a machine, GITHUB_ACTOR / GITHUB_TOKEN in a workflow. #257: first a pair of
+            // this repository's own (githubOwnerRepoUsername / ...Password), so one machine reads several owners'
+            String name = githubRepositoryName(repo);
+            entry = kts ? "maven {\n        name = \"" + name + "\"\n        url = uri(\"" + repo + "\")\n        credentials {\n"
+                    + "            username = providers.gradleProperty(\"" + name + "Username\").orElse(providers.gradleProperty(\"gpr.user\"))"
+                    + ".orElse(providers.environmentVariable(\"GITHUB_ACTOR\")).orNull\n"
+                    + "            password = providers.gradleProperty(\"" + name + "Password\").orElse(providers.gradleProperty(\"gpr.key\"))"
+                    + ".orElse(providers.environmentVariable(\"GITHUB_TOKEN\")).orNull\n"
                     + "        }\n    }"
-                    : "maven {\n        url '" + repo + "'\n        credentials {\n"
-                    + "            username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')\n"
-                    + "            password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')\n"
+                    : "maven {\n        name = '" + name + "'\n        url '" + repo + "'\n        credentials {\n"
+                    + "            username = project.findProperty('" + name + "Username') ?: project.findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')\n"
+                    + "            password = project.findProperty('" + name + "Password') ?: project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')\n"
                     + "        }\n    }";
         }
         Matcher m = REPOSITORIES.matcher(text);
@@ -334,6 +338,21 @@ public final class SetupRules {
                     + "repositories {\n    " + entry + "\n}\n\n"));
         }
         b.suggestion(b.suggestion + " Adds the repository it comes from (support.repository).");
+    }
+
+    /**
+     * #257: a GitHub Packages repository's name, after its owner and repository (https://maven.pkg.github.com/acme/
+     * platform-libs → githubAcmePlatformLibs): its credentials are the Gradle properties of that name with Username /
+     * Password, as Gradle names a repository's credentials.
+     */
+    static String githubRepositoryName(String url) {
+        StringBuilder sb = new StringBuilder("github");
+        for (String part : url.replaceFirst("^https://maven\\.pkg\\.github\\.com/", "").split("[^A-Za-z0-9]+")) {
+            if (!part.isEmpty()) {
+                sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+            }
+        }
+        return sb.toString();
     }
 
     /** Spring Boot 4's EnvironmentPostProcessor; Boot 3 has it in org.springframework.boot.env. */
