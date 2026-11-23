@@ -600,6 +600,61 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #274: two packages that end in {@code event} each get their own {@code EventMetrics} catalog. A metric first used
+     * in {@code alpha.event} lives in alpha's catalog; {@code beta.event} uses it next to its own catalog, and a third
+     * package uses both. Importing a catalog by its simple name would hide beta's own {@code EventMetrics}, or import
+     * two classes of the same name: such a catalog is named by its full name. The result compiles.
+     */
+    @Test
+    void catalogsOfTheSameNameInSeveralPackagesAreNamedByPackage() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            // package, class, the business events it runs (one method each)
+            for (String[] c : new String[][]{{"alpha.event", "AlphaHandler", "refund sync"},
+                    {"beta.event", "BetaHandler", "refund sync", "ledger import"}, {"gamma", "GammaHandler", "refund sync", "ledger import"}}) {
+                Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/" + c[0].replace('.', '/')));
+                StringBuilder methods = new StringBuilder();
+                for (int i = 2; i < c.length; i++) {
+                    methods.append("""
+
+                                public void run%d() {
+                                    log.info("Starting %s");
+                                    work();
+                                    log.info("Finished %s");
+                                }
+                            """.formatted(i - 1, c[i], c[i]));
+                }
+                Files.writeString(dir.resolve(c[1] + ".java"), """
+                        package com.example.e2e.%s;
+
+                        import org.slf4j.Logger;
+                        import org.slf4j.LoggerFactory;
+                        import org.springframework.stereotype.Component;
+
+                        @Component
+                        public class %s {
+                            private static final Logger log = LoggerFactory.getLogger(%s.class);
+                        %s
+                            private void work() {
+                            }
+                        }
+                        """.formatted(c[0], c[1], c[1], methods));
+            }
+        });
+        String base = "src/main/java/com/example/e2e/";
+        assertThat(actual).as("one EventMetrics per event package").containsKeys(base + "alpha/event/EventMetrics.java",
+                base + "beta/event/EventMetrics.java");
+        assertThat(actual.get(base + "beta/event/BetaHandler.java")).as("alpha's catalog next to beta's own: full name, no import")
+                .contains("com.example.e2e.alpha.event.EventMetrics.REFUND_SYNC")
+                .doesNotContain("import com.example.e2e.alpha.event.EventMetrics;");
+        assertThat(actual.get(base + "beta/event/BetaHandler.java")).as("beta's own catalog by its simple name")
+                .contains("ObservedContext.entrypoint(EventMetrics.LEDGER_IMPORT)");
+        assertThat(actual.get(base + "gamma/GammaHandler.java")).as("a third package calls both catalogs by their full names")
+                .contains("com.example.e2e.alpha.event.EventMetrics.REFUND_SYNC")
+                .contains("com.example.e2e.beta.event.EventMetrics.LEDGER_IMPORT");
+        golden(EXPECTED.resolveSibling("expected-catalog-same-name"), actual);
+    }
+
+    /**
      * #106: the Splunk fields follow the format the service really writes. Here nothing configures Spring's structured
      * logging and logast.yaml keeps the default (ecs), but logback-spring.xml uses the Logstash encoder: the queries
      * use its fields ({@code level}, {@code logger_name}), not ECS's ({@code log.level}).

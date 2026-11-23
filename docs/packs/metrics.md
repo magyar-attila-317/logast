@@ -146,7 +146,9 @@ public final class OrderMetrics {
 }
 ```
 `metrics.catalog` in logast.yaml picks where they live: `per-package` (default; one `<Package>Metrics` class per
-package that counts, next to its code; a metric used in several packages stays in the package of its first use),
+package that counts, next to its code; a metric used in several packages stays in the package of its first use, and
+a call site names that catalog by its full name where its simple name means another class, such as its own package's
+`EventMetrics`),
 `single` (all in `metrics.catalogClass`, default `<app package>.metrics.BusinessMetrics`) or `off` (names stay at the
 call sites). Rename or document members freely: logast recognises its catalogs by the `// logast:metrics-catalog`
 comment, keeps what is there, and adds new members at the end. Counting lines written by hand

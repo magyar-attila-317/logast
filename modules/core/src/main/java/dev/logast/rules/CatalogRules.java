@@ -151,13 +151,17 @@ final class CatalogRules {
         for (List<Use> fileUses : byFile.values()) {
             SourceFileInfo f = fileUses.getFirst().file();
             Set<String> imports = new TreeSet<>();
+            Set<String> used = new HashSet<>();
+            fileUses.forEach(u -> used.add(where.get(u.key())[0]));
             for (Use u : fileUses) {
                 String[] w = where.get(u.key());
-                String cls = w[0].substring(w[0].lastIndexOf('.') + 1);
+                boolean samePackage = pkgOf(w[0]).equals(packageOf(f));
+                // #274: a catalog whose simple name means another class here is named by its full name, never imported
+                String cls = samePackage || !ambiguous(f, w[0], used, catalogs.keySet()) ? simpleOf(w[0]) : w[0];
                 String text = u.key().kind().equals("name") ? cls + "." + w[1]
                         : cls + "." + w[1] + "(" + (u.amountSrc() == null ? "" : u.amountSrc()) + ")";
                 b.edit(Edit.replace(f.relPath(), Pos.start(u.tree()), Pos.end(u.tree()), text));
-                if (!w[0].substring(0, w[0].lastIndexOf('.')).equals(packageOf(f))) {
+                if (!samePackage && cls.equals(simpleOf(w[0]))) {
                     imports.add(w[0]);
                 }
             }
@@ -272,6 +276,40 @@ final class CatalogRules {
 
     private static String packageOf(SourceFileInfo f) {
         return f.cu().getPackageDeclaration() == null ? "" : f.cu().getPackageDeclaration().getExpression().printTrimmed();
+    }
+
+    /**
+     * #274: the simple name of catalog {@code fqn} (from another package) names another class in {@code f}: a class of
+     * that name in f's package (existing or a catalog to create), another catalog f calls, a class f imports or declares.
+     * Several packages each have their {@code EventMetrics}; an import would hide f's own one or clash with another.
+     */
+    private boolean ambiguous(SourceFileInfo f, String fqn, Set<String> used, Set<String> catalogs) {
+        String simple = simpleOf(fqn);
+        String own = packageOf(f).isEmpty() ? simple : packageOf(f) + "." + simple;
+        if (ctx.a.index.clazz(own) != null || catalogs.contains(own)) {
+            return true;
+        }
+        for (String other : used) {
+            if (!other.equals(fqn) && simpleOf(other).equals(simple)) {
+                return true;
+            }
+        }
+        String text = f.text();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^import\\s+([\\w.]+\\." + simple + ")\\s*;").matcher(text);
+        while (m.find()) {
+            if (!m.group(1).equals(fqn)) {
+                return true;
+            }
+        }
+        return java.util.regex.Pattern.compile("\\b(class|interface|enum|record)\\s+" + simple + "\\b").matcher(text).find();
+    }
+
+    private static String simpleOf(String fqn) {
+        return fqn.substring(fqn.lastIndexOf('.') + 1);
+    }
+
+    private static String pkgOf(String fqn) {
+        return fqn.contains(".") ? fqn.substring(0, fqn.lastIndexOf('.')) : "";
     }
 
     // ---- where new members go -------------------------------------------------------------------------------
