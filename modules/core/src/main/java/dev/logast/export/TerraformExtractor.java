@@ -234,20 +234,19 @@ public final class TerraformExtractor implements Extractor {
         Map<Path, java.util.concurrent.Future<Map<String, Object>>> renders = new LinkedHashMap<>();
         var pool = useTerragrunt ? java.util.concurrent.Executors.newFixedThreadPool(threads()) : null;
         if (pool != null) {
-            var started = new java.util.concurrent.atomic.AtomicInteger();
             for (Path unit : units) {
-                renders.put(unit, pool.submit(() -> {
-                    System.err.println("… terragrunt render " + rel(root, unit) + " (" + started.incrementAndGet() + "/" + units.size() + ")");
-                    return render(unit);
-                }));
+                renders.put(unit, pool.submit(() -> render(unit)));
             }
             pool.shutdown();
         }
+        int done = 0;
         for (Path unit : units) {
             String env = env(root, unit);
             try {
                 Map<String, Object> rendered = null;
                 if (pool != null) {
+                    // #245: progress from this thread (the renders' threads would print between a fleet's repo lines)
+                    System.err.println("… terragrunt render " + rel(root, unit) + " (" + ++done + "/" + units.size() + ")");
                     try {
                         rendered = renders.get(unit).get();
                     } catch (InterruptedException e) {
@@ -428,8 +427,12 @@ public final class TerraformExtractor implements Extractor {
             p.setVariables(new LinkedHashMap<>(vars));
         }
         try {
-            return p.parse(hcl, true);
+            return dev.logast.QuietStdout.call(() -> p.parse(hcl, true));   // #245: hcl4j prints its debug lines to stdout
         } catch (com.bertramlabs.plugins.hcl4j.HCLParserException e) {
+            throw new IOException("HCL: " + e.getMessage(), e);
+        } catch (IOException | RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
             throw new IOException("HCL: " + e.getMessage(), e);
         }
     }

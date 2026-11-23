@@ -142,7 +142,8 @@ final class FleetKnowledgeBase {
             java.util.regex.Matcher m = MADE_OUTSIDE.matcher(l);
             if (m.find()) {
                 outside.add(m.group(1) + " " + m.group(2));
-            } else if (!(l.startsWith("flyway") && (l.contains(": left out ") || l.contains("stand-in") || l.contains("ran it against")))
+            } else if (!l.startsWith("… ")   // #245: an export's progress (… terragrunt render x (3/25)): only for its log
+                    && !(l.startsWith("flyway") && (l.contains(": left out ") || l.contains("stand-in") || l.contains("ran it against")))
                     && !l.startsWith("export: ") && !l.startsWith("WARNING: ") && !rest.contains(l)) {
                 rest.add(l);
             }

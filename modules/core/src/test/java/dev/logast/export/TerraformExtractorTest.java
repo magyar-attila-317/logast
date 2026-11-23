@@ -101,6 +101,37 @@ class TerraformExtractorTest {
         return root;
     }
 
+    /** #245: hcl4j prints "Evaluating Tuple: …" to stdout for each for expression; none of it reaches logast's output. */
+    @Test
+    void theHclParsersDebugPrintsAreDropped() throws IOException {
+        Path root = repo();
+        Path main = root.resolve("terraform/orders/main.tf");
+        Files.writeString(main, Files.readString(main) + """
+
+                locals {
+                  disk_names = [for disk in var.disks : disk.name]
+                }
+                """);
+        java.io.ByteArrayOutputStream stdout = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream before = System.out;
+        System.setOut(new java.io.PrintStream(stdout, true));
+        try {
+            new TerraformExtractor(false).extract(root, new FactSink() {
+                @Override
+                public void node(Node n) {
+                }
+
+                @Override
+                public void edge(Edge e) {
+                }
+            });
+            System.out.println("the run's own line");
+        } finally {
+            System.setOut(before);
+        }
+        assertThat(stdout.toString()).isEqualTo("the run's own line" + System.lineSeparator());
+    }
+
     @Test
     void unitsEvaluateTheirModulePerEnvironment() throws IOException {
         Path root = repo();

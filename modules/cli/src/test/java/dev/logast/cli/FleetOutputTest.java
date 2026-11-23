@@ -80,6 +80,7 @@ class FleetOutputTest {
                 System.err.println("flyway prod: the migrations expect role reader to exist (made outside Flyway): created it empty and ran them again");
                 System.err.println("flyway: left out V2__x.sql: it needs relation cache.items, which no repo of the fleet makes");
                 System.err.println("\u001b[2Kexport: a problem the repo's line has already");
+                System.err.println("… terragrunt render live/prod/orders/terragrunt.hcl (1/25)");   // #245: progress, for the log only
                 for (int i = 1; i <= 5; i++) {
                     System.err.println("something else " + i);
                 }
