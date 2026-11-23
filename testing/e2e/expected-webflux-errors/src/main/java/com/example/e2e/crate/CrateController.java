@@ -1,7 +1,6 @@
 package com.example.e2e.crate;
 
 import jakarta.validation.Valid;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -11,20 +10,17 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-@Slf4j
 @RestController
 public class CrateController {
     private final WebClient labels = WebClient.create("http://labels");
 
     @PostMapping("/crates")
     public Mono<String> register(@Valid @RequestBody CrateRequest request) {
-        log.info("Crate creation started"); // logast:wording
         return Mono.just(request.label());
     }
 
     @PutMapping("/crates/{crateCode}")
     public Mono<String> relabel(@PathVariable String crateCode, @RequestBody CrateRequest request) {
-        log.info("Crate update started"); // logast:wording
         return Mono.just(crateCode + request.label());
     }
 
@@ -35,7 +31,6 @@ public class CrateController {
 
     @PostMapping("/crates/{crateCode}/seal")
     public Mono<String> seal(@PathVariable String crateCode) {
-        log.info("Crate seal started"); // logast:wording
         return Mono.error(() -> new CrateSealed(crateCode));
     }
 

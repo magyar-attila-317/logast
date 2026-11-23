@@ -16,7 +16,7 @@ public final class JobMetrics {
     public static final String PUBLISHING = "publishing";
 
     /** Observation (timer and span) name. */
-    public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
+    public static final String SETTLEMENT_JOB_EXECUTE = "settlement-job.execute";
 
     /** export.job{outcome="completed"} +1. */
     public static void exportJobCompleted() {

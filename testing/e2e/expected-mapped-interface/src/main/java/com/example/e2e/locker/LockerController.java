@@ -21,7 +21,6 @@ public class LockerController implements LockerApi {
     @Override
     public String open(String lockerId) {
         try (var mdc = MdcScope.of("lockerId", lockerId)) {
-            log.info("Locker open started"); // logast:wording
             log.debug("Locker opened");
             return "open";
         }

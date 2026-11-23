@@ -15,7 +15,7 @@ public class SettlementJobExecutor {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
-        ObservedContext.entrypoint("settlement-job-executor.on-ready")
+        ObservedContext.entrypoint("settlement-job.execute")
                 .failureLoggedByCaller()
                 .run(() -> {
                     job.execute();

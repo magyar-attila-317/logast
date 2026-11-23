@@ -1,6 +1,6 @@
 diff --git a/src/main/java/com/example/e2e/job/JobMetrics.java b/src/main/java/com/example/e2e/job/JobMetrics.java
 new file mode 100644
-index 0000000..7d5b8c5
+index 0000000..fa60b13
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/job/JobMetrics.java
 @@ -0,0 +1,46 @@ 
@@ -22,7 +22,7 @@ index 0000000..7d5b8c5
 +    public static final String PUBLISHING = "publishing";
 +
 +    /** Observation (timer and span) name. */
-+    public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
++    public static final String SETTLEMENT_JOB_EXECUTE = "settlement-job.execute";
 +
 +    /** export.job{outcome="completed"} +1. */
 +    public static void exportJobCompleted() {
@@ -138,15 +138,15 @@ index 94ecffb..49f146d 100644
                  .run(() -> {
                      log.info("Publishing started");
 diff --git a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
-index 8e05f57..28908c9 100644
+index 950243e..a45c601 100644
 --- a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
 +++ b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
 @@ -15,7 +15,7 @@ 
  
      @EventListener(ApplicationReadyEvent.class)
      public void onReady() {
--        ObservedContext.entrypoint("settlement-job-executor.on-ready")
-+        ObservedContext.entrypoint(JobMetrics.SETTLEMENT_JOB_EXECUTOR_ON_READY)
+-        ObservedContext.entrypoint("settlement-job.execute")
++        ObservedContext.entrypoint(JobMetrics.SETTLEMENT_JOB_EXECUTE)
                  .failureLoggedByCaller()
                  .run(() -> {
                      job.execute();

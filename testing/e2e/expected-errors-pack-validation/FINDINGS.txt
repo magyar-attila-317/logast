@@ -6,7 +6,7 @@ REPORT-ONLY DB_NO_TIMEOUT src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/audit/AuditLog.java:18
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/edge/Audited.java:10
 REPORT-ONLY LOG_HELPER src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13
-REPORT-ONLY REQUEST_NOT_VALIDATED src/main/java/com/example/e2e/label/LabelController.java:22
+REPORT-ONLY REQUEST_NOT_VALIDATED src/main/java/com/example/e2e/label/LabelController.java:20
 REPORT-ONLY CLIENT_ERROR_AS_SERVER_ERROR src/main/java/com/example/e2e/label/LabelErrors.java:15
 REPORT-ONLY ERROR_HANDLER_STATUS_OK src/main/java/com/example/e2e/label/LabelErrors.java:23
 REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/label/LabelStore.java:15
@@ -24,7 +24,7 @@ REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/pledge/PledgeLookup.ja
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:26
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:33
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
@@ -44,9 +44,6 @@ REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:2
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:27
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/job/PublishRunJob.java:33
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/TallyJob.java:15
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/label/LabelController.java:23
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/label/LabelController.java:29
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/label/LabelController.java:38
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/label/LabelStore.java:14
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:40
@@ -69,7 +66,5 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

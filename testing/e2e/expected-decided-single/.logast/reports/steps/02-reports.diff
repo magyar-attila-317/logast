@@ -258,7 +258,7 @@ index d616b2f..455e16f 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/metrics/BusinessMetrics.java b/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
-index 89dfa99..d5525bb 100644
+index 865d5b4..1ca4481 100644
 --- a/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
 +++ b/src/main/java/com/example/e2e/metrics/BusinessMetrics.java
 @@ -1,5 +1,7 @@ 

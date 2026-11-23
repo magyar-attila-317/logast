@@ -1,14 +1,14 @@
-REPORT-ONLY HTTP_CLIENT_UNTRACED src/main/java/com/example/e2e/crate/CrateController.java:17
-REPORT-ONLY HTTP_CLIENT_NO_TIMEOUT src/main/java/com/example/e2e/crate/CrateController.java:17
+REPORT-ONLY HTTP_CLIENT_UNTRACED src/main/java/com/example/e2e/crate/CrateController.java:15
+REPORT-ONLY HTTP_CLIENT_NO_TIMEOUT src/main/java/com/example/e2e/crate/CrateController.java:15
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/edge/EdgeFlow.java:44
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:18
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:19
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:27
 REPORT-ONLY DB_NO_TIMEOUT src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/audit/AuditLog.java:18
-REPORT-ONLY REQUEST_NOT_VALIDATED src/main/java/com/example/e2e/crate/CrateController.java:26
-REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/crate/CrateController.java:44
-REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/crate/CrateController.java:49
+REPORT-ONLY REQUEST_NOT_VALIDATED src/main/java/com/example/e2e/crate/CrateController.java:23
+REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/crate/CrateController.java:39
+REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/crate/CrateController.java:44
 REPORT-ONLY CLIENT_ERROR_AS_SERVER_ERROR src/main/java/com/example/e2e/crate/CrateErrors.java:16
 REPORT-ONLY ERROR_HANDLER_STATUS_OK src/main/java/com/example/e2e/crate/CrateErrors.java:28
 REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/crate/CrateSealed.java:3
@@ -28,16 +28,13 @@ REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/pledge/PledgeLookup.ja
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:26
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:33
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_LOG_MIXED src/main/java/com/example/e2e/audit/AuditLog.java:8
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/crate/CrateController.java:21
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/crate/CrateController.java:27
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/crate/CrateController.java:38
+REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/crate/CrateController.java:38
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/crate/CrateController.java:43
-REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/crate/CrateController.java:48
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/crate/CrateErrors.java:17
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/Audited.java:11
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:45
@@ -75,7 +72,5 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

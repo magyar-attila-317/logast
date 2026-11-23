@@ -1,13 +1,11 @@
 package com.example.e2e.parcel;
 
 import java.io.IOException;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Slf4j
 @RestController
 class ParcelController {
     private final ParcelClient client;
@@ -30,7 +28,6 @@ class ParcelController {
 
     @PostMapping("/parcels/{parcelCode}/archive")
     void archive(@PathVariable String parcelCode) throws IOException {
-        log.info("Parcel archive started"); // logast:wording
         ledger.archive(parcelCode);
         ledger.restore(parcelCode);
     }

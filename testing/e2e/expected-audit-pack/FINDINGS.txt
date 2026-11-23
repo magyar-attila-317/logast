@@ -22,7 +22,7 @@ REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeS
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
 REPORT-ONLY AUDIT_SECURITY_EVENTS src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:16
 REPORT-ONLY AUDIT_SECURITY_EVENTS src/main/java/com/example/e2e/shelf/ShelfAuditing.java:19
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
@@ -71,7 +71,5 @@ NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfSlotWriter
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfSlotWriter.java:31
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/shelf/ShelfSlotWriter.java:37
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfSlotWriter.java:38
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

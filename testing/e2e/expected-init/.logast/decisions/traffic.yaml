@@ -2,6 +2,9 @@
 #   sum by (method, uri) (increase(http_server_requests_seconds_count[1d])) ).
 # Optional. Left blank: no volume estimate (logast never estimates traffic); log levels and metrics stay cautious.
 # Regenerate with `logast traffic <root>`: filled-in values are kept, new entrypoints are added.
+# patterns: a rate for every entrypoint whose label matches and has no value below (* within a path segment,
+#   ** across segments; the most specific match wins), e.g. "* /api/admin/**": 10
+patterns: {}
 entrypoints:
   # http
   "DELETE /pledges/{pledgeId}":     # http, PledgeController.delete

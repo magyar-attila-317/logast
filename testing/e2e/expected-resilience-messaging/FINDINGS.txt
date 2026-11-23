@@ -21,7 +21,7 @@ REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeS
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:33
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
 REPORT-ONLY RETRY_IN_TRANSACTION src/main/java/com/example/e2e/stock/StockWriter.java:12
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
@@ -68,7 +68,5 @@ NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockEvents.jav
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockEvents.java:28
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockRejects.java:13
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockRejects.java:17
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

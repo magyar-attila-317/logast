@@ -4,7 +4,7 @@
 # Keys starting with _ are hints (_where and "was:" find the line again when its id changes: keep them). `logast
 # scan` keeps this file up to date and keeps what you wrote.
 #
-# 21 finding(s) below need a message text.
+# 19 finding(s) below need a message text.
 SWA-91b292:
   MSG: ""
   _MSG: "What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri(\"/balances/{customerId}\", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as: {subject} failed"
@@ -77,14 +77,6 @@ SUG-6fe694:
   MSG: ""
   _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges read | suffix keys added by the tool: [count]"
   _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:39 PledgeRepository.findOpen
-SUG-4885ca:
-  MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge revoke started | must read as: {subject} started"
-  _where: src/main/java/com/example/e2e/web/PledgeController.java:59 PledgeController.revoke
-SUG-72f478:
-  MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge hold started | must read as: {subject} started"
-  _where: src/main/java/com/example/e2e/web/PledgeDetailsController.java:31 PledgeDetailsController.hold
 SUG-08dd18:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: Quote controller async work failed | must read as: {subject} failed"

@@ -16,7 +16,7 @@ public final class BusinessMetrics {
     public static final String PUBLISHING = "publishing";
 
     /** Observation (timer and span) name. */
-    public static final String SETTLEMENT_JOB_EXECUTOR_ON_READY = "settlement-job-executor.on-ready";
+    public static final String SETTLEMENT_JOB_EXECUTE = "settlement-job.execute";
 
     /** Observation (timer and span) name. */
     public static final String PLEDGE_MESSAGES_ON_BATCH = "pledge-messages.on-batch";

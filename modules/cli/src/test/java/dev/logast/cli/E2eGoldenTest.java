@@ -1727,6 +1727,10 @@ abstract class E2eGoldenTest {
                         }
                     }
                     """);
+            // #285: started lines go only to endpoints known to be quiet; these are (a traffic pattern)
+            Path traffic = a.resolve(".logast/decisions/traffic.yaml");
+            Files.createDirectories(traffic.getParent());
+            Files.writeString(traffic, "patterns:\n  \"POST /lockers/**\": 20\nentrypoints: {}\n");
         });
         // the started lines of the controller are written and applied: each lands inside the MDC scope its method opens with
         // (#231: the first apply writes generated ones; messages.yaml then asks for domain words in the same form)

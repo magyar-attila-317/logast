@@ -197,30 +197,30 @@ Slowest call in the last minutes (seconds):
 max(publishing_seconds_max{application="e2e-shop"})
 ```
 
-#### settlement-job-executor.on-ready (event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent))
+#### settlement-job.execute (event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent))
 
 Calls per second:
 
 ```promql
-sum(rate(settlement_job_executor_on_ready_seconds_count{application="e2e-shop"}[5m]))
+sum(rate(settlement_job_execute_seconds_count{application="e2e-shop"}[5m]))
 ```
 
 Failures per second, by exception:
 
 ```promql
-sum by (error) (rate(settlement_job_executor_on_ready_seconds_count{application="e2e-shop", error!="none"}[5m]))
+sum by (error) (rate(settlement_job_execute_seconds_count{application="e2e-shop", error!="none"}[5m]))
 ```
 
 Average duration (seconds):
 
 ```promql
-sum(rate(settlement_job_executor_on_ready_seconds_sum{application="e2e-shop"}[5m])) / sum(rate(settlement_job_executor_on_ready_seconds_count{application="e2e-shop"}[5m]))
+sum(rate(settlement_job_execute_seconds_sum{application="e2e-shop"}[5m])) / sum(rate(settlement_job_execute_seconds_count{application="e2e-shop"}[5m]))
 ```
 
 Slowest call in the last minutes (seconds):
 
 ```promql
-max(settlement_job_executor_on_ready_seconds_max{application="e2e-shop"})
+max(settlement_job_execute_seconds_max{application="e2e-shop"})
 ```
 
 ### Business outcomes
@@ -417,10 +417,10 @@ FROM Metric SELECT count(`pledge-messages.on-batch`), filter(count(`pledge-messa
 FROM Metric SELECT count(publishing), filter(count(publishing), WHERE error != 'none') AS 'failed', average(publishing), max(publishing) WHERE service.name = 'e2e-shop' TIMESERIES
 ```
 
-**settlement-job-executor.on-ready** (event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)): calls, failures, average and slowest duration
+**settlement-job.execute** (event @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)): calls, failures, average and slowest duration
 
 ```sql
-FROM Metric SELECT count(`settlement-job-executor.on-ready`), filter(count(`settlement-job-executor.on-ready`), WHERE error != 'none') AS 'failed', average(`settlement-job-executor.on-ready`), max(`settlement-job-executor.on-ready`) WHERE service.name = 'e2e-shop' TIMESERIES
+FROM Metric SELECT count(`settlement-job.execute`), filter(count(`settlement-job.execute`), WHERE error != 'none') AS 'failed', average(`settlement-job.execute`), max(`settlement-job.execute`) WHERE service.name = 'e2e-shop' TIMESERIES
 ```
 
 ### Business outcomes

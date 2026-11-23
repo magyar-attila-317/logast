@@ -6,10 +6,10 @@ REPORT-ONLY DB_NO_TIMEOUT src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/audit/AuditLog.java:18
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/box/BoxAudit.java:12
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/box/BoxAudit.java:16
-REPORT-ONLY AUDIT_MISSING src/main/java/com/example/e2e/box/BoxController.java:24
-REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/box/BoxController.java:42
-REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/box/BoxController.java:49
-REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/box/BoxController.java:57
+REPORT-ONLY AUDIT_MISSING src/main/java/com/example/e2e/box/BoxController.java:22
+REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/box/BoxController.java:37
+REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/box/BoxController.java:43
+REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/box/BoxController.java:50
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/edge/Audited.java:10
 REPORT-ONLY LOG_HELPER src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13
 REPORT-ONLY RABBIT_NO_ERROR_HANDLER src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
@@ -26,19 +26,11 @@ REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/pledge/PledgeLookup.ja
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:26
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:33
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
-REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:50
+REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_LOG_MIXED src/main/java/com/example/e2e/audit/AuditLog.java:8
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/box/BoxController.java:25
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/box/BoxController.java:32
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/box/BoxController.java:40
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/box/BoxController.java:48
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/box/BoxController.java:55
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/box/BoxController.java:63
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/box/BoxController.java:71
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/box/BoxController.java:78
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/Audited.java:11
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:45
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/EdgeFlow.java:48
@@ -75,7 +67,5 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeController.java:59
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/PledgeDetailsController.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

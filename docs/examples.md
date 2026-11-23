@@ -93,9 +93,11 @@ public void cleanup() {
 
 ### A request that changes data says so, with its id in MDC
 
-A POST handler whose own flow logged nothing: logast writes the started line with words from the path, marked for a
-better wording (messages.yaml asks for one), inside an MDC scope with the path's id (#231).
-*Scenario `expected`, `PledgeController.java`.*
+A POST handler whose own flow logged nothing gets an MDC scope with the path's id. Its started line (words from the
+path, marked for a better wording, #231) is added only when the endpoint is known to be quiet: traffic.yaml says at
+most `levels.addedInfoMaxPerDay` calls a day (for example by a pattern, `"POST /admin/**": 10`). Without a known rate the access
+log and `http.server.requests` record the request and only the scope is added (#285).
+*Scenario `expected-mdc-placement` shows the line; `expected`, without traffic, only the scope.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>

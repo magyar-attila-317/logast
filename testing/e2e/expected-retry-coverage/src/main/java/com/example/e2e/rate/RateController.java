@@ -1,12 +1,10 @@
 package com.example.e2e.rate;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Slf4j
 @RestController
 public class RateController {
     private final RateClient client;
@@ -33,7 +31,6 @@ public class RateController {
 
     @PostMapping("/rates/{code}/quotes")
     public void quote(@PathVariable String code) {
-        log.info("Rate quotes started"); // logast:wording
         client.submit(code);
     }
 

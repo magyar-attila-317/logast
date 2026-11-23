@@ -1,5 +1,5 @@
 diff --git a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
-index b09d628..8e05f57 100644
+index b09d628..950243e 100644
 --- a/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
 +++ b/src/main/java/com/example/e2e/job/SettlementJobExecutor.java
 @@ -1,5 +1,6 @@ 
@@ -14,7 +14,7 @@ index b09d628..8e05f57 100644
      @EventListener(ApplicationReadyEvent.class)
      public void onReady() {
 -        job.execute();
-+        ObservedContext.entrypoint("settlement-job-executor.on-ready")
++        ObservedContext.entrypoint("settlement-job.execute")
 +                .failureLoggedByCaller()
 +                .run(() -> {
 +                    job.execute();

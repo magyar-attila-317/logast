@@ -23,6 +23,11 @@ vocabulary:
       key: sponsorshipId
       sources:
         params: [sponsorshipId]
+# the team's timeouts: written by the resilience pack (#271; without them it only proposes)
+resilience:
+  httpConnectTimeout: 5s
+  httpReadTimeout: 30s
+  dbQueryTimeout: 5m
 metrics:
   defaults: []
   catalog: single
