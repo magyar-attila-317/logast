@@ -499,15 +499,20 @@ public final class Main {
             // #119: a Gradle build without a classpath file would resolve no library type, and the compile gate would
             // reject correct fixes with errors that look like a bug: fetch it now (#122), stop only when Gradle fails
             boolean gradleBuild = Files.exists(root().resolve("build.gradle")) || Files.exists(root().resolve("build.gradle.kts"));
-            if (gradleBuild && classpathFile == null && !withoutClasspath && Logast.classpath(root(), null).isEmpty()) {
-                Main.Classpath.Result cpr = Main.Classpath.run(root(), "~reading the classpath with Gradle (nothing is compiled)");
+            // #249: a build file changed since the classpath was read (an apply reverted with git): read it again, or the
+            // classpath still has the dependencies the reverted apply added, and apply would not add them again
+            String stale = gradleBuild && classpathFile == null && !withoutClasspath && !refreshed ? Logast.classpathStale(root()) : null;
+            if (gradleBuild && classpathFile == null && !withoutClasspath && (stale != null || Logast.classpath(root(), null).isEmpty())) {
+                Main.Classpath.Result cpr = Main.Classpath.run(root(), stale != null ? "~" + stale + " changed since the classpath was read: reading it again"
+                        : "~reading the classpath with Gradle (nothing is compiled)");
                 if (cpr.exitCode() != 0) {
                     Out.warn("no classpath (.logast/classpath*.txt): Gradle failed (exit " + cpr.exitCode() + "), its output is above "
                             + "(often a JDK the build's toolchain asks for is not installed). Nothing applied; fix the build and run "
                             + "again, or --without-classpath applies anyway, with library types unresolved.");
                     return 2;
                 }
-                header.add("classpath read with Gradle (" + cpr.entries() + (cpr.entries() == 1 ? " entry)" : " entries)"));
+                header.add((stale != null ? "classpath read again with Gradle, " + stale + " changed since it was read (" : "classpath read with Gradle (")
+                        + cpr.entries() + (cpr.entries() == 1 ? " entry)" : " entries)"));
                 supportHint(header);
             }
             return null;

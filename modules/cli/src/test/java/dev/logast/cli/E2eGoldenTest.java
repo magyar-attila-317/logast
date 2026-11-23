@@ -313,6 +313,19 @@ abstract class E2eGoldenTest {
         assertThat(git(app, "status", "--porcelain")).as("nothing for git either").isEmpty();
         assertThat(first + second).doesNotContain("CHECK FAILED");
         compile(app);
+
+        // #249: the apply undone with git, then a build file changed (a revert of what an apply added, a pulled dependency
+        // change): the classpath .logast kept is older than the build, so the next apply reads it again first, else it
+        // would decide what the build needs from dependencies the build no longer has
+        git(app, "reset", "--quiet", "--hard", "HEAD~1");
+        Path build = app.resolve("build.gradle.kts");
+        Files.writeString(build, Files.readString(build) + "\n// dependencies reviewed\n");
+        git(app, "commit", "--quiet", "-am", "build change");
+        STDERR.setLength(0);
+        String redo = run(app, "apply", app.toString());
+        assertThat(LAST_EXIT).as(redo + STDERR).isZero();
+        assertThat(redo).as(redo).contains("classpath read again with Gradle, build.gradle.kts changed since it was read (");
+        compile(app);
     }
 
     /**
