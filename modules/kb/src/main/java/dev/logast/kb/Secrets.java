@@ -7,8 +7,6 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
 
 /**
  * #166: Key Vault secrets ({@code secret:<vault>/<object>}, from Terraform and from Helm's SecretProviderClasses) with
@@ -21,12 +19,20 @@ public final class Secrets {
 
     public static String list(KnowledgeBase kb, String text, String env, Integer expiringDays, LocalDate today) {
         StringBuilder sb = new StringBuilder();
-        Set<String> done = new TreeSet<>();
-        int count = 0;
+        // #247: a secret is said by the repo that makes it (Terraform: its expiry) and by the charts that mount it (no
+        // expiry); per secret and environment, the fact that has the expiry stands for it, else the first
+        java.util.Map<String, KnowledgeBase.Fact<Node>> secrets = new java.util.LinkedHashMap<>();
         for (KnowledgeBase.Fact<Node> f : kb.nodes()) {
             Node n = f.fact();
-            if (!n.kind().equals("secret") || env != null && n.env() != null && !env.equals(n.env())
-                    || text != null && !text.isBlank() && !n.id().contains(text) || !done.add(n.id() + "|" + n.env())) {
+            if (n.kind().equals("secret")) {
+                secrets.merge(n.id() + "|" + n.env(), f, (had, now) -> had.fact().attrs().get("expiration_date") == null
+                        && now.fact().attrs().get("expiration_date") != null ? now : had);
+            }
+        }
+        int count = 0;
+        for (KnowledgeBase.Fact<Node> f : secrets.values()) {
+            Node n = f.fact();
+            if (env != null && n.env() != null && !env.equals(n.env()) || text != null && !text.isBlank() && !n.id().contains(text)) {
                 continue;
             }
             Object exp = n.attrs().get("expiration_date");

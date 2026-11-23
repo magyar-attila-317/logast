@@ -376,6 +376,7 @@ class TerraformExtractorTest {
         Files.writeString(kb.resolve("deploy.jsonl"), """
                 {"header":{"schema":"kb-facts/0","extractor":"helm","repo":"deploy"}}
                 {"node":{"id":"deployment:orders","kind":"deployment","env":"prod","evidence":{"file":"charts/orders/templates/deployment.yaml"}}}
+                {"node":{"id":"secret:kv-orders-prod/db-password","kind":"secret","env":"prod","attrs":{"vault":"kv-orders-prod","object":"db-password"},"evidence":{"file":"charts/orders/templates/secretproviderclass.yaml"}}}
                 {"edge":{"from":"deployment:orders","kind":"uses-secret","to":"secret:kv-orders-prod/db-password","env":"prod","provenance":"extracted","evidence":{"file":"charts/orders/templates/deployment.yaml"}}}
                 {"node":{"id":"service:orders","kind":"service","evidence":{"file":"build.gradle.kts"}}}
                 """);
@@ -386,5 +387,8 @@ class TerraformExtractorTest {
         assertThat(dev.logast.kb.Secrets.list(k, null, "dev", 30, java.time.LocalDate.parse("2026-11-20")))
                 .contains("secret:kv-orders-dev/db-password [dev]", "no workload mounts or reads it");
         assertThat(dev.logast.kb.Secrets.list(k, null, null, 5, java.time.LocalDate.parse("2026-11-20"))).startsWith("No secret expires within 5 days");
+        // #247: the chart that mounts it says the same secret without its expiry (and loads first): Terraform's date counts
+        assertThat(dev.logast.kb.Secrets.list(k, null, "prod", 30, java.time.LocalDate.parse("2026-11-20")))
+                .contains("secret:kv-orders-prod/db-password [prod], expires 2026-12-01T00:00:00Z", "infra/terraform/orders/main.tf");
     }
 }
