@@ -519,6 +519,24 @@ final class CoverageRules {
                 values.addAll(identity(arg, null));
             }
             insertBeforeReturn(b, m, ret, values, logger.name(), "info", "{{MSG}}");
+        } else if (stmt instanceof J.Return ret) {
+            // #284: the write inside a larger return expression (save(x).getId(), map(save(x))): a line after the
+            // return never runs. Captured into a local first, when nothing in the expression runs before it
+            if (!evaluatedFirst(ret.getExpression(), mi)) {
+                ctx.drop(b);
+                return;
+            }
+            String saved = EntrypointRules.unique("saved", ctx.taken(m, Pos.start(ret)));
+            if (arg != null) {
+                values.addAll(identity(arg, saved));
+            }
+            String indent = Text.indentAt(text, Pos.start(ret));
+            b.edit(Edit.insert(f.relPath(), JavaEdits.statementLines(text, ret)[0], indent + "var " + saved + " = " + src(f, mi) + ";\n"
+                    + indent + logLine(logger.name(), "info", "{{MSG}}", values) + "\n"));
+            b.edit(Edit.replace(f.relPath(), Pos.start(mi), Pos.end(mi), saved));
+        } else if (stmt instanceof J.Throw) {
+            ctx.drop(b);   // a line after a throw never runs; before it, it would say the change happened
+            return;
         } else {
             String subject = stmt instanceof J.VariableDeclarations vd ? vd.getVariables().getFirst().getSimpleName() : null;
             if (arg != null) {
@@ -591,6 +609,64 @@ final class CoverageRules {
             return d == null ? List.of() : List.<String[]>of(new String[]{key(d), src(arg)});
         }
         return List.of();
+    }
+
+    /**
+     * #284: {@code call} is the first thing {@code expr} evaluates, so it can move into a local before the statement
+     * without changing what runs when: every tree between them is a method call (it is in that call's receiver chain,
+     * or an argument after receivers and arguments that call nothing), a cast or parentheses. A conditional, a lambda,
+     * an operator or an earlier call keeps it where it is.
+     */
+    static boolean evaluatedFirst(Expression expr, J.MethodInvocation call) {
+        if (expr == call) {
+            return true;
+        }
+        if (expr instanceof J.Parentheses<?> par && par.getTree() instanceof Expression inner) {
+            return evaluatedFirst(inner, call);
+        }
+        if (expr instanceof J.TypeCast cast) {
+            return evaluatedFirst(cast.getExpression(), call);
+        }
+        if (!(expr instanceof J.MethodInvocation outer) || !contains(outer, call)) {
+            return false;
+        }
+        if (outer.getSelect() != null && contains(outer.getSelect(), call)) {
+            return evaluatedFirst(outer.getSelect(), call);
+        }
+        if (outer.getSelect() != null && callsSomething(outer.getSelect())) {
+            return false;
+        }
+        for (Expression a : outer.getArguments()) {
+            if (contains(a, call)) {
+                return evaluatedFirst(a, call);
+            }
+            if (callsSomething(a)) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static boolean contains(J tree, J part) {
+        return Pos.start(tree) <= Pos.start(part) && Pos.end(part) <= Pos.end(tree);
+    }
+
+    private static boolean callsSomething(J tree) {
+        boolean[] found = {false};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                found[0] = true;
+                return mi;
+            }
+
+            @Override
+            public J.NewClass visitNewClass(J.NewClass nc, Integer p) {
+                found[0] = true;
+                return nc;
+            }
+        }.visit(tree, 0);
+        return found[0];
     }
 
     /** The statement (a direct child of a block) that contains {@code tree}. */

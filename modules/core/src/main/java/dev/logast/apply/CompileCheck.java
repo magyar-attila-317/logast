@@ -170,8 +170,11 @@ public final class CompileCheck {
         }
         DiagnosticCollector<JavaFileObject> diags = new DiagnosticCollector<>();
         try (StandardJavaFileManager fm = javac.getStandardFileManager(diags, Locale.ROOT, StandardCharsets.UTF_8)) {
+            // #284: javac stops before flow analysis (unreachable code, a missing return, an unassigned final) once
+            // attribution found an error; on a partial classpath there always is one (an unresolved type, ignored as
+            // environmental), so go on through FLOW regardless
             List<String> options = new ArrayList<>(List.of("-implicit:none", "-nowarn", "-Xlint:none", "-XDsuppressNotes",
-                    "-Xmaxerrs", "100000"));
+                    "-Xmaxerrs", "100000", "-XDshould-stop.ifError=FLOW"));
             if (lombok != null) {
                 options.addAll(List.of("-proc:full", "-processorpath", lombok.toString()));
             } else {

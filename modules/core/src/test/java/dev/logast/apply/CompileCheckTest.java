@@ -75,6 +75,33 @@ class CompileCheckTest {
         assertThat(new CompileCheck(List.of()).newErrors(work, Map.of("src/main/java/a/B.java", after))).isEmpty();
     }
 
+    /**
+     * #284: javac stops before its flow analysis when attribution found errors, so on a partial classpath (an unresolved
+     * type, ignored as environmental) an unreachable statement the edit adds went unnoticed.
+     */
+    @Test
+    void anUnreachableLineIsAnErrorEvenWhenATypeIsMissing() throws IOException {
+        write("src/main/java/a/D.java", """
+                package a;
+                class D {
+                    String m(missing.Repo repo, String x) {
+                        return repo.save(x).trim();
+                    }
+                }
+                """);
+        String after = """
+                package a;
+                class D {
+                    String m(missing.Repo repo, String x) {
+                        return repo.save(x).trim();
+                        System.out.println("saved");
+                    }
+                }
+                """;
+        assertThat(new CompileCheck(List.of()).newErrors(work, Map.of("src/main/java/a/D.java", after)))
+                .hasEntrySatisfying("src/main/java/a/D.java", e -> assertThat(e).contains("unreachable"));
+    }
+
     @Test
     void otherSourcesOfTheProjectResolve() throws IOException {
         write("src/main/java/a/Helper.java", "package a;\npublic class Helper { public static String name() { return \"x\"; } }\n");

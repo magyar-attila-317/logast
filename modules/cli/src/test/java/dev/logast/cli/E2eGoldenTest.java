@@ -697,6 +697,77 @@ abstract class E2eGoldenTest {
      * and the run's last line says where they are.
      */
     /**
+     * #284: a repository save inside a larger return expression ({@code save(x).getId()}, {@code describe(save(x))}) gets
+     * its line before the return, with the save captured into a local: a line after the return does not compile.
+     */
+    @Test
+    void aSaveInsideAReturnExpressionIsLoggedBeforeTheReturn() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path order = app.resolve("src/main/java/com/example/e2e/order");
+        Files.writeString(order.resolve("OrderArchive.java"), """
+                package com.example.e2e.order;
+
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class OrderArchive {
+                    private final OrderRecordRepository records;
+
+                    public OrderArchive(OrderRecordRepository records) {
+                        this.records = records;
+                    }
+
+                    public String archive(OrderRecord record) {
+                        return records.save(record).getId();
+                    }
+
+                    public String describeArchived(OrderRecord record) {
+                        return describe(records.save(record));
+                    }
+
+                    private String describe(OrderRecord record) {
+                        return "record " + record.getId();
+                    }
+                }
+                """);
+        Files.writeString(order.resolve("OrderArchiveController.java"), """
+                package com.example.e2e.order;
+
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class OrderArchiveController {
+                    private final OrderArchive archive;
+
+                    public OrderArchiveController(OrderArchive archive) {
+                        this.archive = archive;
+                    }
+
+                    @PostMapping("/archive")
+                    public String archive(@RequestBody OrderRecord record) {
+                        return archive.archive(record);
+                    }
+
+                    @PostMapping("/archive/describe")
+                    public String describe(@RequestBody OrderRecord record) {
+                        return archive.describeArchived(record);
+                    }
+                }
+                """);
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(out).as(out).doesNotContain("CHECK FAILED").doesNotContain("REJECTED");
+        String archive = Files.readString(order.resolve("OrderArchive.java"));
+        assertThat(archive).as(archive)
+                .containsPattern("var saved = records\\.save\\(record\\);\\s+\\S*log\\.\\w+\\([^\\n]*\\n\\s+return saved\\.getId\\(\\);")
+                .containsPattern("var saved = records\\.save\\(record\\);\\s+\\S*log\\.\\w+\\([^\\n]*\\n\\s+return describe\\(saved\\);");
+        String again = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(again).as("a second apply changes nothing\n" + again).contains("nothing to change");
+    }
+
+    /**
      * #269: a filter puts the service's own correlation id (from a header, sent back to the caller) under traceId, and
      * an error handler reads it for the response body. Deleting the put as a manual trace copy would hand the reader
      * the tracer's id: the key is renamed instead, in the put, the remove and the get, and the result compiles.
