@@ -186,6 +186,20 @@ public final class FlywayExtractor implements Extractor {
         return out;
     }
 
+    /** Whether a service's own migration folders hold a versioned or repeatable migration (a fleet's member summary says so). */
+    public static boolean hasMigrations(Path root) {
+        for (Path dir : locations(root)) {
+            try (var files = Files.list(dir)) {
+                if (files.anyMatch(f -> f.getFileName().toString().matches("[VR].*__.*\\.sql"))) {
+                    return true;
+                }
+            } catch (IOException e) {
+                // unreadable: not counted
+            }
+        }
+        return false;
+    }
+
     /** {@code spring.flyway.locations} ({@code classpath:} and {@code filesystem:}), default {@code db/migration}. */
     static List<Path> locations(Path root) {
         return locations(root, config(root, null).get("spring.flyway.locations"));

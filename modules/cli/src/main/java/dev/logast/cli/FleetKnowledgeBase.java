@@ -222,6 +222,14 @@ final class FleetKnowledgeBase {
         }
     }
 
+    /** A member's kb line: what its repo holds (with its facts, once exported) first, then the export's notes. */
+    private static List<String> withSummary(Path dir, String name, Path root, KbOutcome o) {
+        List<String> notes = new java.util.ArrayList<>();
+        notes.add(MemberSummary.of(root, o.status() == FleetLog.Status.FAILED ? null : dir.resolve("kb").resolve(name)));
+        notes.addAll(o.notes());
+        return notes;
+    }
+
     void knowledgeBase(Path dir, Map<String, Path> members, FleetLog log) throws IOException {
         Map<String, Path> all = members;
         members = f.work(members);
@@ -256,7 +264,7 @@ final class FleetKnowledgeBase {
                     KbOutcome o = exportMember(dir, m.getKey(), m.getValue(), null, null);
                     running.remove(m.getKey());
                     live.update("~exporting " + String.join(", ", running));
-                    phase.done(m.getKey(), o.status(), System.nanoTime() - t0, o.detail(), o.notes());
+                    phase.done(m.getKey(), o.status(), System.nanoTime() - t0, o.detail(), withSummary(dir, m.getKey(), m.getValue(), o));
                     return null;
                 });
             }
@@ -310,7 +318,7 @@ final class FleetKnowledgeBase {
                 try (Out.Progress p = phase.working(m.getKey(), "running its migrations again")) {
                     o = exportMember(dir, m.getKey(), m.getValue(), null, null, true);
                 }
-                phase.done(m.getKey(), o.status(), System.nanoTime() - t0, o.detail(), o.notes());
+                phase.done(m.getKey(), o.status(), System.nanoTime() - t0, o.detail(), withSummary(dir, m.getKey(), m.getValue(), o));
             }
             phase.end();
         }

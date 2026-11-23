@@ -7702,6 +7702,8 @@ abstract class E2eGoldenTest {
             String first = run(tmp, "fleet", fleetRepo.toString(), "--refresh", "--no-builds", "--classpath-file",
                     fleetRepo.resolve(".cache/classpath.txt").toString());
             assertThat(STDERR.toString()).doesNotContain("running Gradle in");
+            // without --kb, the line under each repo says what it holds; counts come with its facts
+            assertThat(STDERR.toString()).as(STDERR.toString()).containsPattern("└ Java\\R");
             assertThat(first).as(first + STDERR).containsPattern("orders\\s+added\\s+score ").containsPattern("stock\\s+added\\s+score ")
                     .contains("orders -> stock  POST /reservations/{id}", "confirmed: host stock");
             assertThat(fleetRepo.resolve(".cache/repos/orders/src/main/java/com/example/orders/StockClient.java")).isRegularFile();
@@ -7741,6 +7743,8 @@ abstract class E2eGoldenTest {
             String kbRun = run(tmp, "fleet", fleetRepo.toString(), "--kb", "--no-builds", "--classpath-file",
                     fleetRepo.resolve(".cache/classpath.txt").toString());
             assertThat(STDERR.toString()).as(kbRun + STDERR).containsPattern(line("orders", "knowledge base: 1 facts file(s)")).containsPattern(line("stock", "knowledge base: 1 facts file(s)")).contains("mapping owners: ", "logast mcp config --kb");
+            // under each repo's line, what it holds, counted from the facts just exported
+            assertThat(STDERR.toString()).as(STDERR.toString()).containsPattern("└ Java: \\d+ endpoints?\\b");
             assertThat(Files.readString(fleetRepo.resolve("kb/orders/repo.jsonl"))).contains("call:orders:http POST http://stock/reservations/{id}");
             assertThat(Files.readString(fleetRepo.resolve("kb/stock/repo.jsonl"))).contains("endpoint:stock:POST /holds/{id}");
             assertThat(Files.readString(fleetRepo.resolve("kb/mapped/owners.jsonl"))).contains("\"from\":\"team:platform\",\"kind\":\"owns\",\"to\":\"endpoint:stock:POST /holds/{id}\"");

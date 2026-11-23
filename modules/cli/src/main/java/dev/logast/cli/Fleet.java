@@ -246,14 +246,18 @@ final class Fleet implements Callable<Integer> {
         FleetScans.lastScanned.remove();
         long took = System.nanoTime() - t0;
         FleetKnowledgeBase.KbOutcome out = o;
+        // what the repo holds, under its line; with its facts once they are current
+        String holds = MemberSummary.of(root, out != null && out.status() != FleetLog.Status.FAILED ? dir.resolve("kb").resolve(svc) : null);
         if (error != null) {
             return () -> phase.done(svc, FleetLog.Status.FAILED, took, "scan failed: " + FleetLog.oneLine(error) + " (its snapshot stays as it was; "
-                    + "`logast scan` in the repo shows the whole error)", List.of());
+                    + "`logast scan` in the repo shows the whole error)", List.of(holds));
         } else if (out == null) {
-            return () -> phase.done(svc, FleetLog.Status.OK, took, "scanned", List.of());
+            return () -> phase.done(svc, FleetLog.Status.OK, took, "scanned", List.of(holds));
         }
+        List<String> notes = new java.util.ArrayList<>(List.of(holds));
+        notes.addAll(out.notes());
         return () -> phase.done(svc, out.status() == FleetLog.Status.SAME ? FleetLog.Status.OK : out.status(), took,
-                "scanned · " + out.detail(), out.notes());
+                "scanned · " + out.detail(), notes);
     }
 
     /** #223: the members a run works on: the one --service names (with --refresh/--kb), else all. */
@@ -401,7 +405,7 @@ final class Fleet implements Callable<Integer> {
             }
             if (dev.logast.export.RepoExport.roots(root).stream().noneMatch(r -> r.kind().equals("java"))) {
                 phase.done(svc, FleetLog.Status.SKIPPED, 0, "no Java build to scan" + (kb ? ": its facts come with the knowledge base" : ""),
-                        List.of());
+                        List.of(MemberSummary.of(root, null)));
                 continue;
             }
             jobs.add(() -> {

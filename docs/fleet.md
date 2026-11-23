@@ -85,6 +85,14 @@ logast fleet remove shop orders                            # by service name or 
   task only, nothing compiled), run with `-Plogast.outputDir=<that folder>` and its project cache there too; or give
   one file for all with `--classpath-file`. When Gradle fails, the scan uses the classpath of the last scan, else none
   (one warning). A scan never applies anything, and writes no decision files (messages.yaml, metrics.yaml, traffic.yaml).
+- **Under each repo's line** in the run, one line says what the repo holds: its Java builds, Helm, TypeORM, Terraform
+  and workflows, and whether it has Flyway migrations and whether they ran. Once its knowledge base is exported (or
+  kept), the same line counts its facts:
+
+  ```
+    [2/4] ✓ billing      9.1s  scanned · knowledge base: 1 facts file(s)
+          └ Java: 2 endpoints, 1 listener, 2 jobs, 3 tables, 1 topic/queue · Helm: 2 releases, 3 environments · Flyway ran: 4 tables
+  ```
 - **`--service <name>`** prints the findings of the member's last scan the way `logast scan` prints them, from the
   stored `orders.json` (an added member's in the fleet folder, a joined member's in its `.logast/reports/`), with where
   the reports are. The footer `logast scan` adds (decision files, next steps) is left out: it would write into the repo.
