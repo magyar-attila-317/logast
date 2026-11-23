@@ -40,12 +40,35 @@ class ApplierScratchTest {
         Path freshWithoutPid = scratch("logast-apply-5", null);
         Path other = scratch("something-else", gone.pid());
 
-        assertThat(Applier.sweepStale(tmp, Duration.ofHours(6))).isEqualTo(2);
+        assertThat(Applier.sweepStale(tmp, Duration.ofHours(6), null).removed()).isEqualTo(2);
         assertThat(dead).as("its process is gone").doesNotExist();
         assertThat(oldWithoutPid).as("an earlier logast's leftover, older than 6 h").doesNotExist();
         assertThat(running).as("another live run").exists();
         assertThat(mine).as("this run").exists();
         assertThat(freshWithoutPid).as("maybe an earlier logast still running").exists();
         assertThat(other).as("not logast's").exists();
+    }
+
+    /** #293: a dead run's last step and heap come back as a note; a live run on the same project is reported busy. */
+    @Test
+    void aKilledRunLeavesANoteAndALiveOneOnTheSameProjectIsBusy() throws Exception {
+        Process gone = new ProcessBuilder("java", "-version").redirectErrorStream(true).start();
+        gone.getInputStream().readAllBytes();
+        gone.waitFor();
+        long live = ProcessHandle.current().parent().orElseThrow().pid();
+        Path project = tmp.resolve("work/shop");
+        Files.createDirectories(project);
+
+        Path killed = scratch("logast-apply-1", gone.pid());
+        Files.writeString(killed.resolve(Applier.STEP_FILE), "step lines with 3900 MB of 4096 MB heap in use");
+        Path other = scratch("logast-apply-2", live);
+        Files.writeString(other.resolve(Applier.ROOT_FILE), tmp.resolve("work/other").toString());
+        Applier.Sweep s = Applier.sweepStale(tmp, Duration.ofHours(6), project);
+        assertThat(s.killed()).singleElement().asString().contains("pid " + gone.pid(), "step lines with 3900 MB", "--pack");
+        assertThat(s.busyOwner()).as("a live run on another project").isNull();
+
+        Path same = scratch("logast-apply-3", live);
+        Files.writeString(same.resolve(Applier.ROOT_FILE), project.toAbsolutePath().normalize().toString());
+        assertThat(Applier.sweepStale(tmp, Duration.ofHours(6), project).busyOwner()).isEqualTo(live);
     }
 }

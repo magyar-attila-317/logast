@@ -452,8 +452,16 @@ public final class Main {
             Applier.Result r;
             // #126: one live line on a terminal ("migrating… step 3/8: log lines"); elsewhere no per-round lines
             try (Out.Progress p = new Out.Progress("~migrating…")) {
-                applier.onProgress(s -> p.update("~" + ApplySummary.progress(s)));
+                // #293: off a terminal (an agent, CI, a log file) each step gets one line, so a long run is not silent
+                boolean stepLines = !Out.terminal();
+                applier.onProgress(s -> {
+                    String line = ApplySummary.progress(s);
+                    p.update(stepLines && line.startsWith("migrating… step ") ? line : "~" + line);
+                });
                 r = applier.apply(root(), new Applier.Selection(auto, only, fillMap, fills == null), write);
+            } catch (IllegalStateException busy) {
+                System.err.println("apply: " + busy.getMessage());   // #293: another run on this project
+                return 2;
             }
             // #126: both runs of a classpath refresh are one apply
             List<String> applied = new ArrayList<>(earlier == null ? List.of() : earlier.applied());

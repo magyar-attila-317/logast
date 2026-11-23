@@ -118,7 +118,13 @@ public final class Applier {
     }
 
     public Result apply(Path root, Selection sel, boolean write) {
-        sweepStale(Path.of(System.getProperty("java.io.tmpdir")), STALE_WITHOUT_PID);
+        Sweep sweep = sweepStale(Path.of(System.getProperty("java.io.tmpdir")), STALE_WITHOUT_PID, root);
+        sweep.killed().forEach(progress);
+        if (sweep.busyOwner() != null) {
+            // #293: two runs on one project would write over each other's result
+            throw new IllegalStateException("another logast apply (pid " + sweep.busyOwner() + ") is working on this project: "
+                    + "wait for it to finish, or stop it");
+        }
         progress.accept("copying the project to a scratch folder");
         Path work = copy(root);
         Path scratch = work.getParent();
@@ -141,6 +147,18 @@ public final class Applier {
 
     /** The scratch folder's owner, so a later run can tell a dead run's leftover from a live run's copy (#283). */
     static final String PID_FILE = ".logast-pid";
+    /** The project the scratch folder is a copy of (#293: one run per project). */
+    static final String ROOT_FILE = ".logast-root";
+    /** The step running and the heap in use, rewritten as the run goes (#293: what a killed run was doing). */
+    static final String STEP_FILE = ".logast-step";
+
+    /**
+     * @param removed   scratch folders removed
+     * @param killed    one line per removed folder whose run was stopped mid-way: its step and heap
+     * @param busyOwner the pid of a live run working on the same project, or null
+     */
+    record Sweep(int removed, List<String> killed, Long busyOwner) {
+    }
     /** A scratch folder without a pid file (logast 0.4 and earlier) counts as left over after this long. */
     static final java.time.Duration STALE_WITHOUT_PID = java.time.Duration.ofHours(6);
 
@@ -149,10 +167,13 @@ public final class Applier {
      * A folder goes when the process its pid file names is gone, or when it has no pid file and is older than
      * {@code withoutPid}. A live run's folder, and anything unreadable, stays.
      *
-     * @return the folders removed
+     * @param root the project about to be applied (null: none), to find a live run on it
      */
-    static int sweepStale(Path tmp, java.time.Duration withoutPid) {
+    static Sweep sweepStale(Path tmp, java.time.Duration withoutPid, Path root) {
         int removed = 0;
+        List<String> killed = new ArrayList<>();
+        Long busy = null;
+        String project = root == null ? null : root.toAbsolutePath().normalize().toString();
         try (var dirs = Files.newDirectoryStream(tmp, "logast-apply-*")) {
             for (Path d : dirs) {
                 if (!Files.isDirectory(d, LinkOption.NOFOLLOW_LINKS)) {
@@ -164,6 +185,16 @@ public final class Applier {
                     if (Files.exists(pid)) {
                         long owner = Long.parseLong(Files.readString(pid).strip());
                         stale = owner != ProcessHandle.current().pid() && ProcessHandle.of(owner).map(h -> !h.isAlive()).orElse(true);
+                        Path of = d.resolve(ROOT_FILE);
+                        if (!stale && owner != ProcessHandle.current().pid() && project != null && Files.exists(of)
+                                && Files.readString(of).strip().equals(project)) {
+                            busy = owner;
+                        }
+                        Path step = d.resolve(STEP_FILE);
+                        if (stale && Files.exists(step)) {
+                            killed.add("an earlier apply (pid " + owner + ") was stopped during " + Files.readString(step).strip()
+                                    + ": if the system ran out of memory, give logast more (LOGAST_OPTS=-Xmx4g) or run fewer packs (--pack)");
+                        }
                     } else {
                         stale = Files.getLastModifiedTime(d).toInstant().isBefore(java.time.Instant.now().minus(withoutPid));
                     }
@@ -178,7 +209,19 @@ public final class Applier {
         } catch (IOException ignored) {
             // no temp folder to sweep
         }
-        return removed;
+        return new Sweep(removed, killed, busy);
+    }
+
+    /** #293: the step now running and the heap in use, for the note a later run prints if this one gets killed. */
+    private static void recordStep(Path scratch, Rules.Step step) {
+        Runtime rt = Runtime.getRuntime();
+        long usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
+        try {
+            Files.writeString(scratch.resolve(STEP_FILE), "step " + step.name().toLowerCase(Locale.ROOT) + " with "
+                    + usedMb + " MB of " + rt.maxMemory() / (1024 * 1024) + " MB heap in use");
+        } catch (IOException ignored) {
+            // only a note
+        }
     }
 
     /** Passes over the whole pipeline before apply stops (each pass only applies what is still open). */
@@ -294,6 +337,7 @@ public final class Applier {
 
         /** A step's rounds: apply what is selected, rescan, select what the rescan brought up, until nothing is left. */
         private void step(Rules.Step step, int pass, boolean[] announced) {
+            recordStep(work.getParent(), step);
             Map<String, String> beforeStep = new LinkedHashMap<>();   // content of each file before this step touched it
             Set<String> pending = new LinkedHashSet<>(carried);
             carried.clear();
@@ -765,6 +809,7 @@ public final class Applier {
             Path name = root.toAbsolutePath().normalize().getFileName();
             Path scratch = Files.createTempDirectory("logast-apply-");
             Files.writeString(scratch.resolve(PID_FILE), String.valueOf(ProcessHandle.current().pid()));
+            Files.writeString(scratch.resolve(ROOT_FILE), root.toAbsolutePath().normalize().toString());
             Path work = scratch.resolve(name == null ? "project" : name.toString());
             Files.createDirectories(work);
             Files.walkFileTree(root, new SimpleFileVisitor<>() {

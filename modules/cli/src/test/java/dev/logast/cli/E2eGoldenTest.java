@@ -720,8 +720,12 @@ abstract class E2eGoldenTest {
     void skippedStepsChangeNothingTheOthersApply() throws IOException {
         Path app = tmp.resolve("app");
         copy(BEFORE, app);
+        STDERR.setLength(0);
         String out = run(app, "apply", app.toString(), "--auto", "--write", "--skip=lines,levels", "--classpath-file", CLASSPATH);
         assertThat(LAST_EXIT).as(out + STDERR).isZero();
+        // #293: off a terminal each step that runs says so on a line of its own; a skipped one does not
+        assertThat(STDERR.toString()).as(STDERR.toString()).contains("migrating… step 5/8: log messages")
+                .doesNotContain("step 3/8").doesNotContain("step 7/8");
         assertThat(out).as(out).doesNotContain("CHECK FAILED");
         Path steps = app.resolve(".logast/reports/steps");
         List<String> written;
