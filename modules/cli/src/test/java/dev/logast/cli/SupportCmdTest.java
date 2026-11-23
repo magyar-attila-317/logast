@@ -123,6 +123,32 @@ class SupportCmdTest {
         assertThat(auth.values()).as("every request authenticated").containsOnly(basic);
     }
 
+    /** A refused upload: one line saying what to do, exit 1, no stack trace. */
+    @Test
+    void aRefusedUploadSaysWhatToDo() throws Exception {
+        Path dir = shipped();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", ex -> {
+            ex.sendResponseHeaders(401, -1);
+            ex.close();
+        });
+        server.start();
+        java.io.ByteArrayOutputStream err = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream before = System.err;
+        System.setErr(new java.io.PrintStream(err, true, StandardCharsets.UTF_8));
+        int code;
+        try {
+            code = run("publish", "--from", dir.toString(), "--repo", "http://127.0.0.1:" + server.getAddress().getPort() + "/r",
+                    "--credentials", "someone:wrong");
+        } finally {
+            System.setErr(before);
+            server.stop(0);
+        }
+        assertThat(code).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).startsWith("support: PUT dev/logast/logging-support/0.9.0/logging-support-0.9.0.jar: HTTP 401")
+                .contains("--credentials user:token").doesNotContain("\tat ");
+    }
+
     @Test
     void aGitHubRepositoryIsItsPackageRegistry() {
         assertThat(List.of("github.com/acme/platform-libs", "https://github.com/acme/platform-libs", "github.com/acme/platform-libs.git")

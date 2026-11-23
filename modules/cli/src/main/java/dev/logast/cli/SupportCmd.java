@@ -52,7 +52,16 @@ final class SupportCmd {
         Path from;
 
         @Override
-        public Integer call() throws IOException, InterruptedException {
+        public Integer call() throws InterruptedException {
+            try {
+                return publish();
+            } catch (IOException e) {   // one line, not a stack trace: what failed and what to do
+                System.err.println("support: " + e.getMessage());
+                return 1;
+            }
+        }
+
+        private Integer publish() throws IOException, InterruptedException {
             Path dir = from != null ? from : shipped();
             if (dir == null || !Files.isDirectory(dir)) {
                 System.err.println("support: no lib/support next to this logast (" + dir + "): a release zip or ./gradlew :cli:installDist has it");
@@ -241,7 +250,12 @@ final class SupportCmd {
                     HttpResponse<String> r = http.send(request(path).PUT(HttpRequest.BodyPublishers.ofByteArray(content)).build(),
                             HttpResponse.BodyHandlers.ofString());
                     if (r.statusCode() / 100 != 2) {
-                        String why = r.statusCode() == 401 || r.statusCode() == 403 ? " (credentials: --credentials user:token, or REPO_USER/REPO_PASSWORD)"
+                        boolean github = url.startsWith("https://maven.pkg.github.com/");
+                        String why = r.statusCode() == 401 || r.statusCode() == 403
+                                ? github ? " (GitHub Packages: a token of a user who may write to that repository, with the "
+                                        + "write:packages scope (and repo for a private one); `gh auth token` has it only after "
+                                        + "`gh auth refresh -s write:packages`)"
+                                        : " (credentials: --credentials user:token, or REPO_USER/REPO_PASSWORD)"
                                 : r.statusCode() == 409 ? " (this version is there already: publish another --version)" : "";
                         throw new IOException("PUT " + path + ": HTTP " + r.statusCode() + why);
                     }
