@@ -264,6 +264,10 @@ metrics:
 
 ### `resilience` (pack `resilience`)
 
+A timeout changes what a request returns (an error instead of a late answer), so the resilience pack writes only the
+timeouts the team set: in its logast.yaml or a policy it extends (company.yaml). Without that, the finding proposes
+logast's value and names the setting that applies it (#271).
+
 ```yaml
 resilience:
   httpConnectTimeout: 5s        # written to spring.http.clients.connect-timeout when a service has none

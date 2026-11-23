@@ -27,6 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and names the issue, so it fails (and must be turned into a plain remedy) once the rule learns it.
  */
 class RemedyTest {
+    /** #271: a team's policy that chooses the resilience pack's timeouts, so they are written, not only proposed. */
+    private static final String TIMEOUTS_CHOSEN = "resilience:\n  httpConnectTimeout: 5s\n  httpReadTimeout: 30s\n  dbQueryTimeout: 5m\n";
+
     private static final String PACKS = "packs: [logging, tracing, metrics, resilience, errors, audit]\n";
 
     @TempDir
@@ -2051,7 +2054,12 @@ class RemedyTest {
                     private String parcelId;
                 }
                 """);
+        // #271: logast's default is only proposed; the team's chosen value is written
         assertThat(scan(jpa)).filteredOn(o -> o.rule().equals(Rules.DB_NO_TIMEOUT)).singleElement()
+                .satisfies(o -> assertThat(o.edits()).isEmpty())
+                .satisfies(o -> assertThat(o.suggestion()).contains("Proposed: spring.jpa.properties.jakarta.persistence.query.timeout=300000",
+                        "resilience: dbQueryTimeout"));
+        assertThat(scan(with(jpa, "logast.yaml", TIMEOUTS_CHOSEN))).filteredOn(o -> o.rule().equals(Rules.DB_NO_TIMEOUT)).singleElement()
                 .satisfies(o -> assertThat(o.edits()).singleElement().satisfies(e ->
                         assertThat(e.text()).contains("jakarta.persistence.query.timeout: 300000")));
         gone(Rules.DB_NO_TIMEOUT, "spring.jpa.properties.jakarta.persistence.query.timeout", with(jpa, "src/main/resources/application.yml",
@@ -2149,7 +2157,8 @@ class RemedyTest {
                     implementation("org.springframework.boot:spring-boot-starter-web")
                 }
                 """);
-        List<WorkOrder> built = scan(with(BUILT_REST_TEMPLATE, "build.gradle.kts", build.get("build.gradle.kts")), List.of(boot3));
+        List<WorkOrder> built = scan(with(with(BUILT_REST_TEMPLATE, "build.gradle.kts", build.get("build.gradle.kts")), "logast.yaml",
+                TIMEOUTS_CHOSEN), List.of(boot3));
         assertThat(built).filteredOn(o -> o.rule().equals(Rules.HTTP_CLIENT_NO_TIMEOUT)).as("the injected Boot 3 builder "
                         + "counts toward the timeout properties, with Boot 3.5's names").singleElement()
                 .satisfies(o -> assertThat(o.edits()).singleElement().satisfies(e -> assertThat(e.text())

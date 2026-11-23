@@ -87,6 +87,7 @@ metrics:
       # values: [success, failure]   # optional: allowed literal values (METRIC_TAG_VALUE)
 
 resilience:                        # opt-in pack: packs: [..., resilience]
+  # the timeouts below are proposals: written only once logast.yaml (or a layer it extends) sets them (#271)
   httpConnectTimeout: 5s           # written to spring.http.clients.* by HTTP_CLIENT_NO_TIMEOUT
   httpReadTimeout: 30s
   singleInstance: false            # true: never more than one instance, @Scheduled jobs need no lock

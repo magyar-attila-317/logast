@@ -632,6 +632,20 @@ final class ResilienceRules {
         b.suggestion("Sets spring.http." + group + ".connect-timeout=" + cfg.httpConnectTimeout() + " / read-timeout="
                 + cfg.httpReadTimeout() + " (policy resilience.*) for every client built from Spring's builders; "
                 + "clients that need longer get their own requestFactory settings.");
+        List<String> needed = new ArrayList<>();
+        if (!connect) {
+            needed.add("httpConnectTimeout");
+        }
+        if (!read) {
+            needed.add("httpReadTimeout");
+        }
+        String proposal = "spring.http." + group + "." + String.join(" / ", needed.stream().map(n -> n.equals("httpConnectTimeout")
+                ? "connect-timeout=" + cfg.httpConnectTimeout() : "read-timeout=" + cfg.httpReadTimeout()).toList());
+        String unchosen = needed.stream().filter(n -> !cfg.chose(n)).findFirst().orElse(null);
+        if (unchosen != null) {
+            proposedOnly(b, String.join(" / ", needed), proposal);
+            return;
+        }
         StringBuilder snippet = new StringBuilder("spring:\n  http:\n    " + group + ":\n");
         if (!connect) {
             snippet.append("      connect-timeout: ").append(cfg.httpConnectTimeout()).append('\n');
@@ -640,6 +654,23 @@ final class ResilienceRules {
             snippet.append("      read-timeout: ").append(cfg.httpReadTimeout()).append('\n');
         }
         ServiceYaml.merge(ctx, b, snippet.toString());
+    }
+
+    /**
+     * #271: a timeout changes what a request returns (an error instead of a late answer), so logast writes only one the
+     * team chose in its policy (logast.yaml or a layer it extends). Otherwise the order stays a proposal: the value,
+     * why, and the line that applies it.
+     *
+     * @return true when the team chose {@code setting}: write it
+     */
+    private boolean proposedOnly(OrderBuilder b, String setting, String proposal) {
+        if (java.util.Arrays.stream(setting.split(" / ")).allMatch(ctx.policy.resilience()::chose)) {
+            return true;
+        }
+        b.suggestion("Proposed: " + proposal + ". It changes what a slow call or query returns (an error instead of waiting), "
+                + "so logast does not set it on its own: to apply it, choose the value in logast.yaml (resilience: "
+                + setting.replace(" / ", ", ") + ") and run apply again.");
+        return false;
     }
 
     // ---- database --------------------------------------------------------------------------------
@@ -672,7 +703,9 @@ final class ResilienceRules {
                     .suggestion("Sets spring.jdbc.template.query-timeout=" + timeout + " (policy resilience.dbQueryTimeout): "
                             + "generous on purpose, to stop \"forever\" without cutting off long batch queries; lower it where "
                             + "queries are known to be short.");
-            ServiceYaml.merge(ctx, b, "spring:\n  jdbc:\n    template:\n      query-timeout: " + timeout + "\n");
+            if (proposedOnly(b, "dbQueryTimeout", "spring.jdbc.template.query-timeout=" + timeout)) {
+                ServiceYaml.merge(ctx, b, "spring:\n  jdbc:\n    template:\n      query-timeout: " + timeout + "\n");
+            }
             users.stream().skip(1).forEach(u -> b.location(u[0], Integer.parseInt(u[1]), Rules.DB_NO_TIMEOUT));
         }
         jpaQueryTimeout();
@@ -752,7 +785,9 @@ final class ResilienceRules {
                 .suggestion("Sets spring.jpa.properties.jakarta.persistence.query.timeout=" + millis + " (milliseconds, policy "
                         + "resilience.dbQueryTimeout): Hibernate applies it to every query a session creates. Generous on "
                         + "purpose; lower it where queries are known to be short.");
-        ServiceYaml.merge(ctx, b, "spring:\n  jpa:\n    properties:\n      jakarta.persistence.query.timeout: " + millis + "\n");
+        if (proposedOnly(b, "dbQueryTimeout", "spring.jpa.properties.jakarta.persistence.query.timeout=" + millis)) {
+            ServiceYaml.merge(ctx, b, "spring:\n  jpa:\n    properties:\n      jakarta.persistence.query.timeout: " + millis + "\n");
+        }
         jpa.stream().skip(1).forEach(c -> b.location(c.file().relPath(), Pos.line(c.decl().getName()), Rules.DB_NO_TIMEOUT));
     }
 

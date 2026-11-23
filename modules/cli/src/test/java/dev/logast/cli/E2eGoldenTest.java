@@ -768,6 +768,27 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #271: a timeout changes what a request returns, so logast's own values are only proposed: without the team's
+     * resilience settings no timeout is written, and the finding names the value and the setting that applies it.
+     */
+    @Test
+    void timeoutsTheTeamDidNotChooseAreProposedNotWritten() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            String policy = Files.readString(yml);
+            Files.writeString(yml, policy.substring(0, policy.indexOf("# the team's timeouts")));
+        });
+        String config = actual.getOrDefault("src/main/resources/application.yml", "");
+        assertThat(config).as("no timeout written\n" + config)
+                .doesNotContain("query-timeout", "connect-timeout", "read-timeout", "jakarta.persistence.query.timeout");
+        assertThat(actual.get("FINDINGS.txt")).as("still reported").contains("DB_NO_TIMEOUT", "HTTP_CLIENT_NO_TIMEOUT");
+        run(tmp.resolve("app"), "scan", tmp.resolve("app").toString(), "--classpath-file", CLASSPATH);
+        String orders = Files.readString(tmp.resolve("app/.logast/reports/orders.json"));
+        assertThat(orders).contains("Proposed: spring.jdbc.template.query-timeout=5m", "resilience: dbQueryTimeout",
+                "Proposed: spring.http.");
+    }
+
+    /**
      * #269: a filter puts the service's own correlation id (from a header, sent back to the caller) under traceId, and
      * an error handler reads it for the response body. Deleting the put as a manual trace copy would hand the reader
      * the tracer's id: the key is renamed instead, in the put, the remove and the get, and the result compiles.

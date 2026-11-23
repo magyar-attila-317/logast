@@ -66,13 +66,26 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param dbQueryTimeout written to spring.jdbc.template.query-timeout by DB_NO_TIMEOUT: generous by default (it is
      *                       there to stop "forever", not to cut off long batch queries); lower it per service
      * @param singleInstance the service never runs as more than one instance: @Scheduled jobs need no lock
+     * @param chosen         the timeouts a policy layer above logast's defaults sets (filled by the loader, #271): only
+     *                       those are written; a default is proposed, since a timeout changes what a request returns
      */
-    public record Resilience(String httpConnectTimeout, String httpReadTimeout, String dbQueryTimeout, Boolean singleInstance) {
+    public record Resilience(String httpConnectTimeout, String httpReadTimeout, String dbQueryTimeout, Boolean singleInstance,
+                             List<String> chosen) {
         public Resilience {
             singleInstance = singleInstance != null && singleInstance;
+            chosen = chosen == null ? List.of() : List.copyOf(chosen);
             httpConnectTimeout = httpConnectTimeout == null ? "5s" : httpConnectTimeout;
             httpReadTimeout = httpReadTimeout == null ? "30s" : httpReadTimeout;
             dbQueryTimeout = dbQueryTimeout == null ? "5m" : dbQueryTimeout;
+        }
+
+        public Resilience(String httpConnectTimeout, String httpReadTimeout, String dbQueryTimeout, Boolean singleInstance) {
+            this(httpConnectTimeout, httpReadTimeout, dbQueryTimeout, singleInstance, null);
+        }
+
+        /** The team chose this timeout ({@code httpConnectTimeout}, {@code httpReadTimeout}, {@code dbQueryTimeout}). */
+        public boolean chose(String name) {
+            return chosen.contains(name);
         }
     }
 

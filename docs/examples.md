@@ -898,7 +898,7 @@ return result;
 ### HTTP clients and JDBC queries get timeouts
 
 Spring Boot sets none: a slow dependency holds a thread (and a connection) indefinitely. The values come from the
-policy. *`testing/e2e/before` → `testing/e2e/expected`, `application.yml`.*
+team's policy (the scenario's logast.yml sets them; without it they are only proposed, #271). *`testing/e2e/before` → `testing/e2e/expected`, `application.yml`.*
 
 <table>
 <tr><th>Before</th><th>After <code>logast apply</code></th></tr>

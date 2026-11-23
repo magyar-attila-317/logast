@@ -91,6 +91,14 @@ public final class PolicyLoader {
         Path file = explicit != null ? explicit : root == null ? null : defaultFile(root);
         // #127: no layer chose the support mode: dependency when the service's build resolves the starter
         SupportResolvable.decide(merged, project != null ? project : root);
+        // #271: which timeouts a layer above the defaults chose (only those are written; the rest are proposed)
+        var chosen = JsonNodeFactory.instance.arrayNode();
+        for (String t : List.of("httpConnectTimeout", "httpReadTimeout", "dbQueryTimeout")) {
+            if (loader.chosenAboveDefaults("resilience." + t)) {
+                chosen.add(t);
+            }
+        }
+        merged.withObject("/resilience").set("chosen", chosen);
         merged.remove("extends");
         merged.remove("fleet");
         merged.remove("rollout");   // #236: the repo's own rollout intent, not policy
@@ -314,6 +322,19 @@ public final class PolicyLoader {
                 }
                 target.set(key, value.deepCopy());
                 setOrigin(p, layer);
+            }
+        }
+    }
+
+    /** A layer other than logast's defaults set {@code path} (or replaced an object above it). */
+    boolean chosenAboveDefaults(String path) {
+        for (String p = path; ; p = p.substring(0, p.lastIndexOf('.'))) {
+            String layer = origin.get(p);
+            if (layer != null) {
+                return !layer.equals(label(DEFAULTS));
+            }
+            if (p.indexOf('.') < 0) {
+                return false;
             }
         }
     }
