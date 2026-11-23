@@ -123,6 +123,8 @@ $EDITOR repos.yaml                  # the repo URLs
 git push                            # the workflow scans every repo; the report goes to Pages when you switch it on
 ```
 
+<img src="docs/img/fleet-scan.gif" alt="logast fleet on four services: it updates the clones, scans each one, writes the knowledge base, then lists the scores and the three calls between services that lose the trace, with the side that has to fix each" width="100%">
+
 <img src="docs/img/fleet-drawer.png" alt="The fleet report: services by score, next steps, and a side drawer with one service's findings and calls" width="100%">
 
 - **Next steps** at the top: what to do first, each step with its exact command.
@@ -158,7 +160,7 @@ answering "never". With `--code-mode`, the LLM gets two tools instead of twenty:
 sandbox where one program answers what would take a dozen lookups.
 [The MCP server](docs/mcp.md) · [What the facts are](docs/facts.md).
 
-<img src="docs/img/mcp-query.gif" alt="An assistant asks logast's query tool which jobs run on Monday in prod and what they write; logast answers per job, and lists the jobs whose schedule is not known instead of saying they never run" width="100%">
+<img src="docs/img/mcp-query.gif" alt="Over the knowledge base of four services, an assistant asks logast's query tool what runs on Monday and which other services read what it writes (a chain from orders to billing, ledger and reporting), then what is affected downstream if the order-events topic stops, as a tree with the file and line of every step" width="100%">
 
 ---
 

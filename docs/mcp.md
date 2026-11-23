@@ -11,7 +11,7 @@ Questions about the system as a whole, which no single repo answers:
 | question | answered from |
 |---|---|
 | *Who writes `billing.invoice`, and who reads it?* | the tables each endpoint, listener and job touches (JPA, JDBC), across repos |
-| *What runs on Monday in prod, at what time, and what runs after it?* | `@Scheduled` and Quartz crons per environment, CronJobs, a scheduler's pipeline rows |
+| *What runs on Monday in prod, at what time, and what runs after it?* | `@Scheduled` and Quartz crons (Quartz per environment; `@Scheduled` from the base configuration for now, #242), CronJobs, a scheduler's pipeline rows |
 | *If `ledger` is down, what stops downstream?* | calls, topics and queues, tables, pipeline steps, followed as a tree with sources |
 | *Which service publishes to `order-events`, and who consumes it?* | Kafka, RabbitMQ and JMS listeners and the code that sends to them, placeholders resolved |
 | *Where is this secret used, and when does it expire?* | Terraform and Helm (Key Vault), the workloads that mount it, the services running there |
