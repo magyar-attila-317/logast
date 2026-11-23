@@ -207,7 +207,13 @@ Values with these names are removed from log lines and refused as metric tags.
 entrypoints:
   extraAnnotations: [com.example.InboxHandler]   # your own annotations that start work (like @KafkaListener)
   includeMain: false                             # treat main() as an entrypoint (command-line tools)
+  trustInboundTrace: false                       # #270: continue callers' traces (traceparent, baggage)
 ```
+
+When logast adds the tracing starter, the service keeps trusting what it trusted before: no trace context from
+callers. Boot would otherwise accept any caller's `traceparent` (the trace id the service logs under) and `baggage`
+(written into MDC). A service only trusted callers reach sets `trustInboundTrace: true`; one that already configures
+`management.tracing.propagation.*` keeps its own settings.
 
 HTTP endpoints, `@Scheduled`, Kafka/JMS/Rabbit listeners, event listeners, WebSocket handlers and
 `CommandLineRunner`s are found automatically.

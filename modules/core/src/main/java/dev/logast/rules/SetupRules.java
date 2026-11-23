@@ -30,6 +30,7 @@ public final class SetupRules {
             "org\\.springframework\\.boot:spring-boot-gradle-plugin:([0-9][^\\s\\\"']*)");
     private static final Pattern BOOT_CORE_JAR = Pattern.compile("^spring-boot-([0-9]+\\..*)\\.jar$");
     private static final String BOOT4_OTEL_STARTER = "spring-boot-starter-opentelemetry";
+    private static final String PROPAGATION = "management.tracing.propagation";
     private static final String OTLP_METRICS = "management.otlp.metrics.export";
     private static final String ACTUATOR_STARTER = "spring-boot-starter-actuator";
     private static final String OTEL_BRIDGE = "micrometer-tracing-bridge-otel";
@@ -134,14 +135,32 @@ public final class SetupRules {
                     b.suggestion("No top-level dependencies {} block found: add them manually." + scripts.unresolvedNote());
                 } else {
                     b.edit(e.edit()).at(e.file(), e.line());
+                    Set<String> props = dev.logast.SpringProperties.read(root).keySet();
+                    StringBuilder management = new StringBuilder();
+                    List<String> notes = new ArrayList<>();
                     // #230: the Boot 4 starter brings micrometer-registry-otlp, whose export is on by default and pushes
                     // to localhost:4318: without a collector every push logs a stack trace. Traces and logs go out only
                     // when an endpoint is set, so metrics wait for one too.
-                    if (missing.contains("org.springframework.boot:" + BOOT4_OTEL_STARTER)
-                            && dev.logast.SpringProperties.read(root).keySet().stream().noneMatch(k -> k.startsWith(OTLP_METRICS))) {
-                        ServiceYaml.merge(ctx, b, "management:\n  otlp:\n    metrics:\n      export:\n        enabled: false\n");
-                        b.suggestion("OTLP metrics export stays off until a collector is configured: set " + OTLP_METRICS
+                    if (missing.contains("org.springframework.boot:" + BOOT4_OTEL_STARTER) && props.stream().noneMatch(k -> k.startsWith(OTLP_METRICS))) {
+                        management.append("  otlp:\n    metrics:\n      export:\n        enabled: false\n");
+                        notes.add("OTLP metrics export stays off until a collector is configured: set " + OTLP_METRICS
                                 + ".enabled=true and " + OTLP_METRICS + ".url (or MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true).");
+                    }
+                    // #270: with the starter Boot accepts a caller's traceparent and baggage (and the baggage reaches
+                    // MDC): any caller could pick the trace id the service logs under. Before it the service trusted no
+                    // trace context, so it keeps trusting none: consume nothing, produce W3C, no baggage (Spring Boot
+                    // reference, "Tracing > Propagating Traces": management.tracing.propagation.consume / produce,
+                    // management.tracing.baggage.enabled), unless entrypoints.trustInboundTrace says otherwise.
+                    if (!ctx.policy.entrypoints().trustInboundTrace() && props.stream().noneMatch(k -> k.startsWith(PROPAGATION)
+                            || k.startsWith("management.tracing.baggage"))) {
+                        management.append("  tracing:\n    propagation:\n      consume: []\n      produce: [w3c]\n    baggage:\n      enabled: false\n");
+                        notes.add("Inbound trace context is not trusted: callers' traceparent and baggage are ignored, outgoing calls "
+                                + "carry W3C traceparent. A service only trusted callers reach sets entrypoints.trustInboundTrace: true "
+                                + "(or management.tracing.propagation.consume) to continue their traces.");
+                    }
+                    if (!management.isEmpty()) {
+                        ServiceYaml.merge(ctx, b, "management:\n" + management);
+                        b.suggestion(String.join(" ", notes));
                     }
                 }
             } else if (coordinates.isEmpty()) {

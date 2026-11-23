@@ -87,6 +87,24 @@ class BuildScriptsTest {
                 .doesNotContain("micrometer-tracing-bridge-otel").contains("spring-boot-starter-actuator");
     }
 
+    /**
+     * #270: the starter makes Boot accept callers' traceparent and baggage; logast keeps the service's earlier trust (none)
+     * unless the policy says its callers are trusted, or the service already configures propagation itself.
+     */
+    @Test
+    void inboundTraceContextIsTrustedOnlyWhenThePolicySaysSo(@TempDir Path dir) throws IOException {
+        write(dir, "build.gradle", GROOVY_PLUGINS + "dependencies {\n}\n");
+        assertThat(otelEdit(dir).file()).isEqualTo("build.gradle");   // the helper checks the distrusting merge
+        write(dir, "logast.yaml", "entrypoints:\n  trustInboundTrace: true\n");
+        WorkOrder trusting = order(scan(dir), Rules.SETUP_OTEL_STARTER).orElseThrow();
+        assertThat(trusting.edits()).noneMatch(e -> e.file().endsWith("application.yml"));
+        write(dir, "logast.yaml", "packs: [tracing]\n");
+        write(dir, "src/main/resources/application.yml", "management:\n  tracing:\n    propagation:\n      type: w3c\n");
+        WorkOrder configured = order(scan(dir), Rules.SETUP_OTEL_STARTER).orElseThrow();
+        assertThat(configured.edits()).as("the service's own propagation settings stay as they are")
+                .noneMatch(e -> e.file().endsWith("application.yml"));
+    }
+
     @Test
     void computedOrRemoteTargetsAreReported(@TempDir Path dir) throws IOException {
         write(dir, "build.gradle", GROOVY_PLUGINS + "apply from: \"$rootDir/gradle/dependencies.gradle\"\n"
@@ -100,8 +118,12 @@ class BuildScriptsTest {
 
     private static Edit otelEdit(Path dir) {
         WorkOrder otel = order(scan(dir), Rules.SETUP_OTEL_STARTER).orElseThrow();
-        assertThat(otel.edits()).hasSize(1);
-        return otel.edits().getFirst();
+        // one build-file edit; #270: the application.yml merge (inbound trace context not trusted) goes with it
+        List<Edit> build = otel.edits().stream().filter(e -> !e.file().endsWith("application.yml")).toList();
+        assertThat(build).hasSize(1);
+        assertThat(otel.edits()).filteredOn(e -> e.file().endsWith("application.yml")).singleElement()
+                .satisfies(e -> assertThat(e.text()).contains("consume: []", "produce: [w3c]", "baggage:\n      enabled: false"));
+        return build.getFirst();
     }
 
     private static Optional<WorkOrder> order(List<WorkOrder> orders, String rule) {
