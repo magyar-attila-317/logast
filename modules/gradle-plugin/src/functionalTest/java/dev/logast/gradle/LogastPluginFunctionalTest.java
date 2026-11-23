@@ -117,9 +117,10 @@ class LogastPluginFunctionalTest {
         BuildResult fail = gradle("logastCheck").buildAndFail();
         assertThat(fail.task(":logastCheck").getOutcome()).isEqualTo(TaskOutcome.FAILED);
         assertThat(fail.getOutput())
-                .contains("2 new findings at or above medium")
+                .contains("1 new finding at or above medium")
                 .contains("SWALLOWED_EXCEPTION  src/main/java/demo/PaymentController.java:13")
-                .contains("ENTRYPOINT_SILENT  src/main/java/demo/PaymentController.java:10")
+                // #285: a POST endpoint with no known rate gets no started line: the access log records it
+                .doesNotContain("ENTRYPOINT_SILENT")
                 .doesNotContain("SETUP_STRUCTURED_LOGGING");   // in the baseline
     }
 
@@ -132,7 +133,7 @@ class LogastPluginFunctionalTest {
         assertThat(gradle("logastCheck").build().getOutput()).contains("no new findings at or above high");
 
         buildScript("logast { failOn = 'low' }\n");
-        assertThat(gradle("logastCheck").buildAndFail().getOutput()).contains("2 new findings at or above low");
+        assertThat(gradle("logastCheck").buildAndFail().getOutput()).contains("1 new finding at or above low");
 
         buildScript("logast { failOn = 'severe' }\n");
         assertThat(gradle("logastCheck").buildAndFail().getOutput()).contains("logast.failOn = \"severe\": use one of [low, medium, high]");
