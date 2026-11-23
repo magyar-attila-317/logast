@@ -263,6 +263,15 @@ final class LogArgumentRules {
         return found[0];
     }
 
+    /** #251: the method compares {@code name} with null, or declares it {@code @Nullable}. */
+    private static boolean mayBeNull(MethodInfo m, String name) {
+        String text = m.file().slice(Pos.start(m.decl()), Pos.end(m.decl()));
+        String n = java.util.regex.Pattern.quote(name);
+        return java.util.regex.Pattern.compile("(?<![\\w.])" + n + "\\s*[!=]=\\s*null\\b|\\bnull\\s*[!=]=\\s*" + n + "\\b"
+                + "|\\b(isNull|nonNull|requireNonNullElse|ofNullable)\\(\\s*" + n + "\\b"
+                + "|@Nullable\\s+(final\\s+)?[\\w.<>,?\\[\\] ]+\\s" + n + "\\b").matcher(text).find();
+    }
+
     private void collection(MethodInfo m, LogCall lc, Expression arg, String size, int ordinal) {
         int line = Pos.line(arg);
         if (ctx.ignored(m.file(), line, Rules.LOG_COLLECTION_ARGUMENT)) {
@@ -275,6 +284,12 @@ final class LogArgumentRules {
                 .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
         boolean simple = arg instanceof J.Identifier || arg instanceof J.FieldAccess || arg instanceof J.MethodInvocation;
         String sized = src + size;
+        // #251: a value the method itself checks for null (or a @Nullable parameter) may be null here: SLF4J printed
+        // "null", .size() would throw; the count is written null-safe
+        String argName = arg instanceof J.Identifier id ? id.getSimpleName() : arg instanceof J.FieldAccess fa ? fa.getSimpleName() : null;
+        if (argName != null && mayBeNull(m, argName)) {
+            sized = "(" + src + " == null ? null : " + src + size + ")";
+        }
         Expression root = mappedStreamRoot(arg);
         if (root != null) {
             sized = m.file().slice(Pos.start(root), Pos.end(root)) + ".size()";   // lines.stream().map(..).toList() -> lines.size()

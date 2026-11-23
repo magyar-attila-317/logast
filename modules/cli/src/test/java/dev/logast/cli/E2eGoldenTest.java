@@ -8005,11 +8005,11 @@ abstract class E2eGoldenTest {
                     import org.springframework.transaction.support.TransactionSynchronization;
                     import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-                    final class AfterCommit {
+                    public final class AfterCommit {
                         private AfterCommit() {
                         }
 
-                        static void run(String description, Runnable action) {
+                        public static void run(String description, Runnable action) {
                             if (!TransactionSynchronizationManager.isSynchronizationActive()) {
                                 action.run();
                                 return;
@@ -8071,11 +8071,90 @@ abstract class E2eGoldenTest {
                         }
                     }
                     """);
+            // another package that imports the service's AfterCommit: a second import of the support one does not compile
+            Path member = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/member"));
+            Files.writeString(member.resolve("MemberService.java"), """
+                    package com.example.e2e.member;
+
+                    import com.example.e2e.signup.AfterCommit;
+                    import org.springframework.jdbc.core.JdbcTemplate;
+                    import org.springframework.stereotype.Service;
+                    import org.springframework.transaction.annotation.Transactional;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RequestParam;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    @Service
+                    class MemberService {
+                        private static final String REMOVE_MEMBER = "DELETE FROM signup.member WHERE email = ?";
+
+                        private final JdbcTemplate jdbc;
+
+                        MemberService(JdbcTemplate jdbc) {
+                            this.jdbc = jdbc;
+                        }
+
+                        @Transactional
+                        @PostMapping("/members/remove")
+                        public void remove(@RequestParam String email) {
+                            jdbc.update(REMOVE_MEMBER, email);
+                            AfterCommit.run("farewell-mail", () -> farewell(email));
+                        }
+
+                        private void farewell(String email) {
+                        }
+                    }
+                    """);
         });
         String service = actual.get("src/main/java/com/example/e2e/signup/SignupService.java");
         assertThat(service).as("the write is logged (the rule ran on this file)").containsPattern("log\\.\\w+\\(\"[^\"]*(saved|inserted|created)");
         assertThat(service).as("no support AfterCommit over the service's own").doesNotContain("logging.AfterCommit")
                 .contains("AfterCommit.run(\"welcome-mail\"");
+        String member = actual.get("src/main/java/com/example/e2e/member/MemberService.java");
+        assertThat(member).as("the write is logged").containsPattern("log\\.\\w+\\(\"[^\"]*(deleted|removed)");
+        assertThat(member).as("no second AfterCommit import").doesNotContain("logging.AfterCommit");
+    }
+
+    /**
+     * #251: a collection logged whole is logged as its size; one the method itself treats as optional (it checks it for
+     * null) gets a null-safe count, as {@code .size()} on it threw where SLF4J had printed "null".
+     */
+    @Test
+    void aCollectionTheMethodChecksForNullIsCountedNullSafe() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/seat"));
+            Files.writeString(dir.resolve("SeatController.java"), """
+                    package com.example.e2e.seat;
+
+                    import java.util.Collection;
+                    import java.util.List;
+                    import java.util.Set;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RequestParam;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    class SeatController {
+                        private static final Logger log = LoggerFactory.getLogger(SeatController.class);
+
+                        @PostMapping("/seats/pay")
+                        void pay(@RequestParam(required = false) Collection<Long> expectedIds) {
+                            List<Long> actualIds = new java.util.ArrayList<>(Set.of(1L, 2L));
+                            boolean differ = expectedIds != null && !Set.copyOf(expectedIds).equals(Set.copyOf(actualIds));
+                            if (differ || actualIds.isEmpty()) {
+                                log.info("Refused seat pay (expected={}, actual={})", expectedIds, actualIds);
+                                throw new IllegalStateException("the due changed");
+                            }
+                        }
+                    }
+                    """);
+        });
+        String seat = actual.get("src/main/java/com/example/e2e/seat/SeatController.java");
+        assertThat(seat).as(seat).contains("expectedIds == null ? null : expectedIds.size()").contains("actualIds.size()")
+                .doesNotContain("actualIds == null");
     }
 
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {

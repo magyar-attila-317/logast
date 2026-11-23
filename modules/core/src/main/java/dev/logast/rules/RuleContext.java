@@ -341,12 +341,19 @@ public final class RuleContext {
     private static final java.util.regex.Pattern PACKAGE = java.util.regex.Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;");
 
     /**
-     * #248: whether a support class's simple name is free in a file's package: when the service has its own type of that
-     * name there (its own {@code AfterCommit}), an import of the support class would shadow it in the whole file.
+     * #248: whether a support class's simple name is free in a file: when the service has its own type of that name in
+     * the file's package (its own {@code AfterCommit}), an import of the support class would shadow it in the whole file;
+     * when the file imports another type of that name, a second import does not compile.
      */
     boolean supportNameFree(String simpleName, dev.logast.parse.SourceFileInfo f) {
         java.util.regex.Matcher m = PACKAGE.matcher(f.text());
         String pkg = m.find() ? m.group(1) : "";
+        java.util.regex.Matcher imported = java.util.regex.Pattern.compile("(?m)^import\\s+([\\w.]+)\\." + simpleName + "\\s*;").matcher(f.text());
+        while (imported.find()) {
+            if (!imported.group(1).equals(a.supportPackage)) {
+                return false;
+            }
+        }
         return pkg.equals(a.supportPackage) || a.index.clazz(pkg.isEmpty() ? simpleName : pkg + "." + simpleName) == null;
     }
 
