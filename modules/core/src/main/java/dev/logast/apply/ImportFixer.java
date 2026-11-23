@@ -35,7 +35,7 @@ final class ImportFixer {
     }
 
     static String fix(String text, Map<String, String> support) {
-        return fix(text, text, support);
+        return fix(text, text, support, Set.of());
     }
 
     /**
@@ -43,7 +43,12 @@ final class ImportFixer {
      *               fixer removed the last one), the blank line that set the import block apart goes too (#77)
      */
     static String fix(String before, String text, Map<String, String> support) {
-        String fixed = fixImports(text, support);
+        return fix(before, text, support, Set.of());
+    }
+
+    /** @param packageTypes the simple names of the other types in the file's package (#248: never shadowed by an import) */
+    static String fix(String before, String text, Map<String, String> support, Set<String> packageTypes) {
+        String fixed = fixImports(text, support, packageTypes);
         return IMPORT.matcher(before).find() && !IMPORT.matcher(fixed).find() ? closeImportGap(fixed) : fixed;
     }
 
@@ -64,7 +69,7 @@ final class ImportFixer {
         return text.substring(0, eol + 1) + "\n" + text.substring(blank.end());
     }
 
-    private static String fixImports(String text, Map<String, String> support) {
+    private static String fixImports(String text, Map<String, String> support, Set<String> packageTypes) {
         Map<String, String> known = new LinkedHashMap<>(FIXED);
         known.putAll(support);
         Matcher pm = PACKAGE.matcher(text);
@@ -100,7 +105,7 @@ final class ImportFixer {
             String fqnPkg = fqn.substring(0, fqn.lastIndexOf('.'));
             boolean used = Pattern.compile("(?<![\\w.])" + simple + "\\b(?!\\s*=)").matcher(code).find();
             boolean importedHere = fqn.equals(imported.get(simple)) || wildcards.contains(fqnPkg) || fqnPkg.equals(pkg);
-            boolean clash = imported.containsKey(simple) && !fqn.equals(imported.get(simple))
+            boolean clash = imported.containsKey(simple) && !fqn.equals(imported.get(simple)) || packageTypes.contains(simple)
                     || Pattern.compile("(?m)\\b(class|interface|record|enum)\\s+" + simple + "\\b").matcher(code).find();
             if (used && !importedHere && !clash) {
                 add.add("import " + fqn + ";");

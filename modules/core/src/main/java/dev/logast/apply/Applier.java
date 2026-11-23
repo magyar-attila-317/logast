@@ -592,7 +592,7 @@ public final class Applier {
                     after = after.isBlank() ? m.text() : mergeInto(after, m);
                 }
                 if (p.toString().endsWith(".java")) {
-                    after = ImportFixer.fix(before, after, ImportFixer.learn(edits.stream().map(Edit::text).toList()));
+                    after = ImportFixer.fix(before, after, ImportFixer.learn(edits.stream().map(Edit::text).toList()), siblingTypes(p));
                 }
                 if (p.toString().endsWith(".java") && !ProjectParser.parsesCleanly(work, work.relativize(p), after)) {
                     broken.put(entry.getKey(), "does not parse");
@@ -604,6 +604,21 @@ public final class Applier {
             }
         }
         return out;
+    }
+
+    /** #248: the types of the file's package declared in its other files (one top-level type per file, named after it). */
+    private static Set<String> siblingTypes(Path file) {
+        Path dir = file.getParent();
+        if (dir == null) {
+            return Set.of();
+        }
+        try (var s = Files.list(dir)) {
+            String own = file.getFileName().toString();
+            return s.map(x -> x.getFileName().toString()).filter(n -> n.endsWith(".java") && !n.equals(own))
+                    .map(n -> n.substring(0, n.length() - ".java".length())).collect(java.util.stream.Collectors.toSet());
+        } catch (java.io.IOException e) {
+            return Set.of();
+        }
     }
 
     private static String mergeInto(String text, Edit m) {

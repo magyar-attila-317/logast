@@ -33,6 +33,25 @@ class ImportFixerTest {
                 .contains("import org.slf4j.Logger;");
     }
 
+    /** #248: a type of the file's package declared in another file of it is never shadowed by a support import. */
+    @Test
+    void aTypeOfTheSamePackageIsNotShadowed() {
+        Map<String, String> support = ImportFixer.learn(List.of("import com.shop.logging.AfterCommit;\n"));
+        String src = """
+                package com.shop.signup;
+
+                class SignupService {
+                    void register(String email) {
+                        AfterCommit.run("welcome-mail", () -> welcome(email));
+                    }
+                }
+                """;
+        assertThat(ImportFixer.fix(src, src, support, java.util.Set.of("AfterCommit", "SignupController")))
+                .doesNotContain("import com.shop.logging.AfterCommit;");
+        assertThat(ImportFixer.fix(src, src, support, java.util.Set.of())).as("no such type in the package: imported")
+                .contains("import com.shop.logging.AfterCommit;");
+    }
+
     @Test
     void leavesOtherLoggersAndJavadocMentionsAlone() {
         String src = """

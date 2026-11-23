@@ -338,6 +338,18 @@ public final class RuleContext {
     }
 
     /** A support class generated code may use: added or updated by this run, or already there. */
+    private static final java.util.regex.Pattern PACKAGE = java.util.regex.Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;");
+
+    /**
+     * #248: whether a support class's simple name is free in a file's package: when the service has its own type of that
+     * name there (its own {@code AfterCommit}), an import of the support class would shadow it in the whole file.
+     */
+    boolean supportNameFree(String simpleName, dev.logast.parse.SourceFileInfo f) {
+        java.util.regex.Matcher m = PACKAGE.matcher(f.text());
+        String pkg = m.find() ? m.group(1) : "";
+        return pkg.equals(a.supportPackage) || a.index.clazz(pkg.isEmpty() ? simpleName : pkg + "." + simpleName) == null;
+    }
+
     boolean supportHas(String simpleName) {
         if (!a.supportStarterPresent || supportUpdateOrderId != null) {
             return true;

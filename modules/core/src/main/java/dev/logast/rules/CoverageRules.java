@@ -257,7 +257,7 @@ final class CoverageRules {
                     .flatMap(List::stream).anyMatch(an -> Annotations.is(an, "org.springframework.transaction.annotation.Transactional")
                             || Annotations.is(an, "jakarta.transaction.Transactional"));
             if (transactional && ctx.a.project.probe().hasClass("org.springframework.transaction.support.TransactionSynchronizationManager")
-                    && ctx.supportHas("AfterCommit")) {
+                    && ctx.supportHas("AfterCommit") && ctx.supportNameFree("AfterCommit", f)) {   // #248
                 String call = logger.name() + ".info(" + Text.javaString(done);
                 b.rewriteEdits(call, "AfterCommit.log(() -> " + call).rewriteEdits("); " + DbRules.WORDING_MARKER, ")); " + DbRules.WORDING_MARKER);
                 b.edits(JavaEdits.imports(f, ctx.support("AfterCommit")));

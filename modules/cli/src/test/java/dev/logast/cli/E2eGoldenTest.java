@@ -7976,6 +7976,95 @@ abstract class E2eGoldenTest {
     }
 
     /** apply twice (what one run leaves behind shows up), record the output, compile: every file of the result. */
+    /**
+     * #248: a service with its own {@code AfterCommit} beside the code logast edits. An import of the support class of
+     * that name would shadow the service's in the whole file (an explicit import beats a type of the same package), so
+     * the file's own {@code AfterCommit.run(...)} no longer compiled. The write's new log line is written without the
+     * support class there, no import is added, and the result compiles (checked by migrate).
+     */
+    @Test
+    void aServicesOwnAfterCommitIsNotShadowedBySupportCode() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/signup"));
+            Files.writeString(dir.resolve("AfterCommit.java"), """
+                    package com.example.e2e.signup;
+
+                    import org.springframework.transaction.support.TransactionSynchronization;
+                    import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+                    final class AfterCommit {
+                        private AfterCommit() {
+                        }
+
+                        static void run(String description, Runnable action) {
+                            if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+                                action.run();
+                                return;
+                            }
+                            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                                @Override
+                                public void afterCommit() {
+                                    action.run();
+                                }
+                            });
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("SignupService.java"), """
+                    package com.example.e2e.signup;
+
+                    import org.springframework.jdbc.core.JdbcTemplate;
+                    import org.springframework.stereotype.Service;
+                    import org.springframework.transaction.annotation.Transactional;
+
+                    @Service
+                    class SignupService {
+                        private static final String INSERT_MEMBER = "INSERT INTO signup.member (email) VALUES (?)";
+
+                        private final JdbcTemplate jdbc;
+
+                        SignupService(JdbcTemplate jdbc) {
+                            this.jdbc = jdbc;
+                        }
+
+                        @Transactional
+                        public void register(String email) {
+                            jdbc.update(INSERT_MEMBER, email);
+                            AfterCommit.run("welcome-mail", () -> welcome(email));
+                        }
+
+                        private void welcome(String email) {
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("SignupController.java"), """
+                    package com.example.e2e.signup;
+
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RequestParam;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    class SignupController {
+                        private final SignupService signups;
+
+                        SignupController(SignupService signups) {
+                            this.signups = signups;
+                        }
+
+                        @PostMapping("/signups")
+                        void signUp(@RequestParam String email) {
+                            signups.register(email);
+                        }
+                    }
+                    """);
+        });
+        String service = actual.get("src/main/java/com/example/e2e/signup/SignupService.java");
+        assertThat(service).as("the write is logged (the rule ran on this file)").containsPattern("log\\.\\w+\\(\"[^\"]*(saved|inserted|created)");
+        assertThat(service).as("no support AfterCommit over the service's own").doesNotContain("logging.AfterCommit")
+                .contains("AfterCommit.run(\"welcome-mail\"");
+    }
+
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);
         prepare.run(app);

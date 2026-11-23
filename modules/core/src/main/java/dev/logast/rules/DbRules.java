@@ -169,7 +169,7 @@ final class DbRules {
         String args = value[0].isEmpty() ? "" : ", " + value[1];
         String logCall = logger.name() + "." + level + "(" + Text.javaString(message) + args + ")";
         boolean afterCommit = write && ctx.a.project.probe().hasClass("org.springframework.transaction.support.TransactionSynchronizationManager")
-                && ctx.supportHas("AfterCommit");
+                && ctx.supportHas("AfterCommit") && ctx.supportNameFree("AfterCommit", f);   // #248: not over the service's own
         StringBuilder add = new StringBuilder();
         add.append(indent).append(afterCommit ? "AfterCommit.log(() -> " + logCall + ");" : logCall + ";")
                 .append(' ').append(WORDING_MARKER).append('\n');
