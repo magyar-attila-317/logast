@@ -311,11 +311,31 @@ final class LogCallRules {
         if (target == null || target.equals(lc.level().method()) || ctx.ignored(m.file(), line, Rules.LOG_LEVEL)) {
             return;
         }
+        if (target.equals("debug") && reportsASignal(lc)) {
+            // #286: a state change (a device going OFFLINE) or a mismatch (a price discrepancy) is what support looks
+            // for, even once per item: a person decides, the line keeps its level
+            ctx.order(Rules.LOG_LEVEL, m, line, "level" + ordinal)
+                    .title("INFO in a loop, kept: it reports a state change or a mismatch, which support needs to see")
+                    .suggestion("Keep it at INFO if each occurrence matters; else log a summary after the loop at INFO and "
+                            + "this line at DEBUG.")
+                    .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
+            return;
+        }
         J.Identifier name = lc.call().getName();
         ctx.order(Rules.LOG_LEVEL, m, line, "level" + ordinal)
                 .title(lc.level() + " → " + target.toUpperCase(Locale.ROOT) + ": " + why)
                 .edit(Edit.replace(m.file().relPath(), Pos.start(name), Pos.end(name), target))
                 .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
+    }
+
+    /** A message that reports a transition or a mismatch: "status changed", "a -> b", "discrepancy", "went offline". */
+    private static final java.util.regex.Pattern SIGNAL = java.util.regex.Pattern.compile(
+            "(?i)(->|→|\\bchanged\\b|\\btransition|\\bmismatch|\\bdiscrepanc|\\bdiffers?\\b|\\bunexpected\\b|\\boffline\\b"
+                    + "|\\bonline\\b|\\bunreachable\\b|\\bdisconnected\\b|\\breconnected\\b)");
+
+    /** #286: the message text (its template literal) reports a state change or a mismatch. */
+    static boolean reportsASignal(LogCall lc) {
+        return lc.template() instanceof J.Literal lit && lit.getValue() instanceof String text && SIGNAL.matcher(text).find();
     }
 
     /** SWALLOWED orders of callers that catch (and drop) what this catch rethrows. */

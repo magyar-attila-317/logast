@@ -92,4 +92,61 @@ class LoopSizeTest {
                 .doesNotContainKey("Items.hinted")                                  // declared small: INFO stays
                 .doesNotContainKey("Items.fixed");                                  // two fixed items: INFO stays
     }
+
+    /**
+     * #286: a line reporting a state change or a mismatch keeps INFO even once per item of query data: a device going
+     * OFFLINE or a price discrepancy is what support looks for. Reported for a person to decide, not edited.
+     */
+    @Test
+    void stateChangesAndMismatchesInALoopKeepTheirLevel(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Device.java"), "package x;\npublic record Device(String id, String status, long quoted, long received) {}\n");
+        Files.writeString(src.resolve("DeviceRepository.java"), """
+                package x;
+                import java.util.List;
+                public interface DeviceRepository extends org.springframework.data.repository.CrudRepository<Device, String> {
+                    List<Device> findByActiveTrue();
+                }
+                """);
+        Files.writeString(src.resolve("Devices.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public class Devices {
+                    private static final Logger log = LoggerFactory.getLogger(Devices.class);
+                    private final DeviceRepository repository;
+
+                    Devices(DeviceRepository repository) {
+                        this.repository = repository;
+                    }
+
+                    void poll() {
+                        for (Device d : repository.findByActiveTrue()) {
+                            log.info("Device {} status changed: {} -> OFFLINE", d.id(), d.status());
+                        }
+                    }
+
+                    void compare() {
+                        for (Device d : repository.findByActiveTrue()) {
+                            log.info("Price discrepancy: quoted {} received {}", d.quoted(), d.received());
+                        }
+                    }
+
+                    void check() {
+                        for (Device d : repository.findByActiveTrue()) {
+                            log.info("Device checked [deviceId={}]", d.id());
+                        }
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("logast.yaml"), "levels: { infoInLoops: size }\n");
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        Map<String, WorkOrder> byMethod = r.orders().stream().filter(o -> o.fixes().contains(Rules.LOG_LEVEL))
+                .collect(Collectors.toMap(WorkOrder::method, o -> o, (a, b) -> a));
+        assertThat(byMethod.get("Devices.poll").edits()).as("a state change: reported, not lowered").isEmpty();
+        assertThat(byMethod.get("Devices.compare").edits()).as("a mismatch: reported, not lowered").isEmpty();
+        assertThat(byMethod.get("Devices.check").edits()).as("a plain per-item line still goes to DEBUG").isNotEmpty();
+    }
 }

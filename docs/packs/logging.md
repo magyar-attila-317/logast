@@ -57,7 +57,7 @@ can end either way, the finding's note says why.
 | DB_OUTCOME_UNLOGGED | medium | a JDBC statement whose outcome nobody logs | AUTO (wording marked for review) |
 | LIFECYCLE_UNEVEN | low | implementations of one method that log their lifecycle differently | AUTO: the missing lines |
 | **Levels and volume** (see [below](#noise-logs-in-loops-and-real-volume)) | | | |
-| LOG_LEVEL | medium | a level that does not fit: INFO per loop item, ERROR for a client error (`levels.clientErrors`) | AUTO |
+| LOG_LEVEL | medium | a level that does not fit: INFO per loop item, ERROR for a client error (`levels.clientErrors`) | AUTO; a per-item line that reports a state change or a mismatch ("status changed: … -> OFFLINE", "price discrepancy") is reported instead, it keeps INFO (#286) |
 | LOG_IN_LOOP | low | INFO per item of a loop of unknown size | report: a `// logast:loop-size` comment settles it |
 | LOG_VOLUME | medium | a statement above `levels.volumeBudget` lines/day (needs `traffic.yaml` rates; scheduled entrypoints' rates come from their schedule, #235) | report |
 | **Setup** | | | |
