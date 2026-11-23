@@ -501,8 +501,42 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         return key == null ? null : logging.style().apply(key);
     }
 
-    /** MDC key → where its value comes from. */
+    /** #250: what the policy derives, built once per policy instance: rules ask for it per value they follow. */
+    private record Derived(Map<String, KeySource> registry, Map<String, String> aliases) {
+    }
+
+    /** A policy by identity: a record's equals and hashCode would walk the whole policy on every lookup. */
+    private record Same(Policy policy) {
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof Same s && s.policy == policy;
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(policy);
+        }
+    }
+
+    /** The last few policies' derived maps (a run loads a policy per round; the newest is the one asked). */
+    private static final Map<Same, Derived> DERIVED = Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Same, Derived> eldest) {
+            return size() > 16;
+        }
+    });
+
+    private Derived derived() {
+        return DERIVED.computeIfAbsent(new Same(this), k -> new Derived(Collections.unmodifiableMap(buildMdcRegistry()),
+                Collections.unmodifiableMap(buildMdcAliases())));
+    }
+
+    /** MDC key → where its value comes from (read-only). */
     public Map<String, KeySource> mdcRegistry() {
+        return derived().registry();
+    }
+
+    private Map<String, KeySource> buildMdcRegistry() {
         Map<String, KeySource> out = new TreeMap<>();
         mdc.keys().forEach((k, v) -> out.merge(styledKey(k), v, (a, b) -> new KeySource(concat(a.params(), b.params()), merge(a.types(), b.types()))));
         mdcTerms().forEach(t -> {
@@ -514,8 +548,12 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         return out;
     }
 
-    /** Non-canonical MDC key → canonical key (e.g. orderId → order.id, or order.id → orderId under keyStyle camel). */
+    /** Non-canonical MDC key → canonical key (e.g. orderId → order.id, or order.id → orderId under keyStyle camel; read-only). */
     public Map<String, String> mdcAliases() {
+        return derived().aliases();
+    }
+
+    private Map<String, String> buildMdcAliases() {
         Map<String, String> out = new LinkedHashMap<>();
         mdc.keys().keySet().forEach(k -> {
             if (!styledKey(k).equals(k)) {
