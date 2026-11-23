@@ -397,7 +397,9 @@ BANNER
     # shellcheck disable=SC2086 # task names, split on purpose
     ./gradlew -q $tasks </dev/null 2> >(grep -v '^Note: ' >&2) || fail "the build failed (its output is above)"
     if [ "$UPTODATE" = 0 ]; then
-      ZIP="$(ls -t cli/build/distributions/logast-*.zip | head -1)"
+      # the zip of this checkout's version, by name: never an older one left in the folder (or in cli/ before modules/)
+      ZIP="modules/cli/build/distributions/logast-$(prop version gradle.properties).zip"
+      [ -f "$ZIP" ] || fail "the build left no $ZIP"
       ok "built $(basename "$ZIP") in $(since "$t0")"
       unzip -q "$ZIP" -d "$tmp/dist"
     else
