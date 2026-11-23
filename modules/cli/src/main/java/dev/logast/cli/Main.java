@@ -111,6 +111,11 @@ public final class Main {
             return packs.isEmpty() ? p : p.withPacks(packs);
         }
 
+        /** Whether a rule ran in this run: every rule, or with --pack only those of the packs named (#275). */
+        java.util.function.Predicate<String> ranRule() {
+            return packs.isEmpty() ? rule -> true : rule -> rule != null && Rules.packsOf(rule).stream().anyMatch(packs::contains);
+        }
+
         List<Path> classpath() {
             return Logast.classpath(root(), classpathFile);
         }
@@ -186,8 +191,8 @@ public final class Main {
             dev.logast.apply.FillsFile.Update mu = null;
             if (out == null) {
                 // their state is part of the "waiting on you" block (#101)
-                fu = dev.logast.apply.FillsFile.update(root(), r.orders());
-                mu = dev.logast.apply.MetricsFile.update(root(), r.orders());
+                fu = dev.logast.apply.FillsFile.update(root(), r.orders(), ranRule(), true);
+                mu = dev.logast.apply.MetricsFile.update(root(), r.orders(), ranRule(), true);
                 if (policy.packSelected("logging")) {   // the logging pack's account of every log call (#72, as #88)
                     ledger = Logast.lastAnalysis.ledger.write(root(), Logast.lastAnalysis, r.orders(), Map.of());
                 }
@@ -456,8 +461,9 @@ public final class Main {
             if (fills == null) {
                 // the automatic file follows the code: created if missing, finished entries out, new ones in;
                 // their state is part of the "waiting on you" block (#101)
-                fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders());
-                mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders());
+                // a dry run writes nothing, .logast/decisions included; a --pack run leaves other packs' entries (#275)
+                fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders(), ranRule(), write);
+                mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders(), ranRule(), write);
             }
             Written written = writeReports(r, applied, changed, scanner, policy, fu, mu);
             Outcome outcome = new Outcome(r, applied, changed, rejected, violations, header, t0);
@@ -694,7 +700,7 @@ public final class Main {
             }
             // what is left: optional, in plain words (#126); the follow-up checks one line each
             dev.logast.orders.ScanResult left = write ? r.after() : r.before();
-            dev.logast.Todo todo = dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, applied, write);
+            dev.logast.Todo todo = dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, applied, write, write);
             also.addAll(todo.also());
             printBlocks(todo.worthALook(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
                     ledgerLines(ledger, List.of()), dev.logast.Todo.alsoShort(also));

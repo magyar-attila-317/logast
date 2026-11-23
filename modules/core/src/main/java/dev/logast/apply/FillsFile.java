@@ -61,14 +61,19 @@ public final class FillsFile {
      * found) are removed. Nothing is written when nothing changed; the file is created when it does not exist.
      */
     public static Update update(Path root, List<WorkOrder> orders) {
+        return update(root, orders, rule -> true, true);
+    }
+
+    /**
+     * @param ran   whether a rule ran in this run (null for an order id logast cannot map to a rule): an entry whose rule
+     *              did not run (an apply limited by --pack) is kept as it is, not removed (#275)
+     * @param write false for a dry run: work out the update, write nothing
+     */
+    public static Update update(Path root, List<WorkOrder> orders, java.util.function.Predicate<String> ran, boolean write) {
         Path file = root.resolve(PATH);
         Map<String, JsonNode> previous = DecisionYaml.entries(file);
         Map<String, Object> template = template(orders);
         ObjectNode out = DecisionYaml.MAPPER.createObjectNode();
-        // always says where things stand, so an empty file reads as "nothing to write", not as "something went wrong"
-        String header = DecisionYaml.comment(README, template.isEmpty()
-                ? "Nothing needs a message text right now: every finding is fixed automatically or only reported."
-                : template.size() + " finding(s) below need a message text.");
         // written texts follow their line when its id shifted (a log line added above it in the same method)
         Map<String, Fill> written = new LinkedHashMap<>();
         previous.forEach((id, node) -> {
@@ -93,6 +98,10 @@ public final class FillsFile {
             }
             String id = movedTo.getOrDefault(e.getKey(), e.getKey());
             if (!template.containsKey(id) || out.has(id)) {
+                if (!out.has(id) && !movedTo.containsKey(e.getKey()) && !ran.test(ruleOf(e.getKey()))) {
+                    out.set(e.getKey(), e.getValue().deepCopy());   // another pack's entry: this run cannot judge it
+                    continue;
+                }
                 removed++;
                 continue;
             }
@@ -132,11 +141,21 @@ public final class FillsFile {
                 added++;
             }
         }
+        // always says where things stand, so an empty file reads as "nothing to write", not as "something went wrong"
+        String header = DecisionYaml.comment(README, out.isEmpty()
+                ? "Nothing needs a message text right now: every finding is fixed automatically or only reported."
+                : out.size() + " finding(s) below need a message text.");
         boolean exists = Files.exists(file);
         ObjectNode before = DecisionYaml.withoutNotes(OrderJson.MAPPER.valueToTree(previous));
         boolean changed = !exists || added > 0 || removed > 0 || !out.equals(before) || !DecisionYaml.header(file).equals(header);
-        changed = changed && DecisionYaml.write(file, header, out);
+        changed = changed && write && DecisionYaml.write(file, header, out);
         return new Update(template.size(), filled, added, removed, changed);
+    }
+
+    /** The rule an order id stands for, from its prefix ({@code FMT-1a2b3c} → LOG_FORMAT), or null. */
+    public static String ruleOf(String id) {
+        int dash = id.indexOf('-');
+        return dash < 0 ? null : dev.logast.rules.OrderBuilder.ruleOfPrefix(id.substring(0, dash));
     }
 
     /**

@@ -47,6 +47,11 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
      * @param wrote   files were changed
      */
     public static Todo of(Path root, ScanResult result, Policy policy, Analysis a, Collection<String> applied, boolean wrote) {
+        return of(root, result, policy, a, applied, wrote, true);
+    }
+
+    /** @param persist false for a dry run: the decision templates (traffic.yaml, retry.yaml) are not written (#275) */
+    public static Todo of(Path root, ScanResult result, Policy policy, Analysis a, Collection<String> applied, boolean wrote, boolean persist) {
         List<WorkOrder> orders = result.orders();
         Item first = result.stats() != null && result.stats().noClasspath()
                 ? new Item("logast classpath .", "logast cannot see library types yet; findings are incomplete") : null;
@@ -67,7 +72,7 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
         if (a != null && !a.entrypoints.isEmpty() && (policy.packSelected("logging") || policy.packSelected("metrics"))) {
             Path file = root.resolve(LogastDir.TRAFFIC);
             Traffic existing = (Files.exists(file) ? Traffic.load(root, file) : Traffic.none()).withSchedules(a.traffic.schedules());
-            if (!Files.exists(file)) {
+            if (persist && !Files.exists(file)) {
                 try {
                     Files.createDirectories(file.getParent());
                     Files.writeString(file, Traffic.template(a.entrypoints, existing));
@@ -86,7 +91,7 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
         // retry usages: shared settings by default, settings of their own where the person marks it (#104)
         if (a != null && (dev.logast.rules.Rules.enabled(policy, dev.logast.rules.Rules.RETRY_SETTINGS_HARDCODED)
                 || dev.logast.rules.Rules.enabled(policy, dev.logast.rules.Rules.RETRY_RECOMMENDED))
-                && dev.logast.rules.RetrySettingsRules.writeWorkFile(root, a, orders) && retries == 0) {
+                && dev.logast.rules.RetrySettingsRules.writeWorkFile(root, a, orders, persist) && retries == 0) {
             also.add(new Item("mark retry usages that need settings of their own in " + dev.logast.rules.RetrySettingsRules.WORK_FILE
                     + " (optional)", "every @Retryable reads the shared resilience.retry.* settings unless marked specific there"));
         }

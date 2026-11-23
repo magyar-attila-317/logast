@@ -146,6 +146,14 @@ public final class MetricsFile {
 
     /** Created when missing, entries kept as written, new ones appended, finished ones removed. Null when nothing to do. */
     public static FillsFile.Update update(Path root, List<WorkOrder> orders) {
+        return update(root, orders, rule -> true, true);
+    }
+
+    /** As {@link FillsFile#update(Path, List, java.util.function.Predicate, boolean)}: kept when the metrics rule did not run (#275). */
+    public static FillsFile.Update update(Path root, List<WorkOrder> orders, java.util.function.Predicate<String> ran, boolean write) {
+        if (!ran.test(RULE)) {
+            return null;   // the metrics pack did not run: its decisions stay as they are, their state unknown here
+        }
         Path file = root.resolve(PATH);
         Map<String, JsonNode> previous = DecisionYaml.entries(file);
         Map<String, WorkOrder> current = new LinkedHashMap<>();
@@ -222,7 +230,7 @@ public final class MetricsFile {
         }
         boolean changed = !Files.exists(file) || added > 0 || removed > 0 || problemsChanged || !DecisionYaml.header(file).equals(header)
                 || previous.keySet().stream().anyMatch(k -> k.startsWith("_"));   // the earlier "_readme" is the header now
-        changed = changed && DecisionYaml.write(file, header, out);
+        changed = changed && write && DecisionYaml.write(file, header, out);
         return new FillsFile.Update(current.size(), decided, added, removed, changed, problems);
     }
 }

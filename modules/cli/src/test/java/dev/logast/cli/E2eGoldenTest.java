@@ -641,6 +641,51 @@ abstract class E2eGoldenTest {
      * .logast/reports: exactly what `logast explain metrics|queries|lifecycle` prints for the code as it then stands,
      * and the run's last line says where they are.
      */
+    /**
+     * #275: a dry run writes no decision file, and a run limited by --pack keeps the entries of the packs it did not run
+     * (a metrics-only dry run once emptied messages.yaml, a tracing-only run dropped every logging entry).
+     */
+    @Test
+    void aDryRunOrAPartialRunKeepsTheDecisionsOfOtherPacks() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
+        Path decisions = app.resolve(".logast/decisions");
+        Map<String, String> before = new TreeMap<>();
+        try (var files = Files.list(decisions)) {
+            for (Path p : files.toList()) {
+                before.put(p.getFileName().toString(), Files.readString(p));
+            }
+        }
+        assertThat(before.get("messages.yaml")).as("the logging pack asks for texts").contains("FMT-");
+        assertThat(before).containsKey("metrics.yaml");
+
+        String dry = run(app, "apply", app.toString(), "--pack=metrics", "--dry-run", "--classpath-file", CLASSPATH);
+        Map<String, String> afterDry = new TreeMap<>();
+        try (var files = Files.list(decisions)) {
+            for (Path p : files.toList()) {
+                afterDry.put(p.getFileName().toString(), Files.readString(p));
+            }
+        }
+        assertThat(afterDry).as("a dry run writes no decision file\n" + dry).isEqualTo(before);
+        Files.delete(decisions.resolve("messages.yaml"));
+        Files.delete(decisions.resolve("metrics.yaml"));
+        run(app, "apply", app.toString(), "--dry-run", "--classpath-file", CLASSPATH);
+        assertThat(decisions.resolve("messages.yaml")).as("not even a missing one").doesNotExist();
+        assertThat(decisions.resolve("metrics.yaml")).doesNotExist();
+        Files.writeString(decisions.resolve("messages.yaml"), before.get("messages.yaml"));
+        Files.writeString(decisions.resolve("metrics.yaml"), before.get("metrics.yaml"));
+
+        run(app, "scan", app.toString(), "--pack=tracing", "--classpath-file", CLASSPATH);
+        assertThat(idsOf(Files.readString(decisions.resolve("messages.yaml")))).as("a tracing-only scan keeps the logging pack's entries")
+                .containsAll(idsOf(before.get("messages.yaml"))).isNotEmpty();
+        assertThat(Files.readString(decisions.resolve("metrics.yaml"))).as("and the metrics pack's").isEqualTo(before.get("metrics.yaml"));
+    }
+
+    private static List<String> idsOf(String yaml) {
+        return yaml.lines().filter(l -> l.matches("^[A-Z]{3}-[0-9a-f]+:.*")).map(l -> l.substring(0, l.indexOf(':'))).toList();
+    }
+
     @Test
     void scanAndApplyWriteTheReportsExplainPrints() throws IOException {
         Path app = tmp.resolve("app");

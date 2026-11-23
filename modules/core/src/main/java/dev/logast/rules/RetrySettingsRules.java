@@ -399,6 +399,11 @@ public final class RetrySettingsRules {
      * and the ones answered "no" earlier. Written when there is something to list; returns true when created now.
      */
     public static boolean writeWorkFile(Path root, Analysis a, List<dev.logast.orders.WorkOrder> orders) {
+        return writeWorkFile(root, a, orders, true);
+    }
+
+    /** @param write false for a dry run: says whether the file would be created, writes nothing (#275) */
+    public static boolean writeWorkFile(Path root, Analysis a, List<dev.logast.orders.WorkOrder> orders, boolean write) {
         List<Usage> usages = usages(a);
         List<Candidate> candidates = new ArrayList<>();
         Map<String, String> nested = new HashMap<>();
@@ -502,7 +507,7 @@ public final class RetrySettingsRules {
         }
         try {
             boolean created = !Files.exists(p);
-            if (created || !Files.readString(p).equals(sb.toString())) {
+            if (write && (created || !Files.readString(p).equals(sb.toString()))) {
                 Files.createDirectories(p.getParent());
                 Files.writeString(p, sb.toString());
             }
