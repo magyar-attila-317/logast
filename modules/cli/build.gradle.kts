@@ -24,10 +24,23 @@ tasks.processResources {
     filesMatching("logast-version.properties") { expand("version" to v, "commit" to c.get()) }
 }
 
+// #256: the support library and the test capture as they are published, for `logast support publish`
+evaluationDependsOn(":logging-support")
+evaluationDependsOn(":test-capture")
+
 // release zip: bin/, lib/, plus docs, examples and the Claude Code skill
 distributions {
     main {
         contents {
+            for (lib in listOf("logging-support", "test-capture")) {
+                val p = project(":$lib")
+                from(p.tasks.named("jar")) { into("lib/support") }
+                from(p.tasks.named("sourcesJar")) { into("lib/support") }
+                from(p.tasks.named("generatePomFileForLogastPublication")) {
+                    into("lib/support")
+                    rename { "$lib-${project.version}.pom" }
+                }
+            }
             from(rootProject.file("README.md"))
             from(rootProject.file("docs")) { into("docs") }
             from(rootProject.file("examples")) { into("examples") }

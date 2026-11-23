@@ -17,14 +17,20 @@ services: one starter, one company policy, one vocabulary, one report and one CI
 By default (`support.mode: vendor`) logast copies the `logging-support` classes into each service. To have services
 depend on the starter instead:
 
-1. Publish it to your repository: `./install.sh` offers the repositories your Gradle already knows (with their
-   credentials) or another URL; `./install.sh --publish-to <name|url>` without asking. By hand:
+1. Publish it to your repository, from the logast you installed (#256): it ships the support library and the test
+   capture (jars, sources, POMs) and uploads them as Maven repositories take them, with checksums and
+   `maven-metadata.xml`. No checkout, no Gradle:
 
    ```bash
-   ./gradlew :logging-support:publish :test-capture:publish \
-       -PrepoUrl=https://nexus.example.com/repository/maven-releases/ -PrepoUser=… -PrepoPassword=…
-   # or -PrepoName=<a repository from ./gradlew -q logastRepositories>, with the credentials configured on it
+   logast support publish --repo https://nexus.example.com/repository/maven-releases --credentials <user>:<token>
+   logast support publish --repo github.com/<owner>/<repo>          # GitHub Packages
+   logast support publish --repo … --group com.example.platform --version 1.4.0   # under your own coordinates
    ```
+
+   `--version` and `--group` default to logast's (`dev.logast`, this logast's version); credentials default to
+   `REPO_USER`/`REPO_PASSWORD`, else `GITHUB_ACTOR`/`GITHUB_TOKEN`. It prints the `support:` lines below. From a logast
+   checkout, `./install.sh --publish-to <name|url>` and `./gradlew :logging-support:publish -PrepoUrl=…` do the same
+   with Gradle.
 
    That alone is enough for services whose build resolves from there: `apply` checks it with the service's own
    repositories and adds the jar instead of copying the classes in, with no repository line
@@ -51,7 +57,7 @@ A private repository's own package registry is the simplest place on GitHub: its
 token. Publish into it once per version (a token with `write:packages`):
 
 ```bash
-REPO_USER=<github user> REPO_PASSWORD=<token> ./install.sh --publish-to https://maven.pkg.github.com/<owner>/<repo>
+logast support publish --repo github.com/<owner>/<repo> --credentials <github user>:<token>
 ```
 
 ```yaml
