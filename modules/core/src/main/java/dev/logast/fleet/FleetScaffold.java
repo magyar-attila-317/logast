@@ -67,6 +67,8 @@ public final class FleetScaffold {
             # Uncomment and fill in; logast never rewrites this file (decisions taken on the review page go to
             # knowledge.decisions.yml, the LLM's proposals to knowledge.proposed.yml).
 
+            # about: |                     # told to every assistant that connects, before its first question
+            #   Our services are orders, billing, ledger and reporting. Jobs run in the scheduler's tables, not in cron.
             # glossary:
             #   order:
             #     definition: A customer's request to buy, from checkout to delivery.

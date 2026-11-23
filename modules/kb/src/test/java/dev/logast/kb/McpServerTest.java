@@ -94,6 +94,18 @@ class McpServerTest {
         }
     }
 
+    /** #244: what the team tells an assistant first comes with the server's instructions, after when to use it. */
+    @Test
+    void theTeamsAboutIsInTheInstructions() throws IOException {
+        files();
+        Files.writeString(tmp.resolve("kb/knowledge.yml"), "about: |\n  Jobs run from the scheduler's tables, not from cron.\n");
+        List<Path> withKnowledge = KnowledgeBase.factFiles(List.of(tmp.resolve("kb")));
+        McpServer server = new McpServer(() -> withKnowledge, "1.2.3", new PrintStream(new ByteArrayOutputStream(), true));
+        JsonNode init = server.handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{}}}");
+        assertThat(init.at("/result/instructions").asText()).as(init.toString())
+                .contains("Repos: audit, billing.", "\nFrom the team: Jobs run from the scheduler's tables, not from cron.");
+    }
+
     @Test
     void theServerSpeaksMcpOverStdio() throws IOException {
         List<Path> files = files();
@@ -123,6 +135,9 @@ class McpServerTest {
         assertThat(init.has("capabilities")).isTrue();
         assertThat(init.get("instructions").asText()).as("#200: what is loaded and where to look, before the client guesses")
                 .contains("Loaded now: 2 repos; ", "Where to look:", "- job (1): scheduled work", "- endpoint (1): ");
+        assertThat(init.get("instructions").asText()).as("#244: when to come here, first, with the repos by name")
+                .startsWith("When to use: for any question that reaches beyond the repo you are working in")
+                .containsPattern("\\nRepos: \\S+, \\S+\\.");
         List<String> tools = new ArrayList<>();
         replies.get(1).at("/result/tools").forEach(t -> tools.add(t.get("name").asText()));
         assertThat(tools).containsExactly("summary", "find", "describe", "neighbors", "path", "runs_on", "next_runs", "lineage", "risks",

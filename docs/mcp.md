@@ -110,7 +110,17 @@ the `-32022` error naming `2026-07-28`; an older client (`initialize` first, no 
 
 ## What the client is told first
 
-`initialize` tells the client what is loaded and where to look (#200): the repos, the facts by kind, the
+Clients put a server's instructions into the model's prompt, so they say first **when to use it** (#244): for any
+question that reaches beyond the repo the assistant works in (another service, an endpoint and its callers, a table
+and who reads or writes it, a topic, a job and when it runs, a deployment, a secret, a workflow, a business term),
+asked here before searching the working copy. Then the loaded repos by name, and the `about:` of `knowledge.yml`:
+what your team wants every assistant to know first (*our services are …; jobs run from the scheduler's tables*).
+
+For a client that ignores server instructions, one line in the developer's own agent file (`~/.claude/CLAUDE.md`,
+`AGENTS.md`, `GEMINI.md`) does the same: *for anything another repo owns (services, tables, topics, jobs, deployments),
+ask the logast-kb MCP server first.*
+
+`initialize` also tells the client what is loaded and where to look (#200): the repos, the facts by kind, the
 environments, and per kind of fact the tools that answer about it (Helm releases and deployments, Terraform
 resources, jobs, tables, endpoints, topics, workflows), so a first question about deployments goes to them instead of
 a guess.
@@ -180,6 +190,8 @@ the kb paths, written by people and applied when the facts load (#163). It is na
 logast's `company.yaml` policy in the same fleet repo.
 
 ```yaml
+about: |                                          # told to every assistant that connects, before its first question
+  Our services are orders, billing, ledger and reporting. Jobs run from the scheduler's tables, not from cron.
 glossary:
   order:
     definition: A customer's request to buy, from checkout to delivery.

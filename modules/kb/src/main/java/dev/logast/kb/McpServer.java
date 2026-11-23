@@ -181,10 +181,38 @@ public final class McpServer {
     }
 
     private String instructions() {
-        return "Facts about code and deployment of many repos (docs/facts.md in logast). Node ids are "
+        return whenToUse() + "\n\nFacts about code and deployment of many repos (docs/facts.md in logast). Node ids are "
                 + "<kind>:<name>, e.g. service:shipping, endpoint:shipping:GET /shipments/{id}, table:billing.invoice, "
-                + "job:shipping:ExportJob.run. Start with summary or find; cite the (repo/file:line) of each fact you use."
+                + "job:shipping:ExportJob.run. " + (codeMode ? "Start with api, then answer with one query program"
+                : "Start with summary or find") + "; cite the (repo/file:line) of each fact you use."
                 + loaded();
+    }
+
+    /**
+     * #244: when an assistant should come here, said first, as clients put a server's instructions into the model's
+     * prompt: the questions that reach beyond the repo it works in, the repos loaded by name, and the team's {@code about:}.
+     */
+    private String whenToUse() {
+        StringBuilder sb = new StringBuilder("When to use: for any question that reaches beyond the repo you are working in: "
+                + "another service, an endpoint and who calls it, a table and who reads or writes it, a topic or queue and who "
+                + "publishes or consumes it, a scheduled job and when it runs (per environment), a deployment, a secret, a CI "
+                + "workflow, a business term or abbreviation. Ask here before searching the working copy for what another repo "
+                + "owns, and before guessing how services connect: the answers come from the code and deployment files of every "
+                + "loaded repo, each with its file and line.");
+        try {
+            KnowledgeBase k = kb();
+            List<String> repos = k.repos().stream().filter(r -> !r.equals("mapped")).sorted().toList();
+            if (!repos.isEmpty()) {
+                sb.append("\nRepos: ").append(String.join(", ", repos.stream().limit(40).toList()))
+                        .append(repos.size() > 40 ? ", … " + (repos.size() - 40) + " more (summary lists them)" : "").append('.');
+            }
+            for (String about : k.knowledge().about()) {
+                sb.append("\nFrom the team: ").append(about);
+            }
+        } catch (RuntimeException e) {
+            // nothing loaded yet: the general part only
+        }
+        return sb.toString();
     }
 
     private ObjectNode initialize(JsonNode params) {

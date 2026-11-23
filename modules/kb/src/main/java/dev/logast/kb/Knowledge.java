@@ -64,6 +64,12 @@ public final class Knowledge {
     private final Map<String, Summary> summaries = new LinkedHashMap<>();
     private final List<String> problems = new ArrayList<>();
     private final List<Path> files = new ArrayList<>();
+    private final List<String> about = new ArrayList<>();   // what the team tells an assistant first (#244)
+
+    /** #244: the {@code about:} of the knowledge files: what the team tells an assistant before its first question. */
+    public List<String> about() {
+        return List.copyOf(about);
+    }
 
     static Knowledge empty() {
         return new Knowledge();
@@ -80,6 +86,9 @@ public final class Knowledge {
         }
         if (root == null) {
             return;
+        }
+        if (root.path("about").isTextual() && !root.path("about").asText().isBlank()) {
+            about.add(root.path("about").asText().strip());
         }
         root.path("glossary").fields().forEachRemaining(e -> {
             JsonNode t = e.getValue();
