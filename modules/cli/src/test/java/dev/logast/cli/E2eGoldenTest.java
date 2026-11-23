@@ -1621,6 +1621,27 @@ abstract class E2eGoldenTest {
         }
     }
 
+    /**
+     * #254: the starter from GitHub Packages (support.repository on maven.pkg.github.com): the repository goes into the
+     * build with GitHub's credentials convention (gpr.user / gpr.key, else GITHUB_ACTOR / GITHUB_TOKEN), as GitHub
+     * Packages wants a token even for a public package; the result compiles.
+     */
+    @Test
+    void theStarterFromGitHubPackagesComesWithItsCredentials() throws IOException {
+        starterClasses = Path.of(System.getProperty("logast.e2e.support"));
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, a -> {
+            Path yml = a.resolve("logast.yml");
+            String text = Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [tracing]")
+                    .replace("support:\n  mode: vendor\n", "support:\n  mode: dependency\n  repository: https://maven.pkg.github.com/example/logast\n");
+            assertThat(text).contains("repository: https://maven.pkg.github.com/example/logast");
+            Files.writeString(yml, text);
+        });
+        String build = actual.get("build.gradle.kts");
+        assertThat(build).as(build).contains("dev.logast:logging-support", "url = uri(\"https://maven.pkg.github.com/example/logast\")",
+                "providers.gradleProperty(\"gpr.user\").orElse(providers.environmentVariable(\"GITHUB_ACTOR\"))",
+                "providers.gradleProperty(\"gpr.key\").orElse(providers.environmentVariable(\"GITHUB_TOKEN\"))");
+    }
+
     @Test
     void springBoot3UsesMicrometerTracingDependencies() throws IOException {
         Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {

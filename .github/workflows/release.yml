@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write   # creates the release
+  packages: write   # publishes the support library and the test capture to GitHub Packages
 
 jobs:
   release:
@@ -31,6 +32,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build, unit tests and the release zip
         run: ./gradlew build :cli:distZip -x :cli:e2e -x :cli:e2eJdk21 --console=plain
+      - name: Support library and test capture to GitHub Packages
+        # services in dependency mode resolve dev.logast:logging-support:<version> from
+        # https://maven.pkg.github.com/<owner>/logast (docs/platform.md: a token with read:packages, or the package's
+        # Actions access for another repository's workflow)
+        env:
+          REPO_URL: https://maven.pkg.github.com/${{ github.repository }}
+          REPO_USER: ${{ github.actor }}
+          REPO_PASSWORD: ${{ github.token }}
+        run: ./gradlew :logging-support:publishAllPublicationsToCompanyRepository :test-capture:publishAllPublicationsToCompanyRepository --console=plain
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

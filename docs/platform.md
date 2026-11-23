@@ -41,6 +41,28 @@ depend on the starter instead:
    A `support.repository` or `support.coordinates` alone also selects dependency mode. In this mode, and only in it,
    `apply` lists "check the starter resolves" after it adds the dependency.
 
+### From GitHub Packages
+
+Every logast release also publishes `dev.logast:logging-support` and `dev.logast:test-capture` to GitHub Packages
+(`https://maven.pkg.github.com/<owner>/logast`, the release workflow), so a service can depend on the released starter
+without a company repository:
+
+```yaml
+support:
+  mode: dependency
+  coordinates: dev.logast:logging-support:<version>
+  repository: https://maven.pkg.github.com/<owner>/logast
+```
+
+GitHub Packages wants a token even for a public package. `apply` writes the repository with GitHub's credentials
+convention:
+
+- on a developer's machine: `gpr.user` (the GitHub user) and `gpr.key` (a token with `read:packages`) in
+  `~/.gradle/gradle.properties`;
+- in a GitHub Actions workflow: `GITHUB_ACTOR` and `GITHUB_TOKEN` (pass them as `env:` to the Gradle step), after the
+  package's owner grants the service's repository read access in the package settings (*Manage Actions access*). A
+  private service repository can then read it with its own workflow token, no personal token in CI.
+
 Versions, properties and the two modes side by side: [starter.md](starter.md).
 
 ## A company policy: `company.yaml` and `extends`

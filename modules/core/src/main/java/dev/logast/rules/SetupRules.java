@@ -312,6 +312,18 @@ public final class SetupRules {
         String text = read(buildFile);
         boolean kts = buildFile.getFileName().toString().endsWith(".kts");
         String entry = kts ? "maven { url = uri(\"" + repo + "\") }" : "maven { url '" + repo + "' }";
+        if (repo.matches("https://maven\\.pkg\\.github\\.com/.*")) {
+            // #254: GitHub Packages wants a token even for public packages: GitHub's convention, gpr.user / gpr.key in
+            // ~/.gradle/gradle.properties on a machine, GITHUB_ACTOR / GITHUB_TOKEN in a workflow
+            entry = kts ? "maven {\n        url = uri(\"" + repo + "\")\n        credentials {\n"
+                    + "            username = providers.gradleProperty(\"gpr.user\").orElse(providers.environmentVariable(\"GITHUB_ACTOR\")).orNull\n"
+                    + "            password = providers.gradleProperty(\"gpr.key\").orElse(providers.environmentVariable(\"GITHUB_TOKEN\")).orNull\n"
+                    + "        }\n    }"
+                    : "maven {\n        url '" + repo + "'\n        credentials {\n"
+                    + "            username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')\n"
+                    + "            password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')\n"
+                    + "        }\n    }";
+        }
         Matcher m = REPOSITORIES.matcher(text);
         if (m.find()) {
             b.edit(Edit.insert(rel(buildFile), m.end(), "\n    " + entry));
