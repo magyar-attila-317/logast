@@ -110,15 +110,67 @@ public final class Applier {
     }
 
     public Result apply(Path root, Selection sel, boolean write) {
+        sweepStale(Path.of(System.getProperty("java.io.tmpdir")), STALE_WITHOUT_PID);
         progress.accept("copying the project to a scratch folder");
         Path work = copy(root);
+        Path scratch = work.getParent();
+        // a run stopped by SIGTERM (an OOM killer, Ctrl-C) skips the finally below: the hook still removes the copy (#283)
+        Thread cleanup = new Thread(() -> deleteTree(scratch), "logast-scratch-cleanup");
+        Runtime.getRuntime().addShutdownHook(cleanup);
         try {
             Result r = run(root, work, sel, write);
             onFinish.accept(work);
             return r;
         } finally {
-            deleteTree(work.getParent());
+            deleteTree(scratch);
+            try {
+                Runtime.getRuntime().removeShutdownHook(cleanup);
+            } catch (IllegalStateException shuttingDown) {
+                // already exiting: the hook runs and finds nothing left
+            }
         }
+    }
+
+    /** The scratch folder's owner, so a later run can tell a dead run's leftover from a live run's copy (#283). */
+    static final String PID_FILE = ".logast-pid";
+    /** A scratch folder without a pid file (logast 0.4 and earlier) counts as left over after this long. */
+    static final java.time.Duration STALE_WITHOUT_PID = java.time.Duration.ofHours(6);
+
+    /**
+     * Removes scratch folders earlier runs left in {@code tmp} (#283): killed with SIGKILL, the shutdown hook never ran.
+     * A folder goes when the process its pid file names is gone, or when it has no pid file and is older than
+     * {@code withoutPid}. A live run's folder, and anything unreadable, stays.
+     *
+     * @return the folders removed
+     */
+    static int sweepStale(Path tmp, java.time.Duration withoutPid) {
+        int removed = 0;
+        try (var dirs = Files.newDirectoryStream(tmp, "logast-apply-*")) {
+            for (Path d : dirs) {
+                if (!Files.isDirectory(d, LinkOption.NOFOLLOW_LINKS)) {
+                    continue;
+                }
+                boolean stale;
+                try {
+                    Path pid = d.resolve(PID_FILE);
+                    if (Files.exists(pid)) {
+                        long owner = Long.parseLong(Files.readString(pid).strip());
+                        stale = owner != ProcessHandle.current().pid() && ProcessHandle.of(owner).map(h -> !h.isAlive()).orElse(true);
+                    } else {
+                        stale = Files.getLastModifiedTime(d).toInstant().isBefore(java.time.Instant.now().minus(withoutPid));
+                    }
+                } catch (IOException | NumberFormatException e) {
+                    stale = false;
+                }
+                if (stale) {
+                    deleteTree(d);
+                    removed++;
+                }
+            }
+        } catch (IOException ignored) {
+            // no temp folder to sweep
+        }
+        return removed;
     }
 
     /** Passes over the whole pipeline before apply stops (each pass only applies what is still open). */
@@ -700,7 +752,9 @@ public final class Applier {
             // the copy keeps the project's folder name: what is derived from it (the service name when no
             // settings.gradle names it) must come out the same as on the project itself
             Path name = root.toAbsolutePath().normalize().getFileName();
-            Path work = Files.createTempDirectory("logast-apply-").resolve(name == null ? "project" : name.toString());
+            Path scratch = Files.createTempDirectory("logast-apply-");
+            Files.writeString(scratch.resolve(PID_FILE), String.valueOf(ProcessHandle.current().pid()));
+            Path work = scratch.resolve(name == null ? "project" : name.toString());
             Files.createDirectories(work);
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override
