@@ -19,6 +19,7 @@ import java.util.*;
  * statements up to its matching remove (sibling statement or finally of a following try) or to the block end; a
  * {@code try (var mdc = MDC.putCloseable(k, v))} resource becomes {@code MdcScope.of(k, v)} (restores instead of removing).
  * MANUAL_TRACE_MDC: put/remove of trace keys that OpenTelemetry already maintains are deleted.
+ * TRACE_KEY_HOLDS_APP_ID (#269): a trace key the service fills with its own value is renamed, not deleted.
  */
 final class MdcRules {
     private final RuleContext ctx;
@@ -28,9 +29,16 @@ final class MdcRules {
     /** MDC.clear() calls a conversion order already removes. */
     private final Set<J.MethodInvocation> handledClears = Collections.newSetFromMap(new IdentityHashMap<>());
 
+    /** Trace keys the service fills with its own value (#269): not the tracer's, so never deleted as one. */
+    private final Set<String> appOwned = new TreeSet<>();
+    /** Trace keys set from a value logast cannot place (a parameter, a field): kept and reported, never deleted (#269). */
+    private final Set<String> unsure = new TreeSet<>();
+
     MdcRules(RuleContext ctx) {
         this.ctx = ctx;
         this.ambient = new HashSet<>(ctx.policy.mdc().ambientKeys());
+        classifyTraceKeys();
+        this.ambient.removeAll(appOwned);
     }
 
     void run() {
@@ -39,6 +47,131 @@ final class MdcRules {
                 method(m);
                 clears(m);
                 nestedKeys(m);
+            }
+        }
+        appOwnedKeys();
+    }
+
+    /** A value read from the tracer: OpenTelemetry's Span / SpanContext, Micrometer Tracing's Tracer / TraceContext. */
+    private static final java.util.regex.Pattern FROM_TRACER = java.util.regex.Pattern.compile(
+            "getTraceId\\(|getSpanId\\(|traceIdString\\(|context\\(\\)\\.(traceId|spanId)\\(|Span\\.current\\(|currentSpan\\(|currentTraceContext\\(");
+
+    enum Origin { TRACER, SERVICE, UNKNOWN }
+
+    /**
+     * Where the value an MDC put sets comes from: the tracer (the expression, or what the local variable it names is
+     * assigned), the service itself (a header, a generated id, any other expression), or not known here (a parameter,
+     * a field: the caller decides).
+     */
+    static Origin origin(MethodInfo m, Expression value) {
+        if (FROM_TRACER.matcher(value.printTrimmed()).find()) {
+            return Origin.TRACER;
+        }
+        if (value instanceof J.FieldAccess) {
+            return Origin.UNKNOWN;
+        }
+        if (value instanceof J.Identifier id) {
+            if (m.decl().getBody() == null) {
+                return Origin.UNKNOWN;
+            }
+            var assigned = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(id.getSimpleName()) + "\\s*=(?!=)\\s*([^;]+);")
+                    .matcher(m.decl().getBody().printTrimmed());
+            boolean any = false;
+            while (assigned.find()) {
+                any = true;
+                if (FROM_TRACER.matcher(assigned.group(1)).find()) {
+                    return Origin.TRACER;
+                }
+            }
+            return any ? Origin.SERVICE : Origin.UNKNOWN;
+        }
+        return Origin.SERVICE;
+    }
+
+    /** A trace key with any put of the service's own value is the service's; else one of unknown origin makes it unsure. */
+    private void classifyTraceKeys() {
+        for (MethodInfo m : ctx.methods()) {
+            for (MdcOp op : m.facts().mdc) {
+                if ((op.kind() == MdcOp.Kind.PUT || op.kind() == MdcOp.Kind.PUT_CLOSEABLE) && op.key() != null
+                        && ambient.contains(op.key()) && valueOf(op) != null) {
+                    switch (origin(m, valueOf(op))) {
+                        case SERVICE -> appOwned.add(op.key());
+                        case UNKNOWN -> unsure.add(op.key());
+                        case TRACER -> { }
+                    }
+                }
+            }
+        }
+        unsure.removeAll(appOwned);
+    }
+
+    /** MANUAL_TRACE_MDC may delete this trace-key op: the rule is on there and the key's value is the tracer's. */
+    private boolean deletesTraceKey(SourceFileInfo f, MdcOp op) {
+        return folds(f, Pos.line(op.call()), Rules.MANUAL_TRACE_MDC) && !unsure.contains(op.key());
+    }
+
+    /**
+     * TRACE_KEY_HOLDS_APP_ID (#269): the service puts its own id (a correlation id from a header, a generated one) under
+     * a key the tracer owns. Deleting it as a manual trace copy would hand every reader the tracer's id instead, and
+     * the id callers and support see (a response header, an error body, a stored column) would no longer match the
+     * logs. The key moves to a key of its own in every put, remove and get, so each reader keeps the value it had and
+     * the tracer fills the trace key. When a use cannot be renamed in place (the key is a constant) or the new key is
+     * already taken, it is reported.
+     */
+    private void appOwnedKeys() {
+        if (appOwned.isEmpty() && unsure.isEmpty() || !ctx.enabled(Rules.TRACE_KEY_HOLDS_APP_ID)) {
+            return;
+        }
+        String target = ctx.policy.logging().style().apply("correlationId");
+        for (String key : new TreeSet<>(java.util.stream.Stream.concat(appOwned.stream(), unsure.stream()).toList())) {
+            List<MethodInfo> methods = new ArrayList<>();
+            List<MdcOp> uses = new ArrayList<>();
+            boolean taken = false;
+            for (MethodInfo m : ctx.methods()) {
+                for (MdcOp op : m.facts().mdc) {
+                    if (key.equals(op.key())) {
+                        methods.add(m);
+                        uses.add(op);
+                    }
+                    taken |= target.equals(op.key());
+                }
+            }
+            int first = 0;
+            while (first < uses.size() && !(uses.get(first).kind() == MdcOp.Kind.PUT || uses.get(first).kind() == MdcOp.Kind.PUT_CLOSEABLE)) {
+                first++;
+            }
+            if (first == uses.size()) {
+                continue;
+            }
+            MethodInfo at = methods.get(first);
+            MdcOp put = uses.get(first);
+            int line = Pos.line(put.call());
+            if (ctx.ignored(at.file(), line, Rules.TRACE_KEY_HOLDS_APP_ID)) {
+                continue;
+            }
+            boolean literals = uses.stream().allMatch(op -> op.keyExpr() instanceof J.Literal l && key.equals(l.getValue()));
+            String value = Text.oneLine(valueOf(put).printTrimmed(), 80);
+            OrderBuilder b = ctx.order(Rules.TRACE_KEY_HOLDS_APP_ID, at, line, "appkey:" + key);
+            b.context(ctx.context(at, Pos.start(put.call()), Text.oneLine(put.call().printTrimmed(), 160), null));
+            if (unsure.contains(key)) {
+                b.title("MDC key '" + key + "' is set from " + value + ": logast cannot tell whether that is the trace id")
+                        .suggestion("If it is the tracer's id, delete the manual MDC handling: tracing maintains '" + key + "'. If it is the "
+                                + "service's own id (one callers or support see), move it to '" + target + "' in every MDC put, remove and get.");
+                continue;
+            }
+            b.title("MDC key '" + key + "' holds the service's own id (" + value + "), not the trace id");
+            if (taken || !literals) {
+                b.suggestion("Tracing fills '" + key + "' with the trace id. Move this value to a key of its own ("
+                        + (taken ? "'" + target + "' is already used: pick another" : "the key is a constant: rename it where it is defined")
+                        + ") in every MDC put, remove and get, and list it in the log encoder if that names its MDC keys.");
+                continue;
+            }
+            b.suggestion("Renamed to '" + target + "' in every MDC put, remove and get (" + uses.size() + "), so its readers keep this value; "
+                    + "tracing fills '" + key + "' with the trace id. If the log encoder names its MDC keys (includeMdcKeyName), add '"
+                    + target + "' there.");
+            for (int i = 0; i < uses.size(); i++) {
+                J.Literal lit = (J.Literal) uses.get(i).keyExpr();
+                b.edit(Edit.replace(methods.get(i).file().relPath(), Pos.start(lit), Pos.end(lit), "\"" + target + "\""));
             }
         }
     }
@@ -320,7 +453,7 @@ final class MdcRules {
         }
 
         if (ctx.enabled(Rules.MANUAL_TRACE_MDC)) {
-            List<MdcOp> remaining = ambientOps.stream().filter(op -> !coveredAmbient.contains(op)).toList();
+            List<MdcOp> remaining = ambientOps.stream().filter(op -> !coveredAmbient.contains(op) && !unsure.contains(op.key())).toList();
             if (!remaining.isEmpty() && !ctx.ignored(f, Pos.line(remaining.getFirst().call()), Rules.MANUAL_TRACE_MDC)) {
                 MdcOp first = remaining.stream().filter(op -> op.kind() == MdcOp.Kind.PUT).findFirst().orElse(remaining.getFirst());
                 OrderBuilder b = ctx.order(Rules.MANUAL_TRACE_MDC, m, Pos.line(first.call()), "trace")
@@ -429,7 +562,7 @@ final class MdcRules {
         for (MdcOp a : ambientOps) {
             int s = Pos.start(a.call());
             if (s > Pos.start(op.call()) && within(stmts, after, regionEnd, a.call(), mode.equals("try") ? stmts.get(j) : null)
-                    && folds(f, Pos.line(a.call()), Rules.MANUAL_TRACE_MDC)) {
+                    && deletesTraceKey(f, a)) {
                 cuts.add(JavaEdits.statementLines(text, a.call()));
                 coveredAmbient.add(a);
                 if (a.kind() == MdcOp.Kind.PUT) {
@@ -654,7 +787,7 @@ final class MdcRules {
         int[] inner = JavaEdits.blockInner(text, t.getBody());
         // the rewrite drops the try's trace-key puts and removes: only when MANUAL_TRACE_MDC may delete them
         boolean keptTraceKeys = ambientOps.stream().anyMatch(o -> Pos.start(o.call()) > Pos.start(t) && Pos.start(o.call()) < Pos.end(t)
-                && !folds(f, Pos.line(o.call()), Rules.MANUAL_TRACE_MDC));
+                && !deletesTraceKey(f, o));
         J.MethodInvocation clear = (J.MethodInvocation) t.getFinally().getStatements().stream()
                 .filter(fs -> isMdc(fs, "clear", null)).findFirst().orElse(null);
         boolean foldsClear = clear != null && folds(f, Pos.line(clear), Rules.MDC_CLEAR);

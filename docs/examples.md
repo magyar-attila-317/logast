@@ -640,6 +640,42 @@ spring:
 </tr>
 </table>
 
+### A correlation id under the trace key keeps its value, under a key of its own
+
+A filter put the service's own id (from a header, sent back to the caller) under `traceId`; an error handler reads it
+for the response body. It is not the trace id, so it is not deleted as a hand-made copy: the key is renamed in the put,
+the remove and every `MDC.get`, and the tracer fills `traceId` (TRACE_KEY_HOLDS_APP_ID, #269).
+*`E2eGoldenTest.aCorrelationIdUnderTheTraceKeyIsRenamedNotDeleted`, `CorrelationIdFilter.java`.*
+
+<table>
+<tr><th>Before</th><th>After <code>logast apply</code></th></tr>
+<tr>
+<td>
+
+```java
+MDC.put("traceId", correlationId);
+response.setHeader("X-Correlation-ID", correlationId);
+try {
+    chain.doFilter(request, response);
+} finally {
+    MDC.remove("traceId");
+}
+```
+
+</td>
+<td>
+
+```java
+try (var mdc = MdcScope.of("correlationId", correlationId)) {
+    response.setHeader("X-Correlation-ID", correlationId);
+    chain.doFilter(request, response);
+}
+```
+
+</td>
+</tr>
+</table>
+
 ## Metrics
 
 ### A failure that is logged and handled is also counted, through a generated catalog

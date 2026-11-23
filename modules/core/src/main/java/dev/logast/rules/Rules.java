@@ -23,6 +23,7 @@ public final class Rules {
     public static final String PII_IN_LOG = "PII_IN_LOG";
     public static final String MDC_NOT_CLOSEABLE = "MDC_NOT_CLOSEABLE";
     public static final String MANUAL_TRACE_MDC = "MANUAL_TRACE_MDC";
+    public static final String TRACE_KEY_HOLDS_APP_ID = "TRACE_KEY_HOLDS_APP_ID";
     public static final String MISSING_DOMAIN_MDC = "MISSING_DOMAIN_MDC";
     public static final String ENTRYPOINT_NOT_OBSERVED = "ENTRYPOINT_NOT_OBSERVED";
     public static final String ENTRYPOINT_SILENT = "ENTRYPOINT_SILENT";
@@ -160,7 +161,7 @@ public final class Rules {
                 SETUP_LOGBACK_XML, SETUP_STRUCTURED_LOGGING, RUNTIME_MDC_LOST, RUNTIME_NULL_VALUE, LOG_IN_LOOP, LOG_VOLUME)) {
             PACKS.put(r, Set.of("logging"));
         }
-        for (String r : List.of(ENTRYPOINT_NOT_OBSERVED, MANUAL_TRACE_MDC, SETUP_OTEL_STARTER, HTTP_CLIENT_UNTRACED,
+        for (String r : List.of(ENTRYPOINT_NOT_OBSERVED, MANUAL_TRACE_MDC, TRACE_KEY_HOLDS_APP_ID, SETUP_OTEL_STARTER, HTTP_CLIENT_UNTRACED,
                 KAFKA_OBSERVATION_DISABLED, RABBIT_OBSERVATION_DISABLED, JOB_LAUNCH_UNTRACED, RUNTIME_TRACE_LOST, TRACING_SAMPLING,
                 SPAN_NOT_CLOSED, TRACING_EXPORT_UNCONFIGURED, SPAN_NAME_DYNAMIC, TRACE_ID_NOT_LOGGED)) {
             PACKS.put(r, Set.of("tracing"));
@@ -225,7 +226,9 @@ public final class Rules {
                 JOB_LAUNCH_UNTRACED, RETRY_INACTIVE, OBSERVED_ANNOTATION_INACTIVE, REACTIVE_CONTEXT_LOSS,
                 // a retry answered "yes" in retry.yaml (#109) is added before RETRY_INACTIVE enables it (same step, next
                 // round) and RETRY_SETTINGS_HARDCODED (structure) moves its values: one pass
-                RETRY_RECOMMENDED)) {
+                RETRY_RECOMMENDED,
+                // #269: the key is renamed before MDC_NOT_CLOSEABLE scopes it (next step, after a rescan)
+                TRACE_KEY_HOLDS_APP_ID)) {
             STEPS.put(r, Step.SETUP);
         }
         for (String r : List.of(MDC_NOT_CLOSEABLE, MDC_CLEAR, MDC_NOT_OWNER, ENTRYPOINT_NOT_OBSERVED, SCHEDULED_TASK_UNTRACED,
@@ -302,7 +305,7 @@ public final class Rules {
             Map.entry(SETUP_SUPPORT_STARTER, "high"), Map.entry(SETUP_OTEL_STARTER, "high"),
             Map.entry(ENTRYPOINT_NOT_OBSERVED, "high"),
             Map.entry(LOST_THROWABLE, "medium"), Map.entry(MISSING_DOMAIN_MDC, "medium"),
-            Map.entry(ENTRYPOINT_SILENT, "medium"), Map.entry(MANUAL_TRACE_MDC, "medium"),
+            Map.entry(ENTRYPOINT_SILENT, "medium"), Map.entry(MANUAL_TRACE_MDC, "medium"), Map.entry(TRACE_KEY_HOLDS_APP_ID, "high"),
             Map.entry(SETUP_LOGBACK_XML, "medium"), Map.entry(LOG_AND_RETHROW, "medium"),
             Map.entry(SETUP_STRUCTURED_LOGGING, "medium"), Map.entry(MDC_NOT_CLOSEABLE, "low"),
             Map.entry(STRING_CONCAT_LOG, "low"), Map.entry(LOG_FORMAT, "low"), Map.entry(GLOSSARY_VIOLATION, "low"),

@@ -64,6 +64,7 @@ public final class RuleLabels {
             // tracing
             Map.entry(ENTRYPOINT_NOT_OBSERVED, "entrypoint without a trace"),
             Map.entry(MANUAL_TRACE_MDC, "trace id copied into MDC by hand"),
+            Map.entry(TRACE_KEY_HOLDS_APP_ID, "service's own id under a trace key"),
             Map.entry(SETUP_OTEL_STARTER, "tracing not set up"),
             Map.entry(HTTP_CLIENT_UNTRACED, "HTTP client without tracing"),
             Map.entry(KAFKA_OBSERVATION_DISABLED, "Kafka without tracing"),

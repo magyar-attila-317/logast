@@ -642,6 +642,96 @@ abstract class E2eGoldenTest {
      * and the run's last line says where they are.
      */
     /**
+     * #269: a filter puts the service's own correlation id (from a header, sent back to the caller) under traceId, and
+     * an error handler reads it for the response body. Deleting the put as a manual trace copy would hand the reader
+     * the tracer's id: the key is renamed instead, in the put, the remove and the get, and the result compiles.
+     */
+    @Test
+    void aCorrelationIdUnderTheTraceKeyIsRenamedNotDeleted() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path web = app.resolve("src/main/java/com/example/e2e/web");
+        Files.writeString(web.resolve("CorrelationIdFilter.java"), """
+                package com.example.e2e.web;
+
+                import jakarta.servlet.FilterChain;
+                import jakarta.servlet.ServletException;
+                import jakarta.servlet.http.HttpServletRequest;
+                import jakarta.servlet.http.HttpServletResponse;
+                import java.io.IOException;
+                import java.util.UUID;
+                import org.slf4j.MDC;
+                import org.springframework.stereotype.Component;
+                import org.springframework.web.filter.OncePerRequestFilter;
+
+                @Component
+                public class CorrelationIdFilter extends OncePerRequestFilter {
+                    @Override
+                    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+                            throws ServletException, IOException {
+                        String correlationId = request.getHeader("X-Correlation-ID");
+                        if (correlationId == null) {
+                            correlationId = UUID.randomUUID().toString().substring(0, 8);
+                        }
+                        MDC.put("traceId", correlationId);
+                        response.setHeader("X-Correlation-ID", correlationId);
+                        try {
+                            chain.doFilter(request, response);
+                        } finally {
+                            MDC.remove("traceId");
+                        }
+                    }
+                }
+                """);
+        Files.writeString(web.resolve("ProblemIds.java"), """
+                package com.example.e2e.web;
+
+                import org.slf4j.MDC;
+
+                public final class ProblemIds {
+                    private ProblemIds() {
+                    }
+
+                    /** The id a problem-detail body shows the caller. */
+                    public static String current() {
+                        return MDC.get("traceId");
+                    }
+                }
+                """);
+        // a value logast cannot place (a parameter): kept and reported, not deleted as the tracer's
+        Files.writeString(web.resolve("SpanEcho.java"), """
+                package com.example.e2e.web;
+
+                import org.slf4j.MDC;
+
+                public final class SpanEcho {
+                    private SpanEcho() {
+                    }
+
+                    public static void within(String spanId, Runnable work) {
+                        MDC.put("spanId", spanId);
+                        try {
+                            work.run();
+                        } finally {
+                            MDC.remove("spanId");
+                        }
+                    }
+                }
+                """);
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(out).as(out).doesNotContain("CHECK FAILED");
+        assertThat(Files.readString(web.resolve("SpanEcho.java"))).as("not known to be the tracer's: kept")
+                .contains("MDC.put(\"spanId\", spanId);", "MDC.remove(\"spanId\");");
+        String filter = Files.readString(web.resolve("CorrelationIdFilter.java"));
+        assertThat(filter).as("the value is kept, under a key of its own\n" + filter)
+                .contains("\"correlationId\", correlationId").doesNotContain("\"traceId\"");
+        assertThat(Files.readString(web.resolve("ProblemIds.java"))).as("its reader follows")
+                .contains("MDC.get(\"correlationId\")");
+        String again = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(again).as("a second apply changes nothing\n" + again).contains("nothing to change");
+    }
+
+    /**
      * #275: a dry run writes no decision file, and a run limited by --pack keeps the entries of the packs it did not run
      * (a metrics-only dry run once emptied messages.yaml, a tracing-only run dropped every logging entry).
      */

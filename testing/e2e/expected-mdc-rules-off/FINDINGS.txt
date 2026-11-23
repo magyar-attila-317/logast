@@ -1,4 +1,5 @@
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/edge/EdgeFlow.java:44
+REPORT-ONLY TRACE_KEY_HOLDS_APP_ID src/main/java/com/example/e2e/parcel/ParcelTracker.java:13
 REPORT-ONLY MDC_NOT_CLOSEABLE+MDC_CLEAR src/main/java/com/example/e2e/parcel/ParcelTracker.java:28
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:18
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:19
