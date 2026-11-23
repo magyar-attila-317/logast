@@ -11,7 +11,7 @@ Questions about the system as a whole, which no single repo answers:
 | question | answered from |
 |---|---|
 | *Who writes `billing.invoice`, and who reads it?* | the tables each endpoint, listener and job touches (JPA, JDBC), across repos |
-| *What runs on Monday in prod, at what time, and what runs after it?* | `@Scheduled` and Quartz crons (Quartz per environment; `@Scheduled` from the base configuration for now, #242), CronJobs, a scheduler's pipeline rows |
+| *What runs on Monday in prod, at what time, and what runs after it?* | `@Scheduled` and Quartz crons per environment (the base configuration, then `application-<profile>`, as Spring cascades it), CronJobs, a scheduler's pipeline rows |
 | *If `ledger` is down, what stops downstream?* | calls, topics and queues, tables, pipeline steps, followed as a tree with sources |
 | *Which service publishes to `order-events`, and who consumes it?* | Kafka, RabbitMQ and JMS listeners and the code that sends to them, placeholders resolved |
 | *Where is this secret used, and when does it expire?* | Terraform and Helm (Key Vault), the workloads that mount it, the services running there |
@@ -151,7 +151,7 @@ For example: *who writes `audit.event`?* → every endpoint, listener and job th
 *What runs on Monday in prod?* → computed from the jobs' cron schedules (#159): Unix five-field crons (a
 mapping's jobs, CronJobs; when day-of-month and day-of-week are both set, either day fires) and Spring's six fields
 (`@Scheduled`, seconds first; both must match), with names, ranges, steps and the `@daily` macros. A `@Scheduled`
-cron with a `${…}` is resolved from the service's config, else the placeholder's default; Quartz's `L`, `W` and `#`
+cron with a `${…}` is resolved from the service's config, else the placeholder's default, and per environment as Spring cascades it (the base, `application-<profile>.*`, documents activated for the profile, #242); Quartz's `L`, `W` and `#`
 are named as not supported.
 
 **Code and deployments joined** (#161): when the facts are loaded, a service (`service:<name>`, with the image its

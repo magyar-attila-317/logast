@@ -329,8 +329,23 @@ public final class JavaExtractor implements Extractor {
             if (r != null) {
                 attrs.put("cronResolved", r);
             }
+            // #242: each profile's configuration (base, application-<profile>.*, documents activated for it) as for Quartz
+            Map<String, String> byProfile = new TreeMap<>();
+            for (String profile : root == null ? List.<String>of() : profiles(root)) {
+                String p = dev.logast.Placeholders.strict(c, profileProperties.computeIfAbsent(profile,
+                        x -> dev.logast.SpringProperties.forProfile(root, x))::get);
+                if (p != null && !p.equals(r)) {
+                    byProfile.put(profile, p);
+                }
+            }
+            if (!byProfile.isEmpty()) {
+                attrs.putIfAbsent("cronByProfile", byProfile);
+            }
         }
     }
+
+    /** #242: the configuration as each profile sees it, read once. */
+    private final Map<String, Map<String, String>> profileProperties = new java.util.HashMap<>();
 
     /** Placeholders from the base config, else their default; null when one has neither. */
     private String resolve(String text) {
@@ -847,23 +862,7 @@ public final class JavaExtractor implements Extractor {
     }
 
     private static List<String> profiles(Path root) {
-        List<String> out = new ArrayList<>();
-        Path resources = dev.logast.SpringProperties.appResources(root);
-        if (resources == null) {
-            return out;
-        }
-        for (Path dir : List.of(resources, resources.resolve("config"))) {
-            if (Files.isDirectory(dir)) {
-                try (var s = Files.list(dir)) {
-                    s.map(p -> p.getFileName().toString()).map(n -> n.matches("application-([^.]+)\\.(yml|yaml|properties)")
-                            ? n.replaceAll("application-([^.]+)\\..*", "$1") : null).filter(java.util.Objects::nonNull)
-                            .sorted().distinct().forEach(out::add);
-                } catch (java.io.IOException e) {
-                    // unreadable: no profiles
-                }
-            }
-        }
-        return out.stream().distinct().toList();
+        return dev.logast.SpringProperties.profiles(root);
     }
 
     private void configSchedules(Map<String, ClassInfo> jobs, Map<String, String> props, String profile,

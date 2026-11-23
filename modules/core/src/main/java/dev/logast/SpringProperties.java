@@ -137,6 +137,48 @@ public final class SpringProperties {
      * in {@code config/}) and the base files' documents activated for that profile ({@code spring.config.activate.on-profile}),
      * which override it.
      */
+    /**
+     * #242: the profiles a service's configuration names, as {@link #forProfile} reads them: an {@code application-<profile>.*}
+     * (also in {@code config/}), and a base file's document activated with {@code spring.config.activate.on-profile}
+     * (a negated {@code !profile} names none).
+     */
+    public static List<String> profiles(Path root) {
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        Path resources = appResources(root);
+        if (resources == null) {
+            return List.of();
+        }
+        for (Path dir : List.of(resources, resources.resolve("config"))) {
+            if (!Files.isDirectory(dir)) {
+                continue;
+            }
+            try (var s = Files.list(dir)) {
+                s.map(p -> p.getFileName().toString()).filter(n -> n.matches("application-([^.]+)\\.(yml|yaml|properties)"))
+                        .map(n -> n.replaceAll("application-([^.]+)\\..*", "$1")).forEach(out::add);
+            } catch (IOException e) {
+                // unreadable: no profiles from it
+            }
+            for (String f : List.of("application.yml", "application.yaml", "application.properties")) {
+                Path p = dir.resolve(f);
+                if (!Files.isRegularFile(p)) {
+                    continue;
+                }
+                try {
+                    for (Map<String, String> doc : documents(p, dev.logast.parse.SourceText.read(p))) {
+                        String on = doc.get("spring.config.activate.on-profile");
+                        if (on != null) {
+                            java.util.Arrays.stream(on.split(",")).map(String::strip).filter(x -> !x.isEmpty() && !x.startsWith("!"))
+                                    .forEach(out::add);
+                        }
+                    }
+                } catch (IOException | RuntimeException e) {
+                    // unreadable config: treat as absent
+                }
+            }
+        }
+        return List.copyOf(out);
+    }
+
     public static Map<String, String> forProfile(Path root, String profile) {
         Map<String, String> out = new TreeMap<>(read(root));
         Path resources = appResources(root);
