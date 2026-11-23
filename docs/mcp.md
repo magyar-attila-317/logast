@@ -96,6 +96,10 @@ return nodes("job")
   .filter(x => x.readBy.length);
 ```
 
+With facts from `export --code-level`, `api` adds examples over the code's structure (#255): deep inheritance through
+library types, large interfaces with what they inherit, what a call site dispatches to, and outgoing calls without a
+timeout ranked by how many entrypoints reach the class that makes them; each runs as shown (CodeModeTest).
+
 Every node and edge carries its `source` (repo/file:line) to cite. A mistake comes back as an error with a hint (an
 unknown kind lists the kinds). The program runs in GraalJS with no host access, no I/O, no output (stdout is MCP's), a
 fresh context per call, at most 5 s and 50M steps. Without the flag the server is as before. Code mode adds about

@@ -922,10 +922,10 @@ final class ResilienceRules {
 
     // ---- retry annotations that do nothing ------------------------------------------------------
 
-    static final String RESILIENCE_PKG = "org.springframework.resilience.annotation.";
-    static final String SPRING_RETRY_PKG = "org.springframework.retry.annotation.";
-    private static final String ENABLE_RESILIENT = RESILIENCE_PKG + "EnableResilientMethods";
-    private static final String ENABLE_RETRY = SPRING_RETRY_PKG + "EnableRetry";
+    static final String RESILIENCE_PKG = ResilienceActivation.RESILIENCE_PKG;
+    static final String SPRING_RETRY_PKG = ResilienceActivation.SPRING_RETRY_PKG;
+    private static final String ENABLE_RESILIENT = ResilienceActivation.ENABLE_RESILIENT;
+    private static final String ENABLE_RETRY = ResilienceActivation.ENABLE_RETRY;
 
     /** A method (or class) carrying a retry annotation: where it is reported. */
     private record RetrySite(SourceFileInfo file, int line, String label) {
@@ -952,21 +952,20 @@ final class ResilienceRules {
         for (MethodInfo m : ctx.methods()) {
             collectRetry(m.file(), m.decl().getLeadingAnnotations(), m.line(), m.label(), retry, limit, springRetry);
         }
-        boolean resilientOn = annotatedAnywhere(ENABLE_RESILIENT);
         Set<String> missing = new TreeSet<>();
         List<RetrySite> sites = new ArrayList<>();
         List<String> what = new ArrayList<>();
-        if (!retry.isEmpty() && !resilientOn && !mentioned("RetryAnnotationBeanPostProcessor")) {
+        if (!retry.isEmpty() && !ResilienceActivation.springRetryableOn(ctx.a.index)) {
             missing.add(ENABLE_RESILIENT);
             sites.addAll(retry);
             what.add("@Retryable");
         }
-        if (!limit.isEmpty() && !resilientOn && !mentioned("ConcurrencyLimitBeanPostProcessor")) {
+        if (!limit.isEmpty() && !ResilienceActivation.concurrencyLimitOn(ctx.a.index)) {
             missing.add(ENABLE_RESILIENT);
             sites.addAll(limit);
             what.add("@ConcurrencyLimit");
         }
-        if (!springRetry.isEmpty() && !annotatedAnywhere(ENABLE_RETRY)) {
+        if (!springRetry.isEmpty() && !ResilienceActivation.springRetryOn(ctx.a.index)) {
             missing.add(ENABLE_RETRY);
             sites.addAll(springRetry);
             what.add("Spring Retry's @Retryable");
@@ -1052,12 +1051,12 @@ final class ResilienceRules {
     }
 
     private boolean annotatedAnywhere(String fqn) {
-        return ctx.a.index.classes().stream().anyMatch(c -> c.decl().getLeadingAnnotations().stream().anyMatch(a -> Annotations.is(a, fqn)));
+        return ResilienceActivation.annotatedAnywhere(ctx.a.index, fqn);
     }
 
     /** Some source file of the service names {@code word} (a bean type declared by hand). */
     private boolean mentioned(String word) {
-        return ctx.a.index.classes().stream().anyMatch(c -> c.file().text().contains(word));
+        return ResilienceActivation.mentioned(ctx.a.index, word);
     }
 
     // ---- Spring Boot's own executor and scheduler -----------------------------------------------

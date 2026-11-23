@@ -182,7 +182,19 @@ class CodeLevelExportTest {
 
     @Test
     void whatProtectsEachOutgoingCall() throws IOException {
-        List<String> facts = export(shop(), false);
+        Path root = shop();
+        Files.writeString(root.resolve("src/main/java/com/example/shop/ShopConfig.java"), """
+                package com.example.shop;
+
+                import org.springframework.context.annotation.Configuration;
+                import org.springframework.resilience.annotation.EnableResilientMethods;
+
+                @Configuration
+                @EnableResilientMethods
+                public class ShopConfig {
+                }
+                """);
+        List<String> facts = export(root, false);
         assertThat(one(facts, "\"id\":\"call:shop:http GET http://stock/stock/{id}\"")).as("a retry on the method; a client built without a timeout")
                 .contains("\"retry\":\"yes\"", "\"retryFrom\":\"src/main/java/com/example/shop/StockClient.java:12\"",
                         "\"timeout\":\"no\"", "\"timeoutFrom\":\"src/main/java/com/example/shop/StockClient.java:9\"",
@@ -190,5 +202,15 @@ class CodeLevelExportTest {
         assertThat(one(facts, "\"id\":\"call:shop:http GET http://prices/prices/{id}\"")).as("its own request factory sets timeouts; a concurrency limit")
                 .contains("\"timeout\":\"yes\"", "\"timeoutFrom\":\"src/main/java/com/example/shop/PriceClient.java:10\"",
                         "\"bulkhead\":\"yes\"", "\"retry\":\"not known\"");
+    }
+
+    /** The same annotations without @EnableResilientMethods: Spring does not process them, so they protect nothing. */
+    @Test
+    void anAnnotationNothingEnablesProtectsNothing() throws IOException {
+        List<String> facts = export(shop(), false);
+        assertThat(one(facts, "\"id\":\"call:shop:http GET http://stock/stock/{id}\"")).as("@Retryable without its switch")
+                .contains("\"retry\":\"not known\"", "\"retryInactive\":\"src/main/java/com/example/shop/StockClient.java:12: Spring does not process it here")
+                .doesNotContain("\"retryFrom\"");
+        assertThat(one(facts, "\"id\":\"call:shop:http GET http://prices/prices/{id}\"")).contains("\"bulkhead\":\"not known\"", "\"bulkheadInactive\"");
     }
 }

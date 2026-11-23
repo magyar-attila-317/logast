@@ -127,7 +127,10 @@ each `yes` (with `<name>From`: where it is configured), `no` (only where the cod
 - `retry`, `circuitBreaker`, `bulkhead` (and `timeout` through a time limiter): Spring's `@Retryable` /
   `@ConcurrencyLimit` (Framework 7 and spring-retry) or Resilience4j's `@Retry`, `@CircuitBreaker`, `@Bulkhead`,
   `@TimeLimiter`, on the method that makes the call or its class (when something outside the class calls it, so
-  Spring's proxy is in between), or on every path that reaches the call. A path without one leaves it `not known`: a
+  Spring's proxy is in between), or on every path that reaches the call. Only annotations Spring processes count, as
+  for RETRY_INACTIVE: Framework 7's with `@EnableResilientMethods` (or the bean post-processors), spring-retry's with
+  `@EnableRetry`, Resilience4j's with its aspects (the Spring Boot starter, or declared) and AspectJ; one nothing
+  enables leaves the value `not known` and says so in `<name>Inactive`. A path without one leaves it `not known`: a
   retry the code makes by hand is not looked for.
 - `timeout` of an HTTP call (RestClient, RestTemplate, WebClient), from how its class builds the client (or, when the
   class is handed one, the single `@Bean` method that builds it): a request factory or connector whose construction

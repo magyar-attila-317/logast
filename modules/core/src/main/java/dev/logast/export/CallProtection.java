@@ -59,12 +59,21 @@ final class CallProtection {
     Map<String, Object> attrs(MethodInfo m, String transport, String client) {
         Map<String, Object> out = new TreeMap<>();
         for (String what : List.of("retry", "circuitBreaker", "bulkhead", "timeout")) {
-            List<String> from = m == null ? null : annotated(m, ANNOTATIONS.get(what));
+            // only annotations Spring processes count: without @EnableRetry, @EnableResilientMethods or Resilience4j's
+            // aspects they are metadata and the method runs once (the same check as RETRY_INACTIVE)
+            List<String> active = ANNOTATIONS.get(what).stream()
+                    .filter(f -> !Boolean.FALSE.equals(dev.logast.rules.ResilienceActivation.on(f, a.index, a.project.probe()))).toList();
+            List<String> inactive = ANNOTATIONS.get(what).stream().filter(f -> !active.contains(f)).toList();
+            List<String> from = m == null || active.isEmpty() ? null : annotated(m, active);
             if (from != null && !from.isEmpty()) {
                 out.put(what, YES);
                 out.put(what + "From", String.join(", ", from));
             } else {
                 out.put(what, NOT_KNOWN);
+                List<String> idle = m == null || inactive.isEmpty() ? null : annotated(m, inactive);
+                if (idle != null && !idle.isEmpty()) {
+                    out.put(what + "Inactive", String.join(", ", idle) + ": Spring does not process it here (nothing enables it)");
+                }
             }
         }
         if (NOT_KNOWN.equals(out.get("timeout")) && m != null && transport.equals("http")) {

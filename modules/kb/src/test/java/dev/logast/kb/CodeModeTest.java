@@ -44,6 +44,36 @@ class CodeModeTest {
                 "Raw values to join on: property", "Filter and count in the program");
     }
 
+    /** #255: the examples over the code's structure run as the api shows them, on facts of export --code-level. */
+    @Test
+    void theCodeLevelExamplesRunAsWritten() throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("code"));
+        Files.writeString(dir.resolve("shop.jsonl"), """
+                {"header":{"schema":"kb-facts/0","extractor":"java","repo":"shop"}}
+                {"node":{"id":"class:shop:com.example.ShopError","kind":"class","attrs":{"kind":"class","superChain":["java.lang.RuntimeException","java.lang.Exception","java.lang.Throwable","java.lang.Object"],"interfaces":["java.io.Serializable"],"methodCount":0,"reachedByCount":0},"evidence":{"file":"ShopError.java","line":3}}}
+                {"node":{"id":"class:shop:com.example.Catalog","kind":"class","attrs":{"kind":"interface","superChain":[],"interfaces":["org.springframework.data.repository.CrudRepository"],"methodCount":2,"inheritedMethodCount":12,"reachedByCount":0},"evidence":{"file":"Catalog.java","line":5}}}
+                {"node":{"id":"class:shop:com.example.StockController","kind":"class","attrs":{"kind":"class","superChain":["java.lang.Object"],"interfaces":[],"methodCount":1,"reachedByCount":1},"evidence":{"file":"StockController.java","line":8}}}
+                {"node":{"id":"class:shop:com.example.StockClient","kind":"class","attrs":{"kind":"class","superChain":["java.lang.Object"],"interfaces":[],"methodCount":1,"reachedByCount":3},"evidence":{"file":"StockClient.java","line":8}}}
+                {"node":{"id":"method:shop:com.example.StockController#stock(java.lang.String)","kind":"method","attrs":{"line":18,"endLine":23},"evidence":{"file":"StockController.java","line":18}}}
+                {"node":{"id":"method:shop:com.example.StockClient#find(java.lang.String)","kind":"method","attrs":{"line":12,"endLine":14},"evidence":{"file":"StockClient.java","line":12}}}
+                {"node":{"id":"call:shop:http GET http://stock/stock/{id}","kind":"call","attrs":{"timeout":"no","timeoutFrom":"StockClient.java:9","retry":"not known","circuitBreaker":"not known","bulkhead":"not known"},"evidence":{"file":"StockClient.java","line":13}}}
+                {"edge":{"from":"method:shop:com.example.StockController#stock(java.lang.String)","kind":"calls","to":"method:shop:com.example.StockClient#find(java.lang.String)","provenance":"extracted","evidence":{"file":"StockController.java","line":22}}}
+                """);
+        KnowledgeBase kb = KnowledgeBase.load(List.of(dir));
+        assertThat(CodeMode.api(kb, null)).contains("The code's structure (export --code-level)", "Deep inheritance", "without a timeout");
+        java.util.Map<String, String> wanted = java.util.Map.of(
+                "Deep inheritance", "class:shop:com.example.ShopError",
+                "Large interfaces", "\"methods\":14",
+                "really dispatch", "method:shop:com.example.StockClient#find(java.lang.String)",
+                "without a timeout", "\"reachedBy\":3");
+        for (String[] e : CodeMode.CODE_EXAMPLES) {
+            CodeMode.Result r = CodeMode.run(kb, e[1]);
+            assertThat(r.error()).as(e[0] + "\n" + e[1]).isNull();
+            String key = wanted.keySet().stream().filter(e[0]::contains).findFirst().orElseThrow();
+            assertThat(r.json()).as(e[0]).contains(wanted.get(key));
+        }
+    }
+
     @Test
     void oneProgramAnswersAQuestionOfSeveralSteps() throws IOException {
         CodeMode.Result r = CodeMode.run(kb(), """

@@ -119,8 +119,35 @@ public final class CodeMode {
                 // 4. A service's deployments per environment (Helm), with image and replicas:
                 //    return nodes("deployment", d => d.id.includes("billing")).map(d => ({ env: d.env, image: d.attrs.image, replicas: d.attrs.replicas }));
                 """);
+        sb.append("// The code's structure (export --code-level): class (superChain, interfaces, methodCount, inheritedMethodCount, "
+                + "reachedByCount), method; edges calls (method to method, per call site), extends, implements. "
+                + "Every call node says what protects it: timeout, retry, circuitBreaker, bulkhead (yes / no / not known, "
+                + "with <name>From).\n");
+        int n = 5;
+        for (String[] e : CODE_EXAMPLES) {
+            sb.append("// ").append(n++).append(". ").append(e[0]).append(":\n");
+            e[1].lines().forEach(l -> sb.append("//    ").append(l).append('\n'));
+        }
         return sb.toString();
     }
+
+    /** #255: examples over the code's structure, {title, program}; CodeModeTest runs each as written. */
+    static final List<String[]> CODE_EXAMPLES = List.of(
+            new String[]{"Deep inheritance, library types included (superChain ends at java.lang.Object)",
+                    "return nodes(\"class\", c => c.attrs.superChain.length > 3).map(c => ({ id: c.id, depth: c.attrs.superChain.length,"
+                            + " chain: c.attrs.superChain, complete: c.attrs.superChainComplete !== false, source: c.source }));"},
+            new String[]{"Large interfaces, counting what they inherit",
+                    "return nodes(\"class\", c => c.attrs.kind === \"interface\").map(c => ({ id: c.id,"
+                            + " methods: c.attrs.methodCount + (c.attrs.inheritedMethodCount || 0), source: c.source }))"
+                            + ".filter(x => x.methods > 10).sort((a, b) => b.methods - a.methods);"},
+            new String[]{"What a method's call sites really dispatch to (ambiguous: several implementations)",
+                    "const m = nodes(\"method\", x => x.id.endsWith(\"#stock(java.lang.String)\"))[0];\n"
+                            + "return out(m.id, \"calls\").map(e => ({ to: e.to, ambiguous: !!e.attrs.ambiguous, site: e.source }));"},
+            new String[]{"Outgoing calls without a timeout, ranked by how many entrypoints reach the class making them (joined by file)",
+                    "const file = s => s.split(\":\")[0];\n"
+                            + "const reach = {}; nodes(\"class\").forEach(c => reach[file(c.source)] = Math.max(reach[file(c.source)] || 0, c.attrs.reachedByCount));\n"
+                            + "return nodes(\"call\", c => c.attrs.timeout === \"no\").map(c => ({ call: c.id, builtAt: c.attrs.timeoutFrom,"
+                            + " reachedBy: reach[file(c.source)] || 0 })).sort((a, b) => b.reachedBy - a.reachedBy);"});
 
     private static volatile Engine engine;
 
