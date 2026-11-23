@@ -35,9 +35,19 @@ public final class RepoExport {
      * @param flyway       null: no migrations run; else as {@code export --flyway}
      */
     public record Options(Function<Path, List<Path>> classpathFor, Export.FlywayOptions flyway, List<String> envs,
-                          List<String> helmRender, Function<Path, Export.Analysed> analysed) {
+                          List<String> helmRender, Function<Path, Export.Analysed> analysed, boolean codeLevel) {
         public Options(Function<Path, List<Path>> classpathFor, Export.FlywayOptions flyway, List<String> envs, List<String> helmRender) {
             this(classpathFor, flyway, envs, helmRender, root -> null);
+        }
+
+        public Options(Function<Path, List<Path>> classpathFor, Export.FlywayOptions flyway, List<String> envs, List<String> helmRender,
+                       Function<Path, Export.Analysed> analysed) {
+            this(classpathFor, flyway, envs, helmRender, analysed, false);
+        }
+
+        /** #255: the same, also with the code's structure */
+        public Options withCodeLevel(boolean on) {
+            return new Options(classpathFor, flyway, envs, helmRender, analysed, on);
         }
     }
 
@@ -128,7 +138,7 @@ public final class RepoExport {
                         Export.Analysed done = opts.analysed().apply(root.dir());   // #184: the fleet scan's, when it made one
                         problems.addAll(prefixed(rel, Export.java(root.dir(), done != null ? done
                                         : Export.analyse(root.dir(), opts.classpathFor().apply(root.dir()), Logast.policy(root.dir(), null)),
-                                repoName, version, opts.flyway(), w, prefix, repoFacts)));
+                                repoName, version, opts.flyway(), w, prefix, repoFacts, opts.codeLevel())));
                         repoFactsDone |= repoFacts;
                     }
                     case "helm" -> problems.addAll(prefixed(rel, Export.helm(root.dir(), repoName, version, opts.envs(), opts.helmRender(),

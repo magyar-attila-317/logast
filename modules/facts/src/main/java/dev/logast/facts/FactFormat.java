@@ -38,10 +38,10 @@ public final class FactFormat {
     public static final Set<String> CORE_NODE_KINDS = Set.of(
             "service", "library", "endpoint", "listener", "job", "call", "bean", "profile", "property", "table",
             "column", "row", "topic", "file-location", "secret", "deployment", "image", "chart", "workflow", "resource",
-            "term");
+            "term", "class", "method");
     public static final Set<String> CORE_EDGE_KINDS = Set.of(
             "has", "calls", "reads", "writes", "publishes", "consumes", "runs", "after", "active-with", "uses-property",
-            "uses-secret", "depends-on", "deploys", "maps", "alias", "defines");
+            "uses-secret", "depends-on", "deploys", "maps", "alias", "defines", "extends", "implements");
 
     /** {@code <kind>:<name>}. */
     public static String id(String kind, String name) {

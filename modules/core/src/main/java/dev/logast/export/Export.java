@@ -39,7 +39,13 @@ public final class Export {
      */
     public static void java(Path root, List<Path> classpath, Policy policy, String repo, String version, FlywayOptions flyway,
                             Writer out, String rootPrefix, boolean repoFacts) throws IOException {
-        java(root, analyse(root, classpath, policy), repo, version, flyway, out, rootPrefix, repoFacts)
+        java(root, classpath, policy, repo, version, flyway, out, rootPrefix, repoFacts, false);
+    }
+
+    /** @param codeLevel #255: also the code's structure */
+    public static void java(Path root, List<Path> classpath, Policy policy, String repo, String version, FlywayOptions flyway,
+                            Writer out, String rootPrefix, boolean repoFacts, boolean codeLevel) throws IOException {
+        java(root, analyse(root, classpath, policy), repo, version, flyway, out, rootPrefix, repoFacts, codeLevel)
                 .forEach(p -> System.err.println("export: " + p));
     }
 
@@ -60,6 +66,12 @@ public final class Export {
     /** The facts of a root from an analysis already made; returns what went wrong (the migrations that could not run). */
     public static List<String> java(Path root, Analysed analysed, String repo, String version, FlywayOptions flyway,
                                     Writer out, String rootPrefix, boolean repoFacts) throws IOException {
+        return java(root, analysed, repo, version, flyway, out, rootPrefix, repoFacts, false);
+    }
+
+    /** @param codeLevel #255: also classes, methods, resolved calls and what each entrypoint reaches ({@code --code-level}) */
+    public static List<String> java(Path root, Analysed analysed, String repo, String version, FlywayOptions flyway,
+                                    Writer out, String rootPrefix, boolean repoFacts, boolean codeLevel) throws IOException {
         List<String> problems = new java.util.ArrayList<>();
         Path r = root.toAbsolutePath().normalize();
         ScanResult scan = analysed.scan();
@@ -70,7 +82,7 @@ public final class Export {
         String repoName = repo != null ? repo : NamedFleet.serviceName(r);
         try (FactWriter fw = new FactWriter(out, Header.of(extractor, version, repoName, commit))) {
             dev.logast.facts.FactSink w = dev.logast.facts.FactSinks.rooted(fw, rootPrefix);
-            new JavaExtractor(a, scan, classpath).extract(r, w);
+            new JavaExtractor(a, scan, classpath).withCodeLevel(codeLevel).extract(r, w);
             String service = JavaExtractor.serviceName(r, dev.logast.fleet.ServiceSurface.of(a, scan));
             GradleProjects.extract(r, repoName, service, w);   // #162: the repo, and the libraries it publishes
             if (repoFacts) {

@@ -121,6 +121,38 @@ else the one its `.logast` has, else (unless `--no-builds`) its Gradle runs once
 | a file written or read (#172) | `file-location:blob:<container>/<blob>`, `file-location:sftp:<path>` | `writes` / `reads` from each entrypoint that reaches the call, `via` (`BlobClient.upload`, `ChannelSftp.put`): Azure Blob (`getBlobContainerClient`, `containerName`, `getBlobClient`; `upload…`/`delete…` write, `download…`/`exists`/`listBlobs` read), JSch's `ChannelSftp` and sshj's `SFTPClient` (`put` and `rm` write, `get` and `ls` read), Spring Integration's `Session` and `RemoteFileTemplate`. The location from constants, `@Value` (the base config's value, else `${key}`) and partly constant concatenations (`"/outbound/" + day` → `/outbound/{?}`) |
 | SQL built at runtime | `sql:<svc>:<file>:<line>` | `uses-sql` from the entrypoints that reach it: where it runs is known, not which table |
 
+**What protects an outgoing call** (#255): every `call:` node has `timeout`, `retry`, `circuitBreaker` and `bulkhead`,
+each `yes` (with `<name>From`: where it is configured), `no` (only where the code proves it) or `not known`:
+
+- `retry`, `circuitBreaker`, `bulkhead` (and `timeout` through a time limiter): Spring's `@Retryable` /
+  `@ConcurrencyLimit` (Framework 7 and spring-retry) or Resilience4j's `@Retry`, `@CircuitBreaker`, `@Bulkhead`,
+  `@TimeLimiter`, on the method that makes the call or its class (when something outside the class calls it, so
+  Spring's proxy is in between), or on every path that reaches the call. A path without one leaves it `not known`: a
+  retry the code makes by hand is not looked for.
+- `timeout` of an HTTP call (RestClient, RestTemplate, WebClient), from how its class builds the client (or, when the
+  class is handed one, the single `@Bean` method that builds it): a request factory or connector whose construction
+  sets timeouts, or timeout settings on the builder: `yes`; Spring Boot's builder (handed in) with both
+  `spring.http.client.connect-timeout` and `read-timeout` (`spring.http.reactiveclient.*` for WebClient; Boot 3.4 /
+  3.5 and later): `yes`, with neither: `no`; `RestClient.create(..)` / `builder()`, `new RestTemplate()` without a
+  factory: `no` (Spring Boot's properties do not reach it). A customizer bean, several clients built differently, or
+  several `@Bean` methods for the type: `not known`.
+
+### The code's structure: `--code-level`
+
+`logast export <service> --code-level` (also with `--out-dir`) adds what the analysis resolved with types (#255), for
+tools that read code by names and join by `evidence.file` and a class's simple name:
+
+| fact | id | attrs / edges |
+|---|---|---|
+| a class, interface, enum, record or annotation | `class:<svc>:<fqn>` | `kind`, `abstract`; `superChain` (the superclasses in order, to `java.lang.Object`, library types included), `interfaces` (all, transitively, through superclasses and superinterfaces); `superChainComplete: false` where a supertype is not on the classpath; `methodCount` (declared, without constructors), for an interface `inheritedMethodCount` (instance methods of its superinterfaces, library ones included); `reachedByCount`: how many entrypoints (and profile jobs) reach its code; `extends` / `implements` a class of the same service (an interface extending another: `extends`) |
+| a method | `method:<svc>:<fqn>#<name>(<erased parameter types>)` | `line`, `endLine`; `calls` each method the call graph resolves a call to (one edge per call site, cited there; `ambiguous: true` when the site dispatches to several implementations, `async`: `MANAGED` / `RAW`) |
+
+A library supertype is an attribute, not a node: as nodes, every service would repeat the same library types, while a
+class needs one resolved answer. Which entrypoints reach a class is a count, not an edge per pair: on a service of
+2,300 files those edges were two thirds of the facts; which ones follows from the `calls` edges and each entrypoint's
+`handler`. Volume: the e2e scenario 262 → 494 lines; a service of 2,300 files 18,000 lines (6 MB) → 49,000 (22 MB),
+in the same time (the analysis dominates).
+
 Tables come from Spring Data repositories (CRUD and derived methods by name: `save…`, `delete…` write, the rest
 read; `@Query` native SQL and JPQL, `@Modifying` writes), `EntityManager`, and `JdbcTemplate`,
 `NamedParameterJdbcTemplate` and `JdbcClient` with SQL the code states as constants (literals, text blocks, constants,

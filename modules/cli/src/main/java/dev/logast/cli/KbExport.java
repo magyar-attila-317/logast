@@ -57,9 +57,16 @@ final class KbExport {
     static RepoExport.Result repo(Path repo, String name, Path outDir, Path cacheDir, Path classpathFile, boolean noBuilds,
                                   Export.FlywayOptions flyway, List<String> envs, List<String> helmRender,
                                   java.util.function.Function<Path, Export.Analysed> analysed) throws IOException {
+        return repo(repo, name, outDir, cacheDir, classpathFile, noBuilds, flyway, envs, helmRender, analysed, false);
+    }
+
+    /** @param codeLevel #255: also the code's structure ({@code export --code-level}) */
+    static RepoExport.Result repo(Path repo, String name, Path outDir, Path cacheDir, Path classpathFile, boolean noBuilds,
+                                  Export.FlywayOptions flyway, List<String> envs, List<String> helmRender,
+                                  java.util.function.Function<Path, Export.Analysed> analysed, boolean codeLevel) throws IOException {
         Path r = repo.toAbsolutePath().normalize();
         RepoExport.Options opts = new RepoExport.Options(root -> classpath(root, cacheDir.resolve(slug(r, root)), classpathFile, noBuilds),
-                flyway, envs, helmRender, analysed);
+                flyway, envs, helmRender, analysed).withCodeLevel(codeLevel);
         return RepoExport.export(r, name, McpCmd.build(), opts, outDir);
     }
 

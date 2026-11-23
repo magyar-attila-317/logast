@@ -41,6 +41,9 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
     boolean noBuilds;
     @Option(names = "--postgres-image", description = "With --flyway: the PostgreSQL image (default: postgres:16-alpine)")
     String postgresImage;
+    @Option(names = "--code-level", description = "Also the code's structure (#255): classes with their supertype chains, "
+            + "methods, the calls the call graph resolved, and the classes each entrypoint reaches")
+    boolean codeLevel;
 
     @Override
     public Integer call() throws IOException {
@@ -49,7 +52,7 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
             Path out = outDir.toAbsolutePath().normalize();
             dev.logast.export.RepoExport.Result r = KbExport.repo(root, repo != null ? repo : dev.logast.fleet.NamedFleet.serviceName(root),
                     out, out.resolve(".classpath"), classpathFile, noBuilds,
-                    flyway ? new Export.FlywayOptions(rows, postgresImage) : null, envs, helmRender);
+                    flyway ? new Export.FlywayOptions(rows, postgresImage) : null, envs, helmRender, root2 -> null, codeLevel);
             r.files().forEach(f -> System.err.println("facts: " + f));
             r.problems().forEach(p -> System.err.println("export: " + p));
             return 0;
@@ -114,14 +117,16 @@ final class ExportCmd extends Main.Common implements Callable<Integer> {
         }
         if (out == null) {
             Writer w = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
-            Export.java(root, classpath(), policy(), repo, version(), flyway ? new Export.FlywayOptions(rows, postgresImage) : null, w);
+            Export.java(root, classpath(), policy(), repo, version(), flyway ? new Export.FlywayOptions(rows, postgresImage) : null, w,
+                    null, true, codeLevel);
             w.flush();
         } else {
             if (out.toAbsolutePath().getParent() != null) {
                 Files.createDirectories(out.toAbsolutePath().getParent());
             }
             try (Writer w = Files.newBufferedWriter(out, StandardCharsets.UTF_8)) {
-                Export.java(root, classpath(), policy(), repo, version(), flyway ? new Export.FlywayOptions(rows, postgresImage) : null, w);
+                Export.java(root, classpath(), policy(), repo, version(), flyway ? new Export.FlywayOptions(rows, postgresImage) : null, w,
+                        null, true, codeLevel);
             }
             System.err.println("facts: " + out);
         }

@@ -50,6 +50,16 @@ public final class JavaExtractor implements Extractor {
     /** A job the call graph has no entrypoint for (#211: a profile's startup job; #220: a Quartz job), to the keys of the methods it reaches. */
     private final Map<String, Set<String>> profileJobs = new LinkedHashMap<>();
 
+    /** #255: also the code's structure (classes, methods, resolved calls, what each entrypoint reaches). */
+    private boolean codeLevel;
+    /** #255: what protects each outgoing call. */
+    private CallProtection protection;
+
+    public JavaExtractor withCodeLevel(boolean on) {
+        this.codeLevel = on;
+        return this;
+    }
+
     public JavaExtractor(Analysis a, ScanResult scan, List<Path> classpath) {
         this.a = a;
         this.scan = scan;
@@ -94,12 +104,23 @@ public final class JavaExtractor implements Extractor {
         sink.node(Node.of("service", svc, attrs, Evidence.at(buildFile, null)));
 
         Map<MethodInfo, List<String>> entryIds = entrypoints(svc, service, surface, sink);
+        protection = new CallProtection(a, boot);
         calls(svc, service, surface, entryIds, sink);
         beans(svc, entryIds, sink);
         properties(svc, sink);
         constants(svc, sink);
         tables(svc, service, entryIds, sink);
         files(svc, service, entryIds, sink);
+        if (codeLevel) {
+            Map<String, Set<String>> reach = new TreeMap<>();
+            entryIds.forEach((m, ids) -> {
+                Set<String> keys = reach(List.of(m));
+                ids.forEach(id -> reach.computeIfAbsent(id, k -> new java.util.TreeSet<>()).addAll(keys));
+            });
+            profileJobs.forEach((id, keys) -> reach.computeIfAbsent(id, k -> new java.util.TreeSet<>())
+                    .addAll(reach(keys.stream().map(a.index::method).filter(java.util.Objects::nonNull).toList())));
+            new CodeStructure(a, svc).extract(reach, sink);
+        }
         libraries.forEach((ga, version) -> {
             sink.node(Node.of("library", ga, Map.of("version", version), Evidence.at(buildFile, null)));
             sink.edge(Edge.extracted(service, "depends-on", "library:" + ga, Map.of("version", version), Evidence.at(buildFile, null)));
@@ -374,6 +395,8 @@ public final class JavaExtractor implements Extractor {
             if (c.base() != null) {
                 attrs.put("base", c.base());
             }
+            MethodInfo maker = byLabel.get(c.file() + "#" + c.method());
+            attrs.putAll(protection.attrs(maker, c.kind(), c.client()));   // #255
             Node call = Node.of("call", svc + ":" + c.kind() + " " + target, attrs, at);
             sink.node(call);
             if (!c.kind().equals("http")) {

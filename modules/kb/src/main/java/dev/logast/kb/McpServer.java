@@ -239,6 +239,9 @@ public final class McpServer {
             {"endpoint", "HTTP entrypoints and who calls them: find kind=endpoint, neighbors, lineage"},
             {"topic", "messages: find kind=topic, neighbors (publishes, consumes)"},
             {"workflow", "CI (GitHub Actions) and the runners: workflow_refs, runners"},
+            {"class", "the code's classes (export --code-level): superChain and interfaces resolved through libraries, "
+                    + "methodCount, inheritedMethodCount, reachedByCount (entrypoints that reach it): describe; extends, implements"},
+            {"method", "methods (export --code-level) and the calls the call graph resolved to them: neighbors (calls)"},
     };
 
     /** #200: what is loaded, so a client knows what it can ask before guessing (an empty string when nothing is). */
