@@ -1,4 +1,5 @@
 REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:21
 REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/order/PaymentClient.java:35
 REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentException.java:3
+REPORT-ONLY ERROR_RESPONSE_UNTRACED src/main/resources/application.yml:1
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

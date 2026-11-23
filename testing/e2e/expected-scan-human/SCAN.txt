@@ -1,7 +1,7 @@
 logast · 53 files · 21 entrypoints · log coverage 42.9%
 WARNING: 2 calls did not resolve: paths through them may be missing (`--format compact` lists them)
 
-143 findings: 96 logast fixes, 2 need a message, 11 outcomes to count or skip, 34 need your decision
+143 findings: 95 logast fixes, 2 need a message, 11 outcomes to count or skip, 35 need your decision
   logast fixes     message not in house format 41, business id missing from MDC 10, logged outcome not counted 7, same …
   messages         write in .logast/decisions/messages.yaml or `logast review .`: exception dropped without a log line …
   outcomes         decide in .logast/decisions/metrics.yaml (.logast/reports/metrics.md has the context): 11 logged but not counted
@@ -41,6 +41,9 @@ Your decisions (most important first; → what to do)
     exception cause dropped  CAUSE_DROPPED
       → Pass e as the cause: add a constructor (…, Throwable cause) to OrderRejected, or call initCause(e) before throw…
       order/PaymentClient.java:35  catch (IllegalStateException e) throws a new OrderRejected without e as its cause: t…
+    error response without a trace id  ERROR_RESPONSE_UNTRACED
+      → Proposed: logging-support.problem-trace-id.enabled: true (the logging-support starter adds "traceId" to every P…
+      application.yml:1  Error responses do not carry the trace id: a client reporting an error has nothing that leads …
     Kafka without an error handler  KAFKA_NO_ERROR_HANDLER
       → Declare a CommonErrorHandler bean (Spring Boot wires it into the listener containers): new DefaultErrorHandler(…
       order/OrderEvents.java:14  Kafka listeners on the default error handling: a failing record is retried 9 times wit…
@@ -85,12 +88,12 @@ Your decisions (most important first; → what to do)
 
 what to decide, and when it is done: logast scan . --rule ASYNC_CONTEXT_LOSS   ·   everything in full (for an LLM): --format compact
 
-Next: logast apply .   96 fixes logast makes itself (--dry-run: a preview)
+Next: logast apply .   95 fixes logast makes itself (--dry-run: a preview)
 
-Optional (47) — the counts change with the apply — left as is, each keeps its default:
+Optional (48) — the counts change with the apply — left as is, each keeps its default:
    2 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
   11 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
-  34 decisions                      → the decisions above   (each says what to decide)
+  35 decisions                      → the decisions above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 

@@ -2930,6 +2930,31 @@ class RemedyTest {
                         """));
     }
 
+    // ---- ERROR_RESPONSE_UNTRACED (#291) ------------------------------------------------------------------------------
+
+    /** #291: a proposal until the service sets logging-support.problem-trace-id.enabled itself; false is a decision too. */
+    @Test
+    void theTraceIdInErrorBodiesIsDecidedByTheProperty() throws IOException {
+        Map<String, String> before = Map.of(java("CrateController"), """
+                package x;
+
+                import org.springframework.web.bind.annotation.GetMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class CrateController {
+                    @GetMapping("/crates/{crateId}")
+                    public String crate(@PathVariable String crateId) {
+                        return crateId;
+                    }
+                }
+                """);
+        fires(Rules.ERROR_RESPONSE_UNTRACED, before);
+        gone(Rules.ERROR_RESPONSE_UNTRACED, "decided against in application.yml", with(before, "src/main/resources/application.yml",
+                "logging-support:\n  problem-trace-id:\n    enabled: false\n"));
+    }
+
     // ---- SSE_BROADCAST_CONTEXT -------------------------------------------------------------------------------------
 
     /**

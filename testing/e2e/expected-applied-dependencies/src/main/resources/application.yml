@@ -30,6 +30,14 @@ management:
     metrics:
       export:
         enabled: false
+  tracing:
+    propagation:
+      consume: []
+      produce: [w3c]
+    baggage:
+      enabled: false
+    sampling:
+      probability: 1.0
   metrics:
     tags:
       application: ${spring.application.name}
@@ -38,9 +46,6 @@ management:
     resource-attributes:
       service:
         version: ${spring.application.version}
-  tracing:
-    sampling:
-      probability: 1.0
 logging-support:
   log-defaults:
     enabled: true
@@ -49,6 +54,4 @@ logging-support:
   context-propagation:
     enabled: true
   batch-trace:
-    enabled: true
-  problem-trace-id:
     enabled: true

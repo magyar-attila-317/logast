@@ -1971,11 +1971,11 @@ abstract class E2eGoldenTest {
             Files.writeString(yml, only);
         });
         if (pack.equals("errors")) {
-            assertThat(actual.get("src/main/resources/application.yml")).contains("problem-trace-id:");
-            assertThat(app.resolve("src/main/java/com/example/e2e/logging/ProblemTraceId.java"))
-                    .as("the property comes with the class that reads it").exists();
+            // #291: the trace id in error bodies is proposed, so the pack switches nothing on and copies nothing for it
+            assertThat(actual.get("src/main/resources/application.yml")).doesNotContain("problem-trace-id:");
+            assertThat(app.resolve("src/main/java/com/example/e2e/logging/ProblemTraceId.java")).doesNotExist();
             assertThat(app.resolve("src/main/java/com/example/e2e/logging/MdcScope.java"))
-                    .as("but not with the logging set-up the pack did not ask for").doesNotExist();
+                    .as("nor the logging set-up the pack did not ask for").doesNotExist();
         }
     }
 
@@ -2007,20 +2007,20 @@ abstract class E2eGoldenTest {
             Files.writeString(config, unformatted);
         });
         assertThat(app.resolve("src/main/java/com/example/e2e/logging")).as("dependency mode copies no support class").doesNotExist();
-        boolean usesSupport = !Set.of("resilience", "audit").contains(pack);
+        boolean usesSupport = !Set.of("resilience", "audit", "errors").contains(pack);   // #291: errors switches nothing on
         assertThat(actual.get("build.gradle.kts").contains("dev.logast:logging-support"))
                 .as("the starter comes with a pack whose fixes use it, and only with one").isEqualTo(usesSupport);
         String config = actual.get("src/main/resources/application.yml");
         Map<String, List<String>> owned = Map.of("logging", List.of("log-defaults", "mdc-hygiene", "context-propagation"),
-                "tracing", List.of("context-propagation", "batch-trace"), "errors", List.of("problem-trace-id"));
+                "tracing", List.of("context-propagation", "batch-trace"));
         java.util.regex.Matcher block = java.util.regex.Pattern.compile("(?m)^logging-support:\\R((?: .*\\R?)*)").matcher(config);
         assertThat(java.util.regex.Pattern.compile("(?m)^  ([\\w-]+):\\R    enabled: true$").matcher(block.find() ? block.group(1) : "")
                 .results().map(m -> m.group(1)).toList())
                 .as("the starter behaviours switched on are the pack's own").containsExactlyInAnyOrderElementsOf(owned.getOrDefault(pack, List.of()));
         assertThat(config.contains("console:")).as("only the logging pack sets the console log format").isEqualTo(pack.equals("logging"));
         if (pack.equals("errors")) {
-            assertThat(config).contains("problem-trace-id:\n    enabled: true");
-            assertThat(actual.get("FINDINGS.txt")).as("applied, not left as a report").doesNotContain("ERROR_RESPONSE_UNTRACED");
+            assertThat(config).doesNotContain("problem-trace-id");
+            assertThat(actual.get("FINDINGS.txt")).as("#291: a proposal").contains("ERROR_RESPONSE_UNTRACED");
             golden(EXPECTED.resolveSibling("expected-errors-pack-dependency"), actual);
         }
     }
@@ -5888,18 +5888,17 @@ abstract class E2eGoldenTest {
         assertThat(actual.get("src/main/java/com/example/e2e/crate/CrateErrors.java")).as("the catch-all logs the exception")
                 .contains("log.error(\"Request failed unexpectedly\", e);");
         Path support = tmp.resolve("app/src/main/java/com/example/e2e/logging");
-        assertThat(support.resolve("ReactiveProblemTraceId.java")).as("WebFlux's ReactiveProblemTraceId copied (#103)").exists();
         assertThat(support.resolve("ProblemTraceId.java")).as("not the Spring MVC advice").doesNotExist();
-        assertThat(actual.get("src/main/resources/application.yml")).contains("problem-trace-id:\n    enabled: true");
+        assertThat(actual.get("src/main/resources/application.yml")).as("#291: proposed, not switched on").doesNotContain("problem-trace-id");
         golden(EXPECTED.resolveSibling("expected-webflux-errors"), actual);
 
         // the errors pack alone: the same findings, a compiling and settled result; the trace id class and both properties
         Map<String, String> alone = migrate(tmp.resolve("errors-only"), webflux, withPacks(WEBFLUX_ERRORS, "[errors]", ""));
         assertWebFluxErrorFindings(alone.get("FINDINGS.txt"));
         Path aloneSupport = tmp.resolve("errors-only/src/main/java/com/example/e2e/logging");
-        assertThat(aloneSupport.resolve("ReactiveProblemTraceId.java")).exists();
+        assertThat(aloneSupport.resolve("ReactiveProblemTraceId.java")).as("#291: nothing switched on, nothing copied for it").doesNotExist();
         assertThat(aloneSupport.resolve("ProblemTraceId.java")).doesNotExist();
-        assertThat(alone.get("src/main/resources/application.yml")).contains("problem-trace-id:\n    enabled: true");
+        assertThat(alone.get("src/main/resources/application.yml")).doesNotContain("problem-trace-id");
 
         // what settles each finding on WebFlux: the property, WebFlux's ResponseEntityExceptionHandler, a handler for
         // WebExchangeBindException
@@ -5999,8 +5998,8 @@ abstract class E2eGoldenTest {
                 .as("a non-blocking WebClient call fails into the handlers; one with onErrorResume does not (#103)")
                 .contains("Failures of downstream calls (WebClient, 1× on HTTP paths, e.g. WebClient.ResponseSpec.bodyToMono in "
                         + "CrateController.label")
-                .as("the trace id in error responses: switched on, not a report (#103)")
-                .doesNotContain("Error responses do not carry the trace id");
+                .as("the trace id in error responses: proposed, not switched on (#291)")
+                .contains("Error responses do not carry the trace id");
     }
 
     /**
@@ -8512,7 +8511,7 @@ abstract class E2eGoldenTest {
             String ordersFindings = run(tmp, "fleet", "shop", "--service", "orders");
             assertThat(ordersFindings).as("what `logast scan` printed in orders, from the stored results")
                     .startsWith("orders  <app>/repos/orders  added, snapshot just now, ")
-                    .contains("logast · 1 files · 1 entrypoint", "6 findings: 4 logast fixes", "logging support library 1", "MDC.put never removed 1",
+                    .contains("logast · 1 files · 1 entrypoint", "6 findings: 3 logast fixes", "logging support library 1", "MDC.put never removed 1",
                             "error responses not ProblemDetail  PROBLEM_DETAILS_DISABLED")
                     .contains("reports: <app>/home/.local/share/logast/fleets/shop/services/orders/reports/");
             run(tmp, "fleet", "shop", "--service", "nope");

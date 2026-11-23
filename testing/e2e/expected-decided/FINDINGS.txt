@@ -1,7 +1,7 @@
 logast · 72 files · 21 entrypoints · 74/203 methods reachable · 145 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
-75 orders: 0 AUTO, 19 NEEDS TEXT, 56 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+76 orders: 0 AUTO, 19 NEEDS TEXT, 57 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-b1c041  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -137,6 +137,9 @@ BWU-ebd2f1  medium  REPORT-ONLY  BLOCKING_WAIT_UNBOUNDED  src/main/java/com/exam
   path: GET /quotes/{productId} → QuoteController.quote
   note: Wait with a bound: get(5, TimeUnit.SECONDS) / orTimeout(..) / await(5, SECONDS), and handle the TimeoutException (fail the request, or return a partial answer).
   done when: the wait takes a timeout argument (get(5, TimeUnit.SECONDS), await(5, SECONDS), tryAcquire(..)), orTimeout(..) precedes it in the chain, or an earlier bounded wait on the same future (allOf(..).get(5, SECONDS)) runs first on every path
+ERT-0d5559  medium  REPORT-ONLY  ERROR_RESPONSE_UNTRACED  src/main/resources/application.yml:1
+  Error responses do not carry the trace id: a client reporting an error has nothing that leads to its logs
+  note: Proposed: logging-support.problem-trace-id.enabled: true (the logging-support starter adds "traceId" to every ProblemDetail response and to Spring Boot's error map; a traceId a handler already set is kept). It changes what callers see, so logast does not switch it on: check that no response already uses a "traceId" field for something else (a correlation id), then set it in application.yml (false: decided against, no longer reported).
 TEX-42c898  medium  REPORT-ONLY  TRACING_EXPORT_UNCONFIGURED  src/main/resources/application.yml:1
   Traces are exported nowhere: management.opentelemetry.tracing.export.otlp.endpoint is not set, so Spring Boot creates no OTLP exporter and the trace ids in the logs lead nowhere
   note: Set the collector's endpoint per environment: management.opentelemetry.tracing.export.otlp.endpoint in application-<profile>.yml, or MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT in the deployment (e.g. http://otel-collector:4318/v1/traces).
@@ -407,12 +410,12 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 95 changes in 50 files (git diff to review)
+Applied earlier: 94 changes in 50 files (git diff to review)
 
-Optional (75) — left as is, each keeps its default:
+Optional (76) — left as is, each keeps its default:
   19 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
   22 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
-  34 decisions                      → the REPORT-ONLY orders above   (each says what to decide)
+  35 decisions                      → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 

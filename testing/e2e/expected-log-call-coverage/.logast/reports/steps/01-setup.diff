@@ -1,8 +1,8 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index 6bd81fc..6f790a0 100644
+index 6bd81fc..e85fb72 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -1,7 +1,50 @@ 
+@@ -1,7 +1,48 @@ 
  spring:
    application:
      name: e2e-shop
@@ -39,8 +39,6 @@ index 6bd81fc..6f790a0 100644
 +  context-propagation:
 +    enabled: true
 +  batch-trace:
-+    enabled: true
-+  problem-trace-id:
 +    enabled: true
 +management:
 +  metrics:

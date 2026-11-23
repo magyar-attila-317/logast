@@ -29,6 +29,7 @@ REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeS
 REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
+REPORT-ONLY ERROR_RESPONSE_UNTRACED src/main/resources/application.yml:1
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_LOG_MIXED src/main/java/com/example/e2e/audit/AuditLog.java:8
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/edge/Audited.java:11

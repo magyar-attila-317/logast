@@ -1,6 +1,3 @@
 spring:
   application:
     name: e2e-shop
-logging-support:
-  problem-trace-id:
-    enabled: true

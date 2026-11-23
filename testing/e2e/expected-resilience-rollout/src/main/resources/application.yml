@@ -57,5 +57,3 @@ logging-support:
     enabled: true
   batch-trace:
     enabled: true
-  problem-trace-id:
-    enabled: true
