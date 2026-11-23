@@ -41,27 +41,37 @@ depend on the starter instead:
    A `support.repository` or `support.coordinates` alone also selects dependency mode. In this mode, and only in it,
    `apply` lists "check the starter resolves" after it adds the dependency.
 
-### From GitHub Packages
+The starter is yours once you use it: in vendor mode its classes are in each service, in dependency mode it lives in
+**your** repository, at the version you publish and pin. Publish it where your services' builds already resolve from
+(step 1), and upgrade by publishing a newer one and changing `coordinates`.
 
-Every logast release also publishes `dev.logast:logging-support` and `dev.logast:test-capture` to GitHub Packages
-(`https://maven.pkg.github.com/<owner>/logast`, the release workflow), so a service can depend on the released starter
-without a company repository:
+### GitHub Packages
+
+A private repository's own package registry is the simplest place on GitHub: its workflows read it with their own
+token. Publish into it once per version (a token with `write:packages`):
+
+```bash
+REPO_USER=<github user> REPO_PASSWORD=<token> ./install.sh --publish-to https://maven.pkg.github.com/<owner>/<repo>
+```
 
 ```yaml
 support:
   mode: dependency
   coordinates: dev.logast:logging-support:<version>
-  repository: https://maven.pkg.github.com/<owner>/logast
+  repository: https://maven.pkg.github.com/<owner>/<repo>
 ```
+
+For trying it out, every logast release also publishes `dev.logast:logging-support` and `dev.logast:test-capture` to
+logast's own `https://maven.pkg.github.com/<owner of logast>/logast`; for services you run, publish to your own.
 
 GitHub Packages wants a token even for a public package. `apply` writes the repository with GitHub's credentials
 convention:
 
 - on a developer's machine: `gpr.user` (the GitHub user) and `gpr.key` (a token with `read:packages`) in
   `~/.gradle/gradle.properties`;
-- in a GitHub Actions workflow: `GITHUB_ACTOR` and `GITHUB_TOKEN` (pass them as `env:` to the Gradle step), after the
-  package's owner grants the service's repository read access in the package settings (*Manage Actions access*). A
-  private service repository can then read it with its own workflow token, no personal token in CI.
+- in a GitHub Actions workflow: `GITHUB_ACTOR` and `GITHUB_TOKEN` (pass them as `env:` to the Gradle step, with
+  `permissions: packages: read`). The repository's own packages are readable with its workflow token; a package of
+  another repository first needs that repository granted read access in the package settings (*Manage Actions access*).
 
 Versions, properties and the two modes side by side: [starter.md](starter.md).
 
