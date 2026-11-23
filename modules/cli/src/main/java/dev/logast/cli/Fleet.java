@@ -477,7 +477,7 @@ final class Fleet implements Callable<Integer> {
             }
             phase.done(svc, error == null ? FleetLog.Status.OK : FleetLog.Status.FAILED, System.nanoTime() - t0,
                     error == null ? "rescanned: " + e.getValue() : "scan failed: " + FleetLog.oneLine(error)
-                            + " (its snapshot stays as it was)", List.of());
+                            + " (its snapshot stays as it was)", List.of(MemberSummary.of(root, null)));
         }
         if (phase != null) {
             phase.end();
