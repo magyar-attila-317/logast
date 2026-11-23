@@ -275,8 +275,9 @@ code. `logast scan .` shows the same without changing anything. Both also write 
 - **Steps.** `apply` runs in steps (setup, structure, lines, mdc, messages, exceptions, levels, reports), each on the
   result of the previous one, and saves one diff per step in `.logast/reports/steps/` (`01-setup.diff`, `02-structure.diff`,
   …). They apply in order with `git apply`, so a whole kind of change can be reviewed on its own, or dropped: later
-  steps build on earlier ones, so drop from the end, or rerun with `--until <step>`. Background:
-  [pipeline-plan.md](pipeline-plan.md).
+  steps build on earlier ones, so drop from the end, or rerun with `--until <step>`. To keep some steps and not others,
+  rerun with `--skip lines,levels`: the skipped steps change nothing (their findings stay open) and the rest apply on
+  their own and compile (#287). Background: [pipeline-plan.md](pipeline-plan.md).
 - **Checks.** Every run checks its result before writing (no key both in MDC and in a message, no nested scope, one
   started/completed per method, the result still compiles) and prints `CHECK FAILED file:line` if something breaks
   that.

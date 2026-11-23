@@ -697,6 +697,32 @@ abstract class E2eGoldenTest {
      * and the run's last line says where they are.
      */
     /**
+     * #287: steps of a pack can be left out (--skip=lines,levels): the others apply as usual and the result compiles,
+     * the skipped steps change nothing and their findings stay open; an unknown step name is refused.
+     */
+    @Test
+    void skippedStepsChangeNothingTheOthersApply() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--skip=lines,levels", "--classpath-file", CLASSPATH);
+        assertThat(LAST_EXIT).as(out + STDERR).isZero();
+        assertThat(out).as(out).doesNotContain("CHECK FAILED");
+        Path steps = app.resolve(".logast/reports/steps");
+        List<String> written;
+        try (var files = Files.list(steps)) {
+            written = files.map(p -> p.getFileName().toString()).sorted().toList();
+        }
+        assertThat(written).as("the skipped steps changed nothing").noneMatch(n -> n.endsWith("-lines.diff") || n.endsWith("-levels.diff"))
+                .anyMatch(n -> n.endsWith("-messages.diff"));
+        String again = run(app, "apply", app.toString(), "--auto", "--write", "--skip=lines,levels", "--classpath-file", CLASSPATH);
+        assertThat(again).as("the same steps again change nothing\n" + again).contains("nothing to change");
+        STDERR.setLength(0);
+        run(app, "apply", app.toString(), "--skip=line", "--classpath-file", CLASSPATH);
+        assertThat(LAST_EXIT).isEqualTo(2);
+        assertThat(STDERR.toString()).contains("--skip: no step 'line'", "lines, mdc");
+    }
+
+    /**
      * #285: lines logast adds follow the measured rate. A quiet write endpoint (a traffic pattern says 10/day) gets its
      * started line and an INFO saved line below it; an endpoint with no known rate gets no started line (the access
      * log records it) and its saved line at DEBUG.

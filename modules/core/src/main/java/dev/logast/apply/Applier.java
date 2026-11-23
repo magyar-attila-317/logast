@@ -67,6 +67,14 @@ public final class Applier {
         return this;
     }
 
+    private Set<Rules.Step> skipped = EnumSet.noneOf(Rules.Step.class);
+
+    /** #287: leave these steps out of every pass: their orders stay open findings, the other steps apply as usual. */
+    public Applier skip(Set<Rules.Step> steps) {
+        this.skipped = steps.isEmpty() ? EnumSet.noneOf(Rules.Step.class) : EnumSet.copyOf(steps);
+        return this;
+    }
+
     /** Properties the changed files must have (Invariants): checked on the scratch copy before anything is written. */
     public Applier onInvariants(java.util.function.BiFunction<Path, List<String>, List<String>> check) {
         this.invariants = check;
@@ -265,6 +273,9 @@ public final class Applier {
             for (Rules.Step step : Rules.Step.values()) {
                 if (until != null && step.ordinal() > until.ordinal()) {
                     break;
+                }
+                if (skipped.contains(step)) {
+                    continue;
                 }
                 step(step, pass, announced);
             }

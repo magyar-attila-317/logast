@@ -350,6 +350,8 @@ public final class Main {
         Set<String> only = new LinkedHashSet<>();
         @Option(names = "--until", description = "Stop after this pipeline step: setup, structure, lines, mdc, messages, exceptions, levels, reports (default: all)")
         String until;
+        @Option(names = "--skip", split = ",", description = "Leave these pipeline steps out (e.g. lines,levels): their findings stay open, the other steps apply")
+        List<String> skip = new ArrayList<>();
         @Option(names = "--write", description = "Write changes (the default; kept for scripts)")
         boolean write;
         @Option(names = "--dry-run", description = "Print the diff only, change no file")
@@ -424,7 +426,17 @@ public final class Main {
                 return packs.isEmpty() ? p : p.withPacks(packs);
             });
             Rules.Step untilStep = until == null ? null : Rules.Step.valueOf(until.toUpperCase(java.util.Locale.ROOT));
-            Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).compileWith(cp)
+            Set<Rules.Step> skipSteps = EnumSet.noneOf(Rules.Step.class);
+            for (String s : skip) {
+                try {
+                    skipSteps.add(Rules.Step.valueOf(s.strip().toUpperCase(java.util.Locale.ROOT)));
+                } catch (IllegalArgumentException e) {
+                    System.err.println("--skip: no step '" + s + "' (steps: " + java.util.Arrays.stream(Rules.Step.values())
+                            .map(x -> x.name().toLowerCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.joining(", ")) + ")");
+                    return 2;
+                }
+            }
+            Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).skip(skipSteps).compileWith(cp)
                     .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files))
                     .onFinish(work -> {
                         // #125: the reports from the last scan, while the scratch copy it analysed is still there
