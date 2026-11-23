@@ -360,7 +360,11 @@ final class LogCallRules {
         }
         String throwableSrc = throwable == null ? null : src(f, throwable);
         CatchInfo c = lc.inCatch();
-        if (throwable == null && c != null && !c.param.equals("_") && lc.level().compareTo(Level.WARN) >= 0
+        // #253: a line that logs the exception's class and not its message withholds the message on purpose (a driver's
+        // raw text, personal data): attaching the exception would log it after all
+        boolean classOnly = c != null && rawArgs.stream().anyMatch(a -> src(f, a).startsWith(c.param + ".getClass()"))
+                && rawArgs.stream().noneMatch(a -> src(f, a).matches(java.util.regex.Pattern.quote(c.param) + "\\.get(Localized)?Message\\(\\).*"));
+        if (throwable == null && c != null && !c.param.equals("_") && lc.level().compareTo(Level.WARN) >= 0 && !classOnly
                 && rawArgs.stream().noneMatch(a -> a instanceof J.Identifier id && id.getSimpleName().equals(c.param))) {
             throwableSrc = c.param;
             issues.add(Rules.LOST_THROWABLE);

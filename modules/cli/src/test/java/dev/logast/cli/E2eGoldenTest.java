@@ -8157,6 +8157,59 @@ abstract class E2eGoldenTest {
                 .doesNotContain("actualIds == null");
     }
 
+    /**
+     * #253: a catch that logs the exception's class and not its message withholds the message on purpose (a driver's raw
+     * text can carry personal data); attaching the exception would log it after all. A plain WARN still gets it.
+     */
+    @Test
+    void anExceptionLoggedByItsClassOnlyKeepsItsMessageOut() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/support"));
+            Files.writeString(dir.resolve("LockController.java"), """
+                    package com.example.e2e.support;
+
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.web.bind.annotation.PostMapping;
+                    import org.springframework.web.bind.annotation.RequestParam;
+                    import org.springframework.web.bind.annotation.RestController;
+
+                    @RestController
+                    class LockController {
+                        private static final Logger log = LoggerFactory.getLogger(LockController.class);
+
+                        @PostMapping("/locks/release")
+                        boolean release(@RequestParam String lockCode) {
+                            try {
+                                return unlock(lockCode);
+                            } catch (RuntimeException e) {
+                                log.warn("Lock release unavailable ({})", e.getClass().getSimpleName());
+                                return false;
+                            }
+                        }
+
+                        @PostMapping("/locks/renew")
+                        boolean renew(@RequestParam String lockCode) {
+                            try {
+                                return unlock(lockCode);
+                            } catch (RuntimeException e) {
+                                log.warn("Lock renewal failed");
+                                return false;
+                            }
+                        }
+
+                        private boolean unlock(String lockCode) {
+                            return !lockCode.isBlank();
+                        }
+                    }
+                    """);
+        });
+        String lock = actual.get("src/main/java/com/example/e2e/support/LockController.java");
+        assertThat(lock).as(lock).containsPattern("log\\.warn\\([^;]*e\\.getClass\\(\\)\\.getSimpleName\\(\\)\\)")
+                .doesNotContainPattern("log\\.warn\\([^;]*getSimpleName\\(\\), e\\)");
+        assertThat(lock).as("a WARN without the exception still gets it").containsPattern("log\\.warn\\(\"[^\"]*renew[^;]*, e\\);");
+    }
+
     private Map<String, String> migrate(Path app, String classpath, IoAction prepare) throws IOException {
         copy(BEFORE, app);
         prepare.run(app);
