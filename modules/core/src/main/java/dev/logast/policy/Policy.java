@@ -242,11 +242,22 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      *                    and is reported where the size is unknown (a {@code // logast:loop-size N} hint settles it);
      *                    never: INFO in any loop that is not known to be small becomes DEBUG; always: no loop checks
      */
+    /**
+     * @param addedInfoMaxPerDay #285: calls per day up to which a line logast adds to a request or a write (a started
+     *                           line, a saved line) is INFO; above it, or with no known rate, the started line is left
+     *                           out (the access log and the server observation record the request) and the saved line
+     *                           is DEBUG
+     */
     public record Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
-                         Integer boundedLoopMax, String infoInLoops) {
+                         Integer boundedLoopMax, String infoInLoops, Double addedInfoMaxPerDay) {
         public Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
                       Integer boundedLoopMax) {
-            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null);
+            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null, null);
+        }
+
+        /** #285: a line added for an entrypoint with this rate (null: not known) may be INFO. */
+        public boolean addedInfo(Double perDay) {
+            return perDay != null && perDay <= addedInfoMaxPerDay;
         }
 
         public String loopMode() {
@@ -260,6 +271,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
             clientErrorLevel = clientErrorLevel == null ? "warn" : clientErrorLevel.toLowerCase(Locale.ROOT);
             noInfoInLoops = noInfoInLoops != null && noInfoInLoops;
             infoInLoops = infoInLoops == null ? "size" : infoInLoops.toLowerCase(Locale.ROOT);
+            addedInfoMaxPerDay = addedInfoMaxPerDay == null ? 1_000d : addedInfoMaxPerDay;
             if (!Set.of("size", "never", "always").contains(infoInLoops)) {
                 throw new IllegalArgumentException("levels.infoInLoops must be size, never or always, was " + infoInLoops);
             }

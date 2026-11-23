@@ -369,6 +369,27 @@ public final class RuleContext {
      * the file's package (its own {@code AfterCommit}), an import of the support class would shadow it in the whole file;
      * when the file imports another type of that name, a second import does not compile.
      */
+    /**
+     * #285: calls per day of the busiest entrypoint that reaches {@code m} (its traffic value, a pattern, or its
+     * schedule); startup events and runs without a schedule count as rare. Null when none reaches it or one of them has
+     * no known rate: a line added there would be INFO on a path nobody measured.
+     */
+    Double busiestRate(MethodInfo m) {
+        List<dev.logast.model.Entrypoint> eps = a.paths.entrypointsReaching(m);
+        if (eps.isEmpty()) {
+            return null;
+        }
+        double max = 0;
+        for (dev.logast.model.Entrypoint ep : eps) {
+            Double r = a.traffic.perDay(ep);
+            if (r == null && !MetricsMap.lowFrequency(ep)) {
+                return null;
+            }
+            max = Math.max(max, r == null ? 1 : r);
+        }
+        return max;
+    }
+
     boolean supportNameFree(String simpleName, dev.logast.parse.SourceFileInfo f) {
         java.util.regex.Matcher m = PACKAGE.matcher(f.text());
         String pkg = m.find() ? m.group(1) : "";

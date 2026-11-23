@@ -48,7 +48,7 @@ class FormattingVariantsTest {
         assertThat(indented).as("lines re-indented with tabs").isGreaterThan(500);
 
         List<String> spaces = fingerprint(Rules.scan(Fixtures.analysis()).orders());
-        List<String> tabs = fingerprint(Rules.scan(Analysis.run(copy, Fixtures.classpath(), Fixtures.policy())).orders());
+        List<String> tabs = fingerprint(Rules.scan(Analysis.run(copy, Fixtures.classpath(), Fixtures.policy()).withTraffic(Fixtures.traffic())).orders());
         assertThat(spaces).as("the fixture has orders").hasSizeGreaterThan(100);
         assertThat(tabs).as("id, rule and position of every order, indented with tabs").isEqualTo(spaces);
     }

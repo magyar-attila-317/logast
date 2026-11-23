@@ -29,7 +29,7 @@ class CompiledClassesTest {
     void sameOrdersWithCompiledClassesOnTheClasspath() throws Exception {
         ScanResult reference = Rules.scan(Fixtures.analysis());
         ParsedProject parsed = new ProjectParser().parse(Fixtures.root(), withClasses());
-        ScanResult withBytecode = Rules.scan(Analysis.of(parsed, Fixtures.policy()));
+        ScanResult withBytecode = Rules.scan(Analysis.of(parsed, Fixtures.policy()).withTraffic(Fixtures.traffic()));
         assertThat(ids(withBytecode)).isEqualTo(ids(reference));
         assertThat(withBytecode.stats().unresolvedCalls()).isZero();
     }

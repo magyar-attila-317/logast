@@ -494,7 +494,10 @@ final class CoverageRules {
         if (write[0] == null) {
             return;
         }
-        boolean logged = m.facts().logs.stream().anyMatch(l -> l.level().compareTo(Level.INFO) >= 0);
+        // #285: INFO only where every path to it is known to be quiet; else DEBUG, which then counts as its line
+        String level = ctx.policy.levels().addedInfo(ctx.busiestRate(m)) ? "info" : "debug";
+        Level least = Level.parse(level);
+        boolean logged = m.facts().logs.stream().anyMatch(l -> l.level().compareTo(least) >= 0);
         count("stateChanges", logged);
         J.MethodInvocation mi = write[0];
         int line = Pos.line(mi.getName());
@@ -518,7 +521,7 @@ final class CoverageRules {
             if (arg != null) {
                 values.addAll(identity(arg, null));
             }
-            insertBeforeReturn(b, m, ret, values, logger.name(), "info", "{{MSG}}");
+            insertBeforeReturn(b, m, ret, values, logger.name(), level, "{{MSG}}");
         } else if (stmt instanceof J.Return ret) {
             // #284: the write inside a larger return expression (save(x).getId(), map(save(x))): a line after the
             // return never runs. Captured into a local first, when nothing in the expression runs before it
@@ -532,7 +535,7 @@ final class CoverageRules {
             }
             String indent = Text.indentAt(text, Pos.start(ret));
             b.edit(Edit.insert(f.relPath(), JavaEdits.statementLines(text, ret)[0], indent + "var " + saved + " = " + src(f, mi) + ";\n"
-                    + indent + logLine(logger.name(), "info", "{{MSG}}", values) + "\n"));
+                    + indent + logLine(logger.name(), level, "{{MSG}}", values) + "\n"));
             b.edit(Edit.replace(f.relPath(), Pos.start(mi), Pos.end(mi), saved));
         } else if (stmt instanceof J.Throw) {
             ctx.drop(b);   // a line after a throw never runs; before it, it would say the change happened
@@ -543,7 +546,7 @@ final class CoverageRules {
                 values.addAll(identity(arg, subject));
             }
             int[] lines = JavaEdits.statementLines(text, stmt);
-            b.edit(Edit.insert(f.relPath(), lines[1], Text.indentAt(text, Pos.start(stmt)) + logLine(logger.name(), "info", "{{MSG}}", values) + "\n"));
+            b.edit(Edit.insert(f.relPath(), lines[1], Text.indentAt(text, Pos.start(stmt)) + logLine(logger.name(), level, "{{MSG}}", values) + "\n"));
         }
         String changed = changed(mi, arg);   // #231: written when nobody writes a text
         b.slot("MSG", slot("What changed, in domain terms, e.g. 'Order cancelled' or 'Shift closed'",

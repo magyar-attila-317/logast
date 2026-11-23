@@ -159,6 +159,23 @@ levels:
                                 #   never  = DEBUG unless the loop is known to be small; always = no loop checks
   boundedLoopMax: 20            # a loop over at most this many items counts as small
   volumeBudget: 100000          # log lines per day one statement may produce (with traffic numbers)
+  addedInfoMaxPerDay: 1000      # a line logast adds for a request or a write is INFO only up to this rate (#285)
+```
+
+Lines logast *adds* follow the measured rate (#285). A write endpoint that logs nothing gets a "… started" line only
+when its rate is known and at most `addedInfoMaxPerDay`: above it, or with no rate, the access log and
+`http.server.requests` already record each request. A repository save/delete in a method that logs nothing gets its
+"… saved" line at INFO when every entrypoint reaching it is known to be that quiet (startup events and runs without a
+schedule count as rare), otherwise at DEBUG. Unknown means fewer INFO lines, never more.
+
+Rates come from `.logast/decisions/traffic.yaml`: a value per entrypoint, the schedule in the code, or a pattern for
+whole groups (#279), so a large service does not need a value per endpoint:
+```yaml
+patterns:                       # * within a path segment, ** across them; the most specific match wins
+  "* /api/admin/**": 10
+  "GET /api/events/**": 400
+entrypoints:
+  "POST /orders": 120000        # a value of its own wins over a pattern
 ```
 
 Tell logast how big a loop is with a comment right above it (it can't see your data):

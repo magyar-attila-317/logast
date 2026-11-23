@@ -63,7 +63,9 @@ class OwnFlowLogTest {
                     void c() { log.info("Event published"); }
                 }
                 """);
-        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null)));
+        // #285: endpoints known to be quiet (a started line is only added where the rate allows INFO)
+        ScanResult r = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))
+                .withTraffic(dev.logast.Traffic.of(java.util.Map.of(), java.util.Map.of("POST /**", 10d), "test")));
         assertThat(r.orders()).filteredOn(o -> o.fixes().contains(Rules.ENTRYPOINT_SILENT)).extracting(WorkOrder::method)
                 .containsExactlyInAnyOrder("Api.deep", "Api.failureOnly");
     }

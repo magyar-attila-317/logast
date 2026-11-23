@@ -176,14 +176,14 @@ class RuleLedgerTest {
                 throw new UncheckedIOException(e);
             }
             corpora = List.of(
-                    new Corpus("fixture", fixture, policy, Traffic.none(), null),
+                    new Corpus("fixture", fixture, policy, Fixtures.traffic(), null),
                     // LOG_VOLUME needs real rates (as in VolumeTest)
                     new Corpus("fixture with traffic", fixture, policy,
                             Traffic.of(Map.of("POST /orders", 500_000d), "ledger"), null),
                     // LOG_IN_LOOP: the fixture's policy lowers info in loops to debug instead (as in VolumeTest)
                     new Corpus("fixture, info in loops allowed", fixture,
-                            policy.withLevels(new Policy.Levels(null, null, false, null, null)), Traffic.none(), null),
-                    new Corpus("fixture, verified against captured events", fixture, policy, Traffic.none(), EVENTS),
+                            policy.withLevels(new Policy.Levels(null, null, false, null, null)), Fixtures.traffic(), null),
+                    new Corpus("fixture, verified against captured events", fixture, policy, Fixtures.traffic(), EVENTS),
                     // the e2e input, read-only and without Lombok: only used to see which rules fire and switch off
                     new Corpus("e2e/before", new ProjectParser().parse(before, Fixtures.classpath()), e2ePolicy,
                             Traffic.none(), null));

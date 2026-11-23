@@ -17,6 +17,9 @@ import java.util.*;
  * entrypoints:
  *   "POST /orders": 120000
  *   "@Scheduled ReconciliationJob.reconcile": 1440
+ * patterns:                      # #279: for entrypoints without a value of their own; the most specific match wins
+ *   "* /api/admin/**": 10
+ *   "GET /api/events/**": 400
  * </pre>
  * or a Prometheus query result saved as JSON, e.g. from
  * {@code sum by (method, uri) (increase(http_server_requests_seconds_count[1d]))}
@@ -27,20 +30,32 @@ public final class Traffic {
     private final String source;
     /** #235: rates computed from schedules in the code, for labels the file has no value for. */
     private final Map<String, ScheduleRate.Rate> schedules;
+    /** #279: label glob → calls per day ({@code *}: anything but '/', {@code **}: anything), in file order. */
+    private final Map<String, Double> patterns;
 
     private Traffic(Map<String, Double> perDay, String source) {
-        this(perDay, source, Map.of());
+        this(perDay, source, Map.of(), Map.of());
     }
 
-    private Traffic(Map<String, Double> perDay, String source, Map<String, ScheduleRate.Rate> schedules) {
+    private Traffic(Map<String, Double> perDay, String source, Map<String, ScheduleRate.Rate> schedules, Map<String, Double> patterns) {
         this.perDay = perDay;
         this.source = source;
         this.schedules = schedules;
+        this.patterns = patterns;
     }
 
     /** #235: the same rates, with the schedules' rates for entrypoints the file has none for. */
     public Traffic withSchedules(Map<String, ScheduleRate.Rate> rates) {
-        return new Traffic(perDay, source, Map.copyOf(rates));
+        return new Traffic(perDay, source, Map.copyOf(rates), patterns);
+    }
+
+    /** #279: the same rates with pattern defaults (label glob → calls per day). */
+    public static Traffic of(Map<String, Double> perDay, Map<String, Double> patterns, String source) {
+        return new Traffic(new TreeMap<>(perDay), source, Map.of(), new LinkedHashMap<>(patterns));
+    }
+
+    public Map<String, Double> patterns() {
+        return patterns;
     }
 
     /** #235: label → the rate computed from its schedule. */
@@ -80,9 +95,15 @@ public final class Traffic {
         try {
             JsonNode n = new ObjectMapper(new YAMLFactory()).readTree(Files.readString(p));
             Map<String, Double> out = new TreeMap<>();
-            if (n.has("entrypoints")) {
+            Map<String, Double> patterns = new LinkedHashMap<>();
+            n.path("patterns").fields().forEachRemaining(e -> {
+                if (e.getValue() != null && !e.getValue().isNull() && !e.getValue().asText().isBlank()) {
+                    patterns.put(e.getKey().trim(), e.getValue().asDouble());
+                }
+            });
+            if (n.has("entrypoints") || !patterns.isEmpty() && !n.has("data")) {
                 // empty values (from `logast traffic`) mean "no data yet", never zero
-                n.get("entrypoints").fields().forEachRemaining(e -> {
+                n.path("entrypoints").fields().forEachRemaining(e -> {
                     if (e.getValue() != null && !e.getValue().isNull() && !e.getValue().asText().isBlank()) {
                         out.put(e.getKey(), e.getValue().asDouble());
                     }
@@ -98,7 +119,7 @@ public final class Traffic {
             } else {
                 throw new IllegalArgumentException("unknown traffic format in " + p + " (expected 'entrypoints:' or a Prometheus query result)");
             }
-            return new Traffic(out, p.getFileName().toString());
+            return new Traffic(out, p.getFileName().toString(), Map.of(), patterns);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -114,7 +135,16 @@ public final class Traffic {
                 .append("#   sum by (method, uri) (increase(http_server_requests_seconds_count[1d])) ).\n")
                 .append("# Optional. Left blank: no volume estimate (logast never estimates traffic); log levels and metrics stay cautious.\n")
                 .append("# Regenerate with `logast traffic <root>`: filled-in values are kept, new entrypoints are added.\n")
-                .append("entrypoints:\n");
+                .append("# patterns: a rate for every entrypoint whose label matches and has no value below (* within a path segment,\n")
+                .append("#   ** across segments; the most specific match wins), e.g. \"* /api/admin/**\": 10\n")
+                .append("patterns:");
+        if (existing.patterns.isEmpty()) {
+            sb.append(" {}\n");
+        } else {
+            sb.append('\n');
+            existing.patterns.forEach((k, v) -> sb.append("  \"").append(k.replace("\"", "\\\"")).append("\": ").append(number(v)).append('\n'));
+        }
+        sb.append("entrypoints:\n");
         Set<String> labels = new LinkedHashSet<>();
         List<dev.logast.model.Entrypoint> sorted = new ArrayList<>(entrypoints);
         sorted.sort(Comparator.comparingInt((dev.logast.model.Entrypoint ep) -> ep.kind() == dev.logast.model.Entrypoint.Kind.EVENT ? 1 : 0)
@@ -158,16 +188,50 @@ public final class Traffic {
     }
 
     public boolean known() {
-        return !perDay.isEmpty() || !schedules.isEmpty();
+        return !perDay.isEmpty() || !schedules.isEmpty() || !patterns.isEmpty();
     }
 
-    /** Calls per day for an entrypoint label: provided, else computed from its schedule (#235); null when neither. */
+    /**
+     * Calls per day for an entrypoint label: provided, else computed from its schedule (#235), else the most specific
+     * matching pattern (#279); null when none.
+     */
     public Double perDay(String entrypointLabel) {
         Double v = perDay.get(entrypointLabel);
-        if (v != null || !schedules.containsKey(entrypointLabel)) {
+        if (v != null) {
             return v;
         }
-        return schedules.get(entrypointLabel).perDay();
+        if (schedules.containsKey(entrypointLabel)) {
+            return schedules.get(entrypointLabel).perDay();
+        }
+        String best = null;
+        for (String p : patterns.keySet()) {
+            if (glob(p).matcher(entrypointLabel).matches() && (best == null || specificity(p) > specificity(best))) {
+                best = p;
+            }
+        }
+        return best == null ? null : patterns.get(best);
+    }
+
+    /** {@code *} matches within a path segment, {@code **} across segments; everything else literally. */
+    static java.util.regex.Pattern glob(String pattern) {
+        StringBuilder re = new StringBuilder();
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '*' && i + 1 < pattern.length() && pattern.charAt(i + 1) == '*') {
+                re.append(".*");
+                i++;
+            } else if (c == '*') {
+                re.append("[^/]*");
+            } else {
+                re.append(java.util.regex.Pattern.quote(String.valueOf(c)));
+            }
+        }
+        return java.util.regex.Pattern.compile(re.toString());
+    }
+
+    /** The literal characters of a pattern: more of them is a more specific match. */
+    private static int specificity(String pattern) {
+        return pattern.replace("*", "").length();
     }
 
     /** Calls per day for an entrypoint: the sum over its labels (a handler mapped to several paths), or null when none is provided. */

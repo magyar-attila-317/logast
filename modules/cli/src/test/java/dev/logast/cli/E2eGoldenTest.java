@@ -697,6 +697,82 @@ abstract class E2eGoldenTest {
      * and the run's last line says where they are.
      */
     /**
+     * #285: lines logast adds follow the measured rate. A quiet write endpoint (a traffic pattern says 10/day) gets its
+     * started line and an INFO saved line below it; an endpoint with no known rate gets no started line (the access
+     * log records it) and its saved line at DEBUG.
+     */
+    @Test
+    void addedLinesFollowTheMeasuredRate() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path order = app.resolve("src/main/java/com/example/e2e/order");
+        Files.writeString(order.resolve("RecordDesk.java"), """
+                package com.example.e2e.order;
+
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class RecordDesk {
+                    private final OrderRecordRepository records;
+
+                    public RecordDesk(OrderRecordRepository records) {
+                        this.records = records;
+                    }
+
+                    public void keep(OrderRecord record) {
+                        records.save(record);
+                    }
+
+                    public void store(OrderRecord record) {
+                        records.save(record);
+                    }
+                }
+                """);
+        Files.writeString(order.resolve("RecordDeskController.java"), """
+                package com.example.e2e.order;
+
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class RecordDeskController {
+                    private final RecordDesk desk;
+
+                    public RecordDeskController(RecordDesk desk) {
+                        this.desk = desk;
+                    }
+
+                    @PostMapping("/quiet/records")
+                    public void keep(@RequestBody OrderRecord record) {
+                        desk.keep(record);
+                    }
+
+                    @PostMapping("/busy/records")
+                    public void store(@RequestBody OrderRecord record) {
+                        desk.store(record);
+                    }
+                }
+                """);
+        Path traffic = app.resolve(".logast/decisions/traffic.yaml");
+        Files.createDirectories(traffic.getParent());
+        Files.writeString(traffic, "patterns:\n  \"POST /quiet/**\": 10\nentrypoints: {}\n");
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(out).as(out).doesNotContain("CHECK FAILED");
+        String controller = Files.readString(order.resolve("RecordDeskController.java"));
+        String desk = Files.readString(order.resolve("RecordDesk.java"));
+        String quiet = controller.substring(controller.indexOf("void keep("), controller.indexOf("void store("));
+        String busy = controller.substring(controller.indexOf("void store("));
+        assertThat(quiet).as("a quiet endpoint says it started\n" + controller).contains("log.info(");
+        assertThat(busy).as("an endpoint with no known rate: the access log records it\n" + controller).doesNotContain("log.");
+        assertThat(desk.substring(desk.indexOf("void keep("), desk.indexOf("void store("))).as(desk).contains("log.info(");
+        assertThat(desk.substring(desk.indexOf("void store("))).as("saved on a path nobody measured: DEBUG\n" + desk)
+                .contains("log.debug(").doesNotContain("log.info(");
+        String again = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(again).as("a second apply changes nothing\n" + again).contains("nothing to change");
+    }
+
+    /**
      * #284: a repository save inside a larger return expression ({@code save(x).getId()}, {@code describe(save(x))}) gets
      * its line before the return, with the save captured into a local: a line after the return does not compile.
      */

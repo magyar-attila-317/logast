@@ -6,6 +6,7 @@ import dev.logast.policy.Policy;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 /** Access to the sample-app fixture; the analysis is cached because parsing is the slow part. */
 public final class Fixtures {
@@ -32,8 +33,16 @@ public final class Fixtures {
 
     public static synchronized Analysis analysis() {
         if (cached == null) {
-            cached = Analysis.run(root(), classpath(), policy());
+            cached = Analysis.run(root(), classpath(), policy()).withTraffic(traffic());
         }
         return cached;
+    }
+
+    /**
+     * #285: the fixture's measured traffic: its admin endpoints are quiet, so a line logast adds to them may be INFO;
+     * every other path has no known rate. (In code: the fixture's .logast/ is ignored by git.)
+     */
+    public static Traffic traffic() {
+        return Traffic.of(Map.of(), Map.of("* /admin/**", 10d), "fixture");
     }
 }

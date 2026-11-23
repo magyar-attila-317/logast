@@ -164,7 +164,10 @@ final class EntrypointRules {
     private boolean silent(Entrypoint ep, MethodInfo m) {
         boolean readEndpoint = ep.kind() == Entrypoint.Kind.HTTP && (ep.label().startsWith("GET ") || ep.label().startsWith("HEAD "));
         boolean run = LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.RUN;
-        return !readEndpoint && !ctx.lifecycle().frequentRun(ep)   // #272: no INFO line per run of a sweep
+        // #285: the access log and http.server.requests record every request; a started line adds to it only on an
+        // endpoint known to be quiet (traffic.yaml, a pattern), never on one nobody measured
+        boolean busyOrUnknown = LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.HTTP && !ctx.policy.levels().addedInfo(ctx.a.traffic.perDay(ep));
+        return !readEndpoint && !busyOrUnknown && !ctx.lifecycle().frequentRun(ep)   // #272: no INFO line per run of a sweep
                 && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
                 && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(m.file(), m.line(), Rules.ENTRYPOINT_SILENT)
                 && !LifecyclePlan.ownFlowLogs(ctx, m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
