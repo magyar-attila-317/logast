@@ -151,68 +151,33 @@ final class ErrorRules {
                 && ctx.a.entrypoints.stream().anyMatch(ep -> ep.kind() == Entrypoint.Kind.HTTP);
     }
 
-    /** ERROR_RESPONSE_UNTRACED is on and finds something: what makes the errors pack need the support starter (#87). */
+    /**
+     * ERROR_RESPONSE_UNTRACED is on and finds something to switch on. #291: never, any more: the trace id in every error
+     * body changes what callers see (and may take a field name the service already fills), so it is proposed and the
+     * team switches it on; nothing here needs the support starter.
+     */
     static boolean untracedFixable(RuleContext ctx) {
-        return ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED) && traceableErrors(ctx)
-                && !"true".equalsIgnoreCase(ctx.a.springProperties.getOrDefault("logging-support.problem-trace-id.enabled", ""));
+        return false;
     }
 
     /**
      * ERROR_RESPONSE_UNTRACED: error responses without the trace id. A client that reports an error has nothing that
-     * leads to its log lines; with {@code traceId} in every ProblemDetail (and Spring Boot's error map) it does.
+     * leads to its log lines; with {@code traceId} in every ProblemDetail (and Spring Boot's error map) it does. #291:
+     * a proposal until the service sets logging-support.problem-trace-id.enabled itself (true or false: decided).
      */
     private void untraced() {
-        if (!untracedFixable(ctx)) {
+        if (!ctx.enabled(Rules.ERROR_RESPONSE_UNTRACED) || !traceableErrors(ctx)
+                || ctx.a.springProperties.containsKey("logging-support.problem-trace-id.enabled")) {
             return;
         }
-        OrderBuilder b = ctx.order(Rules.ERROR_RESPONSE_UNTRACED, "problem-trace-id").at(ServiceYaml.path(ctx), 1)
+        ctx.order(Rules.ERROR_RESPONSE_UNTRACED, "problem-trace-id").at(ServiceYaml.path(ctx), 1)
                 .title("Error responses do not carry the trace id" + (webflux ? " (Spring WebFlux)" : "")
                         + ": a client reporting an error has nothing that leads to its logs")
-                .suggestion(webflux
-                        ? "logging-support adds \"traceId\" to every ProblemDetail response through an ErrorResponse.Interceptor "
-                        + "(logging-support.problem-trace-id.enabled: true); a traceId a handler already set is kept."
-                        : "logging-support adds \"traceId\" to every ProblemDetail response and to Spring Boot's error map "
-                        + "(logging-support.problem-trace-id.enabled: true); a traceId a handler already set is kept.");
-        // the errors pack on its own in vendor mode: no set-up copies the support classes, so this rule copies the one it
-        // needs (in dependency mode the set-up adds the starter for it, Rules.SUPPORT_SINGLE_CLASS)
-        boolean supportComing = ctx.a.supportStarterPresent || ctx.supportOrderId != null || ctx.supportUpdateOrderId != null;
-        if (!supportComing && !ctx.policy.support().vendor()) {
-            b.suggestion(b.suggestion + " Needs the logging-support starter (" + ctx.policy.support().coordinates()
-                    + ") as a dependency; not applied without it.");
-            return;
-        }
-        if (!supportComing) {
-            Edit copy = SetupRules.vendorOne(ctx, webflux ? SetupRules.VENDORED_ERRORS_REACTIVE.getFirst()
-                    : Rules.SUPPORT_SINGLE_CLASS.get(Rules.ERROR_RESPONSE_UNTRACED));
-            if (copy != null) {
-                b.edit(copy);
-            }
-        }
-        ServiceYaml.merge(ctx, b, "logging-support:\n  problem-trace-id:\n    enabled: true\n");
-        if (webflux) {
-            reactorContext(b);
-        }
-        ctx.dependOnStarter(b);
-    }
-
-    /**
-     * WebFlux keeps the current observation in the Reactor context (HttpWebHandlerAdapter): the interceptor sees its trace
-     * only when Reactor restores ThreadLocals in its operators, spring.reactor.context-propagation: auto (Boot reference,
-     * Observability › Context Propagation). Set here too, so the errors pack works on its own; a value set on purpose stays.
-     */
-    private void reactorContext(OrderBuilder b) {
-        String value = ctx.a.springProperties.get(ReactiveRules.PROPERTY);
-        if (value != null && value.strip().equalsIgnoreCase("auto")) {
-            return;
-        }
-        if (value == null && ReactiveRules.REACTOR_AUTO_CONFIGURATION.stream().anyMatch(ctx.a.project.probe()::hasClass)) {
-            ServiceYaml.merge(ctx, b, "spring:\n  reactor:\n    context-propagation: auto\n");
-            b.suggestion(b.suggestion + " Sets " + ReactiveRules.PROPERTY + ": auto too: the trace id lives in the Reactor "
-                    + "context, and Reactor then restores it in every operator.");
-            return;
-        }
-        b.suggestion(b.suggestion + " The trace id lives in the Reactor context: it reaches the error response only with "
-                + ReactiveRules.PROPERTY + ": auto (or Hooks.enableAutomaticContextPropagation() at startup).");
+                .suggestion("Proposed: logging-support.problem-trace-id.enabled: true (the logging-support starter adds \"traceId\" to "
+                        + (webflux ? "every ProblemDetail response through an ErrorResponse.Interceptor" : "every ProblemDetail response and to Spring Boot's error map")
+                        + "; a traceId a handler already set is kept). It changes what callers see, so logast does not switch it on: "
+                        + "check that no response already uses a \"traceId\" field for something else (a correlation id), then set it "
+                        + "in application.yml (false: decided against, no longer reported).");
     }
 
     /** {@code @ExceptionHandler({A.class, B.class})}, else the Throwable parameters. */

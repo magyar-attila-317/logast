@@ -697,6 +697,22 @@ abstract class E2eGoldenTest {
      * and the run's last line says where they are.
      */
     /**
+     * #291: the trace id in every error body changes what callers see, so it is proposed, not switched on; once the
+     * service sets the property (here: false) it is decided and no longer reported.
+     */
+    @Test
+    void theTraceIdInErrorBodiesIsProposedNotSwitchedOn() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> { });
+        assertThat(actual.getOrDefault("src/main/resources/application.yml", "")).doesNotContain("problem-trace-id");
+        assertThat(actual.get("FINDINGS.txt")).containsPattern("REPORT-ONLY\\s+ERROR_RESPONSE_UNTRACED");
+        Map<String, String> decided = migrate(tmp.resolve("decided"), CLASSPATH, app -> {
+            Path yml = app.resolve("src/main/resources/application.yml");
+            Files.writeString(yml, Files.readString(yml) + "logging-support:\n  problem-trace-id:\n    enabled: false\n");
+        });
+        assertThat(decided.get("FINDINGS.txt")).doesNotContain("ERROR_RESPONSE_UNTRACED");
+    }
+
+    /**
      * #287: steps of a pack can be left out (--skip=lines,levels): the others apply as usual and the result compiles,
      * the skipped steps change nothing and their findings stay open; an unknown step name is refused.
      */
