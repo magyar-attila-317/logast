@@ -1673,6 +1673,115 @@ class RemedyTest {
                 audit.replace("PHASE", "phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true")));
     }
 
+    /**
+     * #282: listeners on an audit event interface routed by SpEL conditions (one @Async @EventListener, one AFTER_COMMIT
+     * @TransactionalEventListener): logast cannot tell which runs, so a conditional async sibling is no proof that the
+     * record leaves before commit. Without a condition, the async listener runs for every event: reported.
+     */
+    @Test
+    void auditEventsRoutedByConditionsAreNotProofOfAnEarlyWrite() throws IOException {
+        String event = """
+                package x;
+
+                public interface AuditableEvent {
+                    String auditAction();
+
+                    default boolean auditSurvivesRollback() {
+                        return false;
+                    }
+                }
+                """;
+        String closed = """
+                package x;
+
+                import org.springframework.context.ApplicationEvent;
+
+                public class ShelfClosedEvent extends ApplicationEvent implements AuditableEvent {
+                    public ShelfClosedEvent(Object source) {
+                        super(source);
+                    }
+
+                    public String auditAction() {
+                        return "shelf.closed";
+                    }
+                }
+                """;
+        String publisher = """
+                package x;
+
+                import org.springframework.context.ApplicationEventPublisher;
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class DomainEvents {
+                    private final ApplicationEventPublisher events;
+
+                    public DomainEvents(ApplicationEventPublisher events) {
+                        this.events = events;
+                    }
+
+                    public void publishShelfClosed(Object source, String shelfId, HandoverAudit handover) {
+                        events.publishEvent(new ShelfClosedEvent(source));
+                    }
+                }
+                """;
+        String listener = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.context.event.EventListener;
+                import org.springframework.scheduling.annotation.Async;
+                import org.springframework.stereotype.Component;
+                import org.springframework.transaction.event.TransactionPhase;
+                import org.springframework.transaction.event.TransactionalEventListener;
+
+                @Component
+                public class AuditListener {
+                    private static final Logger AUDIT = LoggerFactory.getLogger("audit");
+
+                    @Async
+                    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true,
+                            condition = "!#root.args[0].auditSurvivesRollback()")
+                    public void afterCommit(AuditableEvent event) {
+                        AUDIT.info("Audit record [action={}]", event.auditAction());
+                    }
+
+                    @Async
+                    @EventListener(CONDITION)
+                    public void survivingRollback(AuditableEvent event) {
+                        AUDIT.info("Audit record [action={}]", event.auditAction());
+                    }
+                }
+                """;
+        String service = """
+                package x;
+
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public class ShelfService {
+                    private final DomainEvents domainEvents;
+
+                    public ShelfService(DomainEvents domainEvents) {
+                        this.domainEvents = domainEvents;
+                    }
+
+                    @Transactional
+                    public void handOver(String shelfId) {
+                        domainEvents.publishShelfClosed(this, shelfId, new HandoverAudit(shelfId, "next-shift"));
+                    }
+                }
+                """;
+        String handover = "package x;\npublic record HandoverAudit(String shelfId, String to) {\n}\n";
+        Map<String, String> unconditional = Map.of(java("HandoverAudit"), handover, java("AuditableEvent"), event, java("ShelfClosedEvent"), closed,
+                java("DomainEvents"), publisher, java("AuditListener"), listener.replace("(CONDITION)", ""), java("ShelfService"), service);
+        fires(Rules.AUDIT_BEFORE_COMMIT, unconditional);
+        gone(Rules.AUDIT_BEFORE_COMMIT, "the async sibling runs only when its condition holds", with(unconditional,
+                java("AuditListener"), listener.replace("CONDITION", "condition = \"#root.args[0].auditSurvivesRollback()\"")));
+    }
+
     // ---- AUDIT_RECORD_SECRET ---------------------------------------------------------------------------------------
 
     @Test

@@ -1552,6 +1552,9 @@ final class AuditRules {
         }
         if (depth > 0) {
             for (var e : ctx.a.graph.out(t)) {
+                if (conditional(e.to())) {
+                    continue;   // #282: a listener picked by a SpEL condition may not run for this event: no proof
+                }
                 if (e.async() != dev.logast.graph.CallGraph.Async.NONE) {
                     return t.label() + " hands it to another thread";
                 }
@@ -1562,6 +1565,22 @@ final class AuditRules {
             }
         }
         return null;
+    }
+
+    /**
+     * #282: an event listener with a {@code condition} (SpEL, evaluated per event at runtime): logast cannot tell whether
+     * it runs for a given event. Sibling listeners on one event interface, each picked by a condition on the event, are a
+     * common way to route events (sync, async, after commit).
+     */
+    private static boolean conditional(MethodInfo m) {
+        for (J.Annotation a : m.decl().getLeadingAnnotations()) {
+            if ((dev.logast.model.Annotations.is(a, "org.springframework.context.event.EventListener")
+                    || dev.logast.model.Annotations.is(a, "org.springframework.transaction.event.TransactionalEventListener"))
+                    && dev.logast.model.Annotations.rawAttribute(a, "condition").isPresent()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---- secrets in audit records (#92 item 7) --------------------------------------------------
