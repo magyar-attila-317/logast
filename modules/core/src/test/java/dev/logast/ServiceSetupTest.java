@@ -133,6 +133,8 @@ class ServiceSetupTest {
         assertThat(p.packs()).containsExactly("logging");
         assertThat(p.logging().rewriteExistingMessages()).isFalse();
         assertThat(p.reporting().sourceComments()).as("off by default (#72)").isFalse();
+        assertThat(yaml).as("written out, so a changed default never changes the service's trust").contains("entrypoints:\n  trustInboundTrace: true\n");
+        assertThat(p.entrypoints().trustInboundTrace()).isTrue();
 
         Files.writeString(dir.resolve("logast.yaml"), "reporting:\n  sourceComments: true\n");
         assertThat(Policy.resolve(dir, null).reporting().sourceComments()).isTrue();

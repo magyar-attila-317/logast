@@ -69,7 +69,8 @@ class RoundTripTest {
                         // #18: FakeGateway's "amount={}" becomes [amount={}] (LOG_FORMAT keeps the written name) while
                         // RefundService logs [amount.cents={}]: a real field / sub-field clash in the fixture
                         "LOG_KEY_NESTING_CONFLICT",
-                        "ERROR_RESPONSE_UNTRACED");   // #291: a proposal, switched on by the team
+                        "ERROR_RESPONSE_UNTRACED",   // #291: a proposal, switched on by the team
+                        "TRACING_SAMPLING");   // #297: proposed unless tracing.samplingProbability chooses it
         assertThat(last.orders()).filteredOn(o -> o.rule().equals("ASYNC_CONTEXT_LOSS"))
                 .singleElement().satisfies(o -> assertThat(o.title()).startsWith("Parallel stream"));
         return results;

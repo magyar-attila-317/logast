@@ -27,6 +27,7 @@ REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeCo
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
 REPORT-ONLY ERROR_RESPONSE_UNTRACED src/main/resources/application.yml:1
+REPORT-ONLY TRACING_SAMPLING src/main/resources/application.yml:1
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY SHUTDOWN_NOT_GRACEFUL src/main/resources/application.yml:3
 REPORT-ONLY SHUTDOWN_NOT_GRACEFUL src/main/resources/application.yml:33

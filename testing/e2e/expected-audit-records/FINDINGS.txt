@@ -33,6 +33,7 @@ REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteContr
 REPORT-ONLY AUDIT_LOGGER_UNROUTED src/main/resources/application.properties:1
 REPORT-ONLY AUDIT_SECURITY_EVENTS src/main/resources/application.yml:1
 REPORT-ONLY ERROR_RESPONSE_UNTRACED src/main/resources/application.yml:1
+REPORT-ONLY TRACING_SAMPLING src/main/resources/application.yml:1
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_LOGGER_UNROUTED src/main/resources/logback-spring.xml:1
 REPORT-ONLY SETUP_LOGBACK_XML src/main/resources/logback-spring.xml:1

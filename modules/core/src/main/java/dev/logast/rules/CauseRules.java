@@ -115,7 +115,9 @@ final class CauseRules {
         if (close < Pos.start(nc)) {
             return;
         }
-        b.edit(Edit.insert(f.relPath(), close, (args.isEmpty() ? "" : ", ") + c.param));
+        // #301: right after the last argument, so a ')' on a line of its own keeps it: ", e" never starts a line
+        int at = args.isEmpty() ? close : Pos.end(args.getLast());
+        b.edit(Edit.insert(f.relPath(), at, (args.isEmpty() ? "" : ", ") + c.param));
         b.suggestion("Appends " + c.param + " as the cause (" + type + " has a constructor that takes it).");
     }
 

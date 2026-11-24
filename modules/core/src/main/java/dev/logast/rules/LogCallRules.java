@@ -70,6 +70,13 @@ final class LogCallRules {
 
     private boolean logAndRethrow(MethodInfo m, LogCall lc, int ordinal) {
         int line = Pos.line(lc.call());
+        // #304: a line that does not log the caught exception is a status line (the FAILED half of an OK/FAILED pair),
+        // not "logged and rethrown": the handler that logs the exception does not log what this line says
+        String param = lc.inCatch().param;
+        java.util.regex.Pattern mentions = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(param) + "\\b");
+        if (param == null || param.equals("_") || lc.args().stream().noneMatch(a -> mentions.matcher(a.printTrimmed()).find())) {
+            return false;
+        }
         List<String> handlers = loggingHandlers(m, thrownTypes(lc.inCatch()));
         boolean twice = !handlers.isEmpty() && ctx.enabled(Rules.EXCEPTION_LOGGED_TWICE);
         if (!twice && !ctx.enabled(Rules.LOG_AND_RETHROW)) {
@@ -83,7 +90,13 @@ final class LogCallRules {
         Set<String> inMdc = ctx.mdcInside(m);
         List<String> lostContext = new ArrayList<>();
         for (Expression arg : lc.args()) {
-            ctx.domain.keyOf(arg).filter(k -> !inMdc.contains(k)).ifPresent(lostContext::add);
+            var key = ctx.domain.keyOf(arg);
+            if (key.isPresent()) {
+                key.filter(k -> !inMdc.contains(k)).ifPresent(lostContext::add);
+            } else if (!mentions.matcher(arg.printTrimmed()).find() && !(arg instanceof J.Literal)) {
+                // #304: a value the exception does not carry (a duration, a count, a name) would be lost with the line
+                lostContext.add(Text.oneLine(arg.printTrimmed(), 40));
+            }
         }
         b.context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
         if (!lc.statement()) {   // not a statement of its own: logast cannot delete it

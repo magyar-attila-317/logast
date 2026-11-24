@@ -198,30 +198,25 @@ public final class CompileCheck {
                 }
             });
         }
-        DiagnosticCollector<JavaFileObject> diags = new DiagnosticCollector<>();
-        try (StandardJavaFileManager fm = javac.getStandardFileManager(diags, Locale.ROOT, StandardCharsets.UTF_8)) {
-            // #284: javac stops before flow analysis (unreachable code, a missing return, an unassigned final) once
-            // attribution found an error; on a partial classpath there always is one (an unresolved type, ignored as
-            // environmental), so go on through FLOW regardless
-            List<String> options = new ArrayList<>(List.of("-implicit:none", "-nowarn", "-Xlint:none", "-XDsuppressNotes",
-                    "-Xmaxerrs", "100000", "-XDshould-stop.ifError=FLOW"));
-            if (lombok != null) {
-                options.addAll(List.of("-proc:full", "-processorpath", lombok.toString()));
-            } else {
-                options.add("-proc:none");
+        // #305: javac runs annotation processors only on the files it is given, not on those it reads from the source
+        // path: a type there whose source uses Lombok has none of its generated members. When an error points at such a
+        // type, compile again with its file given too (its own errors are not ours: it has no entry in fileOf)
+        String roots = sourceRoots(work);
+        Set<Path> processed = new HashSet<>();
+        DiagnosticCollector<JavaFileObject> diags;
+        for (int pass = 0; ; pass++) {
+            diags = analyze(units, roots);
+            if (diags == null) {
+                return out;   // javac itself failed: no verdict, the round goes on as before
             }
-            String cp = String.join(java.io.File.pathSeparator, classpath.stream().map(Path::toString).toList());
-            if (!cp.isEmpty()) {
-                options.addAll(List.of("-classpath", cp));
+            List<Path> lombokTypes = lombok == null || pass == 3 ? List.of() : lombokSources(diags, fileOf, roots, processed);
+            if (lombokTypes.isEmpty()) {
+                break;
             }
-            String sp = sourceRoots(work);
-            if (!sp.isEmpty()) {
-                options.addAll(List.of("-sourcepath", sp));
+            for (Path f : lombokTypes) {
+                processed.add(f);
+                units.add(fm(f));
             }
-            JavacTask task = (JavacTask) javac.getTask(new StringWriter(), fm, diags, options, null, units);
-            task.analyze();
-        } catch (IOException | RuntimeException e) {
-            return out;   // javac itself failed: no verdict, the round goes on as before
         }
         Set<String> flat = new HashSet<>();
         if (System.getenv("LOGAST_DEBUG_COMPILE") != null) {
@@ -260,6 +255,98 @@ public final class CompileCheck {
         }
         cache.put(key, flat);
         return out;
+    }
+
+    /** One javac analysis of these units; null when javac itself failed. */
+    private DiagnosticCollector<JavaFileObject> analyze(List<JavaFileObject> units, String sp) {
+        DiagnosticCollector<JavaFileObject> diags = new DiagnosticCollector<>();
+        try (StandardJavaFileManager fm = javac.getStandardFileManager(diags, Locale.ROOT, StandardCharsets.UTF_8)) {
+            // #284: javac stops before flow analysis (unreachable code, a missing return, an unassigned final) once
+            // attribution found an error; on a partial classpath there always is one (an unresolved type, ignored as
+            // environmental), so go on through FLOW regardless
+            List<String> options = new ArrayList<>(List.of("-implicit:none", "-nowarn", "-Xlint:none", "-XDsuppressNotes",
+                    "-Xmaxerrs", "100000", "-XDshould-stop.ifError=FLOW"));
+            if (lombok != null) {
+                options.addAll(List.of("-proc:full", "-processorpath", lombok.toString()));
+            } else {
+                options.add("-proc:none");
+            }
+            String cp = String.join(java.io.File.pathSeparator, classpath.stream().map(Path::toString).toList());
+            if (!cp.isEmpty()) {
+                options.addAll(List.of("-classpath", cp));
+            }
+            if (!sp.isEmpty()) {
+                options.addAll(List.of("-sourcepath", sp));
+            }
+            JavacTask task = (JavacTask) javac.getTask(new StringWriter(), fm, diags, options, null, units);
+            task.analyze();
+            return diags;
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static final java.util.regex.Pattern LOCATION =
+            java.util.regex.Pattern.compile("location: (?:variable \\S+ of type|class|interface|enum|record) ([\\w.$]+)");
+
+    /**
+     * #305: the source files, not yet given to javac, of the types an error in our files names as the location of a
+     * missing symbol, when they use Lombok.
+     */
+    private static List<Path> lombokSources(DiagnosticCollector<JavaFileObject> diags, Map<URI, String> fileOf, String roots,
+                                            Set<Path> processed) {
+        Set<Path> found = new java.util.LinkedHashSet<>();
+        for (Diagnostic<? extends JavaFileObject> d : diags.getDiagnostics()) {
+            if (d.getKind() != Diagnostic.Kind.ERROR || d.getSource() == null || !fileOf.containsKey(d.getSource().toUri())) {
+                continue;
+            }
+            java.util.regex.Matcher m = LOCATION.matcher(d.getMessage(Locale.ROOT).replaceAll("\\s+", " "));
+            if (!m.find()) {
+                continue;
+            }
+            Path f = sourceOf(m.group(1), roots);
+            if (f != null && !processed.contains(f) && !fileOf.containsKey(f.toAbsolutePath().normalize().toUri())) {
+                try {
+                    if (dev.logast.parse.SourceText.read(f).contains("lombok")) {
+                        found.add(f);
+                    }
+                } catch (IOException e) {
+                    // unreadable: leave it on the source path
+                }
+            }
+        }
+        return List.copyOf(found);
+    }
+
+    /** The source file of a type (or of the type a nested one is declared in) in one of the source roots, or null. */
+    private static Path sourceOf(String type, String roots) {
+        if (roots.isEmpty()) {
+            return null;
+        }
+        String name = type.replace('$', '.');
+        while (!name.isEmpty()) {
+            for (String root : roots.split(java.io.File.pathSeparator)) {
+                Path f = Path.of(root, name.replace('.', '/') + ".java");
+                if (Files.isRegularFile(f)) {
+                    return f;
+                }
+            }
+            int dot = name.lastIndexOf('.');
+            if (dot < 0) {
+                return null;
+            }
+            name = name.substring(0, dot);
+        }
+        return null;
+    }
+
+    private static JavaFileObject fm(Path f) {
+        return new SimpleJavaFileObject(f.toAbsolutePath().normalize().toUri(), JavaFileObject.Kind.SOURCE) {
+            @Override
+            public CharSequence getCharContent(boolean ignoreEncodingErrors) throws IOException {
+                return dev.logast.parse.SourceText.read(f);
+            }
+        };
     }
 
     private static final java.util.regex.Pattern LOMBOK_LOG = java.util.regex.Pattern.compile("@(lombok\\.extern\\.[\\w.]+\\.)?(Slf4j|XSlf4j|Log|Log4j|Log4j2|CommonsLog|JBossLog|Flogger|CustomLog)\\b");

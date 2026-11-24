@@ -5,5 +5,6 @@ REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/edge/EdgeFlow.java:
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:16
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:17
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:25
+REPORT-ONLY TRACING_SAMPLING src/main/resources/application.yml:1
 REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY TRACE_ID_NOT_LOGGED src/main/resources/logback-spring.xml:4

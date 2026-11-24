@@ -129,6 +129,10 @@ public final class PolicyValidator {
             }
         }
 
+        Double sampling = p.tracing().samplingProbability();
+        if (sampling != null && (sampling < 0 || sampling > 1)) {
+            error("tracing.samplingProbability", sampling + " is not a share of traces: use a value from 0.0 to 1.0");
+        }
         for (String b : p.queries().backends()) {
             if (!Policy.Queries.BACKENDS.contains(b)) {
                 error("queries.backends", "'" + b + "' is not a query backend; use any of " + Policy.Queries.BACKENDS

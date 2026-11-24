@@ -1,8 +1,8 @@
 diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
-index 6bd81fc..e85fb72 100644
+index 6bd81fc..0ffabef 100644
 --- a/src/main/resources/application.yml
 +++ b/src/main/resources/application.yml
-@@ -1,7 +1,48 @@ 
+@@ -1,7 +1,45 @@ 
  spring:
    application:
      name: e2e-shop
@@ -49,9 +49,6 @@ index 6bd81fc..e85fb72 100644
 +    resource-attributes:
 +      service:
 +        version: ${spring.application.version}
-+  tracing:
-+    sampling:
-+      probability: 1.0
 diff --git a/src/main/java/com/example/e2e/logging/BatchTraceListener.java b/src/main/java/com/example/e2e/logging/BatchTraceListener.java
 new file mode 100644
 index 0000000..b2d1cc5

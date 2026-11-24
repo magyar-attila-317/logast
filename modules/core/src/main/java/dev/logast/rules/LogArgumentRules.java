@@ -95,7 +95,12 @@ final class LogArgumentRules {
         if (type == null || type instanceof JavaType.Primitive || ctx.domain.keyOf(arg).isPresent()) {
             return;
         }
-        if (type instanceof JavaType.Array) {
+        if (type instanceof JavaType.Array array) {
+            // #303: a reference array that is the only argument after the format is SLF4J's varargs array (the
+            // log.x(String, Object...) overload), not a value being logged
+            if (lc.args().size() == 1 && !(array.getElemType() instanceof JavaType.Primitive)) {
+                return;
+            }
             if (collections) {
                 collection(m, lc, arg, ".length", ordinal);
             }

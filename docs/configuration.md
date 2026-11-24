@@ -244,6 +244,17 @@ analysed, reported or edited. Generate them before running logast (e.g. `./gradl
 without them a controller implementing a generated interface has no HTTP entrypoints. A generated file declaring a
 class the sources also declare is ignored.
 
+### `tracing`
+
+```yaml
+tracing:
+  samplingProbability: 1.0   # #297: written into management.tracing.sampling.probability when the service sets none
+```
+
+Unset, TRACING_SAMPLING only proposes a value: Spring Boot exports 10 % of traces, so most trace ids in the logs lead
+nowhere, but exporting every trace costs collector capacity. 1.0 with sampling in the collector (tail sampling keeps
+errors and slow requests) is the usual choice.
+
 ### `support`: the runtime helper library
 
 ```yaml

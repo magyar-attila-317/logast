@@ -43,6 +43,3 @@ management:
     resource-attributes:
       service:
         version: ${spring.application.version}
-  tracing:
-    sampling:
-      probability: 1.0

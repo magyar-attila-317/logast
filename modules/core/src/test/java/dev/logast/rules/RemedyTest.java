@@ -2298,6 +2298,22 @@ class RemedyTest {
         assertThat(ResilienceRules.millis("500ms")).isEqualTo(500L);
     }
 
+    // ---- TRACING_SAMPLING (#297) ------------------------------------------------------------------------------------
+
+    /** #297: how many traces are exported is a cost the team chooses: proposed, and written only when the policy names it. */
+    @Test
+    void samplingIsWrittenOnlyWhenThePolicyChoosesIt() throws IOException {
+        Map<String, String> app = Map.of(java("ParcelApp"), BOOT_APP);
+        assertThat(scan(app)).filteredOn(o -> o.rule().equals(Rules.TRACING_SAMPLING)).singleElement()
+                .satisfies(o -> assertThat(o.edits()).as("not chosen: proposed only").isEmpty())
+                .satisfies(o -> assertThat(o.suggestion()).contains("tracing.samplingProbability"));
+        assertThat(scan(with(app, "logast.yaml", PACKS + "tracing:\n  samplingProbability: 0.5\n")))
+                .filteredOn(o -> o.rule().equals(Rules.TRACING_SAMPLING)).singleElement()
+                .satisfies(o -> assertThat(o.edits()).singleElement().satisfies(e -> assertThat(e.text()).contains("probability: 0.5")));
+        gone(Rules.TRACING_SAMPLING, "the service's own sampling", with(app, "src/main/resources/application.yml",
+                "spring:\n  application:\n    name: remedy\nmanagement:\n  tracing:\n    sampling:\n      probability: 1.0\n"));
+    }
+
     // ---- HTTP_CLIENT_NO_TIMEOUT, HTTP_CLIENT_UNTRACED --------------------------------------------------------------
 
     private static final String STOCK_CLIENT = """

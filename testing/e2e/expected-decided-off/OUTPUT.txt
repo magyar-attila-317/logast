@@ -1,17 +1,17 @@
 === logast apply . --auto --write
-✓ 93 changes in 47 files (<t>)
+✓ 92 changes in 47 files (<t>)
   44 log lines rewritten in the standard format
   15 log lines added where something happened silently
   10 business ids put into MDC
   9 MDC keys tidied
-  8 setup changes (dependencies, configuration, tracing)
+  7 setup changes (dependencies, configuration, tracing)
   7 other changes
   support code copied into com/example/e2e/logging (16 files)
   review: git diff   (one diff per kind: .logast/reports/steps/)
 
 Worth a look (optional) — the service works without these:
   19 log lines could say more, 22 outcomes could be counted → logast review
-  35 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
+  36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
 Log lines: 85 — 45 fixed, 22 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
@@ -25,7 +25,7 @@ reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain me
 
 Worth a look (optional) — the service works without these:
   19 log lines could say more, 22 outcomes could be counted → logast review
-  35 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
+  36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
 Log lines: 85 — 45 fixed, 22 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
@@ -42,7 +42,7 @@ reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain me
 
 Worth a look (optional) — the service works without these:
   5 log lines could say more, 3 outcomes could be counted → logast review   (3 in metrics.yaml cannot be written: see "_problem")
-  35 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
+  36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
 Log lines: 85 — 51 fixed, 5 with a finding, 21 fine, 8 not checked (.logast/reports/coverage.txt)
 

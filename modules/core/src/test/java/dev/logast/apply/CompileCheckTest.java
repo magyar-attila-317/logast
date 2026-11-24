@@ -111,6 +111,46 @@ class CompileCheckTest {
     }
 
     /**
+     * #305: javac runs annotation processors only on the files it is given, not on those it reads from the source path:
+     * a fix that calls a Lombok getter of another class must not read as a new error.
+     */
+    @Test
+    void aLombokGetterOfAnotherClassResolves() throws IOException {
+        List<Path> classpath = java.util.Arrays.stream(System.getProperty("logast.test.lombok").split(java.io.File.pathSeparator))
+                .map(Path::of).toList();
+        write("src/main/java/a/ThingMoved.java", """
+                package a;
+
+                import lombok.Getter;
+
+                @Getter
+                public class ThingMoved {
+                    private final String thingId;
+
+                    public ThingMoved(String thingId) {
+                        this.thingId = thingId;
+                    }
+                }
+                """);
+        String before = """
+                package a;
+
+                class Listener {
+                    void on(ThingMoved event) {
+                        System.out.println("moved");
+                    }
+                }
+                """;
+        write("src/main/java/a/Listener.java", before);
+        String after = before.replace("System.out.println(\"moved\");", "System.out.println(event.getThingId());");
+        assertThat(new CompileCheck(classpath).newErrors(work, Map.of("src/main/java/a/Listener.java", after)))
+                .as("the getter Lombok generates on the source path").isEmpty();
+        String typo = before.replace("System.out.println(\"moved\");", "System.out.println(event.getThingName());");
+        assertThat(new CompileCheck(classpath).newErrors(work, Map.of("src/main/java/a/Listener.java", typo)))
+                .as("a getter nothing generates is still an error").containsKey("src/main/java/a/Listener.java");
+    }
+
+    /**
      * #76: Lombok runs with the project's lombok.config, so a fix that logs through Lombok's default name where the
      * config renames the field is a new error, and the configured name is none. (A lower-case name: an unresolved
      * capitalised name like LOG reads as an unknown class and counts as environmental.)

@@ -20,7 +20,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
                      Entrypoints entrypoints, Logging logging, Support support, Map<String, RuleConfig> rules,
                      Map<String, Term> vocabulary, Map<String, Area> areas, Phrasing phrasing, Levels levels,
                      List<String> packs, List<String> overrides, Verify verify, Metrics metrics, Resilience resilience,
-                     Audit audit, Reporting reporting, Queries queries, List<String> warnings) {
+                     Audit audit, Reporting reporting, Queries queries, Tracing tracing, List<String> warnings) {
 
     /**
      * {@code logast queries}: ready-made queries for the service's metrics and logs (#106).
@@ -30,6 +30,14 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param prometheus the label that names the service in Prometheus; empty: {@code application} when
      *                   management.metrics.tags.application is set, else {@code job}
      */
+    /**
+     * @param samplingProbability #297: the share of traces exported, written into
+     *                            {@code management.tracing.sampling.probability} when the service sets none. Unset:
+     *                            logast only proposes a value, since it changes tracing cost and Boot keeps 0.1
+     */
+    public record Tracing(Double samplingProbability) {
+    }
+
     public record Queries(List<String> backends, Splunk splunk, Prometheus prometheus) {
         public static final List<String> BACKENDS = List.of("prometheus", "newrelic", "splunk");
 
@@ -495,6 +503,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         audit = audit == null ? new Audit(null, null, null) : audit;
         reporting = reporting == null ? new Reporting(null) : reporting;
         queries = queries == null ? new Queries(null, null, null) : queries;
+        tracing = tracing == null ? new Tracing(null) : tracing;
         warnings = warnings == null ? List.of() : List.copyOf(warnings);
     }
 
@@ -516,27 +525,27 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
     public Policy withPacks(List<String> selected) {
         PolicyValidator.checkPacks(selected, "--pack");
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, selected, overrides, verify, metrics, resilience, audit, reporting, queries, warnings);
+                phrasing, levels, selected, overrides, verify, metrics, resilience, audit, reporting, queries, tracing, warnings);
     }
 
     public Policy withLogging(Logging l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, l, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, warnings);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, tracing, warnings);
     }
 
     public Policy withLevels(Levels l) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, l, packs, overrides, verify, metrics, resilience, audit, reporting, queries, warnings);
+                phrasing, l, packs, overrides, verify, metrics, resilience, audit, reporting, queries, tracing, warnings);
     }
 
     public Policy withWarnings(List<String> w) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, support, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, w);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, tracing, w);
     }
 
     public Policy withSupport(Support s) {
         return new Policy(parents, glossary, mdc, pii, entrypoints, logging, s, rules, vocabulary, areas,
-                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, warnings);
+                phrasing, levels, packs, overrides, verify, metrics, resilience, audit, reporting, queries, tracing, warnings);
     }
 
     // ---- derived views (vocabulary + the older flat glossary/mdc form) -------------------------------------

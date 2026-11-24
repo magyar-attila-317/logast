@@ -45,9 +45,6 @@ management:
     resource-attributes:
       service:
         version: ${spring.application.version}
-  tracing:
-    sampling:
-      probability: 1.0
 logging-support:
   log-defaults:
     enabled: true

@@ -112,12 +112,18 @@ final class TracingRules {
         }
         String[] yml = applicationYml();
         OrderBuilder b = ctx.order(Rules.TRACING_SAMPLING, "sampling|unset").at(yml[0], 1)
-                .title("No tracing sampling set: Spring Boot exports 10% of traces, so 9 in 10 trace ids in the logs lead nowhere")
-                .suggestion("Sets 1.0 (every trace exported). With high traffic, sample in the collector instead (tail sampling).");
-        String snippet = "management:\n  tracing:\n    sampling:\n      probability: 1.0\n";
-        {
-            ServiceYaml.merge(ctx, b, snippet);
+                .title("No tracing sampling set: Spring Boot exports 10% of traces, so 9 in 10 trace ids in the logs lead nowhere");
+        // #297: how many traces are exported is a cost the team chooses, like a timeout (#271): written only when the
+        // policy names it, proposed otherwise
+        Double chosen = ctx.policy.tracing().samplingProbability();
+        if (chosen == null) {
+            b.suggestion("Choose a rate in logast.yaml (tracing.samplingProbability: 1.0 exports every trace; with high "
+                    + "traffic, keep 1.0 and sample in the collector, tail sampling keeps errors and slow requests), and "
+                    + "logast writes it; or set " + SAMPLING + " yourself.");
+            return;
         }
+        b.suggestion("Sets " + chosen + " (tracing.samplingProbability in logast.yaml).");
+        ServiceYaml.merge(ctx, b, "management:\n  tracing:\n    sampling:\n      probability: " + chosen + "\n");
     }
 
     // ---- @Observed / @NewSpan ---------------------------------------------------------------------------------------

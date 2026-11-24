@@ -360,6 +360,18 @@ public final class ServiceSetup {
         sb.append("  # Messages that alerts or dashboards search for (regex): logast never changes them, it only reports.\n");
         sb.append("  # protectedMessages: [\"^ALERT:\"]\n\n");
         sb.append("""
+                # Callers' trace context (traceparent, baggage): true continues their traces (services behind one
+                # gateway share one trace); false for a service the internet reaches directly, where a caller could
+                # pick the trace id it logs under. Written out so a changed default never changes this service.
+                entrypoints:
+                  trustInboundTrace: true
+
+                # Share of traces exported (management.tracing.sampling.probability). Unset: only proposed.
+                # tracing:
+                #   samplingProbability: 1.0
+
+                """);
+        sb.append("""
                 # Where generated code gets MdcScope / ObservedContext from:
                 #   vendor      copies the classes into this service, no library needed (the default)
                 #   dependency  adds the logging-support library (it must be in a repository your build uses; the
@@ -411,8 +423,7 @@ public final class ServiceSetup {
                 #   infoInLoops: size            # INFO per loop item: fine when small, DEBUG over database rows/streams,
                 #                                # reported when unknown (`// logast:loop-size 10` above a loop settles it)
 
-                # Your own annotations that start work, like @KafkaListener does.
-                # entrypoints:
+                # Your own annotations that start work, like @KafkaListener does (under entrypoints: above).
                 #   extraAnnotations: [com.example.InboxHandler]
 
                 # Gradle tasks that run the tests, for `logast verify` (default: test).
