@@ -159,20 +159,20 @@ index 7fb069d..4f47def 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 0b03fbc..0bb0415 100644
+index 0b03fbc..e8e3ed3 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -26,10 +26,12 @@ 
      @RabbitListener(queues = "pledge-returns")
      public void onReturn(String pledgeId) {
          log.info("Pledge return received [pledgeId={}]", pledgeId);
-+        log.info("Pledge messages completed"); // logast:wording
++        log.info("Pledge messages (return) completed"); // logast:wording
      }
  
      @JmsListener(destination = "pledge-audits")
      public void onAudit(String pledgeId) {
          log.info("Pledge audit received [pledgeId={}]", pledgeId);
-+        log.info("Pledge messages completed"); // logast:wording
++        log.info("Pledge messages (audit) completed"); // logast:wording
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java b/src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java

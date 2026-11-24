@@ -18,7 +18,7 @@ public class ReconciliationJob {
     }
 
     @Scheduled(fixedDelay = 60000)
-    public void reconcile() { // expect: JOB_OUTCOME_MISSING, SCHEDULED_WITHOUT_LOCK, SCHEDULER_SINGLE_THREAD
+    public void reconcile() { // expect: SCHEDULED_WITHOUT_LOCK, SCHEDULER_SINGLE_THREAD // expect-not: JOB_OUTCOME_MISSING (#306: every 60 s is over levels.addedInfoMaxPerDay)
         MDC.put("job.name", "reconciliation"); // expect: MDC_NOT_CLOSEABLE
         for (Order order : repository.findAll()) { // expect: ROW_BY_ROW_WRITE
             if (order.lines().isEmpty()) {

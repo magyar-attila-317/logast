@@ -14,12 +14,10 @@ public class ShelfScanJob {
 
     @Scheduled(fixedDelay = 60000)
     public void scan() {
-        log.info("Shelf scan started"); // logast:wording
         String shelfCode = nextShelf();
         try (var mdc = MdcScope.of("shelfCode", shelfCode)) {
             count(shelfCode);
         }
-        log.info("Shelf scan completed"); // logast:wording
     }
 
     void count(String shelfCode) {

@@ -35,11 +35,11 @@ SUG-49c990:
   _where: src/main/java/com/example/e2e/job/TallyJob.java:15 TallyJob.doExecute
 SUG-7b6956:
   MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages completed | must read as: {subject} completed"
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages (return) completed | must read as: {subject} completed"
   _where: src/main/java/com/example/e2e/messaging/PledgeMessages.java:31 PledgeMessages.onReturn
 SUG-4918d8:
   MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages completed | must read as: {subject} completed"
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages (audit) completed | must read as: {subject} completed"
   _where: src/main/java/com/example/e2e/messaging/PledgeMessages.java:40 PledgeMessages.onAudit
 SUG-85eb33:
   MSG: ""

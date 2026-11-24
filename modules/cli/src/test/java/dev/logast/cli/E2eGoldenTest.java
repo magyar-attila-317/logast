@@ -2951,6 +2951,128 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * Shapes from a large service's adoption: a job polling every 60 s through a placeholder with a default and a
+     * {@code timeUnit} gets no INFO line per run, and an AFTER_COMMIT listener without a rate of its own no started line
+     * (#306); an {@code Object[]} passed as SLF4J's varargs array stays as it is (#303); the FAILED half of a status pair
+     * before a rethrow stays (#304); the cause goes right after a multi-line argument list's last argument (#301).
+     */
+    @Test
+    void adoptionShapesKeepTheirMeaning() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = app.resolve("src/main/java/com/example/e2e/board");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("BoardPoller.java"), """
+                    package com.example.e2e.board;
+
+                    import java.util.concurrent.TimeUnit;
+                    import org.springframework.scheduling.annotation.Scheduled;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class BoardPoller {
+                        private final BoardSweep sweep;
+
+                        public BoardPoller(BoardSweep sweep) {
+                            this.sweep = sweep;
+                        }
+
+                        @Scheduled(fixedDelayString = "${board.poll.interval-seconds:60}", timeUnit = TimeUnit.SECONDS)
+                        public void poll() {
+                            sweep.refresh();
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("BoardMoved.java"), """
+                    package com.example.e2e.board;
+
+                    public record BoardMoved(String boardId) {
+                    }
+                    """);
+            Files.writeString(dir.resolve("BoardMoveListener.java"), """
+                    package com.example.e2e.board;
+
+                    import org.springframework.stereotype.Component;
+                    import org.springframework.transaction.event.TransactionPhase;
+                    import org.springframework.transaction.event.TransactionalEventListener;
+
+                    @Component
+                    public class BoardMoveListener {
+                        private final BoardSweep sweep;
+
+                        public BoardMoveListener(BoardSweep sweep) {
+                            this.sweep = sweep;
+                        }
+
+                        @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+                        public void onMoved(BoardMoved event) {
+                            sweep.refresh();
+                        }
+                    }
+                    """);
+            Files.writeString(dir.resolve("BoardSweep.java"), """
+                    package com.example.e2e.board;
+
+                    import java.util.List;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    public class BoardSweep {
+                        private static final Logger log = LoggerFactory.getLogger(BoardSweep.class);
+
+                        public void refresh() {
+                            summary(3, 0, 12L);
+                        }
+
+                        void summary(int processed, int failed, long elapsedMs) {
+                            String line = "Board sweep summary: processed={} failed={} elapsedMs={}";
+                            Object[] args = {processed, failed, elapsedMs};
+                            if (failed > 0) {
+                                log.error(line, args);
+                            } else {
+                                log.info(line, args);
+                            }
+                        }
+
+                        public void each(List<String> boards) {
+                            for (String board : boards) {
+                                long start = System.nanoTime();
+                                try {
+                                    clean(board);
+                                    log.info("Board cleanup: board={} outcome=OK elapsedMs={}", board, (System.nanoTime() - start) / 1_000_000);
+                                } catch (RuntimeException e) {
+                                    log.error("Board cleanup: board={} outcome=FAILED elapsedMs={}", board, (System.nanoTime() - start) / 1_000_000);
+                                    throw e;
+                                }
+                            }
+                        }
+
+                        public int parse(String raw) {
+                            try {
+                                return Integer.parseInt(raw);
+                            } catch (NumberFormatException e) {
+                                throw new IllegalArgumentException(
+                                        "Invalid board size: " + e.getMessage()
+                                );
+                            }
+                        }
+
+                        void clean(String board) {
+                        }
+                    }
+                    """);
+        });
+        String board = "src/main/java/com/example/e2e/board/";
+        assertThat(actual.get(board + "BoardPoller.java")).as("#306: polled every 60 s").doesNotContain("started");
+        assertThat(actual.getOrDefault(board + "BoardMoveListener.java", "")).as("#306: a listener without a rate").doesNotContain("started");
+        String sweep = actual.get(board + "BoardSweep.java");
+        assertThat(sweep).as("#303: the varargs array").contains("log.error(line, args);").doesNotContain("args.length");
+        assertThat(sweep).as("#304: the FAILED status line stays").contains("outcome=FAILED");
+        assertThat(sweep).as("#301: the cause after the last argument").contains("e.getMessage(), e\n");
+    }
+
+    /**
      * #54: a project whose files end their lines with CRLF (written on Windows) gives the LF result with CRLF: edits
      * keep the file's line ending and the lines they insert use it too, so no file ends up with mixed line endings.
      */

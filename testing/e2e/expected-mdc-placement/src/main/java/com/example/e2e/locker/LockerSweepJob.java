@@ -12,9 +12,7 @@ public class LockerSweepJob {
 
     @Scheduled(fixedDelay = 60000)
     public void sweep() {
-        log.info("Locker sweep started"); // logast:wording
         process(nextLocker());
-        log.info("Locker sweep completed"); // logast:wording
     }
 
     void process(String lockerCode) {

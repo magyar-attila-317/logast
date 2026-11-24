@@ -14,7 +14,6 @@ public class ShelfAccessWatch {
 
     @EventListener
     public void onDenied(AuthorizationDeniedEvent event) {
-        log.info("Denied started"); // logast:wording
         denied.incrementAndGet();
         log.info("Shelf access watch completed"); // logast:wording
         ShelfMetrics.shelfAccessWatchCompleted(); // logast:metric review, confidence: low

@@ -754,11 +754,26 @@ final class CoverageRules {
 
     // ---- helpers --------------------------------------------------------------------------------
 
-    /** "PledgeCleanupJob" → "Pledge cleanup"; a bare "Job"/"Task" class → its method name. */
-    static String jobSubject(MethodInfo m) {
-        String cls = m.owner().simpleName().replaceAll("(Job|Task|Scheduler|Runner|Listener|Handler|Executor|Worker|Service)$", "");
-        String base = cls.isBlank() ? m.name() : cls;
-        return FamilyRules.classWords(base);
+    /**
+     * "PledgeCleanupJob" → "Pledge cleanup"; a bare "Job"/"Task" class → its method name. #307: an acronym keeps its
+     * capitals ("NTAKReportingJob" → "NTAK reporting"); a listener of an event that names what happened
+     * ("SeatingOpenedListener") → "Seating opened event handling"; a class with several such entrypoints names the
+     * method too, so two jobs of one class do not log the same line.
+     */
+    String jobSubject(MethodInfo m) {
+        String raw = m.owner().simpleName();
+        String cls = raw.replaceAll("(Job|Task|Scheduler|Runner|Listener|Handler|Executor|Worker|Service)$", "");
+        String base = Wording.phrase(cls.isBlank() ? m.name() : cls);
+        if (raw.matches(".*(Listener|Handler)$") && (base.endsWith("ed") || base.endsWith(" event"))) {
+            base = (base.endsWith(" event") ? base : base + " event") + " handling";
+        }
+        // siblings that log their own lines: annotated entrypoints of this class (not executor tasks), not sweeps
+        long siblings = ctx.a.entrypoints.stream().filter(e -> e.method().owner().fqn().equals(m.owner().fqn())
+                && !e.method().decl().getLeadingAnnotations().isEmpty() && !ctx.lifecycle().frequentRun(e)).count();
+        if (siblings > 1 && !cls.isBlank()) {
+            base = base + " (" + Wording.phrase(m.name().replaceFirst("^(on|handle)(?=[A-Z])", "")) + ")";
+        }
+        return Wording.capital(base);
     }
 
     private String phrase(String event, String subject) {

@@ -57,7 +57,29 @@ final class Wording {
         }
         // a listener's onReturn / handleRefund: the event is what follows the prefix
         String name = ep.method().name().replaceFirst("^(on|handle)(?=[A-Z])", "");
-        return capital(words(name));
+        String phrase = phrase(name);
+        // #307: an application event names what happened ("order moved"): "Order moved started" reads as if the move
+        // started; its handling is what starts and completes
+        if (ep.kind() == Entrypoint.Kind.EVENT && !dev.logast.graph.EntrypointFinder.oneShot(ep)
+                && (phrase.endsWith("ed") || phrase.endsWith(" event"))) {
+            phrase = (phrase.endsWith(" event") ? phrase : phrase + " event") + " handling";
+        }
+        return capital(phrase);
+    }
+
+    /**
+     * #307: {@link #words} for a phrase in a message: an acronym keeps its capitals ({@code NTAKReporting} →
+     * "NTAK reporting", not "ntakreporting").
+     */
+    static String phrase(String name) {
+        String spaced = name.replaceAll("([A-Z]+)([A-Z][a-z])", "$1 $2").replaceAll("([a-z0-9])([A-Z])", "$1 $2")
+                .replaceAll("[-_]+", " ").strip();
+        List<String> out = new ArrayList<>();
+        for (String w : spaced.split("\\s+")) {
+            boolean acronym = w.length() > 1 && w.chars().allMatch(c -> Character.isUpperCase(c) || Character.isDigit(c));
+            out.add(acronym ? w : w.toLowerCase(Locale.ROOT));
+        }
+        return String.join(" ", out);
     }
 
     /** {@code "Pet creation"} in the policy's form of the event ("{subject} started"). */

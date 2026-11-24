@@ -19,14 +19,13 @@ class StockTracker {
     void warmUp() {
         log.info("Warm up started"); // logast:wording
         picked.clear();
-        log.info("Stock tracker completed"); // logast:wording
+        log.info("Stock tracker (warm up) completed"); // logast:wording
     }
 
     @EventListener
     void onPicked(StockPicked event) {
-        log.info("Picked started"); // logast:wording
         picked.add(event.stockCode());
-        log.info("Stock tracker completed"); // logast:wording
+        log.info("Stock tracker (picked) completed"); // logast:wording
         StockMetrics.stockTrackerCompleted(); // logast:metric review, confidence: low
     }
 

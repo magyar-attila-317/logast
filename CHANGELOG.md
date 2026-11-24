@@ -6,6 +6,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- Generated job and listener lines keep acronyms ("NTAK reporting started"), say "… event handling" for a listener of an event that names what happened, and name the method when one class has several such entrypoints, so two never log the same line (#307).
+- No started line in a job that runs more than `levels.addedInfoMaxPerDay` times a day (a 60 s poller), nor in an application event listener without a traffic.yaml rate (an AFTER_COMMIT listener runs as often as its publishers) (#306).
 - An `Object[]` passed as SLF4J's varargs array is no longer rewritten to `.length` (#303).
 - A line in a rethrowing catch that does not log the exception (a FAILED status line) is never deleted; a logged-and-rethrown line that carries other values is kept with a note (#304).
 - The errors pack appends the cause right after the last argument, so `, e);` never starts a line (#301).

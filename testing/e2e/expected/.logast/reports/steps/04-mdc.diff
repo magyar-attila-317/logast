@@ -84,7 +84,7 @@ index 41a26ce..8bcd696 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 0bb0415..2b8b4e7 100644
+index e8e3ed3..d6fc7a8 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -1,5 +1,6 @@ 
@@ -99,20 +99,20 @@ index 0bb0415..2b8b4e7 100644
      @RabbitListener(queues = "pledge-returns")
      public void onReturn(String pledgeId) {
 -        log.info("Pledge return received [pledgeId={}]", pledgeId);
--        log.info("Pledge messages completed"); // logast:wording
+-        log.info("Pledge messages (return) completed"); // logast:wording
 +        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
 +            log.info("Pledge return received [pledgeId={}]", pledgeId);
-+            log.info("Pledge messages completed"); // logast:wording
++            log.info("Pledge messages (return) completed"); // logast:wording
 +        }
      }
  
      @JmsListener(destination = "pledge-audits")
      public void onAudit(String pledgeId) {
 -        log.info("Pledge audit received [pledgeId={}]", pledgeId);
--        log.info("Pledge messages completed"); // logast:wording
+-        log.info("Pledge messages (audit) completed"); // logast:wording
 +        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
 +            log.info("Pledge audit received [pledgeId={}]", pledgeId);
-+            log.info("Pledge messages completed"); // logast:wording
++            log.info("Pledge messages (audit) completed"); // logast:wording
 +        }
      }
  }

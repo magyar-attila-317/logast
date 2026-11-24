@@ -67,7 +67,6 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:20
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:22
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:27
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:29
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:28
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

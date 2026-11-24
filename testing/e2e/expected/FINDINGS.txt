@@ -240,19 +240,19 @@ SUG-49c990  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/jo
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Tally started" | must read as '{subject} started'
 SUG-7b6956  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/messaging/PledgeMessages.java:31  PledgeMessages.onReturn
-  Generated wording "Pledge messages completed": say it in domain terms
+  Generated wording "Pledge messages (return) completed": say it in domain terms
   path: @RabbitListener pledge-returns → PledgeMessages.onReturn
-  - "Pledge messages completed"
+  - "Pledge messages (return) completed"
   + "{{MSG}}"
   (+1 more edits)
-  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Pledge messages completed" | must read as '{subject} completed'
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Pledge messages (return) completed" | must read as '{subject} completed'
 SUG-4918d8  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/messaging/PledgeMessages.java:40  PledgeMessages.onAudit
-  Generated wording "Pledge messages completed": say it in domain terms
+  Generated wording "Pledge messages (audit) completed": say it in domain terms
   path: @JmsListener pledge-audits → PledgeMessages.onAudit
-  - "Pledge messages completed"
+  - "Pledge messages (audit) completed"
   + "{{MSG}}"
   (+1 more edits)
-  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Pledge messages completed" | must read as '{subject} completed'
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Pledge messages (audit) completed" | must read as '{subject} completed'
 OUM-798439  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17  ReactivePledgeLookup.find
   "Pledge lookup failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
   note: The log line is part of a return/throw statement: a counting line after it would never run; count it where it happens (inside the lambda) or mark it skip. Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.lookup", "failed")) or skip; then logast apply . Count it only if a dashboard or alert needs it.

@@ -151,7 +151,7 @@ index 950243e..a45c601 100644
                  .run(() -> {
                      job.execute();
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 00dafb6..79f37e7 100644
+index 91f6866..2e1263a 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -17,7 +17,7 @@ 
@@ -166,7 +166,7 @@ index 00dafb6..79f37e7 100644
 @@ -29,6 +29,7 @@
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge return received");
-             log.info("Pledge messages completed"); // logast:wording
+             log.info("Pledge messages (return) completed"); // logast:wording
 +            MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
          }
      }
@@ -174,7 +174,7 @@ index 00dafb6..79f37e7 100644
 @@ -37,6 +38,7 @@
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge audit received");
-             log.info("Pledge messages completed"); // logast:wording
+             log.info("Pledge messages (audit) completed"); // logast:wording
 +            MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
          }
      }

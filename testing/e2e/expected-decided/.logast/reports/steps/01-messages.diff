@@ -63,14 +63,14 @@ index ea8b717..8fdfc04 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 5149c03..7e878e4 100644
+index 7aace5f..7e878e4 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -28,7 +28,7 @@ 
      public void onReturn(String pledgeId) {
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge return received");
--            log.info("Pledge messages completed"); // logast:wording
+-            log.info("Pledge messages (return) completed"); // logast:wording
 +            log.info("Pledge sweep completed");
          }
      }
@@ -79,7 +79,7 @@ index 5149c03..7e878e4 100644
      public void onAudit(String pledgeId) {
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge audit received");
--            log.info("Pledge messages completed"); // logast:wording
+-            log.info("Pledge messages (audit) completed"); // logast:wording
 +            log.info("Pledge sweep completed");
          }
      }

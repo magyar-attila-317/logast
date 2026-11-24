@@ -7,10 +7,10 @@ REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/audit/AuditLog
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/edge/Audited.java:10
 REPORT-ONLY LOG_HELPER src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13
 REPORT-ONLY SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/locker/LockerSweepJob.java:14
-REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerSweepJob.java:35
-REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerSweepJob.java:42
-REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerSweepJob.java:48
-REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerSweepJob.java:54
+REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerSweepJob.java:33
+REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerSweepJob.java:40
+REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerSweepJob.java:46
+REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerSweepJob.java:52
 REPORT-ONLY MDC_NESTED_KEY src/main/java/com/example/e2e/locker/LockerTidier.java:13
 REPORT-ONLY RABBIT_NO_ERROR_HANDLER src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
 NEEDS TEXT SWALLOWED_EXCEPTION src/main/java/com/example/e2e/order/LoyaltyClient.java:20
@@ -51,13 +51,11 @@ NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/locker/LockerControll
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/locker/LockerController.java:38
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/locker/LockerController.java:46
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/locker/LockerController.java:53
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/locker/LockerSweepJob.java:15
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/locker/LockerSweepJob.java:17
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:31
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:36
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:43
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:49
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:55
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:29
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:34
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:41
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:47
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerSweepJob.java:53
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/locker/LockerTidier.java:14
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:40

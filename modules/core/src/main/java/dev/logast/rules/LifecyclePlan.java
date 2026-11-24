@@ -105,9 +105,14 @@ public final class LifecyclePlan {
                 startOwner, outcomeOwner, missing);
     }
 
-    /** #272: a {@code @Scheduled} job that runs more often than once a minute ({@link dev.logast.ScheduleRate#FREQUENT_PER_DAY}). */
+    /**
+     * #272, #306: a {@code @Scheduled} job whose runs a day exceed levels.addedInfoMaxPerDay (once a minute is 1,440):
+     * an INFO line per run would be noise. A job whose schedule cannot be read is not frequent.
+     */
     boolean frequentRun(Entrypoint ep) {
-        return ep.kind() == Entrypoint.Kind.SCHEDULED && dev.logast.ScheduleRate.frequent(ctx.a.traffic.perDay(ep));
+        Double perDay = ctx.a.traffic.perDay(ep);
+        return ep.kind() == Entrypoint.Kind.SCHEDULED && perDay != null
+                && (dev.logast.ScheduleRate.frequent(perDay) || !ctx.policy.levels().addedInfo(perDay));
     }
 
     /** Implementation families whose members log their lifecycle unevenly. */

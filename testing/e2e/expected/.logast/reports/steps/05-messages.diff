@@ -188,7 +188,7 @@ index 06eccf0..4ee3a0a 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 2b8b4e7..00dafb6 100644
+index d6fc7a8..91f6866 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -27,7 +27,7 @@ 
@@ -197,7 +197,7 @@ index 2b8b4e7..00dafb6 100644
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
 -            log.info("Pledge return received [pledgeId={}]", pledgeId);
 +            log.info("Pledge return received");
-             log.info("Pledge messages completed"); // logast:wording
+             log.info("Pledge messages (return) completed"); // logast:wording
          }
      }
 @@ -35,7 +35,7 @@
@@ -206,7 +206,7 @@ index 2b8b4e7..00dafb6 100644
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
 -            log.info("Pledge audit received [pledgeId={}]", pledgeId);
 +            log.info("Pledge audit received");
-             log.info("Pledge messages completed"); // logast:wording
+             log.info("Pledge messages (audit) completed"); // logast:wording
          }
      }
 diff --git a/src/main/java/com/example/e2e/job/PublishRunJob.java b/src/main/java/com/example/e2e/job/PublishRunJob.java

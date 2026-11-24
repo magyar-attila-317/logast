@@ -1,5 +1,5 @@
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/edge/EdgeFlow.java:44
-REPORT-ONLY MDC_NOT_CLOSEABLE src/main/java/com/example/e2e/shelf/ShelfScanJob.java:55
+REPORT-ONLY MDC_NOT_CLOSEABLE src/main/java/com/example/e2e/shelf/ShelfScanJob.java:53
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:18
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:19
 REPORT-ONLY ASYNC_CONTEXT_LOSS src/main/java/com/example/e2e/web/QuoteController.java:27
@@ -64,8 +64,6 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfScanJob.java:17
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfScanJob.java:22
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/shelf/ShelfScanJob.java:40
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/shelf/ShelfScanJob.java:38
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

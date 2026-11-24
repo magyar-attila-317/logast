@@ -65,8 +65,7 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:17
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:19
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:18
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/shelf/ShelfSlotRepository.java:9
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/shelf/ShelfSlotWriter.java:23
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfSlotWriter.java:24

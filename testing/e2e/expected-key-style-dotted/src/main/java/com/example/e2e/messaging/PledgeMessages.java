@@ -28,7 +28,7 @@ public class PledgeMessages {
     public void onReturn(String pledgeId) {
         try (var mdc = MdcScope.of("pledge.id", pledgeId)) {
             log.info("Pledge return received");
-            log.info("Pledge messages completed"); // logast:wording
+            log.info("Pledge messages (return) completed"); // logast:wording
             MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
         }
     }
@@ -37,7 +37,7 @@ public class PledgeMessages {
     public void onAudit(String pledgeId) {
         try (var mdc = MdcScope.of("pledge.id", pledgeId)) {
             log.info("Pledge audit received");
-            log.info("Pledge messages completed"); // logast:wording
+            log.info("Pledge messages (audit) completed"); // logast:wording
             MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
         }
     }

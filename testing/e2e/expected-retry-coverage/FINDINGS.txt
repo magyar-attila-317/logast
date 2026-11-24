@@ -73,7 +73,5 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/rate/RateClient.java:15
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/rate/RateClient.java:19
 REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/rate/RateSpread.java:10
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/rate/RateSync.java:20
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/rate/RateSync.java:22
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1
