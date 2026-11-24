@@ -2,6 +2,9 @@
 # Builds logast and installs the `logast` command for the current user.
 #   ./install.sh                      build from source, install to ~/.local/share/logast, link ~/.local/bin/logast
 #   ./install.sh --zip logast-X.zip   install a release zip instead of building
+#   ./install.sh --version X          download release X from GitHub and install it (--latest: the newest release)
+# Without a checkout (curl -fsSL https://raw.githubusercontent.com/magyar-attila-317/logast/main/install.sh | bash) it
+# downloads the latest release (or --version X), checks it against the release's .sha256, and installs that.
 #   ./install.sh --skill              also install the Claude Code skill (~/.claude/skills/logast/SKILL.md)
 # A re-run whose installed `logast --version` names this commit (and the checkout has no local changes) builds nothing:
 #   "already installed — nothing to do"; it still checks the setup below. --force rebuilds and reinstalls.
@@ -172,15 +175,52 @@ source_installed() {   # $1: the installed `logast --version`, $2: the version i
   [ "$1" = "logast $2 ($commit)" ]
 }
 
+# ── release downloads (#295-adjacent: logast without a checkout) ─────────────────────────────────────────────────────
+# Where releases are: GitHub by default; LOGAST_RELEASES points elsewhere (a mirror, or file:// in the tests).
+releases_base() { printf '%s' "${LOGAST_RELEASES:-https://github.com/magyar-attila-317/logast/releases}"; }
+
+# a checkout to build from: the wrapper, the version file and the CLI module
+in_checkout() { [ -f gradlew ] && [ -f gradle.properties ] && [ -d modules/cli ]; }
+
+download() {   # $1: URL, $2: file
+  if command -v curl >/dev/null 2>&1; then curl -fsSL "$1" -o "$2"
+  elif command -v wget >/dev/null 2>&1; then wget -q "$1" -O "$2"
+  else return 1; fi
+}
+
+sha256_of() {   # $1: file
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+# Downloads the release zip of version $1 (empty: the latest) into folder $2, checks it against the release's
+# .sha256 and prints its path; fails (and prints why to stderr) when the download or the checksum does not hold.
+release_zip() {   # $1: version or "", $2: folder
+  local base url name
+  base="$(releases_base)"
+  if [ -n "$1" ]; then name="logast-$1.zip"; url="$base/download/v$1/$name"
+  else name="logast.zip"; url="$base/latest/download/$name"; fi
+  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || { echo "downloading needs curl or wget" >&2; return 1; }
+  download "$url" "$2/$name" || { echo "could not download $url (no such release?)" >&2; return 1; }
+  download "$url.sha256" "$2/$name.sha256" || { echo "could not download $url.sha256" >&2; return 1; }
+  local want got
+  want="$(cut -d' ' -f1 "$2/$name.sha256" | tr -d '\r\n')"
+  got="$(sha256_of "$2/$name")"
+  [ -n "$want" ] && [ "$want" = "$got" ] || { echo "checksum mismatch for $name: expected $want, got $got" >&2; return 1; }
+  printf '%s' "$2/$name"
+}
+
 # ── main ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 main() {
   set -euo pipefail
   PREFIX="${LOGAST_HOME:-$HOME/.local/share/logast}"
   BIN_DIR="${LOGAST_BIN:-$HOME/.local/bin}"
-  ZIP="" SKILL=0 STARTER=ask GRADLE=ask YES=0 PUBLISH_TO="" ASK_AGAIN=0 FORCE=0
+  ZIP="" SKILL=0 STARTER=ask GRADLE=ask YES=0 PUBLISH_TO="" ASK_AGAIN=0 FORCE=0 RELEASE="" LATEST=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --zip) ZIP="${2:?--zip needs a file}"; shift ;;
+      --version) RELEASE="${2:?--version needs a version, e.g. 0.5.2}"; RELEASE="${RELEASE#v}"; shift ;;
+      --latest) LATEST=1 ;;
       --skill) SKILL=1 ;;
       --starter) STARTER=1 ;;
       -y|--yes) YES=1 ;;
@@ -194,7 +234,8 @@ main() {
     shift
   done
   case "$ZIP" in ""|/*) ;; *) ZIP="$PWD/$ZIP" ;; esac   # before the cd below
-  cd "$(dirname "$0")"
+  # run through a pipe (curl … | bash) there is no script file: no checkout either
+  [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ] && cd "$(dirname "${BASH_SOURCE[0]}")"
 
   if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; then
     B=$'\e[1m' D=$'\e[2m' G=$'\e[32m' Y=$'\e[33m' R=$'\e[31m' C=$'\e[36m' N=$'\e[0m'
@@ -220,6 +261,13 @@ BANNER
   fi
   ok "Java $java_major ($(home "$(command -v java)"))$([ "$java_major" -lt 25 ] && printf ' %s· 25 recommended%s' "$D" "$N")"
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  # no checkout to build from (or asked for a release): download one
+  if [ -z "$ZIP" ] && { [ -n "$RELEASE" ] || [ "$LATEST" = 1 ] || ! in_checkout; }; then
+    mkdir -p "$tmp/download"
+    info "downloading logast ${RELEASE:-(latest)} from $(releases_base)"
+    ZIP="$(release_zip "$RELEASE" "$tmp/download")" || fail "no release downloaded (see above)"
+    ok "downloaded and checked $(basename "$ZIP") (sha256)"
+  fi
   old="$([ -x "$PREFIX/bin/logast" ] && "$PREFIX/bin/logast" --version 2>/dev/null || true)"
   UPTODATE=0
   if [ -n "$ZIP" ]; then
@@ -513,6 +561,7 @@ BANNER
   [ -z "$PUBLISH_FAILED" ]   # a refused upload fails the run (scripts and CI see it); the command is installed either way
 }
 
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+# executed (./install.sh), or piped (curl … | bash: no BASH_SOURCE); sourced by scripts/test-install.sh: functions only
+if [ -z "${BASH_SOURCE[0]:-}" ] || [ "${BASH_SOURCE[0]}" = "$0" ]; then
   main "$@"
 fi

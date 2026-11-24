@@ -3,7 +3,7 @@
 Every command prints its options with `--help` (`logast scan --help`). This page explains what they are for, with
 examples. Output samples are illustrations; counts and ids differ per service and version.
 
-`logast --help` lists seven commands; everything else is a report logast writes on its own, a question under
+`logast --help` lists the main commands (and `update`); everything else is a report logast writes on its own, a question under
 `explain`, or an [advanced command](#advanced).
 
 | command | what it does |
@@ -449,6 +449,17 @@ that the vocabulary makes aliases, with their places, i.e. what apply would rena
 now) is extended. Without `--central`, each service's own policy counts. For a named fleet, `logast fleet <name>
 --vocabulary` writes the worksheet in the fleet folder from the snapshots, and its members extend the fleet's
 company.yaml by name.
+
+## update
+
+```bash
+logast update           # the latest release
+logast update 0.5.2     # a given release
+```
+
+Replaces this install with a release downloaded from GitHub, checked against its `.sha256`, in the same place
+(`LOGAST_HOME`). It runs the `install.sh` the install was shipped with (releases from 0.5.2 on); an install from a
+checkout updates with `git pull && ./install.sh`.
 
 ## Reports written automatically
 

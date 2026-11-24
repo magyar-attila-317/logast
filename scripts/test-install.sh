@@ -196,9 +196,45 @@ if command -v java >/dev/null && command -v zip >/dev/null && command -v unzip >
   run --force >/dev/null
   fails "--force reinstalls" test -f "$T/inst/share/bin/marker"
   check "a reinstall keeps the fleets (#135)" keep "$(cat "$T/inst/share/fleets/f1/company.yaml" 2>/dev/null)"
+  # piped, without a checkout (curl … | bash): it downloads the latest release and installs it
+  if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+    P="$T/piped-releases/latest/download"; mkdir -p "$P" "$T/elsewhere"
+    cp "$T/zip/logast-1.0.zip" "$P/logast.zip"
+    (cd "$P" && printf '%s  logast.zip\n' "$(sha256_of logast.zip)" >logast.zip.sha256)
+    piped="$(cd "$T/elsewhere" && LOGAST_RELEASES="file://$T/piped-releases" LOGAST_HOME="$T/piped/share" LOGAST_BIN="$T/piped/bin" \
+              GRADLE_USER_HOME="$T/piped/gradle" XDG_CONFIG_HOME="$T/piped/config" NO_COLOR=1 bash <"$ROOT/install.sh" 2>&1)"; code=$?
+    check "a piped run installs the latest release" 0 "$code"
+    check "the piped install's command" "logast 1.0 (abc1234)" "$("$T/piped/bin/logast" --version 2>/dev/null)"
+    case "$piped" in *"downloaded and checked logast.zip"*) PASSED=$((PASSED + 1)) ;; *) FAILED=$((FAILED + 1)); printf 'FAIL piped run:\n%s\n' "$piped" ;; esac
+  fi
 else
   echo "skipped the whole-run check: java, zip or unzip missing"
 fi
+
+in_dir() { (cd "$1" && shift && "$@"); }   # $1: folder, then the command
+
+# ── release downloads: install.sh without a checkout, `logast update` ──────────────────────────────────────────────
+REL="$T/releases"
+mkdir -p "$REL/download/v9.9.9" "$REL/latest/download" "$T/dl1" "$T/dl2" "$T/dl3" "$T/dl4"
+printf 'zip 9.9.9' >"$REL/download/v9.9.9/logast-9.9.9.zip"
+(cd "$REL/download/v9.9.9" && printf '%s  logast-9.9.9.zip\n' "$(sha256_of logast-9.9.9.zip)" >logast-9.9.9.zip.sha256)
+printf 'zip latest' >"$REL/latest/download/logast.zip"
+(cd "$REL/latest/download" && printf '%s  logast.zip\n' "$(sha256_of logast.zip)" >logast.zip.sha256)
+if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+  export LOGAST_RELEASES="file://$REL"
+  check "a version's zip, checked" "$T/dl1/logast-9.9.9.zip" "$(release_zip 9.9.9 "$T/dl1" 2>/dev/null)"
+  check "the latest zip, checked" "$T/dl2/logast.zip" "$(release_zip "" "$T/dl2" 2>/dev/null)"
+  printf '0000  logast.zip\n' >"$REL/latest/download/logast.zip.sha256"
+  quiet() { "$@" 2>/dev/null; }
+  fails "a zip whose checksum does not match" quiet release_zip "" "$T/dl3"
+  fails "a version that has no release" quiet release_zip 1.2.3 "$T/dl4"
+  unset LOGAST_RELEASES
+else
+  echo "skipped the download checks: neither curl nor wget"
+fi
+mkdir -p "$T/co/modules/cli"; : >"$T/co/gradlew"; : >"$T/co/gradle.properties"
+holds "a checkout builds from source" in_dir "$T/co" in_checkout
+fails "any other folder downloads a release" in_dir "$T/dl1" in_checkout
 
 printf '%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" = 0 ]

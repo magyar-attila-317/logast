@@ -41,6 +41,8 @@ distributions {
                 }
             }
             from(rootProject.file("README.md"))
+            // `logast update` runs it to replace this install with another release (a download, no checkout)
+            from(rootProject.file("install.sh")) { filePermissions { unix("rwxr-xr-x") } }
             from(rootProject.file("docs")) { into("docs") }
             from(rootProject.file("examples")) { into("examples") }
             from(rootProject.file("docs/llm-workflow.md")) { into("claude-skill/logast"); rename { "SKILL.md" } }

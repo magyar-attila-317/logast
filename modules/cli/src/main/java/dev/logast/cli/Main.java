@@ -29,11 +29,11 @@ import java.util.concurrent.Callable;
 @Command(name = "logast", mixinStandardHelpOptions = true, versionProvider = Main.Version.class, scope = CommandLine.ScopeType.INHERIT,
         description = "Uniform logging, MDC and tracing for Spring Boot services: finds gaps along call paths from "
                 + "entrypoints and emits work orders an LLM completes by writing message text only.",
-        // #125: seven in --help; the advanced ones and the old names (each says its new one) are hidden but keep working
+        // #125: the main ones in --help (update too); the advanced ones and the old names (each says its new one) are hidden but keep working
         subcommands = {Main.Apply.class, Main.Scan.class, Review.class, Verify.class, Main.Explain.class, Fleet.class, Init.class,
                 Main.ShapeCmd.class, Main.Classpath.class, Main.TrafficCmd.class, Main.VocabularyCmd.class,
                 Main.MetricsCmd.class, Main.QueriesCmd.class, Main.WhyCmd.class, Main.LifecycleCmd.class, Main.PolicyCmd.class,
-                Main.RulesCmd.class, Facts.class, ExportCmd.class, McpCmd.class, SupportCmd.class})
+                Main.RulesCmd.class, Facts.class, ExportCmd.class, McpCmd.class, SupportCmd.class, UpdateCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override

@@ -73,14 +73,14 @@ class CommandsCliTest {
     }
 
     @Test
-    void helpListsTheSevenCommands() {
+    void helpListsTheMainCommands() {
         String help = run("--help").out();
         List<String> listed = new ArrayList<>();
         Matcher m = Pattern.compile("(?m)^  ([a-z]+)  ").matcher(help.substring(help.indexOf("Commands:")));
         while (m.find()) {
             listed.add(m.group(1));
         }
-        assertThat(listed).containsExactly("apply", "scan", "review", "verify", "explain", "fleet", "init");
+        assertThat(listed).containsExactly("apply", "scan", "review", "verify", "explain", "fleet", "init", "update");
         assertThat(new CommandLine(new Main()).getSubcommands().keySet()).as("hidden, but still there")
                 .contains("shape", "classpath", "traffic", "vocabulary", "metrics", "queries", "why", "lifecycle", "policy", "rules", "facts", "export", "mcp");
         assertThat(new CommandLine(new Main()).getSubcommands().get("explain").getSubcommands().keySet())

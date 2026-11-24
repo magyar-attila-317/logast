@@ -68,7 +68,8 @@ waits in `logast review` for when you get to it.
 
 <img src="docs/img/apply.gif" alt="logast apply on spring-petclinic with nothing set up: it reads the classpath, writes logast.yaml, adds the missing log lines and support code, and summarises what is optional; then git diff shows the added lines" width="100%">
 
-[Install](docs/install.md): `git clone … && ./install.sh` (Java 21+).
+[Install](docs/install.md) (Java 21+): `curl -fsSL https://raw.githubusercontent.com/magyar-attila-317/logast/main/install.sh | bash`,
+then `logast update` for new releases; or from a checkout, `./install.sh`.
 
 ---
 

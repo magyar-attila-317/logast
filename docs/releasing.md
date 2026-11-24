@@ -15,8 +15,9 @@ scripts/release.sh 0.2.0
 
 It sets the version in `gradle.properties` (one commit, `release: v0.2.0`), tags `v0.2.0` and pushes both. The
 [release workflow](../.github/workflows/release.yml) then checks that the tag names the version, builds and tests,
-and creates the GitHub release with the zip (`logast-0.2.0.zip`) and notes generated from the commits since the
-previous tag. A version with a suffix (`0.3.0-rc.1`) becomes a pre-release.
+and creates the GitHub release with the zip (`logast-0.2.0.zip`), its `.sha256`, and the same zip as `logast.zip`
+(which `releases/latest/download/logast.zip` names: `install.sh` and `logast update` download it), with notes
+generated from the commits since the previous tag. A version with a suffix (`0.3.0-rc.1`) becomes a pre-release.
 
 It refuses: a version that is not `x.y.z`, uncommitted changes, a main that differs from origin/main, a tag that
 exists, a commit whose CI is not green (`RELEASE_SKIP_CI=1` skips that check; the workflow still tests), and a version
