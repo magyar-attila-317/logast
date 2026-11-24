@@ -21,9 +21,6 @@ public final class BusinessMetrics {
     /** Observation (timer and span) name. */
     public static final String PLEDGE_MESSAGES_ON_BATCH = "pledge-messages.on-batch";
 
-    /** Observation (timer and span) name. */
-    public static final String ORDER_NOTIFICATIONS = "order.notifications";
-
     /** outcome="audited" on the timer already running (same thread). */
     public static void tagAudited() {
         Outcomes.tag("audited");
@@ -62,6 +59,11 @@ public final class BusinessMetrics {
     /** order.confirmation{outcome="sent"} +1. */
     public static void orderConfirmationSent() {
         Outcomes.count("order.confirmation", "sent");
+    }
+
+    /** order.audit{outcome="recorded"} +1. */
+    public static void orderAuditRecorded() {
+        Outcomes.count("order.audit", "recorded");
     }
 
     /** order{outcome="placed"} +1. */
@@ -126,6 +128,7 @@ public final class BusinessMetrics {
             Outcomes.register("tally", "completed");
             Outcomes.register("pledge.messages", "completed");
             Outcomes.register("order.confirmation", "sent");
+            Outcomes.register("order.audit", "recorded");
             Outcomes.register("order", "placed");
             Outcomes.register("order.shipment", "skipped");
             Outcomes.registerPerRun("orders", "shipped", "items");

@@ -66,10 +66,21 @@ OUM-0f37ab:
   outcome: sent
   _event: sent
   _message: INFO "Order confirmation sent"
-  _where: src/main/java/com/example/e2e/order/OrderNotifications.java:17 OrderNotifications.onPlaced
+  _where: src/main/java/com/example/e2e/order/OrderNotifications.java:16 OrderNotifications.onPlaced
   _frequency: "unknown: no rate for \"POST /orders\" in .logast/decisions/traffic.yaml"
   _paths:
     - http POST /orders
+  _tag: available
+OUM-b0f94e:
+  count: ""
+  name: order.audit
+  outcome: recorded
+  _event: recorded
+  _message: INFO "Order audit recorded"
+  _where: src/main/java/com/example/e2e/order/OrderNotifications.java:23 OrderNotifications.onCommitted
+  _frequency: "unknown: no rate for \"@TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)\" in .logast/decisions/traffic.yaml"
+  _paths:
+    - event @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)
   _tag: available
 OUM-d691d7:
   count: ""

@@ -34,8 +34,8 @@ message (6)
     start: none (not needed (one outcome per message))   outcome: present (observation wrapper (runtime line))
   @RabbitListener pledge-returns  src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
     start: present (not needed (one outcome per message))   outcome: present (the method)
-  @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:24
-    start: present (not needed (one outcome per message))   outcome: present (the method)
+  @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:23
+    start: present (not needed (one outcome per message))   outcome: none (not needed (no known rate))
 run (3)
   @Scheduled EdgeJob.run  src/main/java/com/example/e2e/edge/EdgeJob.java:22
     start: present (the method)   outcome: present (the method)

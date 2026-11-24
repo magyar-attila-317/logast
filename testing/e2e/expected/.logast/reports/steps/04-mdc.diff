@@ -402,20 +402,3 @@ index 1895279..ffe162d 100644
          }
      }
  
-diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 3422916..06eccf0 100644
---- a/src/main/java/com/example/e2e/order/OrderNotifications.java
-+++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -22,10 +22,11 @@ 
-     @TransactionalEventListener
-     public void onCommitted(OrderPlaced event) {
-         ObservedContext.entrypoint("order.notifications")
-+                .mdc("orderId", event.orderId())
-                 .quiet()
-                 .run(() -> {
-                     log.info("Order audit recorded [orderId={}]", event.orderId());
--                    log.info("Order notifications completed"); // logast:wording
-+                    log.info("Order notifications completed [orderId={}]", event.orderId()); // logast:wording
-                 });
-     }
- }

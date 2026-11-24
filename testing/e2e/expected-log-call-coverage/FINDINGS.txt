@@ -1,7 +1,7 @@
-logast · 76 files · 21 entrypoints · 83/222 methods reachable · 173 call edges
+logast · 76 files · 21 entrypoints · 83/222 methods reachable · 170 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 81.0% (jobs 9/9 · http 8/12)   (places that should log and do)
-68 orders: 0 AUTO, 19 NEEDS TEXT, 49 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 76.2% (jobs 8/9 · http 8/12)   (places that should log and do)
+68 orders: 0 AUTO, 18 NEEDS TEXT, 50 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-b1c041  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -261,17 +261,14 @@ OUM-798439  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
   "Pledge lookup failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
   note: The log line is part of a return/throw statement: a counting line after it would never run; count it where it happens (inside the lambda) or mark it skip. Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.lookup", "failed")) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
-OUM-0f37ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderNotifications.java:17  OrderNotifications.onPlaced
+OUM-0f37ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderNotifications.java:16  OrderNotifications.onPlaced
   "Order confirmation sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /orders" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("order.confirmation", "sent")), tag (Outcomes.tag("sent") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
-SUG-85eb33  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/order/OrderNotifications.java:29  OrderNotifications.onCommitted
-  Generated wording "Order notifications completed": say it in domain terms
-  path: @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced) → OrderNotifications.onCommitted
-  - "Order notifications completed"
-  + "{{MSG}}"
-  (+1 more edits)
-  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Order notifications completed" | must read as '{subject} completed'
+OUM-b0f94e  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderNotifications.java:23  OrderNotifications.onCommitted
+  "Order audit recorded" is logged but not counted (outcome=recorded, frequency unknown: no rate for "@TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)" in .logast/decisions/traffic.yaml)
+  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("order.audit", "recorded")), tag (Outcomes.tag("recorded") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
 DCU-db43f0  low  REPORT-ONLY  DATA_CHANGES_UNAUDITED  src/main/java/com/example/e2e/order/OrderRecord.java:6
   OrderRecord is changed through a Spring Data repository, but nothing records who last changed it
   note: Add @LastModifiedBy (and @CreatedBy, @LastModifiedDate) fields and enable auditing (@EnableJpaAuditing / @EnableJdbcAuditing with an AuditorAware bean that reads the current user).
@@ -377,16 +374,16 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 105 changes in 54 files (git diff to review)
+Applied earlier: 99 changes in 54 files (git diff to review)
 
 Optional (68) — left as is, each keeps its default:
-  19 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
-  13 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
+  18 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
+  14 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
   36 decisions                      → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
-Log lines: 92 — 53 fixed, 15 with a finding, 10 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
+Log lines: 91 — 51 fixed, 16 with a finding, 10 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
 
 Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there

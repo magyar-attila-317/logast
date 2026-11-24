@@ -12,9 +12,6 @@ public final class OrderMetrics {
     private OrderMetrics() {
     }
 
-    /** Observation (timer and span) name. */
-    public static final String ORDER_NOTIFICATIONS = "order.notifications";
-
     /** order.shipment{outcome="skipped"} +1. */
     public static void orderShipmentSkipped() {
         Outcomes.count("order.shipment", "skipped");

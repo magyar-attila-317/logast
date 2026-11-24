@@ -25,8 +25,6 @@ class StockTracker {
     @EventListener
     void onPicked(StockPicked event) {
         picked.add(event.stockCode());
-        log.info("Stock tracker (picked) completed"); // logast:wording
-        StockMetrics.stockTrackerCompleted(); // logast:metric review, confidence: low
     }
 
     @NewSpan("stock.count")

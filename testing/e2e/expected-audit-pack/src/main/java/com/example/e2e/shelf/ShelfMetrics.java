@@ -12,11 +12,6 @@ public final class ShelfMetrics {
     private ShelfMetrics() {
     }
 
-    /** shelf.access.watch{outcome="completed"} +1. */
-    public static void shelfAccessWatchCompleted() {
-        Outcomes.count("shelf.access.watch", "completed");
-    }
-
     /** shelf.slot{outcome="updated"} +1; shelf.slot.rows{outcome="updated"} grows by rows. */
     public static void shelfSlotUpdated(Number rows) {
         Outcomes.count("shelf.slot", "updated", "rows", rows);
@@ -32,7 +27,6 @@ public final class ShelfMetrics {
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
         @Override
         public void afterSingletonsInstantiated() {
-            Outcomes.register("shelf.access.watch", "completed");
             Outcomes.registerTotal("shelf.slot", "updated", "rows");
             Outcomes.registerTotal("shelf.slot", "inserted", "rows");
         }

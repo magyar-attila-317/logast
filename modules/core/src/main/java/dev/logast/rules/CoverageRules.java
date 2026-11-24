@@ -228,7 +228,11 @@ final class CoverageRules {
         b.edits(logger.edits());
         // generated wording from the job's name, applied right away and marked for rewording (MESSAGE_SUGGESTED)
         String subject = jobSubject(m);
-        Edit startEdit = addStart ? Edit.insert(f.relPath(), inner[0], indent + logger.name() + "."
+        // #312: after the leading guards (if (!active) return;): a run that returns there did not start
+        int guards = LifecyclePlan.guards(block.getStatements());
+        int startAt = guards == 0 || guards >= block.getStatements().size() ? inner[0]
+                : Text.lineStart(text, Pos.start(block.getStatements().get(guards)));
+        Edit startEdit = addStart ? Edit.insert(f.relPath(), startAt, indent + logger.name() + "."
                 + ctx.policy.logging().entryLevel() + "(" + Text.javaString(phrase("started", subject)) + "); " + DbRules.WORDING_MARKER + "\n")
                 : null;
         if (addOutcome) {
@@ -767,9 +771,9 @@ final class CoverageRules {
         if (raw.matches(".*(Listener|Handler)$") && (base.endsWith("ed") || base.endsWith(" event"))) {
             base = (base.endsWith(" event") ? base : base + " event") + " handling";
         }
-        // siblings that log their own lines: annotated entrypoints of this class (not executor tasks), not sweeps
+        // annotated entrypoints of this class (not executor tasks): #312, a 300 s sweep next to a 60 s poller is not the poller
         long siblings = ctx.a.entrypoints.stream().filter(e -> e.method().owner().fqn().equals(m.owner().fqn())
-                && !e.method().decl().getLeadingAnnotations().isEmpty() && !ctx.lifecycle().frequentRun(e)).count();
+                && !e.method().decl().getLeadingAnnotations().isEmpty()).count();
         if (siblings > 1 && !cls.isBlank()) {
             base = base + " (" + Wording.phrase(m.name().replaceFirst("^(on|handle)(?=[A-Z])", "")) + ")";
         }

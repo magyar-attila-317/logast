@@ -6,6 +6,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- A job that only hands its work to an executor gets no "completed" line; a started line goes after the job's leading `if (…) return;` guards; an event listener without a known rate gets no INFO outcome line; a class with several scheduled jobs names each by its method (#312).
 - MDC keys the code writes are added to a JSON encoder's `includeMdcKeyName` list in logback-spring.xml / logback.xml, so ids moved into MDC reach the JSON logs (MDC_KEY_NOT_IN_LOG_OUTPUT, #296).
 - A chain of labelled values (`thing {} order {}`) loses its nouns along with the values, instead of leaving "thing order" behind (#310).
 - Generated job and listener lines keep acronyms ("NTAK reporting started"), say "… event handling" for a listener of an event that names what happened, and name the method when one class has several such entrypoints, so two never log the same line (#307).

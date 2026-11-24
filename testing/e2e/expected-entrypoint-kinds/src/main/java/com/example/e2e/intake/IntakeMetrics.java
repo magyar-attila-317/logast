@@ -13,9 +13,6 @@ public final class IntakeMetrics {
     }
 
     /** Observation (timer and span) name. */
-    public static final String ORDER_LEDGER = "order.ledger";
-
-    /** Observation (timer and span) name. */
     public static final String ORDER_LINE_PROCESSOR_PROCESS = "order-line-processor.process";
 
     /** Observation (timer and span) name. */

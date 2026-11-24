@@ -1,7 +1,7 @@
 logast · 53 files · 21 entrypoints · log coverage 42.9%
 WARNING: 2 calls did not resolve: paths through them may be missing (`--format compact` lists them)
 
-143 findings: 94 logast fixes, 2 need a message, 11 outcomes to count or skip, 36 need your decision
+142 findings: 93 logast fixes, 2 need a message, 11 outcomes to count or skip, 36 need your decision
   logast fixes     message not in house format 41, business id missing from MDC 10, logged outcome not counted 7, same …
   messages         write in .logast/decisions/messages.yaml or `logast review .`: exception dropped without a log line …
   outcomes         decide in .logast/decisions/metrics.yaml (.logast/reports/metrics.md has the context): 11 logged but not counted
@@ -91,7 +91,7 @@ Your decisions (most important first; → what to do)
 
 what to decide, and when it is done: logast scan . --rule ASYNC_CONTEXT_LOSS   ·   everything in full (for an LLM): --format compact
 
-Next: logast apply .   94 fixes logast makes itself (--dry-run: a preview)
+Next: logast apply .   93 fixes logast makes itself (--dry-run: a preview)
 
 Optional (49) — the counts change with the apply — left as is, each keeps its default:
    2 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)

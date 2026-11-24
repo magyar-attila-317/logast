@@ -12,12 +12,14 @@ public final class OrderMetrics {
     private OrderMetrics() {
     }
 
-    /** Observation (timer and span) name. */
-    public static final String ORDER_NOTIFICATIONS = "order.notifications";
-
     /** order.confirmation{outcome="sent"} +1. */
     public static void orderConfirmationSent() {
         Outcomes.count("order.confirmation", "sent");
+    }
+
+    /** order.audit{outcome="recorded"} +1. */
+    public static void orderAuditRecorded() {
+        Outcomes.count("order.audit", "recorded");
     }
 
     /** order{outcome="placed"} +1. */
@@ -41,6 +43,7 @@ public final class OrderMetrics {
         @Override
         public void afterSingletonsInstantiated() {
             Outcomes.register("order.confirmation", "sent");
+            Outcomes.register("order.audit", "recorded");
             Outcomes.register("order", "placed");
             Outcomes.register("order.shipment", "skipped");
             Outcomes.registerPerRun("orders", "shipped", "items");

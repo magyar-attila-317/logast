@@ -30,7 +30,6 @@ REPORT-ONLY TRACING_EXPORT_UNCONFIGURED src/main/resources/application.yml:1
 REPORT-ONLY AUDIT_LOGGER_UNROUTED src/main/resources/logback-spring.xml:1
 REPORT-ONLY SETUP_LOGBACK_XML src/main/resources/logback-spring.xml:1
 REPORT-ONLY AUDIT_LOG_MIXED src/main/java/com/example/e2e/audit/AuditLog.java:8
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/board/BoardMoveListener.java:20
 NEEDS TEXT LOG_FORMAT src/main/java/com/example/e2e/board/BoardSweep.java:31
 REPORT-ONLY LOG_IN_LOOP src/main/java/com/example/e2e/board/BoardSweep.java:31
 NEEDS TEXT LOG_FORMAT src/main/java/com/example/e2e/board/BoardSweep.java:56
@@ -52,8 +51,8 @@ NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/TallyJob.java:15
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:40
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:17
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/order/OrderNotifications.java:29
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:16
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:23
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/order/OrderRecord.java:6
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:37
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:48

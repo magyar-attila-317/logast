@@ -111,19 +111,6 @@ index 4f47def..8117e82 100644
 +        log.info("Pledge sweep completed");
      }
  }
-diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 771991d..af8650b 100644
---- a/src/main/java/com/example/e2e/order/OrderNotifications.java
-+++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -27,7 +27,7 @@ 
-                 .quiet()
-                 .run(() -> {
-                     log.info("Order audit recorded");
--                    log.info("Order notifications completed"); // logast:wording
-+                    log.info("Pledge sweep completed");
-                 });
-     }
- }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
 index 811a059..73ce29b 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java

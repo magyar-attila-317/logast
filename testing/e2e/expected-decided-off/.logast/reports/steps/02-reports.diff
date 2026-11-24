@@ -79,18 +79,17 @@ index 61074e8..49a7767 100644
          }
      }
 diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index cce7d50..af8ed9e 100644
+index b5016f7..535ee45 100644
 --- a/src/main/java/com/example/e2e/order/OrderNotifications.java
 +++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -1,6 +1,7 @@ 
+@@ -1,5 +1,6 @@ 
  package com.example.e2e.order;
  
- import com.example.e2e.logging.ObservedContext;
 +import com.example.e2e.logging.Outcomes;
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
  import org.springframework.context.event.EventListener;
-@@ -15,6 +16,7 @@
+@@ -14,6 +15,7 @@
      @EventListener
      public void onPlaced(OrderPlaced event) {
          log.info("Order confirmation sent");
@@ -98,6 +97,13 @@ index cce7d50..af8ed9e 100644
          log.debug("Confirmation amount [amountCents={}]", event.amountCents());
      }
  
+@@ -21,5 +23,6 @@
+     @TransactionalEventListener
+     public void onCommitted(OrderPlaced event) {
+         log.info("Order audit recorded [orderId={}]", event.orderId());
++        Outcomes.count("order.audit", "recorded");
+     }
+ }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 index c8a4563..779f455 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java

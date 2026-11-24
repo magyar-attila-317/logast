@@ -1,19 +1,19 @@
 === logast apply . --auto --write
-✓ 104 changes in 53 files (<t>)
-  44 log lines rewritten in the standard format
-  15 log lines added where something happened silently
+✓ 98 changes in 53 files (<t>)
+  42 log lines rewritten in the standard format
+  13 log lines added where something happened silently
   10 business ids put into MDC
   10 outcomes counted (a metric next to their log line)
-  9 MDC keys tidied
+  7 setup changes (dependencies, configuration, tracing)
   16 other changes
   support code copied into com/example/e2e/logging (16 files)
   review: git diff   (one diff per kind: .logast/reports/steps/)
 
 Worth a look (optional) — the service works without these:
-  19 log lines could say more, 12 outcomes could be counted → logast review
+  18 log lines could say more, 13 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 85 — 52 fixed, 15 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 84 — 50 fixed, 16 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?
@@ -24,10 +24,10 @@ reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain me
 ✓ nothing to change: the code has everything logast applies itself (<t>)
 
 Worth a look (optional) — the service works without these:
-  19 log lines could say more, 12 outcomes could be counted → logast review
+  18 log lines could say more, 13 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 85 — 52 fixed, 15 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 84 — 50 fixed, 16 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?

@@ -5,20 +5,22 @@ Identity
   spring.application.version: ${APPLICATION_VERSION:unknown}
   meter tags: application, version
 
-Measured without code: 19 entrypoints
-  3 by ObservedContext, e.g. settlement-job.execute{error=…}  (timer from the observation; also settlement-job.execute.active)
+Measured without code: 18 entrypoints
+  2 by ObservedContext, e.g. settlement-job.execute{error=…}  (timer from the observation; also settlement-job.execute.active)
   1 by Spring Kafka, e.g. spring.kafka.listener{…}  (listener OrderEvents.onOrder)
   12 by Spring MVC, e.g. http.server.requests{method="DELETE", uri="/pledges/{pledgeId}"}
   3 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.edge.EdgeJob", code.function="run"}
   1 Spring Data repositories, e.g. spring.data.repository.invocations{repository="OrderRecordRepository", method=…}
 
-Entrypoints no metric covers: 2
+Entrypoints no metric covers: 3
+  event (1)
+    @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:24
   jms (1)
     @JmsListener pledge-audits  src/main/java/com/example/e2e/messaging/PledgeMessages.java:38
   rabbit (1)
     @RabbitListener pledge-returns  src/main/java/com/example/e2e/messaging/PledgeMessages.java:29
 
-Meters in code: 4   (logast explain metrics . --format table lists them)
+Meters in code: 3   (logast explain metrics . --format table lists them)
 
 Outcomes logged but not counted: 3  failed 2, archived 1
   pick the ones a dashboard or alert needs; snippets (tag or counter) in --format json and in the METRIC_OUTCOME_UNMEASURED findings

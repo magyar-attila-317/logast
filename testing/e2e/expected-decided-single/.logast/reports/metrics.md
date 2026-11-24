@@ -14,7 +14,7 @@ Measured without code: 16 entrypoints
 Entrypoints no metric covers: 5
   event (2)
     @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)  src/main/java/com/example/e2e/job/SettlementJobExecutor.java:18
-    @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:25
+    @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:24
   jms (1)
     @JmsListener pledge-audits  src/main/java/com/example/e2e/messaging/PledgeMessages.java:38
   kafka (1)
@@ -22,7 +22,7 @@ Entrypoints no metric covers: 5
   rabbit (1)
     @RabbitListener pledge-returns  src/main/java/com/example/e2e/messaging/PledgeMessages.java:29
 
-Meters in code: 4   (logast explain metrics . --format table lists them)
+Meters in code: 3   (logast explain metrics . --format table lists them)
 
 Outcomes logged but not counted: 3  failed 2, archived 1
   pick the ones a dashboard or alert needs; snippets (tag or counter) in --format json and in the METRIC_OUTCOME_UNMEASURED findings

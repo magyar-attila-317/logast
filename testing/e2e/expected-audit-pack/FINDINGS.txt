@@ -20,7 +20,7 @@ REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/pledge/PledgeLookup.ja
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:26
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:33
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/pledge/PledgeService.java:35
-REPORT-ONLY AUDIT_SECURITY_EVENTS src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:16
+REPORT-ONLY AUDIT_SECURITY_EVENTS src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:14
 REPORT-ONLY AUDIT_SECURITY_EVENTS src/main/java/com/example/e2e/shelf/ShelfAuditing.java:19
 REPORT-ONLY AUDIT_FAILURES_UNRECORDED src/main/java/com/example/e2e/web/PledgeController.java:48
 REPORT-ONLY BLOCKING_WAIT_UNBOUNDED src/main/java/com/example/e2e/web/QuoteController.java:20
@@ -47,8 +47,8 @@ NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/TallyJob.java:15
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:40
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:17
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/order/OrderNotifications.java:29
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:16
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:23
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/order/OrderRecord.java:6
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:37
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderService.java:48
@@ -65,7 +65,6 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/Pledg
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfAccessWatch.java:18
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/shelf/ShelfSlotRepository.java:9
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/shelf/ShelfSlotWriter.java:23
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/shelf/ShelfSlotWriter.java:24

@@ -47,10 +47,9 @@ src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:16  checked  n
 src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17  reported METRIC_OUTCOME_UNMEASURED OUM-798439
 src/main/java/com/example/e2e/order/OrderEvents.java:18               checked  no finding
 src/main/java/com/example/e2e/order/OrderEvents.java:21               checked  no finding
-src/main/java/com/example/e2e/order/OrderNotifications.java:18        fixed    METRIC_OUTCOME_UNMEASURED OUM-0f37ab
-src/main/java/com/example/e2e/order/OrderNotifications.java:20        checked  no finding
-src/main/java/com/example/e2e/order/OrderNotifications.java:30        checked  no finding
-src/main/java/com/example/e2e/order/OrderNotifications.java:31        fixed    MESSAGE_SUGGESTED SUG-85eb33
+src/main/java/com/example/e2e/order/OrderNotifications.java:17        fixed    METRIC_OUTCOME_UNMEASURED OUM-0f37ab
+src/main/java/com/example/e2e/order/OrderNotifications.java:19        checked  no finding
+src/main/java/com/example/e2e/order/OrderNotifications.java:25        fixed    METRIC_OUTCOME_UNMEASURED OUM-b0f94e
 src/main/java/com/example/e2e/order/OrderService.java:35              checked  no finding
 src/main/java/com/example/e2e/order/OrderService.java:38              fixed    METRIC_OUTCOME_UNMEASURED OUM-d691d7
 src/main/java/com/example/e2e/order/OrderService.java:45              fixed    METRIC_OUTCOME_UNMEASURED OUM-164f3d
@@ -97,7 +96,7 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    M
 # src/main/java/com/example/e2e/job/PublishRunJob.java 06c05cbfcd7b
 # src/main/java/com/example/e2e/job/TallyJob.java 7a669d2c5164
 # src/main/java/com/example/e2e/messaging/PledgeMessages.java 70399951313b
-# src/main/java/com/example/e2e/order/OrderNotifications.java 612e0eb7217d
+# src/main/java/com/example/e2e/order/OrderNotifications.java a40832e7d9c6
 # src/main/java/com/example/e2e/order/OrderService.java eaeb5f196ea6
 # src/main/java/com/example/e2e/order/PaymentClient.java 58e66cb90b86
 # src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java 93c1e283deb1

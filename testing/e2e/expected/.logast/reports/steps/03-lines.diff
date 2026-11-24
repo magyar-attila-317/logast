@@ -256,27 +256,3 @@ index 7d271be..811a059 100644
 +        log.info("Pledge reload completed"); // logast:wording
      }
  }
-diff --git a/src/main/java/com/example/e2e/order/OrderNotifications.java b/src/main/java/com/example/e2e/order/OrderNotifications.java
-index 1ad9a72..3422916 100644
---- a/src/main/java/com/example/e2e/order/OrderNotifications.java
-+++ b/src/main/java/com/example/e2e/order/OrderNotifications.java
-@@ -1,5 +1,6 @@ 
- package com.example.e2e.order;
- 
-+import com.example.e2e.logging.ObservedContext;
- import org.slf4j.Logger;
- import org.slf4j.LoggerFactory;
- import org.springframework.context.event.EventListener;
-@@ -20,6 +21,11 @@
-     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
-     @TransactionalEventListener
-     public void onCommitted(OrderPlaced event) {
--        log.info("Order audit recorded [orderId={}]", event.orderId());
-+        ObservedContext.entrypoint("order.notifications")
-+                .quiet()
-+                .run(() -> {
-+                    log.info("Order audit recorded [orderId={}]", event.orderId());
-+                    log.info("Order notifications completed"); // logast:wording
-+                });
-     }
- }

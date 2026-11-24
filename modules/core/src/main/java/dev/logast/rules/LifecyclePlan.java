@@ -77,6 +77,12 @@ public final class LifecyclePlan {
             return new Flow(ep.label(), m.label(), m.file().relPath() + ":" + m.line(), kind, true, true,
                     "not needed (runs more often than once a minute)", "scheduler observation (tasks.scheduled.execution)", List.of());
         }
+        if (handsOff(m)) {
+            // #312: the run only hands its work to an executor: a "completed" line here would say the work finished when
+            // it was only queued; the task logs its own lines
+            return new Flow(ep.label(), m.label(), m.file().relPath() + ":" + m.line(), kind, true, true,
+                    "not needed (hands its work off)", "the task it hands off", List.of());
+        }
         switch (kind) {
             case RUN -> {
                 startOwner = silent ? "ENTRYPOINT_SILENT" : "the method";
@@ -90,8 +96,12 @@ public final class LifecyclePlan {
             }
             case MESSAGE -> {
                 startOwner = "not needed (one outcome per message)";
-                outcomeOwner = wrapper ? "observation wrapper (runtime line)" : "the method";
-                if (!hasOutcome && !wrapper) {
+                // #312: an application event listener runs as often as its publishers: an INFO outcome per event only
+                // with a known, quiet rate (like its started line, #306)
+                boolean unmeasured = ep.kind() == Entrypoint.Kind.EVENT && !dev.logast.graph.EntrypointFinder.oneShot(ep)
+                        && !ctx.policy.levels().addedInfo(ctx.a.traffic.perDay(ep));
+                outcomeOwner = wrapper ? "observation wrapper (runtime line)" : unmeasured ? "not needed (no known rate)" : "the method";
+                if (!hasOutcome && !wrapper && !unmeasured) {
                     missing.add("completed");
                 }
             }
@@ -113,6 +123,43 @@ public final class LifecyclePlan {
         Double perDay = ctx.a.traffic.perDay(ep);
         return ep.kind() == Entrypoint.Kind.SCHEDULED && perDay != null
                 && (dev.logast.ScheduleRate.frequent(perDay) || !ctx.policy.levels().addedInfo(perDay));
+    }
+
+    private static final Set<String> HAND_OFF = Set.of("submit", "execute", "runAsync", "supplyAsync", "schedule", "handOff",
+            "dispatch", "enqueue", "executeAsync", "submitListenable", "submitCompletable");
+
+    /**
+     * #312: after its leading guards the body only passes work (a lambda or method reference) to an executor call
+     * ({@code executor.submit(this::run)}, {@code handOff(task, () -> ...)}): the run ends when the work is queued.
+     */
+    static boolean handsOff(MethodInfo m) {
+        if (m.decl().getBody() == null) {
+            return false;
+        }
+        List<org.openrewrite.java.tree.Statement> body = m.decl().getBody().getStatements();
+        int i = guards(body);
+        if (i >= body.size()) {
+            return false;
+        }
+        for (org.openrewrite.java.tree.Statement s : body.subList(i, body.size())) {
+            if (!(s instanceof J.MethodInvocation mi) || !HAND_OFF.contains(mi.getSimpleName())
+                    || mi.getArguments().stream().noneMatch(a -> a instanceof J.Lambda || a instanceof J.MemberReference)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** #312: how many statements at the top of a body are guards: {@code if (…) return;} without an else. */
+    static int guards(List<org.openrewrite.java.tree.Statement> body) {
+        int i = 0;
+        while (i < body.size() && body.get(i) instanceof J.If guard && guard.getElsePart() == null
+                && (guard.getThenPart() instanceof J.Return r && r.getExpression() == null
+                || guard.getThenPart() instanceof J.Block blk && blk.getStatements().size() == 1
+                && blk.getStatements().getFirst() instanceof J.Return r2 && r2.getExpression() == null)) {
+            i++;
+        }
+        return i;
     }
 
     /** Implementation families whose members log their lifecycle unevenly. */

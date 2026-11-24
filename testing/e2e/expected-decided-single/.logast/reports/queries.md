@@ -119,32 +119,6 @@ histogram_quantile(0.95, sum by (le, spring_kafka_listener_id) (rate(spring_kafk
 
 `error` is the exception's class name, `none` when the call succeeded.
 
-#### order.notifications (event @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced))
-
-Calls per second:
-
-```promql
-sum(rate(order_notifications_seconds_count{application="e2e-shop"}[5m]))
-```
-
-Failures per second, by exception:
-
-```promql
-sum by (error) (rate(order_notifications_seconds_count{application="e2e-shop", error!="none"}[5m]))
-```
-
-Average duration (seconds):
-
-```promql
-sum(rate(order_notifications_seconds_sum{application="e2e-shop"}[5m])) / sum(rate(order_notifications_seconds_count{application="e2e-shop"}[5m]))
-```
-
-Slowest call in the last minutes (seconds):
-
-```promql
-max(order_notifications_seconds_max{application="e2e-shop"})
-```
-
 #### pledge-messages.on-batch (kafka @KafkaListener pledge-batches)
 
 Calls per second:
@@ -226,126 +200,133 @@ max(settlement_job_execute_seconds_max{application="e2e-shop"})
 ### Business outcomes
 
 **edge.processing** (outcome: completed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:39`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:36`
 
 ```promql
 sum by (outcome) (increase(edge_processing_total{application="e2e-shop"}[1h]))
 ```
 
 **export.job** (outcome: completed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:44`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:41`
 
 ```promql
 sum by (outcome) (increase(export_job_total{application="e2e-shop"}[1h]))
 ```
 
 **order** (outcome: placed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:69`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:71`
 
 ```promql
 sum by (outcome) (increase(order_total{application="e2e-shop"}[1h]))
 ```
 
+**order.audit** (outcome: recorded), per hour  
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:66`
+
+```promql
+sum by (outcome) (increase(order_audit_total{application="e2e-shop"}[1h]))
+```
+
 **order.confirmation** (outcome: sent), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:64`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:61`
 
 ```promql
 sum by (outcome) (increase(order_confirmation_total{application="e2e-shop"}[1h]))
 ```
 
 **order.shipment** (outcome: skipped), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:74`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:76`
 
 ```promql
 sum by (outcome) (increase(order_shipment_total{application="e2e-shop"}[1h]))
 ```
 
 **orders** (outcome: shipped), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:79`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:81`
 
 ```promql
 sum by (outcome) (increase(orders_total{application="e2e-shop"}[1h]))
 ```
 
 **orders.items** (outcome: shipped), average per run  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:79`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:81`
 
 ```promql
 sum by (outcome) (rate(orders_items_sum{application="e2e-shop"}[1h])) / sum by (outcome) (rate(orders_items_count{application="e2e-shop"}[1h]))
 ```
 
 **pledge** (outcome: parsed, published, sent), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:34`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:31`
 
 ```promql
 sum by (outcome) (increase(pledge_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.allotment** (outcome: completed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:114`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:116`
 
 ```promql
 sum by (outcome) (increase(pledge_allotment_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.lookup** (outcome: failed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:84`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:86`
 
 ```promql
 sum by (outcome) (increase(pledge_lookup_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.messages** (outcome: completed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:59`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:56`
 
 ```promql
 sum by (outcome) (increase(pledge_messages_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.resend** (outcome: failed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:104`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:106`
 
 ```promql
 sum by (outcome) (increase(pledge_resend_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.usage** (outcome: saved), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:94`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:96`
 
 ```promql
 sum by (outcome) (increase(pledge_usage_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.usage.uses** (outcome: saved), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:94`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:96`
 
 ```promql
 sum by (outcome) (increase(pledge_usage_uses_total{application="e2e-shop"}[1h]))
 ```
 
 **pledges** (outcome: updated), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:89`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:91`
 
 ```promql
 sum by (outcome) (increase(pledges_total{application="e2e-shop"}[1h]))
 ```
 
 **pledges.rows** (outcome: updated), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:89`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:91`
 
 ```promql
 sum by (outcome) (increase(pledges_rows_total{application="e2e-shop"}[1h]))
 ```
 
 **preload.export** (outcome: completed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:49`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:46`
 
 ```promql
 sum by (outcome) (increase(preload_export_total{application="e2e-shop"}[1h]))
 ```
 
 **tally** (outcome: completed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:54`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:51`
 
 ```promql
 sum by (outcome) (increase(tally_total{application="e2e-shop"}[1h]))
@@ -399,12 +380,6 @@ FROM Metric SELECT rate(count(spring.kafka.listener), 1 minute) WHERE service.na
 
 ### Observed flows and timers
 
-**order.notifications** (event @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)): calls, failures, average and slowest duration
-
-```sql
-FROM Metric SELECT count(order.notifications), filter(count(order.notifications), WHERE error != 'none') AS 'failed', average(order.notifications), max(order.notifications) WHERE service.name = 'e2e-shop' TIMESERIES
-```
-
 **pledge-messages.on-batch** (kafka @KafkaListener pledge-batches): calls, failures, average and slowest duration
 
 ```sql
@@ -441,6 +416,12 @@ FROM Metric SELECT sum(export.job) WHERE service.name = 'e2e-shop' FACET outcome
 
 ```sql
 FROM Metric SELECT sum(order) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
+
+**order.audit** (outcome: recorded), per hour
+
+```sql
+FROM Metric SELECT sum(order.audit) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```
 
 **order.confirmation** (outcome: sent), per hour

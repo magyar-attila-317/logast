@@ -119,32 +119,6 @@ histogram_quantile(0.95, sum by (le, spring_kafka_listener_id) (rate(spring_kafk
 
 `error` is the exception's class name, `none` when the call succeeded.
 
-#### order.notifications (event @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced))
-
-Calls per second:
-
-```promql
-sum(rate(order_notifications_seconds_count{application="e2e-shop"}[5m]))
-```
-
-Failures per second, by exception:
-
-```promql
-sum by (error) (rate(order_notifications_seconds_count{application="e2e-shop", error!="none"}[5m]))
-```
-
-Average duration (seconds):
-
-```promql
-sum(rate(order_notifications_seconds_sum{application="e2e-shop"}[5m])) / sum(rate(order_notifications_seconds_count{application="e2e-shop"}[5m]))
-```
-
-Slowest call in the last minutes (seconds):
-
-```promql
-max(order_notifications_seconds_max{application="e2e-shop"})
-```
-
 #### pledge-messages.on-batch (kafka @KafkaListener pledge-batches)
 
 Calls per second:
@@ -246,8 +220,15 @@ sum by (outcome) (increase(export_job_total{application="e2e-shop"}[1h]))
 sum by (outcome) (increase(order_total{application="e2e-shop"}[1h]))
 ```
 
+**order.audit** (outcome: recorded), per hour  
+`src/main/java/com/example/e2e/order/OrderNotifications.java:26`
+
+```promql
+sum by (outcome) (increase(order_audit_total{application="e2e-shop"}[1h]))
+```
+
 **order.confirmation** (outcome: sent), per hour  
-`src/main/java/com/example/e2e/order/OrderNotifications.java:19`
+`src/main/java/com/example/e2e/order/OrderNotifications.java:18`
 
 ```promql
 sum by (outcome) (increase(order_confirmation_total{application="e2e-shop"}[1h]))
@@ -399,12 +380,6 @@ FROM Metric SELECT rate(count(spring.kafka.listener), 1 minute) WHERE service.na
 
 ### Observed flows and timers
 
-**order.notifications** (event @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)): calls, failures, average and slowest duration
-
-```sql
-FROM Metric SELECT count(order.notifications), filter(count(order.notifications), WHERE error != 'none') AS 'failed', average(order.notifications), max(order.notifications) WHERE service.name = 'e2e-shop' TIMESERIES
-```
-
 **pledge-messages.on-batch** (kafka @KafkaListener pledge-batches): calls, failures, average and slowest duration
 
 ```sql
@@ -441,6 +416,12 @@ FROM Metric SELECT sum(export.job) WHERE service.name = 'e2e-shop' FACET outcome
 
 ```sql
 FROM Metric SELECT sum(order) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
+
+**order.audit** (outcome: recorded), per hour
+
+```sql
+FROM Metric SELECT sum(order.audit) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```
 
 **order.confirmation** (outcome: sent), per hour

@@ -2940,7 +2940,7 @@ abstract class E2eGoldenTest {
         assertThat(sweeper).as("fixedDelay = 5000: no started/completed INFO line per run (the scheduler observes it)")
                 .contains("    @Scheduled(fixedDelay = 5000)\n    public void evictIdle() {\n        buckets.entrySet()")
                 .as("an hourly job keeps its lines")
-                .contains("    public void compact() {\n        log.info(\"Gate sweeper started\");");
+                .contains("    public void compact() {\n        log.info(\"Gate sweeper (compact) started\");");
         assertThat(sweeper).as("an executor task every 5 seconds: traced, its success line at DEBUG")
                 .contains("timer.scheduleWithFixedDelay(() -> ObservedContext.entrypoint(GateMetrics.GATE_SWEEPER_TRIM).debugOnSuccess()"
                         + ".run(this::trim), 5, 5, TimeUnit.SECONDS);")
@@ -5261,8 +5261,8 @@ abstract class E2eGoldenTest {
      * appear in traffic.yaml. Every file must equal e2e/expected-entrypoint-kinds; tracing alone and logging alone
      * each do their part; with the observation switched on (property, {@code @EnableBatchProcessing}) nothing wraps.
      * #99: an observed step, item, SQS message or Stream handler whose lifecycle line names a vocabulary term ("Order desk
-     * completed") gets no second timer (BUSINESS_EVENT_UNMEASURED); a handler with only an MdcScope (OrderLedger) gets its
-     * timer in pass 1, as the rescan would decide.
+     * completed") gets no second timer (BUSINESS_EVENT_UNMEASURED); an event listener without a rate (OrderLedger) gets no
+     * outcome line (#312) and so no timer, decided the same in pass 1 and on the rescan.
      */
     @Test
     void seesBatchStepsSqsListenersStreamFunctionsAndRouterFunctions() throws IOException {
@@ -5285,10 +5285,10 @@ abstract class E2eGoldenTest {
                 .contains("ObservedContext.entrypoint(IntakeMetrics.PLEDGE_QUEUE_LISTENER_ON_BULK)");
         assertThat(actual.get(".logast/reports/apply-trace.txt")).as("#99: Stream times \"Order desk completed\": no second timer")
                 .doesNotContainPattern("BUSINESS_EVENT_UNMEASURED \\S+ \\S+/intake/(OrderDesk|PledgeQueueListener|PledgeImportTasklet|OrderLineProcessor)");
-        assertThat(actual.get(INTAKE + "OrderLedger.java")).as("#99: an MdcScope measures nothing: the timer comes in pass 1; "
-                        + "#20: its MDC goes into the ObservedContext chain, not into an MdcScope around it")
-                .contains("        ObservedContext.entrypoint(IntakeMetrics.ORDER_LEDGER)\n                .mdc(\"orderId\", order.id())\n")
-                .doesNotContain("MdcScope.of");
+        assertThat(actual.get(INTAKE + "OrderLedger.java")).as("#99, #312: an event listener without a rate gets no outcome "
+                        + "line, so no business event to time: its MDC only, decided the same in pass 1 and on the rescan")
+                .contains("try (var mdc = MdcScope.of(\"orderId\", order.id())) {")
+                .doesNotContain("ObservedContext");
         assertThat(actual.get(INTAKE + "OrderDesk.java")).as("observed by Spring Cloud Stream: MDC only")
                 .doesNotContain("ObservedContext").contains("MdcScope.of(\"orderId\", order.id())");
         assertThat(actual.get(INTAKE + "CodeNormalizer.java")).as("bound: MDC; pledgeArchive is not bound")

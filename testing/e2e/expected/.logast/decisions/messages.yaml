@@ -4,7 +4,7 @@
 # Keys starting with _ are hints (_where and "was:" find the line again when its id changes: keep them). `logast
 # scan` keeps this file up to date and keeps what you wrote.
 #
-# 19 finding(s) below need a message text.
+# 18 finding(s) below need a message text.
 SWA-91b292:
   MSG: ""
   _MSG: "What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri(\"/balances/{customerId}\", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as: {subject} failed"
@@ -41,10 +41,6 @@ SUG-4918d8:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge messages (audit) completed | must read as: {subject} completed"
   _where: src/main/java/com/example/e2e/messaging/PledgeMessages.java:40 PledgeMessages.onAudit
-SUG-85eb33:
-  MSG: ""
-  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Order notifications completed | must read as: {subject} completed"
-  _where: src/main/java/com/example/e2e/order/OrderNotifications.java:29 OrderNotifications.onCommitted
 FMT-93dcb8:
   MSG: ""
   _MSG: "Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: Charging order with {} cents | suffix keys added by the tool: [amountCents]"

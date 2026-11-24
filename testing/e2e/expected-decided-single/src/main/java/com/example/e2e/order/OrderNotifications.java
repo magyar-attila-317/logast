@@ -1,6 +1,5 @@
 package com.example.e2e.order;
 
-import com.example.e2e.logging.ObservedContext;
 import com.example.e2e.metrics.BusinessMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,12 +22,7 @@ public class OrderNotifications {
     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
     @TransactionalEventListener
     public void onCommitted(OrderPlaced event) {
-        ObservedContext.entrypoint(BusinessMetrics.ORDER_NOTIFICATIONS)
-                .mdc("orderId", event.orderId())
-                .quiet()
-                .run(() -> {
-                    log.info("Order audit recorded");
-                    log.info("Pledge sweep completed");
-                });
+        log.info("Order audit recorded [orderId={}]", event.orderId());
+        BusinessMetrics.orderAuditRecorded();
     }
 }

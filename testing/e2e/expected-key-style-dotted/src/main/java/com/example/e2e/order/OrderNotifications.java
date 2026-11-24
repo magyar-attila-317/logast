@@ -1,6 +1,5 @@
 package com.example.e2e.order;
 
-import com.example.e2e.logging.ObservedContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -21,12 +20,6 @@ public class OrderNotifications {
     /** Runs when the transaction commits, after place() may have left its scopes: its own flow, its own ids. */
     @TransactionalEventListener
     public void onCommitted(OrderPlaced event) {
-        ObservedContext.entrypoint(OrderMetrics.ORDER_NOTIFICATIONS)
-                .mdc("order.id", event.orderId())
-                .quiet()
-                .run(() -> {
-                    log.info("Order audit recorded");
-                    log.info("Order notifications completed"); // logast:wording
-                });
+        log.info("Order audit recorded [order.id={}]", event.orderId());
     }
 }

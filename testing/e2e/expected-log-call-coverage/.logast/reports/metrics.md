@@ -14,7 +14,7 @@ Measured without code: 16 entrypoints
 Entrypoints no metric covers: 5
   event (2)
     @EventListener SettlementJobExecutor.onReady(ApplicationReadyEvent)  src/main/java/com/example/e2e/job/SettlementJobExecutor.java:17
-    @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:23
+    @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:22
   jms (1)
     @JmsListener pledge-audits  src/main/java/com/example/e2e/messaging/PledgeMessages.java:37
   kafka (1)
@@ -22,9 +22,9 @@ Entrypoints no metric covers: 5
   rabbit (1)
     @RabbitListener pledge-returns  src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
 
-Meters in code: 4   (logast explain metrics . --format table lists them)
+Meters in code: 3   (logast explain metrics . --format table lists them)
 
-Outcomes logged but not counted: 13  failed 2, sent 2, archived 1, audited 1, completed 1, parsed 1, placed 1, published 1, saved 1, shipped 1, stored 1
+Outcomes logged but not counted: 14  failed 2, sent 2, archived 1, audited 1, completed 1, parsed 1, placed 1, published 1, recorded 1, saved 1, shipped 1, stored 1
   pick the ones a dashboard or alert needs; snippets (tag or counter) in --format json and in the METRIC_OUTCOME_UNMEASURED findings
   src/main/java/com/example/e2e/edge/Audited.java:11  Audited.audit
     INFO "Pledge audited"  outcome=audited  frequency low
@@ -42,9 +42,12 @@ Outcomes logged but not counted: 13  failed 2, sent 2, archived 1, audited 1, co
     INFO "Gateway reply stored"  outcome=stored  frequency unknown: no entrypoint is known to reach it
   src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17  ReactivePledgeLookup.find
     WARN "Pledge lookup failed"  outcome=failed  frequency unknown: no entrypoint is known to reach it
-  src/main/java/com/example/e2e/order/OrderNotifications.java:17  OrderNotifications.onPlaced
+  src/main/java/com/example/e2e/order/OrderNotifications.java:16  OrderNotifications.onPlaced
     INFO "Order confirmation sent"  outcome=sent  frequency unknown: no rate for "POST /orders" in .logast/decisions/traffic.yaml
     from http POST /orders
+  src/main/java/com/example/e2e/order/OrderNotifications.java:23  OrderNotifications.onCommitted
+    INFO "Order audit recorded"  outcome=recorded  frequency unknown: no rate for "@TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)" in .logast/decisions/traffic.yaml
+    from event @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)
   src/main/java/com/example/e2e/order/OrderService.java:37  OrderService.place
     INFO "Order placed"  outcome=placed  frequency unknown: no rate for "POST /orders" in .logast/decisions/traffic.yaml
     from http POST /orders
