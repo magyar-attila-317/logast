@@ -358,6 +358,9 @@ public final class Main {
         boolean write;
         @Option(names = "--dry-run", description = "Print the diff only, change no file")
         boolean dryRun;
+        @Option(names = "--safe", description = "Hold back the source files whose changes go beyond logging (scopes, moved "
+                + "evaluations, deleted statements) in classes no test mentions; the rest applies (#316)")
+        boolean safe;
         @Option(names = "--redo", description = "Apply again the fixes an earlier apply made that someone changed back by hand "
                 + "(by default they are left as changed, #317)")
         boolean redo;
@@ -442,7 +445,7 @@ public final class Main {
                 }
             }
             Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).skip(skipSteps).paths(paths).compileWith(cp)
-                    .declined(redo ? Set.of() : ordersAppliedEarlier(root()), changedSinceApplied(root()))
+                    .declined(redo ? Set.of() : ordersAppliedEarlier(root()), changedSinceApplied(root())).safe(safe)
                     .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files))
                     .onFinish(work -> {
                         // #125: the reports from the last scan, while the scratch copy it analysed is still there
@@ -719,6 +722,16 @@ public final class Main {
             if (!kept.isEmpty()) {
                 System.out.println("Left as you changed them (" + kept.size() + "): fixes an earlier apply made and someone changed "
                         + "back; --redo applies them again" + (verbose ? ": " + String.join(" ", kept) : ""));
+            }
+            // #315: tests that assert an id in a log message read it from MDC now
+            if (r.linesLosingIds() > 0) {
+                System.out.println(r.linesLosingIds() + (r.linesLosingIds() == 1 ? " log line no longer carries its id" : " log lines no longer carry their ids")
+                        + " in the text (they are in MDC now): a test that asserts an id in a log message needs the MDC value instead");
+            }
+            List<String> held = r.heldBack() == null ? List.of() : r.heldBack();
+            if (!held.isEmpty()) {
+                System.out.println("Held back (--safe, " + held.size() + " file" + (held.size() == 1 ? "" : "s")
+                        + "): changes beyond logging in classes no test mentions: " + String.join(", ", held));
             }
             // #316: the short list to read; the rest of the diff only changes logging
             List<String> behavioural = r.behavioural() == null ? List.of() : r.behavioural();

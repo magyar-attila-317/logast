@@ -5,6 +5,10 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**CLI**
+- `apply --safe` holds back the source files whose changes go beyond logging in classes no test mentions, applies the rest, and lists what it held back (#316).
+- Apply says how many log lines no longer carry their ids in the text (they are in MDC now), so tests asserting ids in log messages can be found (#315).
+
 ## 0.5.3
 
 **What logast writes**

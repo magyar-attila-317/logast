@@ -292,6 +292,11 @@ code. `logast scan .` shows the same without changing anything. Both also write 
   show as `fixed` ([every log call is accounted for](#every-log-call-is-accounted-for)).
 - `--only <ids>` restricts it to some orders; `--format json` prints the result for tools.
 
+With `--safe`, a source file whose changes go beyond logging in a class no test mentions (by its name, in any
+`src/test` file) stays as it was: the run lists it under `Held back (--safe, …)` and applies the rest, log-only
+changes and build/configuration included. For a service with few tests: apply the logging, review the held-back list,
+then run without `--safe`.
+
 ### Fixes changed back by hand
 
 A fix an earlier apply made that is back as an open order lost its fix since, which is what a person changing it back

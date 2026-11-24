@@ -490,6 +490,7 @@ final class LogCallRules {
 
         // "Pledge {} published" with pledgeId in MDC: the placeholder right after its own noun goes, the sentence stays
         List<String> inPlaceDeps = new ArrayList<>();
+        int idsOut = 0;   // #315: ids this rewrite takes out of the text (they are in MDC)
         if (MessageTemplate.count(raw) == args.size() && !args.isEmpty()) {
             Set<String> inMdcNow = lc.offThread() ? Set.of() : mdcAt(m, lc);   // another thread: MDC is empty there
             java.util.regex.Matcher ph = java.util.regex.Pattern.compile("\\{}").matcher(raw);
@@ -512,6 +513,7 @@ final class LogCallRules {
                         String open = head.stripTrailing();
                         sb.append(open, 0, open.length() - 1);
                         from = ph.end() + rest.indexOf(')') + 1;
+                        idsOut++;
                         String wrap = ctx.plannedBy(m, a.key());
                         if (wrap != null) {
                             inPlaceDeps.add(wrap);
@@ -520,6 +522,7 @@ final class LogCallRules {
                         continue;
                     }
                     sb.append(before, 0, noun.end(1));
+                    idsOut++;
                     String wrap = ctx.plannedBy(m, a.key());
                     if (wrap != null) {
                         inPlaceDeps.add(wrap);
@@ -572,6 +575,7 @@ final class LogCallRules {
                 if (wrap != null) {
                     plannedDeps.add(wrap);
                 }
+                idsOut++;
                 droppedStems.add(MessageTemplate.stem(a.key()));
                 issues.add(Rules.LOG_FORMAT);
             } else if (ctx.domain.isPii(a.expr())) {
@@ -637,6 +641,9 @@ final class LogCallRules {
 
         String rule = unique.stream().max(Comparator.comparingInt(r -> Rules.rank(Rules.severity(ctx.policy, r)))).orElseThrow();
         OrderBuilder b = ctx.order(rule, m, line, "log" + ordinal);
+        if (idsOut > 0) {
+            b.data("idsOutOfText", idsOut);   // #315: counted in the apply summary
+        }
         plannedDeps.forEach(b::dependsOn);
         unique.forEach(b::fix);
         b.title(title(unique, lc));

@@ -3105,10 +3105,42 @@ abstract class E2eGoldenTest {
         assertThat(sweep).as("#303: the varargs array").contains("log.error(line, args);").doesNotContain("args.length");
         assertThat(sweep).as("#304: the FAILED status line stays").contains("outcome=FAILED");
         assertThat(sweep).as("#301: the cause after the last argument").contains("e.getMessage(), e\n");
+        assertThat(actual.get("OUTPUT.txt")).as("#315: the lines whose ids moved into MDC are counted")
+                .containsPattern("\\d+ log lines? no longer carr(y|ies) (their|its) ids? in the text \\(they are in MDC now\\)");
         assertThat(actual.get("OUTPUT.txt")).as("#316: the changes beyond logging are listed, file:line and method")
                 .contains("Changes beyond logging (").containsPattern("src/main/java/com/example/e2e/\\S+\\.java:\\d+ \\S+ — ");
         assertThat(actual.get("src/main/resources/logback-spring.xml")).as("#296: the MDC keys the code writes reach the JSON logs")
                 .contains("<includeMdcKeyName>traceId</includeMdcKeyName>\n            <includeMdcKeyName>orderId</includeMdcKeyName>");
+    }
+
+    /**
+     * #316: --safe holds back every source file whose changes go beyond logging in a class no test mentions (this project
+     * has no tests: all of them), and applies the rest; the result compiles.
+     */
+    @Test
+    void safeHoldsBackChangesBeyondLoggingWithoutTests() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Map<String, String> before = new TreeMap<>();
+        try (Stream<Path> s = Files.walk(app.resolve("src/main/java"))) {
+            for (Path p : s.filter(Files::isRegularFile).toList()) {
+                before.put(app.relativize(p).toString().replace('\\', '/'), Files.readString(p));
+            }
+        }
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--safe", "--classpath-file", CLASSPATH);
+        assertThat(out).as(out).contains("Held back (--safe, ").doesNotContain("CHECK FAILED");
+        String held = out.substring(out.indexOf("Held back (--safe, ")).lines().findFirst().orElseThrow();
+        String first = held.substring(held.indexOf(": ", held.indexOf("mentions")) + 2).split(", ")[0].strip();
+        assertThat(Files.readString(app.resolve(first))).as("a held-back file is as it was: " + first).isEqualTo(before.get(first));
+        long changed = before.entrySet().stream().filter(e -> {
+            try {
+                return !Files.readString(app.resolve(e.getKey())).equals(e.getValue());
+            } catch (IOException x) {
+                return false;
+            }
+        }).count();
+        assertThat(changed).as("log-only changes still apply").isPositive();
+        compile(app);
     }
 
     /**
