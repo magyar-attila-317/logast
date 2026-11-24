@@ -25,7 +25,7 @@ public final class OrderBuilder {
             Map.entry(Rules.LOG_AND_RETHROW, "LAR"), Map.entry(Rules.STRING_CONCAT_LOG, "CAT"),
             Map.entry(Rules.LOG_FORMAT, "FMT"), Map.entry(Rules.GLOSSARY_VIOLATION, "GLO"),
             Map.entry(Rules.PII_IN_LOG, "PII"), Map.entry(Rules.MDC_NOT_CLOSEABLE, "MDC"),
-            Map.entry(Rules.MANUAL_TRACE_MDC, "TRC"), Map.entry(Rules.TRACE_KEY_HOLDS_APP_ID, "TKA"), Map.entry(Rules.MISSING_DOMAIN_MDC, "DOM"),
+            Map.entry(Rules.MANUAL_TRACE_MDC, "TRC"), Map.entry(Rules.TRACE_KEY_HOLDS_APP_ID, "TKA"), Map.entry(Rules.MDC_KEY_NOT_IN_LOG_OUTPUT, "MKO"), Map.entry(Rules.MISSING_DOMAIN_MDC, "DOM"),
             Map.entry(Rules.ENTRYPOINT_NOT_OBSERVED, "OBS"), Map.entry(Rules.ENTRYPOINT_SILENT, "SIL"),
             Map.entry(Rules.ASYNC_CONTEXT_LOSS, "ASY"), Map.entry(Rules.SETUP_OTEL_STARTER, "OTL"),
             Map.entry(Rules.SETUP_SUPPORT_STARTER, "SUP"), Map.entry(Rules.SETUP_LOGBACK_XML, "LBK"),

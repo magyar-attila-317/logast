@@ -46,6 +46,7 @@ can end either way, the finding's note says why.
 | MDC_CLEAR | high | `MDC.clear()`: wipes the caller's context, trace ids included | report; folded into the MDC_NOT_CLOSEABLE fix |
 | MDC_NESTED_KEY | medium | a scope for a key already set on every path into the method | AUTO: unwrapped when the value is the caller's; report otherwise |
 | MDC_NOT_OWNER | high | MDC written while a bean is created (startup thread) | AUTO: moved to the flow that uses the value |
+| MDC_KEY_NOT_IN_LOG_OUTPUT | high | a JSON encoder in `logback-spring.xml` / `logback.xml` lists the MDC keys it writes (`<includeMdcKeyName>`, logstash-logback-encoder) and leaves out keys the code puts into MDC: an id moved out of a message would vanish from the JSON logs (#296) | AUTO: the missing keys are added to each list (last step, after every MDC move); a key in `<excludeMdcKeyName>` is reported, not added |
 | MDC_KEY_ALIAS | medium | an MDC key spelled as an alias of a vocabulary key | AUTO: renamed |
 | AREA_MDC_MISSING | medium | a key an `areas` entry requires, missing in logging methods of that area | report |
 | **Log coverage** (see [below](#log-coverage)) | | | |

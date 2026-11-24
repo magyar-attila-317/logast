@@ -6,6 +6,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- MDC keys the code writes are added to a JSON encoder's `includeMdcKeyName` list in logback-spring.xml / logback.xml, so ids moved into MDC reach the JSON logs (MDC_KEY_NOT_IN_LOG_OUTPUT, #296).
+- A chain of labelled values (`thing {} order {}`) loses its nouns along with the values, instead of leaving "thing order" behind (#310).
 - Generated job and listener lines keep acronyms ("NTAK reporting started"), say "… event handling" for a listener of an event that names what happened, and name the method when one class has several such entrypoints, so two never log the same line (#307).
 - No started line in a job that runs more than `levels.addedInfoMaxPerDay` times a day (a 60 s poller), nor in an application event listener without a traffic.yaml rate (an AFTER_COMMIT listener runs as often as its publishers) (#306).
 - An `Object[]` passed as SLF4J's varargs array is no longer rewritten to `.length` (#303).

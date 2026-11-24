@@ -542,6 +542,20 @@ final class LogCallRules {
                 kept.add(new Arg(detached, cls, ctx.policy.logKey("errorType"), false));
             }
         }
+        // #310: "thing {} order {}" names each value by a noun; with the values gone from the prose (into MDC or the
+        // [key=…] suffix) those nouns would stay behind without values
+        if (!compliant && !mismatch) {
+            List<java.util.Set<String>> labels = new ArrayList<>();
+            for (Arg a : args) {
+                java.util.Set<String> l = new java.util.HashSet<>();
+                l.add(MessageTemplate.stem(a.key()).toLowerCase(java.util.Locale.ROOT));
+                String name = a.src().replaceAll(".*\\.", "").replaceAll("\\(\\)$", "").replaceFirst("^get(?=[A-Z])", "");
+                l.add(name.toLowerCase(java.util.Locale.ROOT));
+                l.add(MessageTemplate.stem(Text.lowerFirst(name)).toLowerCase(java.util.Locale.ROOT));
+                labels.add(l);
+            }
+            raw = MessageTemplate.dropLabels(raw, labels);
+        }
         String base = compliant ? MessageTemplate.compliantBase(raw) : MessageTemplate.stripPlaceholders(raw);
         if (!compliant && mechanical) {
             List<String> stems = new ArrayList<>(droppedStems);

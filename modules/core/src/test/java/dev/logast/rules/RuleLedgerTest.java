@@ -117,6 +117,9 @@ class RuleLedgerTest {
                     + "(expected-tracing-depth), which also scans it switched off"),
             Map.entry(Rules.REACTIVE_CONTEXT_LOSS, "#14: needs an entrypoint returning a Mono/Flux, which no corpus has: fires and is "
                     + "applied in its own e2e scenario (expected-reactive), with the property, tracing alone and logging alone"),
+            Map.entry(Rules.MDC_KEY_NOT_IN_LOG_OUTPUT, "#296: needs a JSON encoder with an includeMdcKeyName list, which no "
+                    + "corpus has: fires and is applied in its own e2e scenario (expected-adoption-shapes) and in "
+                    + "LogOutputAllowlistTest#keysTheCodeWritesAreAddedToTheEncodersList"),
             Map.entry(Rules.SETUP_OTEL_STARTER, "#58: needs a Boot 3 build with a conflicting OpenTelemetry setup (e2e expected-boot3-conflict)"),
             Map.entry(Rules.RETRY_RECOMMENDED, "#105: no corpus reaches an idempotent client call from an entrypoint without a "
                     + "retry: fires in its own e2e scenario (expected-retry-coverage) and in RemedyTest#idempotentCallRetriedOnItsPath"),

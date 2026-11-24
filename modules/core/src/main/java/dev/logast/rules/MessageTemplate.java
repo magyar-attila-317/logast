@@ -213,6 +213,54 @@ public final class MessageTemplate {
         return trimTail(t);
     }
 
+    private static final Pattern LABEL_BEFORE = Pattern.compile("\\b(\\w+)\\s*[:=#]?\\s*$");
+
+    /**
+     * #310: removes the nouns of a chain of labelled values ({@code "thing {} order {}"} with thingId, orderId →
+     * {@code "{} {}"}): with the values in MDC or the [key=…] suffix they would stay behind without values. A single
+     * labelled value ("Order {} shipped") keeps its noun: it is the message's subject.
+     *
+     * @param labels per placeholder, the lower-case words that name its value (key stem, variable name)
+     */
+    public static String dropLabels(String raw, List<java.util.Set<String>> labels) {
+        // per placeholder: where its label noun starts in raw, or -1; and where the placeholder is
+        List<int[]> ph = new ArrayList<>();   // {labelStart, phStart}
+        int from = 0;
+        int i = raw.indexOf("{}");
+        while (i >= 0 && ph.size() < labels.size()) {
+            Matcher m = LABEL_BEFORE.matcher(raw.substring(from, i));
+            int label = -1;
+            if (m.find()) {
+                String w = m.group(1).toLowerCase(Locale.ROOT);
+                String singular = w.endsWith("s") ? w.substring(0, w.length() - 1) : w;
+                if (labels.get(ph.size()).contains(w) || labels.get(ph.size()).contains(singular)) {
+                    label = from + m.start();
+                }
+            }
+            ph.add(new int[]{label, i});
+            from = i + 2;
+            i = raw.indexOf("{}", from);
+        }
+        // only a chain of labelled values ("thing {} order {}"): a single "Order {} shipped" keeps its subject
+        boolean[] drop = new boolean[ph.size()];
+        for (int k = 0; k + 1 < ph.size(); k++) {
+            if (ph.get(k)[0] >= 0 && ph.get(k + 1)[0] >= 0 && raw.substring(ph.get(k)[1] + 2, ph.get(k + 1)[0]).matches("[\\s,;]*")) {
+                drop[k] = true;
+                drop[k + 1] = true;
+            }
+        }
+        StringBuilder out = new StringBuilder();
+        int at = 0;
+        for (int k = 0; k < ph.size(); k++) {
+            if (drop[k]) {
+                out.append(raw, at, ph.get(k)[0]);
+                at = ph.get(k)[1];
+            }
+        }
+        out.append(raw.substring(at));
+        return out.toString();
+    }
+
     /** "order.id" → "order", "shipmentId" → "shipment", "email" → "email". */
     public static String stem(String key) {
         String s = key.contains(".") ? key.substring(0, key.indexOf('.')) : key;

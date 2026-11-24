@@ -3060,9 +3060,31 @@ abstract class E2eGoldenTest {
 
                         void clean(String board) {
                         }
+
+                        public void recover(String boardId, String orderId, String tenant) {
+                            try {
+                                clean(boardId);
+                            } catch (IllegalStateException e) {
+                                log.error("BOARD_RECOVERY_FAILED: board {} order {} tenant {}", boardId, orderId, tenant, e);
+                            }
+                        }
                     }
                     """);
+            Files.writeString(app.resolve("src/main/resources/logback-spring.xml"), """
+                    <configuration>
+                        <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+                        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+                            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                                <includeMdcKeyName>traceId</includeMdcKeyName>
+                            </encoder>
+                        </appender>
+                        <root level="INFO">
+                            <appender-ref ref="JSON"/>
+                        </root>
+                    </configuration>
+                    """);
         });
+        golden(EXPECTED.resolveSibling("expected-adoption-shapes"), actual);
         String board = "src/main/java/com/example/e2e/board/";
         assertThat(actual.get(board + "BoardPoller.java")).as("#306: polled every 60 s").doesNotContain("started");
         assertThat(actual.getOrDefault(board + "BoardMoveListener.java", "")).as("#306: a listener without a rate").doesNotContain("started");
@@ -3070,6 +3092,8 @@ abstract class E2eGoldenTest {
         assertThat(sweep).as("#303: the varargs array").contains("log.error(line, args);").doesNotContain("args.length");
         assertThat(sweep).as("#304: the FAILED status line stays").contains("outcome=FAILED");
         assertThat(sweep).as("#301: the cause after the last argument").contains("e.getMessage(), e\n");
+        assertThat(actual.get("src/main/resources/logback-spring.xml")).as("#296: the MDC keys the code writes reach the JSON logs")
+                .contains("<includeMdcKeyName>traceId</includeMdcKeyName>\n            <includeMdcKeyName>orderId</includeMdcKeyName>");
     }
 
     /**
