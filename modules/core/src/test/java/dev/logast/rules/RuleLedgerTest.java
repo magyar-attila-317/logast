@@ -70,6 +70,7 @@ class RuleLedgerTest {
             Map.entry(Rules.KAFKA_NO_ERROR_HANDLER, "rules/RemedyTest#kafkaListenerWithACommonErrorHandlerBean"),
             // #291: a proposal, never applied: the near miss is the service that decided (the property set)
             Map.entry(Rules.ERROR_RESPONSE_UNTRACED, "rules/RemedyTest#theTraceIdInErrorBodiesIsDecidedByTheProperty"),
+            Map.entry(Rules.TRACING_SAMPLING, "rules/RemedyTest#samplingIsWrittenOnlyWhenThePolicyChoosesIt"),   // #297: the service sets its own
             Map.entry(Rules.PROBLEM_DETAILS_DISABLED, "rules/RemedyTest#problemDetailsByPropertyOrByAdvice"),
             Map.entry(Rules.REQUEST_NOT_VALIDATED, "rules/RemedyTest#requestBodyValidatedWithValid"),
             Map.entry(Rules.SCHEDULED_WITHOUT_LOCK, "rules/RemedyTest#scheduledJobWithALockOrOnASingleInstance"),
