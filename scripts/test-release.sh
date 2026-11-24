@@ -26,6 +26,7 @@ git init --quiet --bare "$T/origin.git"
 git clone --quiet "$T/origin.git" "$T/work" 2>/dev/null
 (cd "$T/work" && printf 'group=dev.logast\nversion=0.1.0\n' > gradle.properties && mkdir -p testing/e2e/expected-x \
   && printf 'dependencies {\n    implementation("dev.logast:logging-support:0.1.0")\n}\n' > testing/e2e/expected-x/build.gradle.kts \
+  && printf '# Changelog\n\n## 0.2.0\n\n- first\n\n## 0.3.0-rc.1\n\n- candidate\n' > CHANGELOG.md \
   && git add . && git commit --quiet -m init && git push --quiet origin main)
 
 expect "a version that is not x.y.z" 1 "give the version as x.y.z" 1.2
@@ -39,6 +40,7 @@ expect "main not pushed" 1 "not the same as origin/main" 0.2.0
 expect "not on main" 1 "not on main" 0.2.0
 (cd "$T/work" && git checkout --quiet main)
 
+expect "a version without its CHANGELOG.md section (#294)" 1 "CHANGELOG.md has no '## 0.2.1' section" 0.2.1
 expect "a release" 0 "released v0.2.0" 0.2.0
 check() { if [ "$2" = "$3" ]; then PASSED=$((PASSED + 1)); else FAILED=$((FAILED + 1)); printf 'FAIL %s\n  expected: [%s]\n  actual:   [%s]\n' "$1" "$2" "$3"; fi; }
 check "the version is committed" "version=0.2.0" "$(git -C "$T/origin.git" show main:gradle.properties | grep '^version=')"
@@ -54,6 +56,8 @@ expect "a release candidate" 0 "released v0.3.0-rc.1" 0.3.0-rc.1
   && git commit --quiet --allow-empty -m "fix: a crash on SQL without a schema" -m "Closes #160, fixes #161" \
   && git commit --quiet --allow-empty -m "docs: releasing" \
   && git commit --quiet --allow-empty -m "tidy the build" \
+  && printf '\n## 0.4.0\n\n**What logast writes**\n- timeouts are proposed\n' >> CHANGELOG.md \
+  && git commit --quiet -am "changelog for 0.4.0" \
   && git tag v0.4.0)
 notes="$(cd "$T/work" && bash "$ROOT/scripts/release-notes.sh" v0.4.0)"
 has() { case "$notes" in *"$2"*) PASSED=$((PASSED + 1)) ;; *) FAILED=$((FAILED + 1)); printf 'FAIL %s\n  no [%s] in:\n%s\n' "$1" "$2" "$notes" ;; esac; }
@@ -63,6 +67,10 @@ has "a fix, with every issue it closes" "- a crash on SQL without a schema (#160
 has "docs in their own section" "## Documentation"
 has "a commit without a type under Other" "- tidy the build"
 has "the compare link to the previous tag" "compare/v0.3.0-rc.1...v0.4.0"
+has "the changelog section first (#294)" "**What logast writes**
+- timeouts are proposed"
+has "then the commits" "## Commits"
+hasnt "another version's changelog section" "- candidate"
 hasnt "commits of earlier releases are left out" "init"
 hasnt "the release commits are left out" "release: v"
 
