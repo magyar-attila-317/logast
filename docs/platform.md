@@ -89,6 +89,9 @@ convention:
   `permissions: packages: read`). The repository's own packages are readable with its workflow token; a package of
   another repository first needs that repository granted read access in the package settings (*Manage Actions access*).
 
+`apply` says this in the order that adds the repository, and names the workflows that run Gradle without
+`packages: read` (#277). Without `support.repository` logast stays in vendor mode and says so in that order's title.
+
 Versions, properties and the two modes side by side: [starter.md](starter.md).
 
 ## A company policy: `company.yaml` and `extends`

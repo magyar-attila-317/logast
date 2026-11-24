@@ -2101,6 +2101,20 @@ abstract class E2eGoldenTest {
                         + ".orElse(providers.environmentVariable(\"GITHUB_ACTOR\"))",
                 "providers.gradleProperty(\"githubExampleLogastPassword\").orElse(providers.gradleProperty(\"gpr.key\"))"
                         + ".orElse(providers.environmentVariable(\"GITHUB_TOKEN\"))");
+
+        // #277: the order says a token is needed even to read, and names the workflow that runs Gradle without packages: read
+        Path pre = tmp.resolve("pre");
+        copy(BEFORE, pre);
+        Path yml = pre.resolve("logast.yml");
+        Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^packs: .*$", "packs: [tracing]")
+                .replace("support:\n  mode: vendor\n", "support:\n  mode: dependency\n  repository: https://maven.pkg.github.com/example/logast\n"));
+        Path workflow = pre.resolve(".github/workflows/ci.yml");
+        Files.createDirectories(workflow.getParent());
+        Files.writeString(workflow, "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./gradlew build\n");
+        run(pre, "scan", pre.toString(), "--classpath-file", CLASSPATH);
+        assertThat(Files.readString(pre.resolve(".logast/reports/orders.json")))
+                .contains("needs a token even to read", "githubExampleLogastUsername", "packages: read",
+                        "Workflows running Gradle without it: .github/workflows/ci.yml");
     }
 
     @Test

@@ -358,6 +358,37 @@ public final class SetupRules {
                     + "repositories {\n    " + entry + "\n}\n\n"));
         }
         b.suggestion(b.suggestion + " Adds the repository it comes from (support.repository).");
+        if (repo.matches("https://maven\\.pkg\\.github\\.com/.*")) {
+            // #277: GitHub Packages answers "not found" to an unauthenticated read, public package or not
+            String name = githubRepositoryName(repo);
+            b.suggestion(b.suggestion + " GitHub Packages needs a token even to read: on a machine put " + name + "Username / "
+                    + name + "Password (a token with read:packages) in ~/.gradle/gradle.properties (or gpr.user / gpr.key);"
+                    + " a workflow needs permissions: packages: read and GITHUB_TOKEN in its env." + workflowsWithoutPackagesRead());
+        }
+    }
+
+    /** #277: the GitHub workflows that run Gradle without packages: read, named so the build's CI can be fixed with it. */
+    private String workflowsWithoutPackagesRead() {
+        Path workflows = root.resolve(".github/workflows");
+        if (!Files.isDirectory(workflows)) {
+            return "";
+        }
+        List<String> missing = new ArrayList<>();
+        try (var files = Files.list(workflows)) {
+            for (Path f : files.sorted().toList()) {
+                String name = f.getFileName().toString();
+                if (!name.endsWith(".yml") && !name.endsWith(".yaml")) {
+                    continue;
+                }
+                String text = read(f);
+                if (text.matches("(?s).*\\b(gradlew|gradle)\\b.*") && !text.matches("(?s).*packages:\\s*(read|write).*")) {
+                    missing.add(rel(f));
+                }
+            }
+        } catch (java.io.IOException e) {
+            return "";
+        }
+        return missing.isEmpty() ? "" : " Workflows running Gradle without it: " + String.join(", ", missing) + ".";
     }
 
     /**
@@ -423,7 +454,9 @@ public final class SetupRules {
                 .suggestion("Generated code imports " + pkg + ".{ObservedContext, MdcScope, ContextExecutors}; the TaskDecorator, "
                         + "batch trace listener and ECS defaults are registered by component scan and spring.factories, each "
                         + "behind its logging-support.*.enabled property. "
-                        + "Switching to the Nexus starter later = delete this package and set support.mode: dependency.");
+                        + "Vendor is the default while logast.yaml names no support.repository (#277): to depend on the library "
+                        + "instead, publish it into your registry (logast support publish --repo <url>), set support.repository "
+                        + "in logast.yaml and delete this package.");
         List<String> classes = new ArrayList<>(VENDORED);
         if (servlet()) {
             classes.addAll(VENDORED_SERVLET);
