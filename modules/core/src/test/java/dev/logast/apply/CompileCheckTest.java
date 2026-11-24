@@ -151,6 +151,47 @@ class CompileCheckTest {
     }
 
     /**
+     * #305: a constructor Lombok generates (@RequiredArgsConstructor) on a class from the source path: the error names
+     * it as "constructor X in class Y", and the class is compiled with Lombok too, so a test that calls it still compiles.
+     */
+    @Test
+    void aLombokConstructorOfAnotherClassResolves() throws IOException {
+        List<Path> classpath = java.util.Arrays.stream(System.getProperty("logast.test.lombok").split(java.io.File.pathSeparator))
+                .map(Path::of).toList();
+        write("src/main/java/a/Ledger.java", """
+                package a;
+
+                public class Ledger {
+                }
+                """);
+        write("src/main/java/a/Recorder.java", """
+                package a;
+
+                import lombok.RequiredArgsConstructor;
+
+                @RequiredArgsConstructor
+                public class Recorder {
+                    private final Ledger ledger;
+
+                    public void record(String id) {
+                        System.out.println(id + ledger);
+                    }
+                }
+                """);
+        String test = """
+                package a;
+
+                class RecorderTest {
+                    void records() {
+                        new Recorder(new Ledger()).record("o-1");
+                    }
+                }
+                """;
+        assertThat(new CompileCheck(classpath).newErrors(work, Map.of("src/test/java/a/RecorderTest.java", test)))
+                .as("the constructor Lombok generates on the source path").isEmpty();
+    }
+
+    /**
      * #76: Lombok runs with the project's lombok.config, so a fix that logs through Lombok's default name where the
      * config renames the field is a new error, and the configured name is none. (A lower-case name: an unresolved
      * capitalised name like LOG reads as an unknown class and counts as environmental.)

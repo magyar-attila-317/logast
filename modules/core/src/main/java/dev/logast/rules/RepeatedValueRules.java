@@ -481,6 +481,14 @@ public final class RepeatedValueRules {
         for (int i = 1; i < regions.size() && nested; i++) {
             nested = regions.get(i - 1).start() <= regions.get(i).start() && regions.get(i).end() <= regions.get(i - 1).end();
         }
+        if (nested && onlyDeclarationsBetween(text, regions)) {
+            // #311: "UUID thingId = …; UUID orderId = …;" then the rest: one scope after the last declaration, not one
+            // per id nested in each other
+            Region last = regions.getLast();
+            List<Candidate> all = regions.stream().flatMap(r -> byRegion.get(r).stream()).toList();
+            order(m, f, text, new Region(last.start(), last.end(), last.indent(), false), all, totals);
+            return;
+        }
         if (nested) {
             orderNested(m, f, text, regions, byRegion, totals);
             return;
@@ -490,6 +498,25 @@ public final class RepeatedValueRules {
                 .max(Comparator.comparingInt((Map.Entry<Region, List<Candidate>> e) -> e.getValue().size())
                         .thenComparingInt(e -> -(e.getKey().end() - e.getKey().start())))
                 .ifPresent(e -> order(m, f, text, e.getKey(), e.getValue(), totals));
+    }
+
+    private static final Pattern DECLARATION = Pattern.compile("\\s*(?:final\\s+)?[\\w.$<>\\[\\]?, ]+\\s+\\w+\\s*=\\s*[^;{}]*;");
+
+    /**
+     * #311: the nested regions all end where the outermost ends, and only local declarations (no log line, no block)
+     * stand between where the outermost starts and where the innermost starts: the values all exist at the innermost.
+     */
+    private static boolean onlyDeclarationsBetween(String text, List<Region> regions) {
+        Region outer = regions.getFirst();
+        Region inner = regions.getLast();
+        if (regions.stream().anyMatch(r -> r.end() != outer.end())) {
+            return false;
+        }
+        String between = text.substring(outer.start(), inner.start());
+        if (between.contains("log.") || between.contains("LOG.") || between.contains("logger.")) {
+            return false;
+        }
+        return DECLARATION.matcher(between).replaceAll("").isBlank();
     }
 
     /** Nested regions, outermost first: one edit wraps the inner ones, then the outer ones around them. */

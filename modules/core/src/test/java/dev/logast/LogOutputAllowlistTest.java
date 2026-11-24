@@ -81,6 +81,8 @@ class LogOutputAllowlistTest {
                 .isEqualTo("RECOVERY_FAILED: {} {} {}: {}");
         assertThat(MessageTemplate.dropLabels("Order {} shipped", List.of(Set.of("order"))))
                 .as("a single labelled value is the subject").isEqualTo("Order {} shipped");
+        assertThat(MessageTemplate.dropLabels("thing {} not found (order {}) - skipping", List.of(Set.of("thing"), Set.of("order"))))
+                .as("a labelled value in parentheses goes with its noun").isEqualTo("thing {} not found ({}) - skipping");
     }
 
     @Test

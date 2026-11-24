@@ -243,6 +243,14 @@ public final class MessageTemplate {
         }
         // only a chain of labelled values ("thing {} order {}"): a single "Order {} shipped" keeps its subject
         boolean[] drop = new boolean[ph.size()];
+        for (int k = 0; k < ph.size(); k++) {
+            // a labelled value in parentheses ("not found (order {})"): the group goes with the value (#310)
+            int label = ph.get(k)[0];
+            int after = ph.get(k)[1] + 2;
+            if (label > 0 && raw.substring(0, label).stripTrailing().endsWith("(") && raw.substring(after).stripLeading().startsWith(")")) {
+                drop[k] = true;
+            }
+        }
         for (int k = 0; k + 1 < ph.size(); k++) {
             if (ph.get(k)[0] >= 0 && ph.get(k + 1)[0] >= 0 && raw.substring(ph.get(k)[1] + 2, ph.get(k + 1)[0]).matches("[\\s,;]*")) {
                 drop[k] = true;

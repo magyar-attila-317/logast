@@ -5,8 +5,14 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**What logast writes**
+- Ids read into locals one after the other get one MdcScope after the last declaration, not one nested scope per id (#311).
+- A labelled value in parentheses (`not found (order {})`) goes with its noun (#310).
+- MDC_KEY_NOT_IN_LOG_OUTPUT no longer adds keys that shadow the encoder's own fields (`timestamp`, `level`, `message`, …), and no longer trips its self-check when other fixes of the same round add keys (#296).
+
 **CLI**
-- Apply rounds re-parse only the files that changed, against classes compiled from the same work tree; a round parses in full when that cannot be exact (a new or removed file, a changed API, many changed files). `LOGAST_PARSE=full` restores full parses; `LOGAST_TIMING=1` shows what each round did (#308).
+- The compile check also sees constructors Lombok generates (`@RequiredArgsConstructor`) on classes a test or an edited file uses (#305).
+- Apply rounds re-parse only the files that changed, against classes compiled from the same work tree; a round parses in full when that cannot be exact (a removed file, a changed API, many changed files). `LOGAST_PARSE=full` restores full parses; `LOGAST_TIMING=1` shows what each round did (#308).
 
 ## 0.5.1
 

@@ -25,6 +25,9 @@ final class LogOutputRules {
     private static final Pattern INCLUDE = Pattern.compile("(?m)^([ \\t]*)<includeMdcKeyName>\\s*([^<\\s]+)\\s*</includeMdcKeyName>");
     private static final Pattern EXCLUDE = Pattern.compile("<excludeMdcKeyName>\\s*([^<\\s]+)\\s*</excludeMdcKeyName>");
 
+    private static final Set<String> STANDARD_FIELDS = Set.of("timestamp", "@timestamp", "@version", "message", "level",
+            "level_value", "logger", "logger_name", "thread", "thread_name", "stack_trace");
+
     private final RuleContext ctx;
 
     LogOutputRules(RuleContext ctx) {
@@ -47,6 +50,8 @@ final class LogOutputRules {
                 }
             }
         }
+        // fields the encoder writes itself: a key of that name would sit next to "@timestamp", "level", … (#296)
+        keys.removeAll(STANDARD_FIELDS);
         if (keys.isEmpty()) {
             return;
         }
@@ -113,7 +118,9 @@ final class LogOutputRules {
             return;
         }
         int line = (int) text.substring(0, runs.getFirst()[1]).chars().filter(c -> c == '\n').count() + 1;
-        OrderBuilder b = ctx.order(Rules.MDC_KEY_NOT_IN_LOG_OUTPUT, "mdc-output|" + rel).at(rel, line);
+        // the keys in the id: when other fixes of the same round put more keys into MDC, the next round's order is a new
+        // one, not this one "back" without having seen its own fix (#296)
+        OrderBuilder b = ctx.order(Rules.MDC_KEY_NOT_IN_LOG_OUTPUT, "mdc-output|" + rel + "|" + missingAll + "|" + dropped).at(rel, line);
         if (!missingAll.isEmpty()) {
             b.title("MDC keys the code writes never reach the JSON logs: " + rel + " lists only " + listed.getFirst()
                             + " (includeMdcKeyName); missing " + missingAll)

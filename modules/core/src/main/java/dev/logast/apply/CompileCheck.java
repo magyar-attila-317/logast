@@ -287,7 +287,9 @@ public final class CompileCheck {
     }
 
     private static final java.util.regex.Pattern LOCATION =
-            java.util.regex.Pattern.compile("location: (?:variable \\S+ of type|class|interface|enum|record) ([\\w.$]+)");
+            // "location: class x.Order", and (#305) "constructor Order in class x.Order cannot be applied" /
+            // "method of in class x.Order": Lombok's constructors, builders and accessors
+            java.util.regex.Pattern.compile("(?:location: (?:variable \\S+ of type|class|interface|enum|record)|\\bin (?:class|interface|enum|record)) ([\\w.$]+)");
 
     /**
      * #305: the source files, not yet given to javac, of the types an error in our files names as the location of a
@@ -301,17 +303,16 @@ public final class CompileCheck {
                 continue;
             }
             java.util.regex.Matcher m = LOCATION.matcher(d.getMessage(Locale.ROOT).replaceAll("\\s+", " "));
-            if (!m.find()) {
-                continue;
-            }
-            Path f = sourceOf(m.group(1), roots);
-            if (f != null && !processed.contains(f) && !fileOf.containsKey(f.toAbsolutePath().normalize().toUri())) {
-                try {
-                    if (dev.logast.parse.SourceText.read(f).contains("lombok")) {
-                        found.add(f);
+            while (m.find()) {
+                Path f = sourceOf(m.group(1).replaceAll("<.*", ""), roots);
+                if (f != null && !processed.contains(f) && !fileOf.containsKey(f.toAbsolutePath().normalize().toUri())) {
+                    try {
+                        if (dev.logast.parse.SourceText.read(f).contains("lombok")) {
+                            found.add(f);
+                        }
+                    } catch (IOException e) {
+                        // unreadable: leave it on the source path
                     }
-                } catch (IOException e) {
-                    // unreadable: leave it on the source path
                 }
             }
         }
