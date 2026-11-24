@@ -241,6 +241,45 @@ public final class Applier {
         }
     }
 
+    /**
+     * #279: the test sources that mention a changed class and no longer compile against the result (a fix changed a
+     * signature they call), as CHECK FAILED lines: the change stays, the test needs the same change.
+     */
+    private List<String> brokenTests(Path root, Path work, List<String> changed) {
+        if (compile == null) {
+            return List.of();
+        }
+        Set<String> names = new HashSet<>();
+        for (String f : changed) {
+            if (f.endsWith(".java") && f.contains("src/main/java/")) {
+                names.add(f.substring(f.lastIndexOf('/') + 1, f.length() - ".java".length()));
+            }
+        }
+        if (names.isEmpty()) {
+            return List.of();
+        }
+        java.util.regex.Pattern mentions = java.util.regex.Pattern.compile("\\b(" + String.join("|", names) + ")\\b");
+        List<String> tests = new ArrayList<>();
+        try (var files = Files.walk(work)) {
+            files.filter(p -> p.toString().endsWith(".java") && p.toString().replace('\\', '/').contains("/src/test/java/"))
+                    .forEach(p -> {
+                        try {
+                            if (mentions.matcher(Files.readString(p)).find()) {
+                                tests.add(work.relativize(p).toString().replace('\\', '/'));
+                            }
+                        } catch (IOException ignored) {
+                            // unreadable: not checked
+                        }
+                    });
+        } catch (IOException e) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        compile.brokenTests(root, work, tests).forEach((file, error) -> out.add(file + ": no longer compiles against the "
+                + "changed code (" + error + "): the fix changed a signature this test calls, update the test the same way"));
+        return out;
+    }
+
     /** Passes over the whole pipeline before apply stops (each pass only applies what is still open). */
     static final int MAX_PASSES = 3;
 
@@ -315,6 +354,7 @@ public final class Applier {
             List<String> violations = new ArrayList<>(selfCheck);
             if (!changed.isEmpty()) {
                 violations.addAll(invariants.apply(work, changed));
+                violations.addAll(brokenTests(root, work, changed));
             }
             if (write) {
                 copyBack(root, work, changed);

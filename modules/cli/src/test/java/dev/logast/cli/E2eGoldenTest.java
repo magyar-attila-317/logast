@@ -762,6 +762,36 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #279: a fix that changes a constructor (the hand-built WebClient now comes from Spring Boot's builder) breaks the
+     * test that calls it: the run says which test no longer compiles and why, and exits 1, instead of reporting success.
+     */
+    @Test
+    void aTestBrokenByAChangedSignatureIsReported() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        ROLLOUT_AND_CACHES.run(app);
+        Path test = app.resolve("src/test/java/com/example/e2e/depot/DepotClientCheck.java");
+        Files.createDirectories(test.getParent());
+        Files.writeString(test, """
+                package com.example.e2e.depot;
+
+                import org.springframework.http.client.reactive.ClientHttpConnector;
+
+                class DepotClientCheck {
+                    DepotClient client(ClientHttpConnector connector) {
+                        return new DepotClient(connector);
+                    }
+                }
+                """);
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(Files.readString(app.resolve("src/main/java/com/example/e2e/depot/DepotClient.java")))
+                .as("the fix is applied").contains("WebClient.Builder");
+        assertThat(out).as(out).contains("CHECK FAILED")
+                .contains("src/test/java/com/example/e2e/depot/DepotClientCheck.java: no longer compiles against the changed code");
+        assertThat(LAST_EXIT).isEqualTo(1);
+    }
+
+    /**
      * #288: a big service in batches: --path applies only the findings in files matching the glob (setup changes,
      * which the code needs, still apply); the rest stay open for the next batch.
      */

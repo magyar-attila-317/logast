@@ -142,14 +142,44 @@ public final class CompileCheck {
         return out;
     }
 
+    /**
+     * #279: test files (relative paths, unchanged) that compiled against {@code original}'s sources and do not against
+     * {@code work}'s: a fix changed a signature they call. The first new error of each.
+     */
+    public Map<String, String> brokenTests(Path original, Path work, List<String> tests) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (javac == null || tests.isEmpty() || tooNew != null) {
+            return out;
+        }
+        Map<String, String> texts = new LinkedHashMap<>();
+        for (String f : tests) {
+            try {
+                texts.put(f, dev.logast.parse.SourceText.read(work.resolve(f)));
+            } catch (IOException e) {
+                return out;
+            }
+        }
+        Map<String, Set<String>> old = errors(original, texts);
+        Map<String, Set<String>> now = errors(work, texts);
+        for (var e : now.entrySet()) {
+            Set<String> added = new HashSet<>(e.getValue());
+            added.removeAll(old.getOrDefault(e.getKey(), Set.of()));
+            if (!added.isEmpty()) {
+                out.put(e.getKey(), added.stream().sorted().findFirst().orElseThrow());
+            }
+        }
+        return out;
+    }
+
     /** Error kinds per file, for these texts compiled together; the project's other sources come from the source path. */
     private Map<String, Set<String>> errors(Path work, Map<String, String> texts) {
         Map<String, Set<String>> out = new HashMap<>();
         if (texts.isEmpty()) {
             return out;
         }
-        String key = texts.entrySet().stream().map(e -> e.getKey() + "\u0000" + e.getValue().hashCode() + "\u0000" + e.getValue().length())
-                .sorted().reduce("", String::concat);
+        // the folder is part of the key: the same texts compile differently against another tree (#279)
+        String key = work.toAbsolutePath() + "\u0001" + texts.entrySet().stream().map(e -> e.getKey() + "\u0000" + e.getValue().hashCode()
+                + "\u0000" + e.getValue().length()).sorted().reduce("", String::concat);
         Set<String> cached = cache.get(key);
         if (cached != null) {
             cached.forEach(s -> out.computeIfAbsent(s.substring(0, s.indexOf('|')), k -> new HashSet<>()).add(s.substring(s.indexOf('|') + 1)));

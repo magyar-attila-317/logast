@@ -284,7 +284,8 @@ code. `logast scan .` shows the same without changing anything. Both also write 
 - **Exit code.** 0 when everything selected was applied and checked; 1 when a change was REJECTED or a check FAILED,
   so a script or an agent can tell "all" from "partial" (#288).
 - **Checks.** Every run checks its result before writing (no key both in MDC and in a message, no nested scope, one
-  started/completed per method, the result still compiles) and prints `CHECK FAILED file:line` if something breaks
+  started/completed per method, the result still compiles, and the test sources that use a changed class still compile:
+  a fix that changes a signature names the test to update, #279) and prints `CHECK FAILED file:line` if something breaks
   that.
 - **Trace.** `.logast/reports/apply-trace.txt` records what each round applied and what its rescan brought up.
 - **Coverage.** Unless `--dry-run`, `.logast/reports/coverage.txt` lists every log call of the result; the ones this run changed
