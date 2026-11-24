@@ -25,23 +25,6 @@ logging:
         service:
           name: ${spring.application.name}
           version: ${spring.application.version}
-management:
-  tracing:
-    propagation:
-      consume: []
-      produce: [w3c]
-    baggage:
-      enabled: false
-    sampling:
-      probability: 1.0
-  metrics:
-    tags:
-      application: ${spring.application.name}
-      version: ${spring.application.version}
-  opentelemetry:
-    resource-attributes:
-      service:
-        version: ${spring.application.version}
 logging-support:
   log-defaults:
     enabled: true
@@ -51,3 +34,15 @@ logging-support:
     enabled: true
   batch-trace:
     enabled: true
+management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      version: ${spring.application.version}
+  opentelemetry:
+    resource-attributes:
+      service:
+        version: ${spring.application.version}
+  tracing:
+    sampling:
+      probability: 1.0

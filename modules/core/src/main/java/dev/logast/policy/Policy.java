@@ -380,9 +380,9 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
 
     /** @param kafkaObservationEnabled true when {@code spring.kafka.listener.observation-enabled} is set */
     /**
-     * @param trustInboundTrace #270: accept a caller's traceparent and baggage. Off by default: the tracing starter logast
-     *                          adds would otherwise let any caller choose the trace id the service logs under and write
-     *                          baggage into its MDC; a service only internal callers reach sets it true
+     * @param trustInboundTrace #270: continue a caller's trace (traceparent, baggage), Spring Boot's default. On by default:
+     *                          a trace id is a label, not a credential, and services behind a gateway are meant to share
+     *                          one trace; a public-facing service with nothing in front that restarts traces sets it false
      */
     public record Entrypoints(List<String> extraAnnotations, Boolean includeMain, Boolean kafkaObservationEnabled,
                               Boolean trustInboundTrace) {
@@ -391,7 +391,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
         }
 
         public Entrypoints {
-            trustInboundTrace = trustInboundTrace != null && trustInboundTrace;
+            trustInboundTrace = trustInboundTrace == null || trustInboundTrace;
             extraAnnotations = extraAnnotations == null ? List.of() : List.copyOf(extraAnnotations);
             includeMain = includeMain != null && includeMain;
             kafkaObservationEnabled = kafkaObservationEnabled != null && kafkaObservationEnabled;

@@ -6,6 +6,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- Callers' traces continue by default again (`entrypoints.trustInboundTrace: true`): the propagation lockdown (`consume: []`, `produce: [w3c]`, no baggage) is written only for a service that sets it to false (#270).
 - An exception policy: `logging.exceptionStack: never` / `exceptionMessage: never` log the caught exception's class only (`[errorType=…]`) (#278).
 - `logging.structuredProfiles: [prod, …]`: the JSON console format goes into those profiles' config only; dev, test and local keep plain logs (#278).
 - Code that withholds an exception on purpose (a "deliberately" comment, a redacting helper) is reported, not changed (#290).
@@ -15,6 +16,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 - `messages.yaml` asks for at most `logging.wordingQueue` (50) texts at once, the most severe first (#292).
 
 **CLI**
+- `logast --version` names the release tag in a release zip (it named the previous tag, #302).
 - `apply --path <glob>`: one batch of a big service; REJECTED or CHECK FAILED exits 1 (#288).
 - A test the change breaks (a changed signature) is a CHECK FAILED line naming it (#279).
 - One progress line per step off a terminal; one apply per project at a time; a note when a run was killed (#293).

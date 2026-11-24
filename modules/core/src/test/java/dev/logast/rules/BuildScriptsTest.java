@@ -88,17 +88,21 @@ class BuildScriptsTest {
     }
 
     /**
-     * #270: the starter makes Boot accept callers' traceparent and baggage; logast keeps the service's earlier trust (none)
-     * unless the policy says its callers are trusted, or the service already configures propagation itself.
+     * #270: with the starter Boot continues callers' traces, which services behind one gateway want (the default); a
+     * public-facing service distrusts them through the policy, unless it already configures propagation itself.
      */
     @Test
-    void inboundTraceContextIsTrustedOnlyWhenThePolicySaysSo(@TempDir Path dir) throws IOException {
+    void inboundTraceContextIsDistrustedOnlyWhenThePolicySaysSo(@TempDir Path dir) throws IOException {
         write(dir, "build.gradle", GROOVY_PLUGINS + "dependencies {\n}\n");
-        assertThat(otelEdit(dir).file()).isEqualTo("build.gradle");   // the helper checks the distrusting merge
-        write(dir, "logast.yaml", "entrypoints:\n  trustInboundTrace: true\n");
+        assertThat(otelEdit(dir).file()).isEqualTo("build.gradle");
         WorkOrder trusting = order(scan(dir), Rules.SETUP_OTEL_STARTER).orElseThrow();
-        assertThat(trusting.edits()).noneMatch(e -> e.file().endsWith("application.yml"));
-        write(dir, "logast.yaml", "packs: [tracing]\n");
+        assertThat(trusting.edits()).as("by default callers' traces continue: Boot's propagation defaults stay")
+                .noneMatch(e -> e.file().endsWith("application.yml") && e.text().contains("propagation"));
+        write(dir, "logast.yaml", "packs: [tracing]\nentrypoints:\n  trustInboundTrace: false\n");
+        WorkOrder distrusting = order(scan(dir), Rules.SETUP_OTEL_STARTER).orElseThrow();
+        assertThat(distrusting.edits()).filteredOn(e -> e.file().endsWith("application.yml")).singleElement()
+                .satisfies(e -> assertThat(e.text()).contains("consume: []", "produce: [w3c]", "baggage:\n      enabled: false"));
+        write(dir, "logast.yaml", "packs: [tracing]\nentrypoints:\n  trustInboundTrace: false\n");
         write(dir, "src/main/resources/application.yml", "management:\n  tracing:\n    propagation:\n      type: w3c\n");
         WorkOrder configured = order(scan(dir), Rules.SETUP_OTEL_STARTER).orElseThrow();
         assertThat(configured.edits()).as("the service's own propagation settings stay as they are")
@@ -118,11 +122,9 @@ class BuildScriptsTest {
 
     private static Edit otelEdit(Path dir) {
         WorkOrder otel = order(scan(dir), Rules.SETUP_OTEL_STARTER).orElseThrow();
-        // one build-file edit; #270: the application.yml merge (inbound trace context not trusted) goes with it
+        // one build-file edit (an application.yml merge may go with it)
         List<Edit> build = otel.edits().stream().filter(e -> !e.file().endsWith("application.yml")).toList();
         assertThat(build).hasSize(1);
-        assertThat(otel.edits()).filteredOn(e -> e.file().endsWith("application.yml")).singleElement()
-                .satisfies(e -> assertThat(e.text()).contains("consume: []", "produce: [w3c]", "baggage:\n      enabled: false"));
         return build.getFirst();
     }
 

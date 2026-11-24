@@ -211,12 +211,14 @@ Values with these names are removed from log lines and refused as metric tags.
 entrypoints:
   extraAnnotations: [com.example.InboxHandler]   # your own annotations that start work (like @KafkaListener)
   includeMain: false                             # treat main() as an entrypoint (command-line tools)
-  trustInboundTrace: false                       # #270: continue callers' traces (traceparent, baggage)
+  trustInboundTrace: true                        # #270: continue callers' traces (traceparent, baggage)
 ```
 
-When logast adds the tracing starter, the service keeps trusting what it trusted before: no trace context from
-callers. Boot would otherwise accept any caller's `traceparent` (the trace id the service logs under) and `baggage`
-(written into MDC). A service only trusted callers reach sets `trustInboundTrace: true`; one that already configures
+When logast adds the tracing starter, the service continues its callers' traces (Spring Boot's default): services
+behind one gateway share one trace. A trace id is a label, not a credential; the edge (gateway, ingress) is where traces
+from outside are restarted. A public-facing service with nothing in front of it sets `trustInboundTrace: false`: logast
+then writes `management.tracing.propagation.consume: []`, `produce: [w3c]` and `baggage.enabled: false`, so callers
+cannot pick the trace id the service logs under or write baggage. One that already configures
 `management.tracing.propagation.*` keeps its own settings.
 
 HTTP endpoints, `@Scheduled`, Kafka/JMS/Rabbit listeners, event listeners, WebSocket handlers and

@@ -146,17 +146,15 @@ public final class SetupRules {
                         notes.add("OTLP metrics export stays off until a collector is configured: set " + OTLP_METRICS
                                 + ".enabled=true and " + OTLP_METRICS + ".url (or MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true).");
                     }
-                    // #270: with the starter Boot accepts a caller's traceparent and baggage (and the baggage reaches
-                    // MDC): any caller could pick the trace id the service logs under. Before it the service trusted no
-                    // trace context, so it keeps trusting none: consume nothing, produce W3C, no baggage (Spring Boot
-                    // reference, "Tracing > Propagating Traces": management.tracing.propagation.consume / produce,
-                    // management.tracing.baggage.enabled), unless entrypoints.trustInboundTrace says otherwise.
+                    // #270: with the starter Boot continues a caller's trace (traceparent, baggage), which is what
+                    // services behind one gateway want. A public-facing service sets entrypoints.trustInboundTrace: false:
+                    // consume nothing, produce W3C, no baggage (Spring Boot reference, "Tracing > Propagating Traces":
+                    // management.tracing.propagation.consume / produce, management.tracing.baggage.enabled).
                     if (!ctx.policy.entrypoints().trustInboundTrace() && props.stream().noneMatch(k -> k.startsWith(PROPAGATION)
                             || k.startsWith("management.tracing.baggage"))) {
                         management.append("  tracing:\n    propagation:\n      consume: []\n      produce: [w3c]\n    baggage:\n      enabled: false\n");
-                        notes.add("Inbound trace context is not trusted: callers' traceparent and baggage are ignored, outgoing calls "
-                                + "carry W3C traceparent. A service only trusted callers reach sets entrypoints.trustInboundTrace: true "
-                                + "(or management.tracing.propagation.consume) to continue their traces.");
+                        notes.add("Inbound trace context is not trusted (entrypoints.trustInboundTrace: false): callers' traceparent "
+                                + "and baggage are ignored, outgoing calls carry W3C traceparent.");
                     }
                     if (!management.isEmpty()) {
                         ServiceYaml.merge(ctx, b, "management:\n" + management);
