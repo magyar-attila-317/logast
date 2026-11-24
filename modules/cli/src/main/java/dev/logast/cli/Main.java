@@ -358,6 +358,9 @@ public final class Main {
         boolean write;
         @Option(names = "--dry-run", description = "Print the diff only, change no file")
         boolean dryRun;
+        @Option(names = "--redo", description = "Apply again the fixes an earlier apply made that someone changed back by hand "
+                + "(by default they are left as changed, #317)")
+        boolean redo;
         @Option(names = "--force", description = "Write even though the git working tree has uncommitted changes")
         boolean force;
         @Option(names = "--format", defaultValue = "text", description = "text | json")
@@ -439,6 +442,7 @@ public final class Main {
                 }
             }
             Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).skip(skipSteps).paths(paths).compileWith(cp)
+                    .declined(redo ? Set.of() : ordersAppliedEarlier(root()), changedSinceApplied(root()))
                     .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files))
                     .onFinish(work -> {
                         // #125: the reports from the last scan, while the scratch copy it analysed is still there
@@ -579,6 +583,9 @@ public final class Main {
             if (write && !changed.isEmpty()) {   // #131: both runs of a refresh; this one hashes what they wrote last
                 recordApplied(root(), changed);
             }
+            if (write && !applied.isEmpty()) {   // #317: what later runs leave alone once someone changes it back
+                recordAppliedOrders(root(), applied);
+            }
             // every log call of the result, with the ones this run fixed (#72); the logging pack's report, as in scan
             List<dev.logast.LogLedger.Entry> ledger = null;
             if (write && scanner.lastAnalysis != null && policy.packSelected("logging")) {
@@ -707,6 +714,32 @@ public final class Main {
                 System.out.println(Ansi.warn("CHECK FAILED (" + violations.size() + "): the result breaks a rule every migrated file must follow"));
                 violations.forEach(v -> System.out.println("  " + v));
             }
+            // #317: fixes an earlier apply made that are back as open orders: someone changed them back
+            List<String> kept = r.keptByHand() == null ? List.of() : r.keptByHand();
+            if (!kept.isEmpty()) {
+                System.out.println("Left as you changed them (" + kept.size() + "): fixes an earlier apply made and someone changed "
+                        + "back; --redo applies them again" + (verbose ? ": " + String.join(" ", kept) : ""));
+            }
+            // #316: the short list to read; the rest of the diff only changes logging
+            List<String> behavioural = r.behavioural() == null ? List.of() : r.behavioural();
+            if (!behavioural.isEmpty()) {
+                System.out.println("Changes beyond logging (" + behavioural.size() + "): code that can now run differently; the rest of the "
+                        + "diff only changes log lines" + (write ? " (.logast/reports/behavioural.txt)" : ""));
+                behavioural.stream().limit(10).forEach(b -> System.out.println("  " + b));
+                if (behavioural.size() > 10) {
+                    System.out.println("  … and " + (behavioural.size() - 10) + " more");
+                }
+                if (write) {
+                    try {
+                        Path reports = root().resolve(".logast/reports");
+                        Files.createDirectories(reports);
+                        Files.writeString(reports.resolve("behavioural.txt"), "# changes beyond logging: file:line method — what (#316)\n"
+                                + String.join("\n", behavioural) + "\n");
+                    } catch (java.io.IOException e) {
+                        // only a report
+                    }
+                }
+            }
             dev.logast.Todo.Item next = null;
             if (!write && !applied.isEmpty()) {
                 next = new dev.logast.Todo.Item("logast apply ." + (fills != null ? " --fills " + fills : "")
@@ -798,6 +831,62 @@ public final class Main {
                 + "while a file still has it, its change is logast's and does not block the next apply\n");
         state.forEach((f, h) -> sb.append(h).append("  ").append(f).append('\n'));
         Files.writeString(file, sb.toString());
+    }
+
+    /** #317: the ids of every order an apply made, across runs. */
+    static final String APPLIED_ORDERS = ".logast/applied-orders.txt";
+
+    /**
+     * #317: the orders earlier applies made: .logast/applied-orders.txt, and the last apply's list
+     * (.logast/reports/last-apply.txt, which logast wrote before it kept the list), so hand edits after a 0.5.2 apply
+     * count too.
+     */
+    static Set<String> ordersAppliedEarlier(Path root) {
+        Set<String> ids = new java.util.TreeSet<>();
+        try {
+            Path list = root.resolve(APPLIED_ORDERS);
+            if (Files.isRegularFile(list)) {
+                Files.readAllLines(list).stream().map(String::strip).filter(l -> !l.isEmpty() && !l.startsWith("#")).forEach(ids::add);
+            }
+            Path last = root.resolve(LAST_APPLY);
+            if (Files.isRegularFile(last)) {
+                for (String line : Files.readAllLines(last)) {
+                    if (line.startsWith("applied (")) {
+                        java.util.Arrays.stream(line.substring(line.indexOf(':') + 1).trim().split("\\s+"))
+                                .filter(t -> !t.isEmpty()).forEach(ids::add);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            return ids;
+        }
+        return ids;
+    }
+
+    /**
+     * #317: a file that differs from the content the last apply wrote into it (applied-state.txt), read once before
+     * this run changes anything; a file without a record never counts as changed by hand.
+     */
+    static java.util.function.Predicate<String> changedSinceApplied(Path root) {
+        Map<String, String> wrote = appliedState(root);
+        // the whole apply undone (git reset, a revert): no file still has what logast wrote. That is a fresh start, not a
+        // person choosing against single fixes: everything applies again (#249)
+        boolean undoneAsAWhole = !wrote.isEmpty() && wrote.entrySet().stream()
+                .noneMatch(e -> !e.getValue().equals("-") && e.getValue().equals(sha256(root.resolve(e.getKey()))));
+        if (undoneAsAWhole) {
+            return f -> false;
+        }
+        Map<String, Boolean> answer = new java.util.HashMap<>();
+        return f -> answer.computeIfAbsent(f, k -> wrote.containsKey(k) && !wrote.get(k).equals(sha256(root.resolve(k))));
+    }
+
+    static void recordAppliedOrders(Path root, List<String> applied) throws IOException {
+        Set<String> ids = new java.util.TreeSet<>(ordersAppliedEarlier(root));
+        ids.addAll(applied);
+        Path list = root.resolve(APPLIED_ORDERS);
+        Files.createDirectories(list.getParent());
+        Files.writeString(list, "# every fix logast apply made here (#317): one that is back as an open order was changed back "
+                + "by hand, and a later apply leaves it (--redo applies it again)\n" + String.join("\n", ids) + "\n");
     }
 
     /** #131: file → SHA-256 of the content apply wrote; empty without a record (an earlier logast). */

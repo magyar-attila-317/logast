@@ -10,14 +10,15 @@ public class PaymentClient {
     private static final Logger log = LoggerFactory.getLogger(PaymentClient.class);
 
     public void charge(Order order) {
-        try (var mdc = MdcScope.of("orderId", order.id())) {
-            try {
+        try {
+            try (var mdc = MdcScope.of("orderId", order.id())) {
                 log.debug("Charging order {} with {} cents", order.id(), order.amountCents()); // logast: LOG_FORMAT FMT-93dcb8
                 gateway(order);
-            } catch (IllegalStateException e) {
-                log.error("Charge failed for order", e);
-                throw new PaymentException("charge failed", e);
             }
+        } catch (IllegalStateException e) {
+            log.error("Charge failed [orderId={}]", order.id(), e);
+            OrderMetrics.chargeFailed(); // logast:metric review, confidence: medium
+            throw new PaymentException("charge failed", e);
         }
     }
 

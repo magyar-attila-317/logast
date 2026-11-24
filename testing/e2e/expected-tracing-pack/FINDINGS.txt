@@ -11,8 +11,8 @@ NEEDS TEXT SWALLOWED_EXCEPTION src/main/java/com/example/e2e/order/LoyaltyClient
 REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:21
 REPORT-ONLY KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/order/OrderEvents.java:15
 REPORT-ONLY REMOTE_CALL_IN_TRANSACTION src/main/java/com/example/e2e/order/OrderService.java:26
-REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/order/PaymentClient.java:18
-REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/order/PaymentClient.java:38
+REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/order/PaymentClient.java:19
+REPORT-ONLY CAUSE_DROPPED src/main/java/com/example/e2e/order/PaymentClient.java:39
 REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentException.java:3
 REPORT-ONLY SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
 REPORT-ONLY ROW_BY_ROW_WRITE src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:25
@@ -66,6 +66,5 @@ REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.jav
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:51
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:20
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/stock/StockTracker.java:22
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/web/QuoteController.java:30
 REPORT-ONLY PROBLEM_DETAILS_DISABLED src/main/resources/application.yml:1

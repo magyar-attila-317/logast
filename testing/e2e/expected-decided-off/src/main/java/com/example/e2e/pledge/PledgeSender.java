@@ -18,15 +18,15 @@ public class PledgeSender {
 
     /** A failure logged and handled here: an outcome worth counting by default. */
     public boolean resend(String pledgeId) {
-        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-            try {
+        try {
+            try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
                 send(pledgeId);
                 return true;
-            } catch (IllegalStateException e) {
-                log.warn("Pledge resend failed", e);
-                Outcomes.count("pledge.resend", "failed");
-                return false;
             }
+        } catch (IllegalStateException e) {
+            log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
+            Outcomes.count("pledge.resend", "failed");
+            return false;
         }
     }
 }

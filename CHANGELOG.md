@@ -6,12 +6,18 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- A catch that handles the outcome (a fallback value, a skip, a report entry) accepts any wording, not only "{subject} failed" (#319).
 - An MdcScope never evaluates a value whose chain the code null-checks (`t.getTable() == null`, then `t.getTable().getUuid()`): no scope there, or the entry value is read null-safe at that step; in a body that is one `try` with catches the scope opens inside the `try` (an exception reading the value stays the code's own to catch).
 - An id counts as in MDC only where a scope in the method covers the line: a line before the scope or in a catch outside it keeps its id.
 - Lists of plain values (strings, numbers, enums, UUIDs, dates) and `.limit(n)` streams stay as logged; only collections of entities become `.size()`.
 - A log-and-rethrow line that carries any value besides the exception is never deleted: an id in MDC here is not in MDC where the rethrown exception is logged.
 - An added line never calls the argument expression again (no query re-run in a log argument); a write per loop item gets no line per item; any existing line counts, so a lowered line is not added again (#314).
 - Generated wording: "Menu categories saved" (no "Entity" suffix, English plurals); a pipeline is named after its source (`openOrderIds`, not `toList`); a startup check gets no "completed" line and no "event handling" wording; `(order {})` for an id in MDC goes with it (#310).
+
+**CLI**
+- A fix an earlier apply made and a person changed back is left as changed on the next apply (`Left as you changed them (N)`); `--redo` applies it again (#317).
+- Apply lists the changes beyond logging (code that can run differently: scopes, moved evaluations, deleted or added statements, build and configuration files) as `file:line method — what`, and writes `.logast/reports/behavioural.txt` (#316).
+- The test check no longer reports a static import from a library the main classpath lacks (Mockito, spring-test) as a break (#320).
 
 ## 0.5.2
 

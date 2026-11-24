@@ -74,7 +74,7 @@ index b5016f7..9783241 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index c8a4563..c6754b6 100644
+index 883cb52..d9a678e 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 @@ -12,6 +12,7 @@ 
@@ -85,14 +85,14 @@ index c8a4563..c6754b6 100644
      }
  
      /** A failure logged and handled here: an outcome worth counting by default. */
-@@ -22,6 +23,7 @@
-                 return true;
-             } catch (IllegalStateException e) {
-                 log.warn("Pledge resend failed", e);
-+                PledgeMetrics.pledgeResendFailed();
-                 return false;
+@@ -23,6 +24,7 @@
              }
+         } catch (IllegalStateException e) {
+             log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
++            PledgeMetrics.pledgeResendFailed();
+             return false;
          }
+     }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
 index 8117e82..899d04e 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
@@ -146,6 +146,18 @@ index 36ff109..725ebea 100644
          }
      }
  }
+diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
+index fff6c96..ea9ca43 100644
+--- a/src/main/java/com/example/e2e/order/PaymentClient.java
++++ b/src/main/java/com/example/e2e/order/PaymentClient.java
+@@ -17,6 +17,7 @@ 
+             }
+         } catch (IllegalStateException e) {
+             log.error("Charge failed [orderId={}]", order.id(), e);
++            OrderMetrics.chargeFailed();
+             throw new PaymentException("charge failed", e);
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 index 7e878e4..14ceb1d 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
@@ -310,10 +322,10 @@ index 0000000..6cce5ea
 +}
 diff --git a/src/main/java/com/example/e2e/order/OrderMetrics.java b/src/main/java/com/example/e2e/order/OrderMetrics.java
 new file mode 100644
-index 0000000..9e71e63
+index 0000000..47f77e8
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/order/OrderMetrics.java
-@@ -0,0 +1,52 @@ 
+@@ -0,0 +1,58 @@ 
 +package com.example.e2e.order;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -353,6 +365,11 @@ index 0000000..9e71e63
 +        Outcomes.record("orders", "shipped", "items", items);
 +    }
 +
++    /** charge{outcome="failed"} +1. */
++    public static void chargeFailed() {
++        Outcomes.count("charge", "failed");
++    }
++
 +    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
 +    @org.springframework.stereotype.Component
 +    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
@@ -363,6 +380,7 @@ index 0000000..9e71e63
 +            Outcomes.register("order", "placed");
 +            Outcomes.register("order.shipment", "skipped");
 +            Outcomes.registerPerRun("orders", "shipped", "items");
++            Outcomes.register("charge", "failed");
 +        }
 +    }
 +}

@@ -49,8 +49,11 @@ public final class Invariants {
                 }
                 List<String> keys = MessageTemplate.compliantKeys(raw);
                 if (keys != null) {
+                    // in MDC where the line is: a scope of the method covers it, or callers set the key (as the rules decide)
+                    Set<String> here = new HashSet<>(inside);
+                    here.removeAll(paths.notCoveredAt(m, Pos.start(lc.call())));
                     for (String k : keys) {
-                        if (inside.contains(k)) {
+                        if (here.contains(k)) {
                             out.add(file + ":" + Pos.line(lc.call()) + "  logs " + k + " in the message although MDC carries it");
                         }
                     }

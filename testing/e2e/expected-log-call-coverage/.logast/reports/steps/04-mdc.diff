@@ -229,7 +229,7 @@ index 0f711af..3423e6d 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index 3c0d973..3fd26f3 100644
+index 3c0d973..b399b46 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 @@ -1,5 +1,6 @@ 
@@ -239,27 +239,19 @@ index 3c0d973..3fd26f3 100644
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
  import org.springframework.stereotype.Component;
-@@ -15,12 +16,14 @@
- 
+@@ -16,8 +17,10 @@
      /** A failure logged and handled here: an outcome worth counting by default. */
      public boolean resend(String pledgeId) {
--        try {
+         try {
 -            send(pledgeId);
 -            return true;
--        } catch (IllegalStateException e) {
--            log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
--            return false;
-+        try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
-+            try {
++            try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
 +                send(pledgeId);
 +                return true;
-+            } catch (IllegalStateException e) {
-+                log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
-+                return false;
 +            }
-         }
-     }
- }
+         } catch (IllegalStateException e) {
+             log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
+             return false;
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 index 1c941f2..09afebd 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
@@ -371,7 +363,7 @@ index 3da7176..ee77169 100644
  
      public void place(Order order) {
 diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
-index 1895279..ffe162d 100644
+index 1895279..180b614 100644
 --- a/src/main/java/com/example/e2e/order/PaymentClient.java
 +++ b/src/main/java/com/example/e2e/order/PaymentClient.java
 @@ -1,5 +1,6 @@ 
@@ -381,24 +373,16 @@ index 1895279..ffe162d 100644
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
  import org.springframework.stereotype.Component;
-@@ -9,12 +10,14 @@
-     private static final Logger log = LoggerFactory.getLogger(PaymentClient.class);
+@@ -10,8 +11,10 @@
  
      public void charge(Order order) {
--        try {
+         try {
 -            log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
 -            gateway(order);
--        } catch (IllegalStateException e) {
--            log.error("Charge failed for order {}", order.id(), e);
--            throw new PaymentException("charge failed", e);
-+        try (var mdc = MdcScope.of("orderId", order.id())) {
-+            try {
++            try (var mdc = MdcScope.of("orderId", order.id())) {
 +                log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
 +                gateway(order);
-+            } catch (IllegalStateException e) {
-+                log.error("Charge failed for order {}", order.id(), e);
-+                throw new PaymentException("charge failed", e);
 +            }
-         }
-     }
- 
+         } catch (IllegalStateException e) {
+             log.error("Charge failed for order {}", order.id(), e);
+             throw new PaymentException("charge failed", e);

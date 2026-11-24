@@ -62,7 +62,7 @@ src/main/java/com/example/e2e/order/OrderService.java:37              fixed    L
 src/main/java/com/example/e2e/order/OrderService.java:43              fixed    METRIC_OUTCOME_UNMEASURED OUM-164f3d
 src/main/java/com/example/e2e/order/OrderService.java:48              reported METRIC_OUTCOME_UNMEASURED OUM-00f4c0
 src/main/java/com/example/e2e/order/PaymentClient.java:15             fixed    REPEATED_LOG_VALUE RLV-fc4256; reported LOG_FORMAT FMT-93dcb8
-src/main/java/com/example/e2e/order/PaymentClient.java:18             fixed    LOG_FORMAT FMT-9cb82a; reported LOG_AND_RETHROW LAR-277884
+src/main/java/com/example/e2e/order/PaymentClient.java:19             fixed    LOG_FORMAT FMT-9cb82a, METRIC_OUTCOME_UNMEASURED OUM-6778ab; reported LOG_AND_RETHROW LAR-277884
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23         reported MESSAGE_SUGGESTED SUG-3fd65d
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:26         fixed    LOG_FORMAT FMT-e06e0e, LOG_LEVEL LVL-d7ccac
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29         reported MESSAGE_SUGGESTED SUG-bc7bc4
@@ -74,7 +74,7 @@ src/main/java/com/example/e2e/pledge/PledgeRepository.java:33         reported M
 src/main/java/com/example/e2e/pledge/PledgeRepository.java:39         reported MESSAGE_SUGGESTED SUG-6fe694
 src/main/java/com/example/e2e/pledge/PledgeSender.java:13             fixed    LOG_FORMAT FMT-96b9cd
 src/main/java/com/example/e2e/pledge/PledgeSender.java:14             fixed    LOG_FORMAT FMT-06ebd0; reported METRIC_OUTCOME_UNMEASURED OUM-e7708e
-src/main/java/com/example/e2e/pledge/PledgeSender.java:24             fixed    REPEATED_LOG_VALUE RLV-517972, LOG_FORMAT FMT-10b369, METRIC_OUTCOME_UNMEASURED OUM-246c77
+src/main/java/com/example/e2e/pledge/PledgeSender.java:25             fixed    REPEATED_LOG_VALUE RLV-517972, METRIC_OUTCOME_UNMEASURED OUM-246c77
 src/main/java/com/example/e2e/pledge/PledgeService.java:41            fixed    LOG_FORMAT FMT-2d5392; reported MESSAGE_VAGUE MVG-60b01f
 src/main/java/com/example/e2e/pledge/PledgeService.java:44            fixed    LOG_FORMAT FMT-a6ea8c; reported METRIC_OUTCOME_UNMEASURED OUM-98314f
 src/main/java/com/example/e2e/pledge/PledgeService.java:49            fixed    REPEATED_LOG_VALUE RLV-3b6ae3, LOG_FORMAT FMT-e5b4c8
@@ -105,11 +105,11 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             reported M
 # src/main/java/com/example/e2e/messaging/PledgeMessages.java 4c309decbf02
 # src/main/java/com/example/e2e/order/OrderNotifications.java 5587152a2e82
 # src/main/java/com/example/e2e/order/OrderService.java 3e84740bdd33
-# src/main/java/com/example/e2e/order/PaymentClient.java 58e66cb90b86
+# src/main/java/com/example/e2e/order/PaymentClient.java bb2677227d4c
 # src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java 85728efdb638
 # src/main/java/com/example/e2e/pledge/PledgeLookup.java 1c296b3934e6
 # src/main/java/com/example/e2e/pledge/PledgeRepository.java a8c968c778d8
-# src/main/java/com/example/e2e/pledge/PledgeSender.java 7ade4feece3b
+# src/main/java/com/example/e2e/pledge/PledgeSender.java c31a1e97b71e
 # src/main/java/com/example/e2e/pledge/PledgeService.java 2f9401c79e7f
 # src/main/java/com/example/e2e/stipend/PledgeChecks.java 64aaa89f9d86
 # src/main/java/com/example/e2e/stipend/StipendCalculator.java f4bdb836fbc9

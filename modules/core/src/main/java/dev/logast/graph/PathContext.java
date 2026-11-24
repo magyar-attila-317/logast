@@ -151,6 +151,41 @@ public final class PathContext {
         return s;
     }
 
+    /**
+     * Keys the method itself puts into MDC with a try-with-resources scope (MdcScope, putCloseable) that do not cover the
+     * position {@code at}: before the try or in a catch outside it. A key callers set too is everywhere in the method.
+     */
+    public Set<String> notCoveredAt(MethodInfo m, int at) {
+        if (m.decl().getBody() == null) {
+            return Set.of();
+        }
+        Map<String, List<int[]>> covered = new HashMap<>();
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public org.openrewrite.java.tree.J.Try visitTry(org.openrewrite.java.tree.J.Try t, Integer p) {
+                if (t.getResources() != null) {
+                    for (MdcOp op : m.facts().mdc) {
+                        if (op.kind() == MdcOp.Kind.PUT_CLOSEABLE && op.key() != null
+                                && dev.logast.parse.Pos.start(op.call()) >= dev.logast.parse.Pos.start(t)
+                                && dev.logast.parse.Pos.end(op.call()) <= dev.logast.parse.Pos.start(t.getBody())) {
+                            covered.computeIfAbsent(op.key(), k -> new ArrayList<>()).add(new int[]{
+                                    dev.logast.parse.Pos.start(t.getBody()), dev.logast.parse.Pos.end(t.getBody())});
+                        }
+                    }
+                }
+                return super.visitTry(t, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        Set<String> out = new TreeSet<>();
+        Set<String> fromCallers = mdcAtEntry(m);
+        covered.forEach((key, ranges) -> {
+            if (!fromCallers.contains(key) && ranges.stream().noneMatch(r -> at >= r[0] && at < r[1])) {
+                out.add(key);
+            }
+        });
+        return out;
+    }
+
     /** Keys of every method reachable from the entrypoint (itself included). */
     public Set<String> reachableFrom(Entrypoint ep) {
         return parents.getOrDefault(ep.method().key(), Map.of()).keySet();

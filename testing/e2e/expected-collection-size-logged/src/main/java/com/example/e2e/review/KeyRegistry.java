@@ -9,13 +9,19 @@ import org.slf4j.LoggerFactory;
 
 class KeyRegistry {
     private static final Logger log = LoggerFactory.getLogger(KeyRegistry.class);
-    private final List<String> items = new ArrayList<>();
+    private final List<Item> items = new ArrayList<>();
 
-    List<String> getItems() {
+    record Key(String name) {
+    }
+
+    record Item(String name) {
+    }
+
+    List<Item> getItems() {
         return items;
     }
 
-    void register(Set<String> existingKeys) {
+    void register(Set<Key> existingKeys) {
         log.warn("{} keys have an entity already associated with them: {}", existingKeys.size(), existingKeys);
     }
 

@@ -1,7 +1,7 @@
 logast · 70 files · 21 entrypoints · 74/201 methods reachable · 142 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 76.2% (jobs 8/9 · http 8/12)   (places that should log and do)
-77 orders: 0 AUTO, 18 NEEDS TEXT, 59 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+78 orders: 0 AUTO, 18 NEEDS TEXT, 60 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-b1c041  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -57,7 +57,7 @@ SWA-91b292  medium  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/e
   Exception is caught and dropped without a log line in LoyaltyClient.balance (falls back silently)
   + log.warn("{{MSG}}"{{ARGS}}, e);
   (+2 more edits)
-  MSG: What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri("/balances/{customerId}", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as '{subject} failed'
+  MSG: What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri("/balances/{customerId}", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool.
   mdc: []  vars: customerId:String, e:Exception
   related: CAD-265862 (CATCH_ALL_DEFAULT)  (same code: decide them together)
 CAD-265862  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:21  LoyaltyClient.balance
@@ -75,18 +75,18 @@ RCT-2df7d7  medium  REPORT-ONLY  REMOTE_CALL_IN_TRANSACTION  src/main/java/com/e
   OrderService.placeAndReward is @Transactional and calls a remote service inside the transaction: OrderService.placeAndReward → LoyaltyClient.award → RestClient.post. The database connection is held while the network call waits
   note: Move the call out of the transaction (before it, or after commit: TransactionSynchronization / @TransactionalEventListener / an outbox), or make the transaction only cover the database work.
   done when: no blocking HTTP call is reachable from it on the same thread (up to 4 calls deep)
-LAR-277884  medium  REPORT-ONLY  LOG_AND_RETHROW  src/main/java/com/example/e2e/order/PaymentClient.java:18  PaymentClient.charge
+LAR-277884  medium  REPORT-ONLY  LOG_AND_RETHROW  src/main/java/com/example/e2e/order/PaymentClient.java:19  PaymentClient.charge
   Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it
   path: POST /orders → PledgeController.place → OrderService.place → PaymentClient.charge
-  note: Not removed: nothing else is known to log it on the path through OrderService.ship (no caller in the code), so this line may be its only record. Log it there (or in an @ExceptionHandler), then delete this one.
-  done when: a catch or @ExceptionHandler logs it on the path through OrderService.ship (no caller in the code); then logast deletes this line itself. Or the line is gone
+  note: Not removed: the line carries [orderId], which the rethrown exception does not, and nothing else is known to log it on the path through OrderService.ship (no caller in the code), so this line may be its only record. Put the values into the exception (its message or a field) and log the exception there (or in an @ExceptionHandler), then delete this one.
+  done when: the line logs nothing but the exception and a catch or @ExceptionHandler logs it on the path through OrderService.ship (no caller in the code); then logast deletes this line itself. Or the line is gone
 CDR-2c546b  medium  REPORT-ONLY  CAUSE_DROPPED  src/main/java/com/example/e2e/order/PaymentClient.java:38  PaymentClient.verify
   catch (IllegalStateException e) throws a new OrderRejected without e as its cause: the original stack trace is lost
   note: Pass e as the cause: add a constructor (…, Throwable cause) to OrderRejected, or call initCause(e) before throwing.
   done when: the new OrderRejected gets e (or a Throwable wrapping it) as a constructor argument, or initCause(e) before the throw
 UMX-665400  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e2e/order/PaymentException.java:3
   PaymentException is thrown on HTTP paths (1×) but no handler or @ResponseStatus maps it: the client gets a 500
-  also fixes: UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentClient.java:19
+  also fixes: UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentClient.java:20
   note: Decide its status: @ResponseStatus(HttpStatus.CONFLICT) on the class, or an @ExceptionHandler returning a ProblemDetail (with a stable error code) in the controller advice.
   done when: @ResponseStatus on it or a supertype, it extends ResponseStatusException (or is an ErrorResponse), or an @ExceptionHandler names it or a supertype narrower than Exception / RuntimeException
 SWL-aa8bfe  medium  REPORT-ONLY  SCHEDULED_WITHOUT_LOCK  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
@@ -312,6 +312,10 @@ FMT-93dcb8  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/order/Pay
   + "{{MSG}}", order.amountCents(){{ARGS}}
   MSG: Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: "Charging order with {} cents" | suffix keys: [amountCents]
   mdc: [orderId]  vars: order:Order, mdc:MdcScope
+OUM-6778ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/PaymentClient.java:19  PaymentClient.charge
+  "Charge failed" is logged but not counted (outcome=failed, frequency unknown: no rate for "POST /orders" in .logast/decisions/traffic.yaml)
+  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("charge", "failed")), tag (Outcomes.tag("failed") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
 SUG-3fd65d  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23  PledgeCleanupJob.cleanup
   Generated wording "Pledge cleanup started": say it in domain terms
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup
@@ -377,7 +381,7 @@ OUM-e7708e  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
   "Pledge sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /pledges/allot" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge", "sent")), tag (Outcomes.tag("sent") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
-OUM-246c77  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeSender.java:24  PledgeSender.resend
+OUM-246c77  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeSender.java:25  PledgeSender.resend
   "Pledge resend failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.resend", "failed")) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
@@ -410,11 +414,11 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 87 changes in 48 files (git diff to review)
+Applied earlier: 86 changes in 48 files (git diff to review)
 
-Optional (77) — left as is, each keeps its default:
+Optional (78) — left as is, each keeps its default:
   18 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
-  23 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
+  24 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
   36 decisions                      → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)

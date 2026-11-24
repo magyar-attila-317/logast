@@ -81,6 +81,11 @@ public final class BusinessMetrics {
         Outcomes.record("orders", "shipped", "items", items);
     }
 
+    /** charge{outcome="failed"} +1. */
+    public static void chargeFailed() {
+        Outcomes.count("charge", "failed");
+    }
+
     /** pledge.lookup{outcome="failed"} +1. */
     public static void pledgeLookupFailed() {
         Outcomes.count("pledge.lookup", "failed");
@@ -132,6 +137,7 @@ public final class BusinessMetrics {
             Outcomes.register("order", "placed");
             Outcomes.register("order.shipment", "skipped");
             Outcomes.registerPerRun("orders", "shipped", "items");
+            Outcomes.register("charge", "failed");
             Outcomes.register("pledge.lookup", "failed");
             Outcomes.registerTotal("pledges", "updated", "rows");
             Outcomes.registerTotal("pledge.usage", "saved", "uses");

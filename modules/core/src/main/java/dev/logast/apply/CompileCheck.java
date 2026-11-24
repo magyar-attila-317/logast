@@ -362,9 +362,12 @@ public final class CompileCheck {
      * classpath lacks) that says more about the environment than about the edit. Name clashes, wrong methods on known
      * types and wrong arguments are still errors. A type name a rule misspells slips through here; the e2e compile catches it.
      */
-    private static boolean environmental(String code, String message) {
+    static boolean environmental(String code, String message) {
         // an unknown class used as a qualifier (Factory.builder()) is reported as a variable
-        return code.equals("compiler.err.doesnt.exist") || code.startsWith("compiler.err.cant.resolve")
+        // #320: a static import from a class javac cannot find (a test library missing from the main classpath) is read
+        // as a package: "static import only from classes and interfaces"
+        return code.equals("compiler.err.doesnt.exist") || code.equals("compiler.err.static.imp.only.classes.and.interfaces")
+                || code.startsWith("compiler.err.cant.resolve")
                 && (message.contains("symbol: class ") || message.matches(".*symbol: variable [A-Z]\\w*( .*)?"));
     }
 

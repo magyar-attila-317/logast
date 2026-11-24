@@ -309,7 +309,8 @@ abstract class E2eGoldenTest {
         git(app, "commit", "--quiet", "-m", "logast apply");
         String second = run(app, "apply", app.toString());
         assertThat(LAST_EXIT).isZero();
-        assertThat(second).as("a second apply changes nothing").contains("nothing to change");
+        assertThat(second).as("a second apply changes nothing").contains("nothing to change")
+                .as("#317: and leaves nothing out as changed back by hand").doesNotContain("Left as you changed them");
         assertThat(git(app, "status", "--porcelain")).as("nothing for git either").isEmpty();
         assertThat(first + second).doesNotContain("CHECK FAILED");
         compile(app);
@@ -1187,7 +1188,7 @@ abstract class E2eGoldenTest {
                 .contains("outcomes to count or skip").contains("--rule ASYNC_CONTEXT_LOSS")
                 .as("each rule says what to do: the note's first instruction, past an explanation")
                 .contains("      → Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.\n")
-                .contains("      → Log it there (or in an @ExceptionHandler), then delete this one.\n")
+                .contains("      → e.g. Put the values into the exception (its message or a field) and log the exception there (or in an @Exceptio…")
                 .contains("      → e.g. Record the trace or correlation id");
         String piped = run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
         assertThat(piped).as("not a terminal: the full listing").contains("REPORT-ONLY").doesNotContain("Your decisions");
@@ -1391,8 +1392,9 @@ abstract class E2eGoldenTest {
             dev.logast.orders.OrderJson.MAPPER.writerWithDefaultPrettyPrinter().writeValue(dir.resolve(e.getValue()).toFile(), old);
             Files.delete(dir.resolve(e.getKey()));
         }
-        // metrics.md and lifecycle.txt came with the reports/ folder (#125): an earlier logast never wrote them
-        Set<String> newer = Set.of("metrics.md", "lifecycle.txt");
+        // metrics.md and lifecycle.txt came with the reports/ folder (#125), behavioural.txt later (#316): an earlier
+        // logast never wrote them
+        Set<String> newer = Set.of("metrics.md", "lifecycle.txt", "behavioural.txt");
         for (String sub : List.of("decisions", "reports")) {
             try (Stream<Path> s = Files.list(dir.resolve(sub))) {
                 for (Path p : s.toList()) {
@@ -2013,7 +2015,8 @@ abstract class E2eGoldenTest {
         Files.writeString(job, shifted);
         Path client = app.resolve("src/main/java/com/example/e2e/order/PaymentClient.java");
         String c = Files.readString(client);
-        String cShifted = c.replace("            try {\n                log.debug(\"Charging order", "            try {\n                log.debug(\"Charge requested\");\n                log.debug(\"Charging order");
+        // D1b: the order's scope opens inside the method's own try, the line sits in it
+        String cShifted = c.replace("\n                log.debug(\"Charging order", "\n                log.debug(\"Charge requested\");\n                log.debug(\"Charging order");
         assertThat(cShifted).as("a line above the reworded one").isNotEqualTo(c);
         Files.writeString(client, cShifted);
 
@@ -2547,7 +2550,10 @@ abstract class E2eGoldenTest {
         golden(EXPECTED.resolveSibling("expected-suppressions"), actual);
     }
 
-    /** #69: a collection logged next to its own size is not rewritten to a second count, it is reported for rewording. */
+    /**
+     * #69: a collection logged next to its own size is not rewritten to a second count, it is reported for rewording
+     * (collections of domain objects: a list of plain values is logged as it is, D2).
+     */
     @Test
     void reportsCollectionWhoseSizeIsAlreadyLogged() throws IOException {
         Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
@@ -2565,13 +2571,19 @@ abstract class E2eGoldenTest {
 
                     class KeyRegistry {
                         private static final Logger log = LoggerFactory.getLogger(KeyRegistry.class);
-                        private final List<String> items = new ArrayList<>();
+                        private final List<Item> items = new ArrayList<>();
 
-                        List<String> getItems() {
+                        record Key(String name) {
+                        }
+
+                        record Item(String name) {
+                        }
+
+                        List<Item> getItems() {
                             return items;
                         }
 
-                        void register(Set<String> existingKeys) {
+                        void register(Set<Key> existingKeys) {
                             log.warn("{} keys have an entity already associated with them: {}", existingKeys.size(), existingKeys);
                         }
 
@@ -3092,8 +3104,31 @@ abstract class E2eGoldenTest {
         assertThat(sweep).as("#303: the varargs array").contains("log.error(line, args);").doesNotContain("args.length");
         assertThat(sweep).as("#304: the FAILED status line stays").contains("outcome=FAILED");
         assertThat(sweep).as("#301: the cause after the last argument").contains("e.getMessage(), e\n");
+        assertThat(actual.get("OUTPUT.txt")).as("#316: the changes beyond logging are listed, file:line and method")
+                .contains("Changes beyond logging (").containsPattern("src/main/java/com/example/e2e/\\S+\\.java:\\d+ \\S+ — ");
         assertThat(actual.get("src/main/resources/logback-spring.xml")).as("#296: the MDC keys the code writes reach the JSON logs")
                 .contains("<includeMdcKeyName>traceId</includeMdcKeyName>\n            <includeMdcKeyName>orderId</includeMdcKeyName>");
+    }
+
+    /**
+     * #317: a fix an earlier apply made and a person changed back stays as the person left it on the next apply (said
+     * in the output); --redo applies it again.
+     */
+    @Test
+    void aFixChangedBackByHandIsLeftAsChanged() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        String rel = "src/main/java/com/example/e2e/order/OrderService.java";
+        String original = Files.readString(app.resolve(rel));
+        run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(Files.readString(app.resolve(rel))).as("the first apply changes the file").isNotEqualTo(original);
+        Files.writeString(app.resolve(rel), original);   // a person reverts the whole file
+        String again = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(again).as(again).contains("Left as you changed them (");
+        assertThat(Files.readString(app.resolve(rel))).as("the person's version stands").isEqualTo(original);
+        String redo = run(app, "apply", app.toString(), "--auto", "--write", "--redo", "--classpath-file", CLASSPATH);
+        assertThat(redo).doesNotContain("Left as you changed them");
+        assertThat(Files.readString(app.resolve(rel))).as("--redo applies them again").isNotEqualTo(original);
     }
 
     /**
@@ -8987,8 +9022,8 @@ abstract class E2eGoldenTest {
     }
 
     /**
-     * #251: a collection logged whole is logged as its size; one the method itself treats as optional (it checks it for
-     * null) gets a null-safe count, as {@code .size()} on it threw where SLF4J had printed "null".
+     * #251: a collection of objects logged whole is logged as its size; one the method itself treats as optional (it checks
+     * it for null) gets a null-safe count, as {@code .size()} on it threw where SLF4J had printed "null".
      */
     @Test
     void aCollectionTheMethodChecksForNullIsCountedNullSafe() throws IOException {
@@ -9010,12 +9045,15 @@ abstract class E2eGoldenTest {
                     class SeatController {
                         private static final Logger log = LoggerFactory.getLogger(SeatController.class);
 
+                        record Seat(Long number) {
+                        }
+
                         @PostMapping("/seats/pay")
-                        void pay(@RequestParam(required = false) Collection<Long> expectedIds) {
-                            List<Long> actualIds = new java.util.ArrayList<>(Set.of(1L, 2L));
-                            boolean differ = expectedIds != null && !Set.copyOf(expectedIds).equals(Set.copyOf(actualIds));
-                            if (differ || actualIds.isEmpty()) {
-                                log.info("Refused seat pay (expected={}, actual={})", expectedIds, actualIds);
+                        void pay(@RequestParam(required = false) Collection<Seat> expectedSeats) {
+                            List<Seat> actualSeats = new java.util.ArrayList<>(Set.of(new Seat(1L), new Seat(2L)));
+                            boolean differ = expectedSeats != null && !Set.copyOf(expectedSeats).equals(Set.copyOf(actualSeats));
+                            if (differ || actualSeats.isEmpty()) {
+                                log.info("Refused seat pay (expected={}, actual={})", expectedSeats, actualSeats);
                                 throw new IllegalStateException("the due changed");
                             }
                         }
@@ -9023,8 +9061,8 @@ abstract class E2eGoldenTest {
                     """);
         });
         String seat = actual.get("src/main/java/com/example/e2e/seat/SeatController.java");
-        assertThat(seat).as(seat).contains("expectedIds == null ? null : expectedIds.size()").contains("actualIds.size()")
-                .doesNotContain("actualIds == null");
+        assertThat(seat).as(seat).contains("expectedSeats == null ? null : expectedSeats.size()").contains("actualSeats.size()")
+                .doesNotContain("actualSeats == null");
     }
 
     /**

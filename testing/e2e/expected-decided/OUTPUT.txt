@@ -1,6 +1,6 @@
 === logast apply . --auto --write
-✓ 87 changes in 49 files (<t>)
-  42 log lines rewritten in the standard format
+✓ 86 changes in 49 files (<t>)
+  41 log lines rewritten in the standard format
   13 log lines added where something happened silently
   10 business ids put into MDC
   7 setup changes (dependencies, configuration, tracing)
@@ -8,9 +8,21 @@
   8 other changes
   support code copied into com/example/e2e/logging (16 files)
   review: git diff   (one diff per kind: .logast/reports/steps/)
+Changes beyond logging (31): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
+  src/main/java/com/example/e2e/edge/Audited.java:10 Audited.audit — code changed besides logging
+  src/main/java/com/example/e2e/edge/EdgeFlow.java:18 EdgeFlow.process — code changed besides logging
+  src/main/java/com/example/e2e/edge/EdgeJob.java:22 EdgeJob.run — code changed besides logging
+  src/main/java/com/example/e2e/job/BaseRunJob.java:9 BaseRunJob.doExecute — code changed besides logging
+  src/main/java/com/example/e2e/job/PublishRunJob.java:17 PublishRunJob.doRun — code changed besides logging
+  src/main/java/com/example/e2e/job/SettlementJobExecutor.java:17 SettlementJobExecutor.onReady — code changed besides logging
+  src/main/java/com/example/e2e/messaging/PledgeMessages.java:19 PledgeMessages.onBatch — code changed besides logging
+  src/main/java/com/example/e2e/messaging/PledgeMessages.java:28 PledgeMessages.onReturn — code changed besides logging
+  src/main/java/com/example/e2e/messaging/PledgeMessages.java:36 PledgeMessages.onAudit — code changed besides logging
+  src/main/java/com/example/e2e/order/OrderEvents.java:15 OrderEvents.onOrder — code changed besides logging
+  … and 21 more
 
 Worth a look (optional) — the service works without these:
-  18 log lines could say more, 23 outcomes could be counted → logast review
+  18 log lines could say more, 24 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
 Log lines: 84 — 43 fixed, 23 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
@@ -24,7 +36,7 @@ reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain me
 ✓ nothing to change: the code has everything logast applies itself (<t>)
 
 Worth a look (optional) — the service works without these:
-  18 log lines could say more, 23 outcomes could be counted → logast review
+  18 log lines could say more, 24 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
 Log lines: 84 — 43 fixed, 23 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
@@ -35,17 +47,29 @@ Also: logast verify .   build and run the tests with log capture: does the resul
 reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)
 
 === after writing every text and counting every outcome
-✓ 34 changes in 21 files (<t>)
-  20 outcomes counted (a metric next to their log line)
+✓ 35 changes in 22 files (<t>)
+  21 outcomes counted (a metric next to their log line)
   13 log lines rewritten in the standard format
   1 metric, error-handling or audit fix
   review: git diff   (one diff per kind: .logast/reports/steps/)
+Changes beyond logging (27): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
+  src/main/java/com/example/e2e/edge/Audited.java:10 Audited.audit — code changed besides logging
+  src/main/java/com/example/e2e/edge/EdgeFlow.java:18 EdgeFlow.process — code changed besides logging
+  src/main/java/com/example/e2e/job/ExportJob.java:12 ExportJob.doExecute — code changed besides logging
+  src/main/java/com/example/e2e/job/JobMetrics.java:22 JobMetrics.exportJobCompleted — method added
+  src/main/java/com/example/e2e/job/JobMetrics.java:27 JobMetrics.preloadExportCompleted — method added
+  src/main/java/com/example/e2e/job/JobMetrics.java:32 JobMetrics.tallyCompleted — method added
+  src/main/java/com/example/e2e/job/JobMetrics.java:38 Registration — method added
+  src/main/java/com/example/e2e/job/JobMetrics.java:40 Registration.afterSingletonsInstantiated — method added
+  src/main/java/com/example/e2e/job/PreloadJob.java:14 PreloadJob.doExecute — code changed besides logging
+  src/main/java/com/example/e2e/job/TallyJob.java:14 TallyJob.doExecute — code changed besides logging
+  … and 17 more
 
 Worth a look (optional) — the service works without these:
   5 log lines could say more, 3 outcomes could be counted → logast review   (3 in metrics.yaml cannot be written: see "_problem")
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 84 — 51 fixed, 5 with a finding, 20 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 84 — 50 fixed, 6 with a finding, 20 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?

@@ -16,7 +16,7 @@ index ee77169..5f70c44 100644
  
      /** Logs a quantity (items) and an id-like number (batchNumber): only the quantity is an amount to count. */
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index 3fd26f3..c8a4563 100644
+index b399b46..883cb52 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 @@ -10,8 +10,8 @@ 
@@ -30,15 +30,6 @@ index 3fd26f3..c8a4563 100644
      }
  
      /** A failure logged and handled here: an outcome worth counting by default. */
-@@ -21,7 +21,7 @@
-                 send(pledgeId);
-                 return true;
-             } catch (IllegalStateException e) {
--                log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
-+                log.warn("Pledge resend failed", e);
-                 return false;
-             }
-         }
 diff --git a/src/main/java/com/example/e2e/edge/Audited.java b/src/main/java/com/example/e2e/edge/Audited.java
 index b2fb984..8c7e3d5 100644
 --- a/src/main/java/com/example/e2e/edge/Audited.java
@@ -296,18 +287,18 @@ index 0ae3a0b..fc4ed6c 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
-index ffe162d..f6790d6 100644
+index 180b614..43485a7 100644
 --- a/src/main/java/com/example/e2e/order/PaymentClient.java
 +++ b/src/main/java/com/example/e2e/order/PaymentClient.java
-@@ -15,7 +15,7 @@ 
-                 log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
+@@ -16,7 +16,7 @@ 
                  gateway(order);
-             } catch (IllegalStateException e) {
--                log.error("Charge failed for order {}", order.id(), e);
-+                log.error("Charge failed for order", e);
-                 throw new PaymentException("charge failed", e);
              }
+         } catch (IllegalStateException e) {
+-            log.error("Charge failed for order {}", order.id(), e);
++            log.error("Charge failed [orderId={}]", order.id(), e);
+             throw new PaymentException("charge failed", e);
          }
+     }
 diff --git a/src/main/java/com/example/e2e/edge/Exclusion.java b/src/main/java/com/example/e2e/edge/Exclusion.java
 index aec7560..e4c4d40 100644
 --- a/src/main/java/com/example/e2e/edge/Exclusion.java

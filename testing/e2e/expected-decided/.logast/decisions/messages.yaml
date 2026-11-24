@@ -7,7 +7,7 @@
 # 5 finding(s) below need a message text.
 SWA-91b292:
   MSG: ""
-  _MSG: "What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri(\"/balances/{customerId}\", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | must read as: {subject} failed"
+  _MSG: "What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri(\"/balances/{customerId}\", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool."
   _where: src/main/java/com/example/e2e/order/LoyaltyClient.java:20 LoyaltyClient.balance
 FMT-93dcb8:
   MSG: ""

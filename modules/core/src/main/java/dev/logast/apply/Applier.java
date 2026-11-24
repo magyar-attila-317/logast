@@ -45,11 +45,13 @@ public final class Applier {
                          List<String> violations,
                          @com.fasterxml.jackson.annotation.JsonIgnore Map<String, String> stepDiffs,
                          @com.fasterxml.jackson.annotation.JsonIgnore List<String> trace,
-                         @com.fasterxml.jackson.annotation.JsonIgnore Map<String, TreeMap<Integer, Set<String>>> fixed) {
+                         @com.fasterxml.jackson.annotation.JsonIgnore Map<String, TreeMap<Integer, Set<String>>> fixed,
+                         List<String> behavioural, List<String> keptByHand) {
         public Result(List<String> applied, Map<String, String> rejected, List<String> resolvedIndirectly,
                       List<String> changedFiles, String diff, int rounds, ScanResult before, ScanResult after,
                       List<String> violations, Map<String, String> stepDiffs) {
-            this(applied, rejected, resolvedIndirectly, changedFiles, diff, rounds, before, after, violations, stepDiffs, List.of(), Map.of());
+            this(applied, rejected, resolvedIndirectly, changedFiles, diff, rounds, before, after, violations, stepDiffs, List.of(), Map.of(),
+                    List.of(), List.of());
         }
     }
 
@@ -87,6 +89,22 @@ public final class Applier {
     }
 
     /** #287: leave these steps out of every pass: their orders stay open findings, the other steps apply as usual. */
+    /**
+     * #317: ids of orders an earlier apply applied. One that is back as an open order lost its fix since, which is what
+     * a person reverting it does: left as the person changed it (listed in {@link Result#keptByHand()}), unless the run
+     * names it ({@code --only}) or brings a text for it (messages.yaml).
+     */
+    public Applier declined(Set<String> ids, java.util.function.Predicate<String> changedSince) {
+        this.declined = Set.copyOf(ids);
+        this.changedSince = changedSince;
+        return this;
+    }
+
+    private Set<String> declined = Set.of();
+    /** #317: whether a file differs from what the last apply wrote into it (a person changed it since). */
+    private java.util.function.Predicate<String> changedSince = f -> false;
+    private final Set<String> keptByHand = new java.util.TreeSet<>();
+
     public Applier skip(Set<Rules.Step> steps) {
         this.skipped = steps.isEmpty() ? EnumSet.noneOf(Rules.Step.class) : EnumSet.copyOf(steps);
         return this;
@@ -368,6 +386,10 @@ public final class Applier {
             List<String> changed = new ArrayList<>();
             StringBuilder diff = new StringBuilder();
             compare(root, work, changed, diff);
+            // #316: the changes that can change what the service does (the rest only changes its logging); before the
+            // write-back, while root still holds the code as it was
+            List<String> behavioural = new ChangeClassifier(null).classify(root, work, changed).stream()
+                    .map(ChangeClassifier.Behavioural::describe).toList();
             progress.accept("~checking the result");
             List<String> violations = new ArrayList<>(selfCheck);
             if (!changed.isEmpty()) {
@@ -377,7 +399,8 @@ public final class Applier {
             if (write) {
                 copyBack(root, work, changed);
             }
-            return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs, trace, fixed);
+            return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs, trace, fixed,
+                    behavioural, List.copyOf(keptByHand));
         }
 
         /** One pass over the steps; false when the passes stop (nothing applied, --until, or a pass undoing another). */
@@ -489,6 +512,8 @@ public final class Applier {
                             && Rules.stepOf(byId.get(d).rule()).ordinal() > step.ordinal());
                     if (later) {
                         carried.add(o.id());
+                    } else if (missingDeps.stream().anyMatch(keptByHand::contains)) {
+                        keptByHand.add(o.id());   // #317: builds on a fix someone changed back: left with it
                     } else {
                         rejected.put(o.id(), "depends on " + missingDeps + ": select it in the same apply");
                     }
@@ -654,6 +679,13 @@ public final class Applier {
             }
             boolean wanted = sel.fills().containsKey(o.id()) || sel.only().contains(o.id())
                     || (sel.auto() && o.mechanical());
+            // an order back that an earlier apply made, in a file that is no longer as that apply left it: changed back
+            // by hand. In a file still as logast wrote it, the order came back for another reason, and applies
+            if (wanted && declined.contains(o.id()) && o.file() != null && changedSince.test(o.file())
+                    && !sel.only().contains(o.id()) && !sel.fills().containsKey(o.id())) {
+                keptByHand.add(o.id());   // #317: applied before, changed back since: the person's version stands
+                wanted = false;
+            }
             if (!sel.only().isEmpty() && !sel.only().contains(o.id()) && !sel.fills().containsKey(o.id())) {
                 wanted = false;
             }

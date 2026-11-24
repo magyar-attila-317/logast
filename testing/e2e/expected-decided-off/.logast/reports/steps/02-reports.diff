@@ -105,7 +105,7 @@ index b5016f7..535ee45 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index c8a4563..779f455 100644
+index 883cb52..1a34eb1 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 @@ -1,6 +1,7 @@ 
@@ -124,14 +124,14 @@ index c8a4563..779f455 100644
      }
  
      /** A failure logged and handled here: an outcome worth counting by default. */
-@@ -22,6 +24,7 @@
-                 return true;
-             } catch (IllegalStateException e) {
-                 log.warn("Pledge resend failed", e);
-+                Outcomes.count("pledge.resend", "failed");
-                 return false;
+@@ -23,6 +25,7 @@
              }
+         } catch (IllegalStateException e) {
+             log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
++            Outcomes.count("pledge.resend", "failed");
+             return false;
          }
+     }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
 index 8117e82..ba48df7 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
@@ -214,6 +214,26 @@ index 36ff109..2a6a4d0 100644
          }
      }
  }
+diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
+index fff6c96..6acf0f0 100644
+--- a/src/main/java/com/example/e2e/order/PaymentClient.java
++++ b/src/main/java/com/example/e2e/order/PaymentClient.java
+@@ -1,6 +1,7 @@ 
+ package com.example.e2e.order;
+ 
+ import com.example.e2e.logging.MdcScope;
++import com.example.e2e.logging.Outcomes;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Component;
+@@ -17,6 +18,7 @@
+             }
+         } catch (IllegalStateException e) {
+             log.error("Charge failed [orderId={}]", order.id(), e);
++            Outcomes.count("charge", "failed");
+             throw new PaymentException("charge failed", e);
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 index 3005ac6..4092c27 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java

@@ -96,7 +96,10 @@ final class ExceptionRules {
         b.slot("MSG", new Slot("What failed and what happens next, for " + c.typeNames() + " thrown by `" + tryBody + "`"
                 + (comment.isEmpty() ? "" : " (code comment: \"" + comment + "\")") + ". The [k=v] suffix and the exception are added by the tool.",
                 values.stream().map(v -> ctx.policy.logKey(v.key())).toList(), ctx.glossary.terms(), null,
-                ctx.phrasing.canonicalOf("failed") == null ? null : "failed", ctx.phrasing.canonicalOf("failed")));
+                // #319: a catch with code of its own (a fallback value, a skip, an entry in a report) handles the outcome:
+                // "Content type treated as plain text", "Image copy skipped"; only a catch that drops it is a failure
+                fallback || ctx.phrasing.canonicalOf("failed") == null ? null : "failed",
+                fallback ? null : ctx.phrasing.canonicalOf("failed")));
     }
 
     /** A callee (called inside this try) that logs and rethrows a type this catch handles. */

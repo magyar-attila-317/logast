@@ -199,6 +199,13 @@ max(settlement_job_execute_seconds_max{application="e2e-shop"})
 
 ### Business outcomes
 
+**charge** (outcome: failed), per hour  
+`src/main/java/com/example/e2e/order/OrderMetrics.java:22`
+
+```promql
+sum by (outcome) (increase(charge_total{application="e2e-shop"}[1h]))
+```
+
 **edge.processing** (outcome: completed), per hour  
 `src/main/java/com/example/e2e/edge/EdgeMetrics.java:17`
 
@@ -336,6 +343,12 @@ FROM Metric SELECT count(`settlement-job.execute`), filter(count(`settlement-job
 ```
 
 ### Business outcomes
+
+**charge** (outcome: failed), per hour
+
+```sql
+FROM Metric SELECT sum(charge) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
 
 **edge.processing** (outcome: completed), per hour
 

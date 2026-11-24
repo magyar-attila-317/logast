@@ -292,6 +292,21 @@ code. `logast scan .` shows the same without changing anything. Both also write 
   show as `fixed` ([every log call is accounted for](#every-log-call-is-accounted-for)).
 - `--only <ids>` restricts it to some orders; `--format json` prints the result for tools.
 
+### Fixes changed back by hand
+
+A fix an earlier apply made that is back as an open order lost its fix since, which is what a person changing it back
+does: the next apply leaves it as it is and says so (`Left as you changed them (N)`, the ids with `--verbose`), #317.
+`--redo` applies them again; an `--only` id or a text in messages.yaml for one still applies. The fixes applied are
+kept in `.logast/applied-orders.txt` (and the last run's `.logast/reports/last-apply.txt` counts too).
+
+### Changes beyond logging
+
+At the end, apply lists the changes that can make the code run differently (#316): a method whose code, with its log
+statements left out, differs before and after (an MDC scope or observation around code, an evaluation moved, a
+statement deleted or added), and changed build or configuration files, as `file:line method — what`
+(`.logast/reports/behavioural.txt` after a write). Everything else in the diff only changes log lines: their text,
+level and arguments, or a line added. On a service with few tests, that list is what to review.
+
 ## review
 
 ```bash

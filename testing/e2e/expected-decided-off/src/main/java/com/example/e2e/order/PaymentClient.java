@@ -1,6 +1,7 @@
 package com.example.e2e.order;
 
 import com.example.e2e.logging.MdcScope;
+import com.example.e2e.logging.Outcomes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -10,14 +11,15 @@ public class PaymentClient {
     private static final Logger log = LoggerFactory.getLogger(PaymentClient.class);
 
     public void charge(Order order) {
-        try (var mdc = MdcScope.of("orderId", order.id())) {
-            try {
+        try {
+            try (var mdc = MdcScope.of("orderId", order.id())) {
                 log.debug("Charging order {} with {} cents", order.id(), order.amountCents());
                 gateway(order);
-            } catch (IllegalStateException e) {
-                log.error("Charge failed for order", e);
-                throw new PaymentException("charge failed", e);
             }
+        } catch (IllegalStateException e) {
+            log.error("Charge failed [orderId={}]", order.id(), e);
+            Outcomes.count("charge", "failed");
+            throw new PaymentException("charge failed", e);
         }
     }
 

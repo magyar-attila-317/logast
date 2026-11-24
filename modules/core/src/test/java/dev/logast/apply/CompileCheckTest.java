@@ -150,6 +150,28 @@ class CompileCheckTest {
                 .as("a getter nothing generates is still an error").containsKey("src/main/java/a/Listener.java");
     }
 
+    /** #320: a static import from a test library the main classpath lacks is the environment, not a new error. */
+    @Test
+    void aStaticImportFromAMissingLibraryIsNoError() throws IOException {
+        write("src/main/java/a/Ledger.java", "package a;\n\npublic class Ledger {\n}\n");
+        String test = """
+                package a;
+
+                import static java.util.concurrent.*;
+
+                class LedgerTest {
+                    void books() {
+                        new Ledger();
+                    }
+                }
+                """;
+        assertThat(new CompileCheck(List.of()).newErrors(work, Map.of("src/test/java/a/LedgerTest.java", test)))
+                .as("a class javac cannot find, read as a package: no verdict on it").isEmpty();
+        // what javac reports for "import static org.mockito.Mockito.*" without mockito on the classpath
+        assertThat(CompileCheck.environmental("compiler.err.static.imp.only.classes.and.interfaces",
+                "static import only from classes and interfaces")).isTrue();
+    }
+
     /** #305: a chain of Lombok getters resolves link by link: each pass finds the next class to compile with Lombok. */
     @Test
     void aLongChainOfLombokGettersResolves() throws IOException {

@@ -16,15 +16,15 @@ public class PledgeSender {
 
     /** A failure logged and handled here: an outcome worth counting by default. */
     public boolean resend(String pledgeId) {
-        try (var mdc = MdcScope.of("pledge.id", pledgeId)) {
-            try {
+        try {
+            try (var mdc = MdcScope.of("pledge.id", pledgeId)) {
                 send(pledgeId);
                 return true;
-            } catch (IllegalStateException e) {
-                log.warn("Pledge resend failed", e);
-                PledgeMetrics.pledgeResendFailed(); // logast:metric review, confidence: medium
-                return false;
             }
+        } catch (IllegalStateException e) {
+            log.warn("Pledge resend failed [pledge.id={}]", pledgeId, e);
+            PledgeMetrics.pledgeResendFailed(); // logast:metric review, confidence: medium
+            return false;
         }
     }
 }

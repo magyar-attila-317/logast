@@ -37,6 +37,11 @@ public final class OrderMetrics {
         Outcomes.record("orders", "shipped", "items", items);
     }
 
+    /** charge{outcome="failed"} +1. */
+    public static void chargeFailed() {
+        Outcomes.count("charge", "failed");
+    }
+
     /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
     @org.springframework.stereotype.Component
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
@@ -47,6 +52,7 @@ public final class OrderMetrics {
             Outcomes.register("order", "placed");
             Outcomes.register("order.shipment", "skipped");
             Outcomes.registerPerRun("orders", "shipped", "items");
+            Outcomes.register("charge", "failed");
         }
     }
 }

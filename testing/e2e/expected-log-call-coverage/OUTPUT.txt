@@ -1,13 +1,25 @@
 === logast apply . --auto --write
 ✓ 99 changes in 54 files (<t>)
-  43 log lines rewritten in the standard format
+  42 log lines rewritten in the standard format
   13 log lines added where something happened silently
+  11 outcomes counted (a metric next to their log line)
   10 business ids put into MDC
-  10 outcomes counted (a metric next to their log line)
   7 setup changes (dependencies, configuration, tracing)
   16 other changes
   support code copied into com/example/e2e/logging (16 files)
   review: git diff   (one diff per kind: .logast/reports/steps/)
+Changes beyond logging (36): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
+  src/main/java/com/example/e2e/edge/Audited.java:10 Audited.audit — code changed besides logging
+  src/main/java/com/example/e2e/edge/EdgeFlow.java:18 EdgeFlow.process — code changed besides logging
+  src/main/java/com/example/e2e/edge/EdgeJob.java:22 EdgeJob.run — code changed besides logging
+  src/main/java/com/example/e2e/job/BaseRunJob.java:9 BaseRunJob.doExecute — code changed besides logging
+  src/main/java/com/example/e2e/job/ExportJob.java:12 ExportJob.doExecute — code changed besides logging
+  src/main/java/com/example/e2e/job/PreloadJob.java:14 PreloadJob.doExecute — code changed besides logging
+  src/main/java/com/example/e2e/job/PublishRunJob.java:17 PublishRunJob.doRun — code changed besides logging
+  src/main/java/com/example/e2e/job/SettlementJobExecutor.java:17 SettlementJobExecutor.onReady — code changed besides logging
+  src/main/java/com/example/e2e/job/TallyJob.java:14 TallyJob.doExecute — code changed besides logging
+  src/main/java/com/example/e2e/messaging/PledgeMessages.java:19 PledgeMessages.onBatch — code changed besides logging
+  … and 26 more
 
 Worth a look (optional) — the service works without these:
   18 log lines could say more, 14 outcomes could be counted → logast review

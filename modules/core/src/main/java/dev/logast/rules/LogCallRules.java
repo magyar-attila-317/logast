@@ -79,28 +79,7 @@ final class LogCallRules {
         }
         int at = Pos.start(lc.call());
         Set<String> out = new java.util.TreeSet<>(all);
-        // scopes already in the code: the try of each resource that opens one
-        Map<String, List<int[]>> covered = new HashMap<>();
-        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
-            @Override
-            public J.Try visitTry(J.Try t, Integer p) {
-                if (t.getResources() != null) {
-                    for (dev.logast.model.MdcOp op : m.facts().mdc) {
-                        if (op.kind() == dev.logast.model.MdcOp.Kind.PUT_CLOSEABLE && op.key() != null
-                                && Pos.start(op.call()) >= Pos.start(t) && Pos.end(op.call()) <= Pos.start(t.getBody())) {
-                            covered.computeIfAbsent(op.key(), k -> new ArrayList<>()).add(new int[]{Pos.start(t.getBody()), Pos.end(t.getBody())});
-                        }
-                    }
-                }
-                return super.visitTry(t, p);
-            }
-        }.visit(body, 0);
-        for (var e : covered.entrySet()) {
-            boolean fromCallers = ctx.a.paths.mdcAtEntry(m).contains(e.getKey());
-            if (!fromCallers && e.getValue().stream().noneMatch(r -> at >= r[0] && at < r[1])) {
-                out.remove(e.getKey());
-            }
-        }
+        out.removeAll(ctx.a.paths.notCoveredAt(m, at));
         // planned in this scan, in a body that is one try with catches (D1b): the scope goes inside the try, not the catch
         J.Block guarded = RepeatedValueRules.guardedBlock(body);
         Set<String> local = ctx.mdc.localKeys().get(m.key());

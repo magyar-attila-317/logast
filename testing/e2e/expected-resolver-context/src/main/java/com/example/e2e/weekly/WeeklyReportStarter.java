@@ -20,7 +20,6 @@ public class WeeklyReportStarter {
     public void onReady() {
         try (var mdc = MdcScope.of("targetWeek", targetWeekResolver.targetWeek())) {
             log.info("Weekly report started");
-            log.info("Weekly report starter completed"); // logast:wording
         }
     }
 }

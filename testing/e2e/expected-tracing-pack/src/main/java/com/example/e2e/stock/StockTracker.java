@@ -19,7 +19,6 @@ class StockTracker {
     void warmUp() {
         log.info("Warm up started"); // logast:wording
         picked.clear();
-        log.info("Stock tracker (warm up) completed"); // logast:wording
     }
 
     @EventListener

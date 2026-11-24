@@ -54,8 +54,8 @@ src/main/java/com/example/e2e/order/OrderService.java:34              checked  n
 src/main/java/com/example/e2e/order/OrderService.java:37              fixed    METRIC_OUTCOME_UNMEASURED OUM-d691d7
 src/main/java/com/example/e2e/order/OrderService.java:44              fixed    METRIC_OUTCOME_UNMEASURED OUM-164f3d
 src/main/java/com/example/e2e/order/OrderService.java:49              fixed    METRIC_OUTCOME_UNMEASURED OUM-00f4c0
-src/main/java/com/example/e2e/order/PaymentClient.java:15             fixed    REPEATED_LOG_VALUE RLV-fc4256; reported LOG_FORMAT FMT-93dcb8
-src/main/java/com/example/e2e/order/PaymentClient.java:18             fixed    LOG_FORMAT FMT-9cb82a; reported LOG_AND_RETHROW LAR-277884
+src/main/java/com/example/e2e/order/PaymentClient.java:15             reported LOG_FORMAT FMT-93dcb8
+src/main/java/com/example/e2e/order/PaymentClient.java:19             fixed    METRIC_OUTCOME_UNMEASURED OUM-6778ab; reported LOG_AND_RETHROW LAR-277884
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23         fixed    MESSAGE_SUGGESTED SUG-3fd65d
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:26         checked  no finding
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29         fixed    MESSAGE_SUGGESTED SUG-bc7bc4
@@ -67,7 +67,7 @@ src/main/java/com/example/e2e/pledge/PledgeRepository.java:33         fixed    M
 src/main/java/com/example/e2e/pledge/PledgeRepository.java:40         reported MESSAGE_SUGGESTED SUG-6fe694
 src/main/java/com/example/e2e/pledge/PledgeSender.java:13             checked  no finding
 src/main/java/com/example/e2e/pledge/PledgeSender.java:14             fixed    METRIC_OUTCOME_UNMEASURED OUM-e7708e
-src/main/java/com/example/e2e/pledge/PledgeSender.java:25             fixed    METRIC_OUTCOME_UNMEASURED OUM-246c77
+src/main/java/com/example/e2e/pledge/PledgeSender.java:26             fixed    METRIC_OUTCOME_UNMEASURED OUM-246c77
 src/main/java/com/example/e2e/pledge/PledgeService.java:41            reported MESSAGE_VAGUE MVG-60b01f
 src/main/java/com/example/e2e/pledge/PledgeService.java:44            fixed    METRIC_OUTCOME_UNMEASURED OUM-98314f
 src/main/java/com/example/e2e/pledge/PledgeService.java:50            checked  no finding
@@ -98,12 +98,12 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    M
 # src/main/java/com/example/e2e/messaging/PledgeMessages.java d7d2bb7646ec
 # src/main/java/com/example/e2e/order/OrderNotifications.java 8565cf457bf2
 # src/main/java/com/example/e2e/order/OrderService.java b140b5e06222
-# src/main/java/com/example/e2e/order/PaymentClient.java 58e66cb90b86
+# src/main/java/com/example/e2e/order/PaymentClient.java cdbcae7bead9
 # src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java 93c1e283deb1
 # src/main/java/com/example/e2e/pledge/PledgeLookup.java 3e07ea72f19c
 # src/main/java/com/example/e2e/pledge/PledgeReloadJob.java 46ba73c34bcd
 # src/main/java/com/example/e2e/pledge/PledgeRepository.java bbc7b09ac836
-# src/main/java/com/example/e2e/pledge/PledgeSender.java 9ca0528b4e66
+# src/main/java/com/example/e2e/pledge/PledgeSender.java adb0e30a0f6a
 # src/main/java/com/example/e2e/pledge/PledgeService.java f81dbf19d6a5
 # src/main/java/com/example/e2e/stipend/PledgeChecks.java 64aaa89f9d86
 # src/main/java/com/example/e2e/stipend/StipendCalculator.java f4bdb836fbc9

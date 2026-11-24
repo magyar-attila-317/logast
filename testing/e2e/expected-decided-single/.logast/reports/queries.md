@@ -199,6 +199,13 @@ max(settlement_job_execute_seconds_max{application="e2e-shop"})
 
 ### Business outcomes
 
+**charge** (outcome: failed), per hour  
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:86`
+
+```promql
+sum by (outcome) (increase(charge_total{application="e2e-shop"}[1h]))
+```
+
 **edge.processing** (outcome: completed), per hour  
 `src/main/java/com/example/e2e/metrics/BusinessMetrics.java:36`
 
@@ -263,14 +270,14 @@ sum by (outcome) (increase(pledge_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.allotment** (outcome: completed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:116`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:121`
 
 ```promql
 sum by (outcome) (increase(pledge_allotment_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.lookup** (outcome: failed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:86`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:91`
 
 ```promql
 sum by (outcome) (increase(pledge_lookup_total{application="e2e-shop"}[1h]))
@@ -284,35 +291,35 @@ sum by (outcome) (increase(pledge_messages_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.resend** (outcome: failed), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:106`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:111`
 
 ```promql
 sum by (outcome) (increase(pledge_resend_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.usage** (outcome: saved), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:96`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:101`
 
 ```promql
 sum by (outcome) (increase(pledge_usage_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.usage.uses** (outcome: saved), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:96`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:101`
 
 ```promql
 sum by (outcome) (increase(pledge_usage_uses_total{application="e2e-shop"}[1h]))
 ```
 
 **pledges** (outcome: updated), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:91`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:96`
 
 ```promql
 sum by (outcome) (increase(pledges_total{application="e2e-shop"}[1h]))
 ```
 
 **pledges.rows** (outcome: updated), per hour  
-`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:91`
+`src/main/java/com/example/e2e/metrics/BusinessMetrics.java:96`
 
 ```promql
 sum by (outcome) (increase(pledges_rows_total{application="e2e-shop"}[1h]))
@@ -399,6 +406,12 @@ FROM Metric SELECT count(`settlement-job.execute`), filter(count(`settlement-job
 ```
 
 ### Business outcomes
+
+**charge** (outcome: failed), per hour
+
+```sql
+FROM Metric SELECT sum(charge) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
 
 **edge.processing** (outcome: completed), per hour
 

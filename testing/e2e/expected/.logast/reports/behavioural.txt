@@ -1,0 +1,37 @@
+# changes beyond logging: file:line method — what (#316)
+src/main/java/com/example/e2e/edge/Audited.java:10 Audited.audit — code changed besides logging
+src/main/java/com/example/e2e/edge/EdgeFlow.java:18 EdgeFlow.process — code changed besides logging
+src/main/java/com/example/e2e/edge/EdgeJob.java:22 EdgeJob.run — code changed besides logging
+src/main/java/com/example/e2e/job/BaseRunJob.java:9 BaseRunJob.doExecute — code changed besides logging
+src/main/java/com/example/e2e/job/ExportJob.java:12 ExportJob.doExecute — code changed besides logging
+src/main/java/com/example/e2e/job/PreloadJob.java:14 PreloadJob.doExecute — code changed besides logging
+src/main/java/com/example/e2e/job/PublishRunJob.java:17 PublishRunJob.doRun — code changed besides logging
+src/main/java/com/example/e2e/job/SettlementJobExecutor.java:17 SettlementJobExecutor.onReady — code changed besides logging
+src/main/java/com/example/e2e/job/TallyJob.java:14 TallyJob.doExecute — code changed besides logging
+src/main/java/com/example/e2e/messaging/PledgeMessages.java:19 PledgeMessages.onBatch — code changed besides logging
+src/main/java/com/example/e2e/messaging/PledgeMessages.java:28 PledgeMessages.onReturn — code changed besides logging
+src/main/java/com/example/e2e/messaging/PledgeMessages.java:37 PledgeMessages.onAudit — code changed besides logging
+src/main/java/com/example/e2e/order/OrderEvents.java:15 OrderEvents.onOrder — code changed besides logging
+src/main/java/com/example/e2e/order/OrderService.java:26 OrderService.placeAndReward — code changed besides logging
+src/main/java/com/example/e2e/order/OrderService.java:41 OrderService.ship — code changed besides logging
+src/main/java/com/example/e2e/order/PaymentClient.java:12 PaymentClient.charge — code changed besides logging
+src/main/java/com/example/e2e/order/PaymentClient.java:26 PaymentClient.refund — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22 PledgeCleanupJob.cleanup — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeLookup.java:18 PledgeLookup.find — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:25 PledgeRepository.close — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:31 PledgeRepository.countUse — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:37 PledgeRepository.findOpen — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeSender.java:18 PledgeSender.resend — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeService.java:47 PledgeService.allot — code changed besides logging
+src/main/java/com/example/e2e/stipend/StipendCalculator.java:28 StipendCalculator.validatePledge — code changed besides logging
+src/main/java/com/example/e2e/stipend/TallyService.java:16 TallyService.processRow — code changed besides logging
+src/main/java/com/example/e2e/web/PledgeController.java:29 PledgeController.publish — code changed besides logging
+src/main/java/com/example/e2e/web/PledgeController.java:36 PledgeController.use — code changed besides logging
+src/main/java/com/example/e2e/web/PledgeController.java:48 PledgeController.delete — code changed besides logging
+src/main/java/com/example/e2e/web/PledgeController.java:55 PledgeController.revoke — code changed besides logging
+src/main/java/com/example/e2e/web/PledgeController.java:62 PledgeController.place — code changed besides logging
+src/main/java/com/example/e2e/web/PledgeDetailsController.java:20 PledgeDetailsController.details — code changed besides logging
+src/main/java/com/example/e2e/web/PledgeDetailsController.java:27 PledgeDetailsController.hold — code changed besides logging
+src/main/java/com/example/e2e/web/QuoteController.java:25 QuoteController.refresh — code changed besides logging
+src/main/resources/META-INF/spring.factories:1 — build or configuration file added
+src/main/resources/application.yml:1 — build or configuration changed
