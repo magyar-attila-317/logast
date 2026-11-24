@@ -181,7 +181,8 @@ public final class SetupRules {
      */
     private Map<String, String> supportFeatures() {
         Map<String, String> out = new LinkedHashMap<>();
-        if (ctx.enabled(Rules.SETUP_STRUCTURED_LOGGING)) {
+        // #278: the starter's log defaults are JSON in every profile: not for a team that logs JSON in some only
+        if (ctx.enabled(Rules.SETUP_STRUCTURED_LOGGING) && ctx.policy.logging().structuredProfiles().isEmpty()) {
             out.put(LOG_DEFAULTS, "ECS JSON console logs by default, service.name/version from SERVICE_NAME/APP_VERSION");
         }
         if (ctx.policy.packSelected("logging") && servlet()) {
@@ -1113,7 +1114,17 @@ public final class SetupRules {
                         + "starter's default applies; make it explicit (" + format + why + ")")
                 .suggestion("Sets logging.structured.format.console=" + format + ". Service name and version come from "
                         + "spring.application.name / spring.application.version.");
-        if (yml) {
+        List<String> profiles = ctx.policy.logging().structuredProfiles();
+        if (yml && !profiles.isEmpty()) {
+            // #278: JSON where the service is deployed; dev, test and local keep the plain console format
+            for (String profile : profiles) {
+                Path yaml = resources.resolve("application-" + profile + ".yaml");
+                Path file = Files.exists(yaml) ? yaml : resources.resolve("application-" + profile + ".yml");
+                b.edit(Edit.yamlMerge(rel(file), "logging:\n  structured:\n    format:\n      console: " + format + "\n", false));
+            }
+            b.suggestion("Sets logging.structured.format.console=" + format + " for the profiles " + profiles
+                    + " (logging.structuredProfiles); the others keep plain console logs.");
+        } else if (yml) {
             ServiceYaml.merge(ctx, b, "logging:\n  structured:\n    format:\n      console: " + format + "\n");
         } else {
             String text = read(props);

@@ -130,6 +130,7 @@ logging:
   swallowedLevel: warn          # level for a log line added to a catch block that swallowed an exception
   exceptionStack: attach        # never: log the caught exception's class only ([errorType=…]), not the exception (#278)
   exceptionMessage: keep        # never: no e.getMessage() in log lines (it may carry personal data or a response body)
+  structuredProfiles: []        # e.g. [prod, staging]: JSON console logs only there (application-<profile>.yml), plain elsewhere
   protectedMessages:            # messages alerts or dashboards depend on (regex): never reworded, only reported
     - "^ALERT:"
   vagueMessages:                # wording to avoid (regex, added to the built-in list); reported as MESSAGE_VAGUE

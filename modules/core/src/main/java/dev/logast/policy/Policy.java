@@ -413,15 +413,18 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      * @param exceptionStack   #278: attach (default) passes the exception to the logger; never logs its class only
      *                         ([errorType=…]): a team whose exceptions may carry personal data or response bodies
      * @param exceptionMessage #278: keep (default); never drops {@code e.getMessage()} from log lines (the class instead)
+     * @param structuredProfiles #278: the profiles that log JSON (the deployed ones, e.g. [prod, staging]); the format goes
+     *                         into their application-&lt;profile&gt;.yml and dev / test / local keep plain logs. Empty
+     *                         (default): every profile
      */
     public record Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
                           Boolean rewriteExistingMessages, String keyStyle, List<String> protectedMessages,
                           List<String> vagueMessages, String structuredFormat, String serviceName, String serviceVersion,
-                          String exceptionStack, String exceptionMessage) {
+                          String exceptionStack, String exceptionMessage, List<String> structuredProfiles) {
         public Logging(String loggerName, String swallowedLevel, String entryLevel, String minEntrypointLevel,
                        Boolean rewriteExistingMessages, String keyStyle) {
             this(loggerName, swallowedLevel, entryLevel, minEntrypointLevel, rewriteExistingMessages, keyStyle, null, null, null, null, null,
-                    null, null);
+                    null, null, null);
         }
 
         /** #278: the exception itself goes to the logger (its stack trace and message). */
@@ -451,6 +454,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
             swallowedLevel = swallowedLevel == null ? "warn" : swallowedLevel.toLowerCase(Locale.ROOT);
             entryLevel = entryLevel == null ? "info" : entryLevel.toLowerCase(Locale.ROOT);
             minEntrypointLevel = minEntrypointLevel == null ? "info" : minEntrypointLevel.toLowerCase(Locale.ROOT);
+            structuredProfiles = structuredProfiles == null ? List.of() : List.copyOf(structuredProfiles);
             exceptionStack = exceptionStack == null ? "attach" : exceptionStack.toLowerCase(Locale.ROOT);
             exceptionMessage = exceptionMessage == null ? "keep" : exceptionMessage.toLowerCase(Locale.ROOT);
             if (!Set.of("attach", "never").contains(exceptionStack)) {

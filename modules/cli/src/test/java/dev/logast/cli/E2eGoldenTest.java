@@ -697,6 +697,27 @@ abstract class E2eGoldenTest {
      * and the run's last line says where they are.
      */
     /**
+     * #278: JSON logs where the service is deployed only: with logging.structuredProfiles: [prod] the console format goes
+     * into application-prod.yml, application.yml (dev, test, local) keeps plain logs, and the starter's log defaults
+     * (JSON in every profile) stay off.
+     */
+    @Test
+    void jsonLogsOnlyInTheDeployedProfiles() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^logging:\n", "logging:\n  structuredProfiles: [prod]\n"));
+            Path config = app.resolve("src/main/resources/application.yml");
+            String unformatted = Files.readString(config).replace("logging:\n  structured:\n    format:\n      console: ecs\n", "");
+            assertThat(unformatted).as("the service sets no console log format").doesNotContain("console:");
+            Files.writeString(config, unformatted);
+        });
+        assertThat(actual.get("src/main/resources/application.yml")).as("dev, test and local keep plain logs")
+                .doesNotContain("console:").doesNotContain("log-defaults");
+        assertThat(actual.get("src/main/resources/application-prod.yml")).as("JSON where it is deployed")
+                .contains("format:\n      console: logstash");
+    }
+
+    /**
      * #278: a team that logs exceptions by class only (they may carry personal data or a response body): with
      * logging.exceptionStack/exceptionMessage never, no log line of the service attaches the caught exception or logs
      * its message afterwards; the class goes in as [errorType=…], and the result still compiles and settles.
