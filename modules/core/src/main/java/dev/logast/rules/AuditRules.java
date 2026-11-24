@@ -1579,7 +1579,8 @@ final class AuditRules {
             for (Expression a : args(c)) {
                 if (ctx.domain.isSecret(a) || ctx.values().sources(a, c.m()).stream().anyMatch(s -> ctx.domain.isSecret(s.value()))) {
                     found.add(a.printTrimmed());
-                } else if (!(a instanceof J.NewClass) && !(a instanceof J.MethodInvocation call && builtByBuilder(call))) {
+                } else if (!(a instanceof J.NewClass) && !(a instanceof J.MethodInvocation call && builtByBuilder(call))
+                        && !(a instanceof J.Identifier id && id.getSimpleName().equals("this"))) {   // #282: an event's source
                     String field = secretField(a.getType());
                     if (field != null) {
                         found.add(a.printTrimmed() + " (its " + field + ")");
@@ -1604,8 +1605,8 @@ final class AuditRules {
     private String secretField(JavaType t) {
         JavaType.FullyQualified fq = TypeUtils.asFullyQualified(t);
         ClassInfo c = fq == null || fq.getFullyQualifiedName().startsWith("java.") ? null : ctx.a.index.clazz(fq.getFullyQualifiedName());
-        if (c == null) {
-            return null;
+        if (c == null || BEANS.stream().anyMatch(b -> c.decl().getLeadingAnnotations().stream().anyMatch(a -> dev.logast.model.Annotations.is(a, b)))) {
+            return null;   // #282: a Spring bean is not serialised into a record: its fields are collaborators
         }
         List<Statement> members = new ArrayList<>(c.decl().getBody().getStatements());
         if (c.decl().getPrimaryConstructor() != null) {
@@ -1613,7 +1614,7 @@ final class AuditRules {
         }
         for (Statement s : members) {
             if (s instanceof J.VariableDeclarations vd && !vd.hasModifier(J.Modifier.Type.Static)
-                    && !vd.hasModifier(J.Modifier.Type.Transient)) {
+                    && !vd.hasModifier(J.Modifier.Type.Transient) && valueType(vd.getType())) {
                 for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
                     if (DomainValues.isSecretName(v.getSimpleName())) {
                         return v.getSimpleName();
@@ -1622,6 +1623,24 @@ final class AuditRules {
             }
         }
         return null;
+    }
+
+    private static final List<String> BEANS = List.of("org.springframework.stereotype.Component", "org.springframework.stereotype.Service",
+            "org.springframework.stereotype.Repository", "org.springframework.stereotype.Controller",
+            "org.springframework.web.bind.annotation.RestController", "org.springframework.context.annotation.Configuration");
+
+    /**
+     * #282: a field that can hold a secret's value (a String, char[] / byte[], a CharSequence, a number); a
+     * {@code passwordEncoder} or {@code tokenRepository} is a collaborator whose name merely contains the word.
+     */
+    private static boolean valueType(JavaType t) {
+        if (t == null || t instanceof JavaType.Primitive) {
+            return true;
+        }
+        if (t instanceof JavaType.Array arr) {
+            return arr.getElemType() == JavaType.Primitive.Char || arr.getElemType() == JavaType.Primitive.Byte;
+        }
+        return TypeUtils.isAssignableTo("java.lang.CharSequence", t) || TypeUtils.isAssignableTo("java.lang.Number", t);
     }
 
     // ---- the actor on another thread (#92 item 3) -----------------------------------------------

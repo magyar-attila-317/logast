@@ -1606,6 +1606,73 @@ class RemedyTest {
                         """)));
     }
 
+    /**
+     * #282: the audit method publishes an event and an @Async @TransactionalEventListener writes the record: the listener's
+     * default phase is AFTER_COMMIT, so the record goes out after the transaction, on another thread or not.
+     */
+    @Test
+    void auditRecordWrittenByAnAfterCommitListener() throws IOException {
+        String audit = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.context.ApplicationEventPublisher;
+                import org.springframework.scheduling.annotation.Async;
+                import org.springframework.stereotype.Component;
+                import org.springframework.transaction.event.TransactionPhase;
+                import org.springframework.transaction.event.TransactionalEventListener;
+
+                @Component
+                public class ShelfAudit {
+                    private static final Logger AUDIT = LoggerFactory.getLogger("audit");
+                    private final ApplicationEventPublisher events;
+
+                    public ShelfAudit(ApplicationEventPublisher events) {
+                        this.events = events;
+                    }
+
+                    public record Recorded(String action, String shelfId) {
+                    }
+
+                    public void record(String action, String shelfId) {
+                        events.publishEvent(new Recorded(action, shelfId));
+                    }
+
+                    @Async
+                    @TransactionalEventListener(PHASE)
+                    public void write(Recorded r) {
+                        AUDIT.info("Shelf audit record [action={}, shelfId={}]", r.action(), r.shelfId());
+                    }
+                }
+                """;
+        String service = """
+                package x;
+
+                import org.springframework.stereotype.Service;
+                import org.springframework.transaction.annotation.Transactional;
+
+                @Service
+                public class ShelfService {
+                    private final ShelfAudit audit;
+
+                    public ShelfService(ShelfAudit audit) {
+                        this.audit = audit;
+                    }
+
+                    @Transactional
+                    public void handOver(String shelfId) {
+                        audit.record("shelf.hand-over", shelfId);
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(java("ShelfAudit"), audit.replace("PHASE", "phase = TransactionPhase.BEFORE_COMMIT"),
+                java("ShelfService"), service);
+        fires(Rules.AUDIT_BEFORE_COMMIT, before);
+        gone(Rules.AUDIT_BEFORE_COMMIT, "the listener writes after commit (its default phase)", with(before, java("ShelfAudit"),
+                audit.replace("PHASE", "phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true")));
+    }
+
     // ---- AUDIT_RECORD_SECRET ---------------------------------------------------------------------------------------
 
     @Test
@@ -1651,6 +1718,58 @@ class RemedyTest {
         gone(Rules.AUDIT_RECORD_SECRET, "a derived value: its length", Map.of(java("AccountAudit"), audit,
                 java("AccountService"), service.replace("DETAILS", "newPasswordLength(newPassword)")
                         .replace("    }\n}", "    }\n\n    private static int newPasswordLength(String p) {\n        return p.length();\n    }\n}")));
+    }
+
+    /**
+     * #282: an event's source ({@code this}, the publishing service) and a Spring bean are not record data, and a field
+     * named for a secret but holding a collaborator (a password encoder) is not a secret; an object with a String
+     * password field still is.
+     */
+    @Test
+    void anEventSourceOrABeanIsNotASecretInTheRecord() throws IOException {
+        String audit = """
+                package x;
+
+                import java.util.List;
+                import java.util.concurrent.CopyOnWriteArrayList;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class LoginAudit {
+                    private final List<String> entries = new CopyOnWriteArrayList<>();
+
+                    public void record(String action, Object source, String outcome) {
+                        entries.add(action + " " + source + " " + outcome);
+                    }
+                }
+                """;
+        String service = """
+                package x;
+
+                import java.util.function.UnaryOperator;
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class LoginService {
+                    private final LoginAudit audit;
+                    private final UnaryOperator<String> passwordEncoder;
+
+                    public LoginService(LoginAudit audit, UnaryOperator<String> passwordEncoder) {
+                        this.audit = audit;
+                        this.passwordEncoder = passwordEncoder;
+                    }
+
+                    public void login(String userId, Credentials credentials) {
+                        audit.record("login", SOURCE, "done");
+                    }
+                }
+                """;
+        String credentials = "package x;\npublic class Credentials {\n    private String password;\n}\n";
+        Map<String, String> holdsAPassword = Map.of(java("LoginAudit"), audit, java("Credentials"), credentials,
+                java("LoginService"), service.replace("SOURCE", "credentials"));
+        fires(Rules.AUDIT_RECORD_SECRET, holdsAPassword);
+        gone(Rules.AUDIT_RECORD_SECRET, "the service itself as the event source", with(holdsAPassword, java("LoginService"),
+                service.replace("SOURCE", "this")));
     }
 
     // ---- AUDIT_ACTOR_LOST_ASYNC ------------------------------------------------------------------------------------
