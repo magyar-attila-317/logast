@@ -19,7 +19,11 @@ class FillsFileTest {
     Path root;
 
     private static WorkOrder order(String id) {
-        return new WorkOrder(id, "SWALLOWED_EXCEPTION", List.of("SWALLOWED_EXCEPTION"), "high", "t", "src/A.java", 12, List.of(),
+        return order(id, "high");
+    }
+
+    private static WorkOrder order(String id, String severity) {
+        return new WorkOrder(id, "SWALLOWED_EXCEPTION", List.of("SWALLOWED_EXCEPTION"), severity, "t", "src/A.java", 12, List.of(),
                 "A.run", List.of(), null, List.of(), Map.of("MSG", new Slot("What failed", List.of(), List.of(), "Export failed")),
                 null, List.of(), Map.of(), null, null, List.of());
     }
@@ -74,5 +78,24 @@ class FillsFileTest {
             assertThat(fills.get("SWA-1").slots()).containsEntry("MSG", "Export failed");
             assertThat(fills.get("SWA-1").args()).containsExactly("batchSize");
         }
+    }
+
+    /**
+     * #292: a queue nobody can finish is no queue: at most logging.wordingQueue entries ask for a text, the most severe
+     * first, a text already written always stays, and the header says how many wait.
+     */
+    @Test
+    void theWordingQueueIsCappedMostSevereFirst() throws IOException {
+        Path file = root.resolve(FillsFile.PATH);
+        List<WorkOrder> orders = List.of(order("SWA-1", "low"), order("SWA-2", "low"), order("SWA-3", "high"), order("SWA-4", "medium"));
+        FillsFile.update(root, orders, rule -> true, true, 2);
+        assertThat(DecisionYaml.entries(file).keySet()).containsExactlyInAnyOrder("SWA-3", "SWA-4");
+        assertThat(Files.readString(file)).contains("2 more keep their generated wording");
+
+        Files.writeString(file, Files.readString(file).replace("SWA-4:\n  MSG: \"\"", "SWA-4:\n  MSG: \"Export failed, kept for retry\""));
+        FillsFile.update(root, List.of(order("SWA-1", "high"), order("SWA-2", "high"), order("SWA-3", "high"), order("SWA-4", "low")),
+                rule -> true, true, 2);
+        assertThat(DecisionYaml.entries(file).keySet()).as("the written text stays; one more slot for the most severe")
+                .hasSize(2).contains("SWA-4");
     }
 }

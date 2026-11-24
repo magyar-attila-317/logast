@@ -191,7 +191,7 @@ public final class Main {
             dev.logast.apply.FillsFile.Update mu = null;
             if (out == null) {
                 // their state is part of the "waiting on you" block (#101)
-                fu = dev.logast.apply.FillsFile.update(root(), r.orders(), ranRule(), true);
+                fu = dev.logast.apply.FillsFile.update(root(), r.orders(), ranRule(), true, policy.logging().wordingQueue());
                 mu = dev.logast.apply.MetricsFile.update(root(), r.orders(), ranRule(), true);
                 if (policy.packSelected("logging")) {   // the logging pack's account of every log call (#72, as #88)
                     ledger = Logast.lastAnalysis.ledger.write(root(), Logast.lastAnalysis, r.orders(), Map.of());
@@ -484,7 +484,8 @@ public final class Main {
                 // the automatic file follows the code: created if missing, finished entries out, new ones in;
                 // their state is part of the "waiting on you" block (#101)
                 // a dry run writes nothing, .logast/decisions included; a --pack run leaves other packs' entries (#275)
-                fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders(), ranRule(), write);
+                fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders(), ranRule(), write,
+                        policy.logging().wordingQueue());
                 mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders(), ranRule(), write);
             }
             Written written = writeReports(r, applied, changed, scanner, policy, fu, mu);

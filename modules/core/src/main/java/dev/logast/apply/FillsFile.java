@@ -70,9 +70,41 @@ public final class FillsFile {
      * @param write false for a dry run: work out the update, write nothing
      */
     public static Update update(Path root, List<WorkOrder> orders, java.util.function.Predicate<String> ran, boolean write) {
+        return update(root, orders, ran, write, Integer.MAX_VALUE);
+    }
+
+    /**
+     * @param queue #292: at most this many entries ask for a text, the most severe first; entries with a text written stay
+     *              beyond it. The rest keep their generated wording and come up once these are done
+     */
+    public static Update update(Path root, List<WorkOrder> orders, java.util.function.Predicate<String> ran, boolean write, int queue) {
         Path file = root.resolve(PATH);
         Map<String, JsonNode> previous = DecisionYaml.entries(file);
         Map<String, Object> template = template(orders);
+        int waiting = 0;
+        if (template.size() > queue) {
+            Set<String> withText = new HashSet<>();
+            previous.forEach((id, node) -> {
+                if (!id.startsWith("_") && node.isObject()) {
+                    Fill f = OrderJson.MAPPER.convertValue(node, Fill.class);
+                    if (!f.slots().isEmpty() && f.slots().values().stream().noneMatch(String::isBlank)) {
+                        withText.add(id);
+                    }
+                }
+            });
+            Map<String, Integer> rank = new HashMap<>();
+            orders.forEach(o -> rank.put(o.id(), switch (o.severity()) {
+                case "high" -> 0;
+                case "medium" -> 1;
+                default -> 2;
+            }));
+            List<String> open = template.keySet().stream().filter(id -> !withText.contains(id))
+                    .sorted(Comparator.comparingInt(id -> rank.getOrDefault(id, 2))).toList();
+            Set<String> keep = new HashSet<>(withText);
+            open.stream().limit(Math.max(0, queue - withText.size())).forEach(keep::add);
+            waiting = template.size() - (int) template.keySet().stream().filter(keep::contains).count();
+            template.keySet().retainAll(keep);
+        }
         ObjectNode out = DecisionYaml.MAPPER.createObjectNode();
         // written texts follow their line when its id shifted (a log line added above it in the same method)
         Map<String, Fill> written = new LinkedHashMap<>();
@@ -142,9 +174,11 @@ public final class FillsFile {
             }
         }
         // always says where things stand, so an empty file reads as "nothing to write", not as "something went wrong"
-        String header = DecisionYaml.comment(README, out.isEmpty()
+        String header = DecisionYaml.comment(README, (out.isEmpty()
                 ? "Nothing needs a message text right now: every finding is fixed automatically or only reported."
-                : out.size() + " finding(s) below need a message text.");
+                : out.size() + " finding(s) below need a message text.")
+                + (waiting == 0 ? "" : "\n" + waiting + " more keep their generated wording for now and come up here once these are "
+                + "done (the most severe first; logging.wordingQueue)."));
         boolean exists = Files.exists(file);
         ObjectNode before = DecisionYaml.withoutNotes(OrderJson.MAPPER.valueToTree(previous));
         boolean changed = !exists || added > 0 || removed > 0 || !out.equals(before) || !DecisionYaml.header(file).equals(header);
