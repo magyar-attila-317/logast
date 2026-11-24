@@ -5,6 +5,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+## 0.5.1
+
 **What logast writes**
 - A key for a method whose body already is one MdcScope joins that scope's `MdcScope.of(…)` call instead of nesting a second scope (#311).
 - Wording: a collection endpoint names what it creates (`POST /menu/categories` → "Category creation started"), a sub-resource's update or removal says so ("Item image deletion"), acronyms with digits stay ("E2E data seeder"), and "Starting X..." becomes "X started" without leftover dots (#307).
