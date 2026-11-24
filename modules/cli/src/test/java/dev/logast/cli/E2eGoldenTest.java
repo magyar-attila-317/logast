@@ -697,6 +697,34 @@ abstract class E2eGoldenTest {
      * and the run's last line says where they are.
      */
     /**
+     * #278: a team that logs exceptions by class only (they may carry personal data or a response body): with
+     * logging.exceptionStack/exceptionMessage never, no log line of the service attaches the caught exception or logs
+     * its message afterwards; the class goes in as [errorType=…], and the result still compiles and settles.
+     */
+    @Test
+    void exceptionsLoggedByClassOnlyWhenThePolicySaysSo() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path yml = app.resolve("logast.yml");
+            Files.writeString(yml, Files.readString(yml).replaceFirst("(?m)^logging:\n", "logging:\n  exceptionStack: never\n  exceptionMessage: never\n"));
+        });
+        java.util.regex.Pattern attached = java.util.regex.Pattern.compile("\\b(?:log|LOG|logger)\\.(?:warn|error|info|debug)\\((?:[^;]|\\n)*?,\\s*(?:e|ex|exception|cause)\\);");
+        java.util.regex.Pattern message = java.util.regex.Pattern.compile("\\b(?:log|LOG|logger)\\.\\w+\\((?:[^;]|\\n)*?\\b(?:e|ex|exception)\\.get(?:Localized)?Message\\(\\)");
+        List<String> offenders = new ArrayList<>();
+        boolean errorType = false;
+        for (var e : actual.entrySet()) {
+            if (!e.getKey().startsWith("src/main/java/") || e.getKey().contains("/e2e/logging/")) {
+                continue;
+            }
+            if (attached.matcher(e.getValue()).find() || message.matcher(e.getValue()).find()) {
+                offenders.add(e.getKey());
+            }
+            errorType |= e.getValue().contains("errorType=");
+        }
+        assertThat(offenders).as("no log line attaches the exception or logs its message").isEmpty();
+        assertThat(errorType).as("the class goes in instead").isTrue();
+    }
+
+    /**
      * #291: the trace id in every error body changes what callers see, so it is proposed, not switched on; once the
      * service sets the property (here: false) it is decided and no longer reported.
      */

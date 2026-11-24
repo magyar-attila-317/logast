@@ -380,11 +380,19 @@ final class LogCallRules {
         }
         String throwableSrc = throwable == null ? null : src(f, throwable);
         CatchInfo c = lc.inCatch();
+        // #278: a team that never attaches the exception: the caught one becomes [errorType=…] (its class)
+        Expression detached = null;
+        if (throwable != null && c != null && !ctx.policy.logging().attachExceptions() && throwableSrc.equals(c.param)) {
+            detached = throwable;
+            throwableSrc = null;
+            issues.add(Rules.LOG_FORMAT);
+        }
         // #253: a line that logs the exception's class and not its message withholds the message on purpose (a driver's
         // raw text, personal data): attaching the exception would log it after all
         boolean classOnly = c != null && rawArgs.stream().anyMatch(a -> src(f, a).startsWith(c.param + ".getClass()"))
                 && rawArgs.stream().noneMatch(a -> src(f, a).matches(java.util.regex.Pattern.quote(c.param) + "\\.get(Localized)?Message\\(\\).*"));
         if (throwable == null && c != null && !c.param.equals("_") && lc.level().compareTo(Level.WARN) >= 0 && !classOnly
+                && ctx.policy.logging().attachExceptions()   // #278: a team that never attaches the exception
                 && rawArgs.stream().noneMatch(a -> a instanceof J.Identifier id && id.getSimpleName().equals(c.param))) {
             throwableSrc = c.param;
             issues.add(Rules.LOST_THROWABLE);
@@ -501,11 +509,25 @@ final class LogCallRules {
                 issues.add(Rules.PII_IN_LOG);
             } else if (throwableSrc != null && a.src().equals(throwableSrc + ".getMessage()")) {
                 issues.add(Rules.LOG_FORMAT);
+            } else if (c != null && !ctx.policy.logging().exceptionMessages()
+                    && a.src().matches(java.util.regex.Pattern.quote(c.param) + "\\.get(Localized)?Message\\(\\)")) {
+                // #278: the raw message may carry personal data or a response body: the class instead, once
+                issues.add(Rules.LOG_FORMAT);
+                String cls = c.param + ".getClass().getSimpleName()";
+                if (args.stream().noneMatch(x -> x.src().equals(cls)) && kept.stream().noneMatch(x -> x.src().equals(cls))) {
+                    kept.add(new Arg(a.expr(), cls, ctx.policy.logKey("errorType"), false));
+                }
             } else {
                 kept.add(a);
             }
         }
 
+        if (detached != null) {
+            String cls = c.param + ".getClass().getSimpleName()";
+            if (kept.stream().noneMatch(x -> x.src().equals(cls))) {
+                kept.add(new Arg(detached, cls, ctx.policy.logKey("errorType"), false));
+            }
+        }
         String base = compliant ? MessageTemplate.compliantBase(raw) : MessageTemplate.stripPlaceholders(raw);
         if (!compliant && mechanical) {
             List<String> stems = new ArrayList<>(droppedStems);

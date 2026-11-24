@@ -67,10 +67,16 @@ final class ExceptionRules {
         }
 
         Set<String> inMdc = ctx.mdcInside(m);
-        List<DomainValues.Value> values = ctx.domain.fromVars(ctx.vars(m, open + 1)).stream()
-                .filter(v -> !inMdc.contains(v.key())).toList();
+        List<DomainValues.Value> values = new ArrayList<>(ctx.domain.fromVars(ctx.vars(m, open + 1)).stream()
+                .filter(v -> !inMdc.contains(v.key())).toList());
+        // #278: a team that logs exceptions by class only gets [errorType=…] instead of the exception (stack and message)
+        boolean attach = ctx.policy.logging().attachExceptions();
+        if (!attach) {
+            values.add(new DomainValues.Value("errorType", c.param + ".getClass().getSimpleName()"));
+        }
         String args = String.join("", values.stream().map(v -> ", " + v.expr()).toList());
-        String call = logger.name() + "." + ctx.policy.logging().swallowedLevel() + "(\"{{MSG}}\"" + args + "{{ARGS}}, " + c.param + ");";
+        String call = logger.name() + "." + ctx.policy.logging().swallowedLevel() + "(\"{{MSG}}\"" + args + "{{ARGS}}"
+                + (attach ? ", " + c.param : "") + ");";
 
         String unit = Text.indentUnit(text);
         String indent = Text.indentAt(text, Pos.start(c.clause)) + unit;
