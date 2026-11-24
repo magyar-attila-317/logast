@@ -2468,17 +2468,19 @@ class RemedyTest {
         Map<String, String> before = Map.of("logast.yaml", policy, java("ParcelDispatcher"), dispatcher.replace("BODY", logged));
         fires(Rules.LOG_AND_RETHROW, before);
         // #85: the done-when line names both conditions (context in MDC, and a log on every caller path), not only the first
-        assertThat(scan(before)).as("the parcelId it carries is not in MDC, and nothing calls dispatch: report-only")
+        assertThat(scan(before)).as("it carries parcelId, and nothing calls dispatch: report-only")
                 .anyMatch(o -> o.rule().equals(Rules.LOG_AND_RETHROW) && o.reportOnly() && o.doneWhen().startsWith(
-                        "parcelId is in MDC here and a catch or @ExceptionHandler logs it on the path through ParcelDispatcher.dispatch"));
+                        "the line logs nothing but the exception and a catch or @ExceptionHandler logs it on the path through ParcelDispatcher.dispatch"));
         gone(Rules.LOG_AND_RETHROW, "the line deleted", with(before, java("ParcelDispatcher"), dispatcher.replace("BODY", """
                         send(parcelId);
                 """)));
         Map<String, String> inMdc = with(before, java("ParcelDispatcher"), dispatcher.replace("BODY",
                 "        try (MDC.MDCCloseable scope = MDC.putCloseable(\"parcelId\", parcelId)) {\n" + logged.indent(4) + "        }\n"));
-        assertThat(scan(inMdc)).as("with parcelId in MDC, what is left is the second condition the first line named")
+        // D3: in MDC here is not in MDC where the rethrown exception is logged (the scope closes first): the line still
+        // carries parcelId, so both conditions stay
+        assertThat(scan(inMdc)).as("parcelId in MDC here does not reach whoever logs the exception later")
                 .anyMatch(o -> o.rule().equals(Rules.LOG_AND_RETHROW) && o.reportOnly()
-                        && o.doneWhen().startsWith("a catch or @ExceptionHandler logs it on the path through ParcelDispatcher.dispatch"));
+                        && o.doneWhen().startsWith("the line logs nothing but the exception and a catch"));
         // with that condition met too, the finding is the caller's log line logging it again, which logast deletes itself
         Map<String, String> loggedByCaller = with(inMdc, java("DispatchJob"), """
                 package x;
@@ -2505,8 +2507,15 @@ class RemedyTest {
                     }
                 }
                 """);
-        gone(Rules.LOG_AND_RETHROW, "parcelId in MDC and a caller that logs the failure", loggedByCaller);
-        becomesAuto(Rules.EXCEPTION_LOGGED_TWICE, "parcelId in MDC and a caller that logs the failure", loggedByCaller);
+        gone(Rules.LOG_AND_RETHROW, "a caller that logs the failure", loggedByCaller);
+        assertThat(scan(loggedByCaller)).as("D3: logged twice, but the line carries parcelId: kept, reported")
+                .anyMatch(o -> o.rule().equals(Rules.EXCEPTION_LOGGED_TWICE) && o.reportOnly());
+        // the line that logs nothing but the exception is the duplicate logast deletes itself
+        Map<String, String> onlyTheException = with(loggedByCaller, java("ParcelDispatcher"), dispatcher.replace("BODY",
+                "        try (MDC.MDCCloseable scope = MDC.putCloseable(\"parcelId\", parcelId)) {\n"
+                        + logged.replace("log.error(\"Parcel dispatch failed [parcelId={}]\", parcelId, e);", "log.error(\"Parcel dispatch failed\", e);")
+                        .indent(4) + "        }\n"));
+        becomesAuto(Rules.EXCEPTION_LOGGED_TWICE, "a caller that logs the failure, and a line with nothing but the exception", onlyTheException);
     }
 
     // ---- LOG_HELPER ------------------------------------------------------------------------------------------------

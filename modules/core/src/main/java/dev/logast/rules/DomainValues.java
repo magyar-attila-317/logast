@@ -183,6 +183,10 @@ public final class DomainValues {
     }
 
     /** Name used inside {@code [k=v]} for an argument without a registry key. */
+    /** Stream and collection steps: a value they produce is named after what the pipeline starts from. */
+    private static final Set<String> PIPELINE = Set.of("toList", "collect", "stream", "map", "filter", "sorted", "distinct",
+            "limit", "values", "keySet", "entrySet", "toArray", "flatMap", "boxed", "mapToObj");
+
     public static String derivedKey(Expression arg) {
         if (arg instanceof J.Identifier id) {
             return id.getSimpleName();
@@ -192,6 +196,19 @@ public final class DomainValues {
         }
         if (arg instanceof J.MethodInvocation mi) {
             String n = mi.getSimpleName();
+            // "orders.stream().map(Order::getUuid).toList()": a pipeline is named after what it starts from, not after
+            // toList/collect/stream; a projection to ids says so ("orderIds")
+            if (PIPELINE.contains(n) && mi.getSelect() != null) {
+                Expression root = mi.getSelect();
+                boolean ids = arg.printTrimmed().matches("(?s).*\\.map\\(\\s*\\w+::get(Id|Uuid)\\s*\\).*");
+                while (root instanceof J.MethodInvocation inner && PIPELINE.contains(inner.getSimpleName()) && inner.getSelect() != null) {
+                    root = inner.getSelect();
+                }
+                String base = derivedKey(root);
+                if (base != null && !PIPELINE.contains(base)) {
+                    return ids ? singular(base) + "Ids" : base;
+                }
+            }
             if (n.startsWith("get") && n.length() > 3 && Character.isUpperCase(n.charAt(3))) {
                 n = Character.toLowerCase(n.charAt(3)) + n.substring(4);
             }

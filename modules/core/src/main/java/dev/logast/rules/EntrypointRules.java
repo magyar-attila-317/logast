@@ -80,13 +80,17 @@ final class EntrypointRules {
         }
         b.title(title(ep, notObserved, missing, silent));
 
-        int[] inner = m.decl().getBody() == null ? null : JavaEdits.blockInner(text, m.decl().getBody());
+        // D1b: a body that is one try with catches: the scope and the observation go inside it, so reading the entry's
+        // values stays covered by the code's own catch
+        J.Block guarded = RepeatedValueRules.guardedBlock(m.decl().getBody());
+        J.Block wrapped = guarded != null ? guarded : m.decl().getBody();
+        int[] inner = wrapped == null ? null : JavaEdits.blockInner(text, wrapped);
         if (inner == null) {
             b.suggestion("Method body layout not supported for automatic wrapping; wrap it manually.");
             return;
         }
         String unit = Text.indentUnit(text);
-        Body body = new Body(inner, Text.indentAt(text, Pos.start(m.decl().getBody())) + unit, unit,
+        Body body = new Body(inner, Text.indentAt(text, Pos.start(wrapped)) + unit, unit,
                 text.substring(inner[0], inner[1]), ctx.taken(m, inner[0]));
         List<Edit> extra = new ArrayList<>();
         StringBuilder top = new StringBuilder(silent ? startLine(ep, m, b, extra) : "");
@@ -535,7 +539,28 @@ final class EntrypointRules {
             return v;
         }
         String root = v.expr().substring(0, dot);
-        return mayBeNull(m, root) ? new DomainValues.Value(v.key(), root + " == null ? null : " + v.expr()) : v;
+        if (mayBeNull(m, root)) {
+            return new DomainValues.Value(v.key(), root + " == null ? null : " + v.expr());
+        }
+        // a step of the chain the method null-checks (order.getTable() == null, then order.getTable().getId()): the scope
+        // opens before that guard, so the value is read null-safe at that step
+        List<String> steps = RepeatedValueRules.prefixes(v.expr());
+        for (int i = steps.size() - 1; i >= 1; i--) {
+            if (chainChecked(m, steps.get(i))) {
+                return new DomainValues.Value(v.key(), steps.get(i) + " == null ? null : " + v.expr());
+            }
+        }
+        return v;
+    }
+
+    private static boolean chainChecked(MethodInfo m, String step) {
+        if (m.decl().getBody() == null) {
+            return false;
+        }
+        String body = m.decl().getBody().printTrimmed();
+        String q = java.util.regex.Pattern.quote(step);
+        return java.util.regex.Pattern.compile("(?<![\\w.])" + q + "\\s*[!=]=\\s*null|null\\s*[!=]=\\s*" + q + "(?![\\w.(])")
+                .matcher(body).find();
     }
 
     private static boolean mayBeNull(MethodInfo m, String name) {

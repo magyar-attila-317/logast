@@ -476,6 +476,30 @@ final class CoverageRules {
 
     // ---- STATE_CHANGE_UNLOGGED ------------------------------------------------------------------
 
+    /** Whether the call sits in a loop of the method (for, for-each, while, do). */
+    private static boolean inLoop(MethodInfo m, J.MethodInvocation call) {
+        boolean[] found = {false};
+        int at = Pos.start(call);
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Lambda visitLambda(J.Lambda l, Integer p) {
+                return l;
+            }
+
+            @Override
+            public Statement visitStatement(Statement s, Integer p) {
+                if ((s instanceof J.ForEachLoop || s instanceof J.ForLoop || s instanceof J.WhileLoop || s instanceof J.DoWhileLoop)
+                        && at >= Pos.start(s) && at < Pos.end(s)) {
+                    found[0] = true;
+                }
+                return super.visitStatement(s, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return found[0];
+    }
+
+
+
     private void stateChange(MethodInfo m) {
         J.MethodInvocation[] write = {null};
         new JavaIsoVisitor<Integer>() {
@@ -498,10 +522,15 @@ final class CoverageRules {
         if (write[0] == null) {
             return;
         }
-        // #285: INFO only where every path to it is known to be quiet; else DEBUG, which then counts as its line
+        // #285: INFO only where every path to it is known to be quiet; else DEBUG
         String level = ctx.policy.levels().addedInfo(ctx.busiestRate(m)) ? "info" : "debug";
-        Level least = Level.parse(level);
-        boolean logged = m.facts().logs.stream().anyMatch(l -> l.level().compareTo(least) >= 0);
+        // E1: any line at DEBUG or above is its line: a line this rule added at INFO and the levels step lowered (a loop,
+        // a busy path) must not bring the rule back, or each pass adds another
+        boolean logged = m.facts().logs.stream().anyMatch(l -> l.level().compareTo(Level.DEBUG) >= 0);
+        // E1: a write per loop item gets no line per item: the loop's summary (BATCH_SUMMARY_MISSING) counts them
+        if (!logged && inLoop(m, write[0])) {
+            return;
+        }
         count("stateChanges", logged);
         J.MethodInvocation mi = write[0];
         int line = Pos.line(mi.getName());
@@ -587,14 +616,35 @@ final class CoverageRules {
         if (entity == null) {
             return null;
         }
-        String words = Wording.words(entity);
-        return Wording.capital((many ? words + (words.endsWith("s") ? "" : "s") : words) + " " + verb);
+        // "MenuCategoryEntity" names the table row: "Menu categories saved", not "Menu category entitys saved" (#307)
+        String bare = entity.replaceAll("(JpaEntity|Entity|Record|Model)$", "");
+        String words = Wording.words(bare.isEmpty() ? entity : bare);
+        return Wording.capital((many ? plural(words) : words) + " " + verb);
+    }
+
+    /** "category" → "categories", "box" → "boxes", "order" → "orders", "items" stays. */
+    static String plural(String words) {
+        if (words.endsWith("s")) {
+            return words;
+        }
+        if (words.matches(".*[^aeiou]y")) {
+            return words.substring(0, words.length() - 1) + "ies";
+        }
+        if (words.matches(".*(x|ch|sh)")) {
+            return words + "es";
+        }
+        return words + "s";
     }
 
     /** The values that identify what was written: an entity's id, a collection's size, or the id passed in. */
     private List<String[]> identity(Expression arg, String savedVar) {
         JavaType t = arg.getType();
         if (TypeUtils.isAssignableTo("java.util.Collection", t)) {
+            // a collection a call returns (deleteAll(repo.findByOrder(o))): calling it again in the log line would run the
+            // query once more, even at DEBUG, and after the delete it finds nothing: no count then (C1)
+            if (!(arg instanceof J.Identifier || arg instanceof J.FieldAccess fa && fa.getTarget() instanceof J.Identifier)) {
+                return List.of();
+            }
             return List.<String[]>of(new String[]{key(DomainValues.countKey(name(arg))), src(arg) + ".size()"});
         }
         Optional<String> reg = ctx.domain.keyOf(arg);
@@ -768,7 +818,10 @@ final class CoverageRules {
         String raw = m.owner().simpleName();
         String cls = raw.replaceAll("(Job|Task|Scheduler|Runner|Listener|Handler|Executor|Worker|Service)$", "");
         String base = Wording.phrase(cls.isBlank() ? m.name() : cls);
-        if (raw.matches(".*(Listener|Handler)$") && (base.endsWith("ed") || base.endsWith(" event"))) {
+        // a startup check in a listener class (@EventListener(ApplicationReadyEvent.class)) handles no event of its own
+        boolean oneShot = ctx.a.entrypoints.stream().anyMatch(e -> e.method().key().equals(m.key())
+                && dev.logast.graph.EntrypointFinder.oneShot(e));
+        if (!oneShot && raw.matches(".*(Listener|Handler)$") && (base.endsWith("ed") || base.endsWith(" event"))) {
             base = (base.endsWith(" event") ? base : base + " event") + " handling";
         }
         // annotated entrypoints of this class (not executor tasks): #312, a 300 s sweep next to a 60 s poller is not the poller

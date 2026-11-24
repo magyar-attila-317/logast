@@ -19,7 +19,7 @@ public class CacheWarmup {
     }
 
     @EventListener
-    public void onReady(ApplicationReadyEvent event) { // expect: JOB_OUTCOME_MISSING
+    public void onReady(ApplicationReadyEvent event) { // expect-not: JOB_OUTCOME_MISSING (a startup check that starts no work)
         log.info("Price list refresh started");
     }
 

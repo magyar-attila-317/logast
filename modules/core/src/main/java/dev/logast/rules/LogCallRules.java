@@ -66,6 +66,50 @@ final class LogCallRules {
         }
     }
 
+    /**
+     * The MDC keys at this log line. A key the method itself scopes (a try-with-resources MdcScope / putCloseable) is in
+     * MDC only inside that try's block: a line before it or in a catch of the method's own try (D1b) is outside. A key
+     * from callers or a whole-body scope is everywhere in the method.
+     */
+    private Set<String> mdcAt(MethodInfo m, LogCall lc) {
+        Set<String> all = ctx.mdcInside(m);
+        J.Block body = m.decl().getBody();
+        if (body == null || all.isEmpty()) {
+            return all;
+        }
+        int at = Pos.start(lc.call());
+        Set<String> out = new java.util.TreeSet<>(all);
+        // scopes already in the code: the try of each resource that opens one
+        Map<String, List<int[]>> covered = new HashMap<>();
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Try visitTry(J.Try t, Integer p) {
+                if (t.getResources() != null) {
+                    for (dev.logast.model.MdcOp op : m.facts().mdc) {
+                        if (op.kind() == dev.logast.model.MdcOp.Kind.PUT_CLOSEABLE && op.key() != null
+                                && Pos.start(op.call()) >= Pos.start(t) && Pos.end(op.call()) <= Pos.start(t.getBody())) {
+                            covered.computeIfAbsent(op.key(), k -> new ArrayList<>()).add(new int[]{Pos.start(t.getBody()), Pos.end(t.getBody())});
+                        }
+                    }
+                }
+                return super.visitTry(t, p);
+            }
+        }.visit(body, 0);
+        for (var e : covered.entrySet()) {
+            boolean fromCallers = ctx.a.paths.mdcAtEntry(m).contains(e.getKey());
+            if (!fromCallers && e.getValue().stream().noneMatch(r -> at >= r[0] && at < r[1])) {
+                out.remove(e.getKey());
+            }
+        }
+        // planned in this scan, in a body that is one try with catches (D1b): the scope goes inside the try, not the catch
+        J.Block guarded = RepeatedValueRules.guardedBlock(body);
+        Set<String> local = ctx.mdc.localKeys().get(m.key());
+        if (guarded != null && local != null && (at < Pos.start(guarded) || at >= Pos.end(guarded))) {
+            out.removeAll(local);
+        }
+        return out;
+    }
+
     // ---- LOG_AND_RETHROW -----------------------------------------------------------------------
 
     private boolean logAndRethrow(MethodInfo m, LogCall lc, int ordinal) {
@@ -92,7 +136,9 @@ final class LogCallRules {
         for (Expression arg : lc.args()) {
             var key = ctx.domain.keyOf(arg);
             if (key.isPresent()) {
-                key.filter(k -> !inMdc.contains(k)).ifPresent(lostContext::add);
+                // D3: in MDC here is not in MDC where the rethrown exception is logged: an @ExceptionHandler or a caller's
+                // catch runs after this method's scopes closed. The id goes with the line, so the line stays
+                lostContext.add(key.get());
             } else if (!mentions.matcher(arg.printTrimmed()).find() && !(arg instanceof J.Literal)) {
                 // #304: a value the exception does not carry (a duration, a count, a name) would be lost with the line
                 lostContext.add(Text.oneLine(arg.printTrimmed(), 40));
@@ -101,29 +147,30 @@ final class LogCallRules {
         b.context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
         if (!lc.statement()) {   // not a statement of its own: logast cannot delete it
             b.suggestion(lostContext.isEmpty() ? "Remove the log statement; let the handler log it."
-                    : "Not removed: the message carries " + lostContext + " which is not in MDC here. Put it into MDC "
-                    + "upstream (MdcScope) or attach it to the rethrown exception, then delete this log.");
+                    : "Not removed: the line carries " + lostContext + ", which the rethrown exception does not. Keep it, or "
+                    + "put the values into the exception (its message or a field) and delete this log.");
             return false;
         }
-        // deleting it is only safe when something else logs the exception on every way it can travel (#46); with
-        // context missing from MDC too, the note and done-when line name both conditions, not only the first (#85)
+        // deleting it is only safe when something else logs the exception on every way it can travel (#46); with values
+        // the exception does not carry too, the note and done-when line name both conditions, not only the first (#85)
         String silent = silentEnd(m, thrownTypes(lc.inCatch()));
-        String carries = String.join(", ", lostContext) + " " + (lostContext.size() == 1 ? "is" : "are");
         if (silent != null) {
             b.title("Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it")
-                    .suggestion("Not removed: " + (lostContext.isEmpty() ? "" : "the message carries " + lostContext
-                            + " which is not in MDC here, and ") + "nothing else is known to log it on the path through " + silent
-                            + ", so this line may be its only record. " + (lostContext.isEmpty() ? "Log it" : "Put the context into MDC upstream "
-                            + "(MdcScope) or attach it to the rethrown exception, and log the exception") + " there (or in an @ExceptionHandler), "
+                    .suggestion("Not removed: " + (lostContext.isEmpty() ? "" : "the line carries " + lostContext
+                            + ", which the rethrown exception does not, and ") + "nothing else is known to log it on the path through "
+                            + silent + ", so this line may be its only record. " + (lostContext.isEmpty() ? "Log it" : "Put the values into "
+                            + "the exception (its message or a field) and log the exception") + " there (or in an @ExceptionHandler), "
                             + "then delete this one.")
-                    .doneWhen((lostContext.isEmpty() ? "" : carries + " in MDC here and ") + "a catch or @ExceptionHandler logs "
-                            + "it on the path through " + silent + "; then logast deletes this line itself. Or the line is gone");
+                    .doneWhen((lostContext.isEmpty() ? "" : "the line logs nothing but the exception and ") + "a catch or "
+                            + "@ExceptionHandler logs it on the path through " + silent + "; then logast deletes this line itself. "
+                            + "Or the line is gone");
             return false;
         }
         if (!lostContext.isEmpty()) {
-            b.suggestion("Not removed: the message carries " + lostContext + " which is not in MDC here. Put it into MDC "
-                            + "upstream (MdcScope) or attach it to the rethrown exception, then delete this log.")
-                    .doneWhen(carries + " in MDC here (then logast deletes this line itself), or the line is gone");
+            b.suggestion("Not removed: the line carries " + lostContext + ", which the rethrown exception does not; whoever "
+                            + "logs the exception (an @ExceptionHandler, a caller's catch) runs after this method's MDC scopes "
+                            + "closed. Keep the line, or put the values into the exception (its message or a field) and delete it.")
+                    .doneWhen("the line logs nothing but the exception (then logast deletes it itself), or the line is gone");
             return false;
         }
         b.edit(JavaEdits.deleteStatement(m.file(), lc.call()));
@@ -449,7 +496,7 @@ final class LogCallRules {
         // "Pledge {} published" with pledgeId in MDC: the placeholder right after its own noun goes, the sentence stays
         List<String> inPlaceDeps = new ArrayList<>();
         if (MessageTemplate.count(raw) == args.size() && !args.isEmpty()) {
-            Set<String> inMdcNow = lc.offThread() ? Set.of() : ctx.mdcInside(m);   // another thread: MDC is empty there
+            Set<String> inMdcNow = lc.offThread() ? Set.of() : mdcAt(m, lc);   // another thread: MDC is empty there
             java.util.regex.Matcher ph = java.util.regex.Pattern.compile("\\{}").matcher(raw);
             StringBuilder sb = new StringBuilder();
             List<Arg> keptArgs = new ArrayList<>();
@@ -463,6 +510,20 @@ final class LogCallRules {
                 java.util.regex.Matcher noun = java.util.regex.Pattern
                         .compile("(?i)(\\b" + stem + "s?)((?:\\s+(?:id|no\\.?|number))?\\s*#?\\s*)$").matcher(before);
                 if (a.registry() && inMdcNow.contains(a.key()) && noun.find()) {
+                    String head = before.substring(0, noun.start(1));
+                    String rest = raw.substring(ph.end());
+                    if (head.stripTrailing().endsWith("(") && rest.stripLeading().startsWith(")")) {
+                        // #310: "not found (order {})": the group only named the value, it goes with it
+                        String open = head.stripTrailing();
+                        sb.append(open, 0, open.length() - 1);
+                        from = ph.end() + rest.indexOf(')') + 1;
+                        String wrap = ctx.plannedBy(m, a.key());
+                        if (wrap != null) {
+                            inPlaceDeps.add(wrap);
+                        }
+                        changed = true;
+                        continue;
+                    }
                     sb.append(before, 0, noun.end(1));
                     String wrap = ctx.plannedBy(m, a.key());
                     if (wrap != null) {
@@ -504,7 +565,7 @@ final class LogCallRules {
 
         // drop values already in MDC, PII and e.getMessage() when the exception itself is logged; a line that runs on
         // another thread (no MDC propagation) keeps its values: MDC is empty there
-        Set<String> inMdc = lc.offThread() ? Set.of() : ctx.mdcInside(m);
+        Set<String> inMdc = lc.offThread() ? Set.of() : mdcAt(m, lc);
         List<String> plannedDeps = new ArrayList<>(inPlaceDeps);
         List<Arg> kept = new ArrayList<>();
         List<String> droppedStems = new ArrayList<>();

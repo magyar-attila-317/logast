@@ -5,6 +5,14 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**What logast writes**
+- An MdcScope never evaluates a value whose chain the code null-checks (`t.getTable() == null`, then `t.getTable().getUuid()`): no scope there, or the entry value is read null-safe at that step; in a body that is one `try` with catches the scope opens inside the `try` (an exception reading the value stays the code's own to catch).
+- An id counts as in MDC only where a scope in the method covers the line: a line before the scope or in a catch outside it keeps its id.
+- Lists of plain values (strings, numbers, enums, UUIDs, dates) and `.limit(n)` streams stay as logged; only collections of entities become `.size()`.
+- A log-and-rethrow line that carries any value besides the exception is never deleted: an id in MDC here is not in MDC where the rethrown exception is logged.
+- An added line never calls the argument expression again (no query re-run in a log argument); a write per loop item gets no line per item; any existing line counts, so a lowered line is not added again (#314).
+- Generated wording: "Menu categories saved" (no "Entity" suffix, English plurals); a pipeline is named after its source (`openOrderIds`, not `toList`); a startup check gets no "completed" line and no "event handling" wording; `(order {})` for an id in MDC goes with it (#310).
+
 ## 0.5.2
 
 **What logast writes**

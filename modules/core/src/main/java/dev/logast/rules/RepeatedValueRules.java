@@ -622,6 +622,35 @@ public final class RepeatedValueRules {
         return -1;
     }
 
+    /**
+     * #D1: the proper prefixes of a getter chain, outermost first: {@code t.getTable().getUuid()} gives {@code t} and
+     * {@code t.getTable()}; a plain name gives none.
+     */
+    static List<String> prefixes(String expr) {
+        List<String> out = new ArrayList<>();
+        int depth = 0;
+        for (int i = 0; i < expr.length(); i++) {
+            char ch = expr.charAt(i);
+            if (ch == '(' || ch == '[') {
+                depth++;
+            } else if (ch == ')' || ch == ']') {
+                depth--;
+            } else if (ch == '.' && depth == 0) {
+                out.add(expr.substring(0, i).strip());
+            }
+        }
+        return out;
+    }
+
+    /** D1b: the block of a body that is one try with catches (and no resources), else null. */
+    static J.Block guardedBlock(J.Block body) {
+        if (body != null && body.getStatements().size() == 1 && body.getStatements().getFirst() instanceof J.Try t
+                && t.getResources() == null && !t.getCatches().isEmpty()) {
+            return t.getBody();
+        }
+        return null;
+    }
+
     /** Where the value exists and stays the same: whole body (parameter) or after its declaration (local). */
     private Region region(MethodInfo m, String text, Candidate c) {
         J.Block body = m.decl().getBody();
@@ -629,9 +658,13 @@ public final class RepeatedValueRules {
                 && vd.getVariables().stream().anyMatch(v -> v.getSimpleName().equals(c.root())));
         Region r = null;
         if (param && !m.decl().isConstructor()) {
-            int[] inner = JavaEdits.blockInner(text, body);
+            // D1b: a body that is one try with catches: the scope goes inside it, so reading the value stays covered
+            // by the code's own catch (an NPE there was logged and swallowed, not thrown out of a listener)
+            J.Block guarded = guardedBlock(body);
+            J.Block block = guarded != null ? guarded : body;
+            int[] inner = JavaEdits.blockInner(text, block);
             if (inner != null) {
-                r = new Region(inner[0], inner[1], Text.indentAt(text, Pos.start(body)) + Text.indentUnit(text), true);
+                r = new Region(inner[0], inner[1], Text.indentAt(text, Pos.start(block)) + Text.indentUnit(text), guarded == null);
             }
         } else if (!param) {
             r = afterDeclaration(text, body, c.root());   // a loop variable changes every pass: never scoped
@@ -640,7 +673,11 @@ public final class RepeatedValueRules {
             return null;
         }
         int rs = r.start(), re = r.end();
-        if (c.logs().stream().anyMatch(lc -> Pos.start(lc.call()) < rs || Pos.end(lc.call()) > re)) {
+        // D1b: in a body that is one try with catches, a line in a catch keeps its value in the message (no MDC there)
+        J.Block guarded = param ? guardedBlock(body) : null;
+        int ls = guarded != null ? Pos.start(body.getStatements().getFirst()) : rs;
+        int le = guarded != null ? Pos.end(body.getStatements().getFirst()) : re;
+        if (c.logs().stream().anyMatch(lc -> Pos.start(lc.call()) < ls || Pos.end(lc.call()) > le)) {
             return null;
         }
         // string literals and comments out: "[pledgeId={}]" in a message is not an assignment
@@ -649,9 +686,14 @@ public final class RepeatedValueRules {
         if (Pattern.compile("(?<![\\w.])" + v + "\\s*(?:[-+*/%&|^]?=(?!=)|\\+\\+|--)|(?:\\+\\+|--)" + v + "\\b").matcher(region).find()) {
             return null;    // reassigned: the MDC value would go stale
         }
-        if (!c.expr().equals(c.root()) && Pattern.compile("(?<![\\w.])" + v + "\\s*[!=]=\\s*null|null\\s*[!=]=\\s*" + v
-                + "\\b|Objects\\.(?:isNull|nonNull)\\(\\s*" + v + "\\s*\\)").matcher(region).find()) {
-            return null;    // the code null-checks it: evaluating the getter up front could throw
+        // the code null-checks the value's root or a step of its chain (t.getTable() == null, then t.getTable().getUuid()):
+        // evaluating it up front, before that guard, could throw where the code threw its own exception
+        for (String prefix : prefixes(c.expr())) {
+            String q = Pattern.quote(prefix);
+            if (Pattern.compile("(?<![\\w.])" + q + "\\s*[!=]=\\s*null|null\\s*[!=]=\\s*" + q + "(?![\\w.(])"
+                    + "|Objects\\.(?:isNull|nonNull|requireNonNull)\\(\\s*" + q + "\\s*[,)]").matcher(region).find()) {
+                return null;
+            }
         }
         return r;
     }

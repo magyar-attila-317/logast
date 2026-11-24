@@ -99,7 +99,10 @@ public final class LifecyclePlan {
                 // #312: an application event listener runs as often as its publishers: an INFO outcome per event only
                 // with a known, quiet rate (like its started line, #306)
                 boolean unmeasured = ep.kind() == Entrypoint.Kind.EVENT && !dev.logast.graph.EntrypointFinder.oneShot(ep)
-                        && !ctx.policy.levels().addedInfo(ctx.a.traffic.perDay(ep));
+                        && !ctx.policy.levels().addedInfo(ctx.a.traffic.perDay(ep))
+                        // C4: a startup check that starts no work (a warning, a cache primed): its own lines say what it
+                        // did; a "completed" per boot is noise, and tests count startup log events
+                        || ctx.idleOneShot(ep);
                 outcomeOwner = wrapper ? "observation wrapper (runtime line)" : unmeasured ? "not needed (no known rate)" : "the method";
                 if (!hasOutcome && !wrapper && !unmeasured) {
                     missing.add("completed");

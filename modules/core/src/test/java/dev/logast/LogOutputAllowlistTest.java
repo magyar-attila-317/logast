@@ -115,6 +115,38 @@ class LogOutputAllowlistTest {
                 .doesNotContain("thing {}").doesNotContain("order {}");
     }
 
+    /** #310: an id already in MDC, in parentheses after another value: the group goes with it. */
+    @Test
+    void aParenthesisedIdInMdcLeavesNoGroupBehind(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("logast.yaml"), """
+                vocabulary:
+                  order:
+                    mdc: { key: orderId, sources: { params: [orderId] } }
+                """);
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Seating.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.slf4j.MDC;
+
+                public class Seating {
+                    private static final Logger log = LoggerFactory.getLogger(Seating.class);
+
+                    void seat(String orderId, String tableId) {
+                        try (var c = MDC.putCloseable("orderId", orderId)) {
+                            log.warn("table {} not found (order {}) - skipping", tableId, orderId);
+                        }
+                    }
+                }
+                """);
+        String texts = String.join("\n", scan(dir).stream().filter(o -> "Seating.seat".equals(o.method()))
+                .flatMap(o -> java.util.stream.Stream.concat(o.edits().stream().map(Edit::text),
+                        o.slots().values().stream().map(sl -> sl.original() + "|" + sl.generated()))).toList());
+        assertThat(texts).contains("not found").doesNotContain("(order)").doesNotContain("(order {})");
+    }
+
     private static List<WorkOrder> scan(Path dir) throws java.io.IOException {
         return Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))).orders();
     }

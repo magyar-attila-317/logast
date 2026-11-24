@@ -230,10 +230,32 @@ final class LogArgumentRules {
     }
 
     /** List.of(..)/EnumSet/constants: a fixed, known number of elements. */
+    /** A value that prints as itself: a string, a number, a boolean, a char, an enum, a UUID, a date or time. */
+    private static boolean valueType(JavaType t) {
+        JavaType.FullyQualified fq = TypeUtils.asFullyQualified(t);
+        if (fq == null) {
+            return false;
+        }
+        String n = fq.getFullyQualifiedName();
+        return fq.getKind() == JavaType.FullyQualified.Kind.Enum || n.equals("java.lang.String") || n.equals("java.lang.Boolean")
+                || n.equals("java.lang.Character") || n.equals("java.util.UUID") || n.startsWith("java.time.")
+                || TypeUtils.isAssignableTo("java.lang.Number", t) || TypeUtils.isAssignableTo("java.lang.CharSequence", t);
+    }
+
     private boolean bounded(MethodInfo m, Expression arg) {
         if (arg instanceof J.MethodInvocation mi && Set.of("limit", "subList", "first", "top", "head", "take", "firstN")
                 .contains(mi.getSimpleName())) {
             return true;   // already capped
+        }
+        // D2: capped further up a stream (stream().limit(5).map(…).toList()): the list is what support reads
+        if (arg instanceof J.MethodInvocation && arg.printTrimmed().matches("(?s).*\\.limit\\(\\s*\\d+\\s*\\).*")) {
+            return true;
+        }
+        // D2: plain values (invoice numbers, permission names, rates, ids) print compactly and load nothing: the list is
+        // the information ("missing=[ORDER_EDIT, TIP_VIEW]"), its size is not; an entity's toString is the risk
+        if (arg.getType() instanceof JavaType.Parameterized p && !p.getTypeParameters().isEmpty()
+                && TypeUtils.isAssignableTo("java.util.Collection", arg.getType()) && valueType(p.getTypeParameters().getFirst())) {
+            return true;
         }
         if (arg.getType() instanceof JavaType.Parameterized p && !p.getTypeParameters().isEmpty()
                 && TypeUtils.asFullyQualified(p.getTypeParameters().getFirst()) instanceof JavaType.FullyQualified el
