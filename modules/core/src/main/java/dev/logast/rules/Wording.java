@@ -49,8 +49,16 @@ final class Wording {
                         String action = VERBS.get(parts[0]);
                         return action == null ? null : capital(singular(tail) + " " + action);
                     }
-                    // an action of its own after a resource: /orders/{id}/cancel
-                    return capital(singular(words.get(words.size() - 2)) + " " + words(tail));
+                    // #307: a collection (POST /menu/categories): "Category creation", not "Menu categories"
+                    String[] segs = parts[1].replaceAll("/+$", "").split("/");
+                    boolean afterId = segs.length >= 2 && segs[segs.length - 2].startsWith("{");
+                    if (!afterId) {
+                        return capital(singular(tail) + " " + VERBS.get(parts[0]));
+                    }
+                    // an action of its own after a resource: /orders/{id}/cancel; a sub-resource changed or removed
+                    // (PUT / DELETE /items/{id}/image) says so, so it does not read like its upload (#307)
+                    String sub = singular(words.get(words.size() - 2)) + " " + words(tail);
+                    return capital(parts[0].equals("POST") ? sub : sub + " " + VERBS.get(parts[0]));
                 }
             }
             return null;
@@ -72,7 +80,8 @@ final class Wording {
      * "NTAK reporting", not "ntakreporting").
      */
     static String phrase(String name) {
-        String spaced = name.replaceAll("([A-Z]+)([A-Z][a-z])", "$1 $2").replaceAll("([a-z0-9])([A-Z])", "$1 $2")
+        // "E2EDataSeeder" → "E2E data seeder": an upper-case run with digits stays one word
+        String spaced = name.replaceAll("([A-Z0-9]*[A-Z])([A-Z][a-z])", "$1 $2").replaceAll("([a-z])([A-Z0-9])", "$1 $2")
                 .replaceAll("[-_]+", " ").strip();
         List<String> out = new ArrayList<>();
         for (String w : spaced.split("\\s+")) {

@@ -6,6 +6,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- A key for a method whose body already is one MdcScope joins that scope's `MdcScope.of(…)` call instead of nesting a second scope (#311).
+- Wording: a collection endpoint names what it creates (`POST /menu/categories` → "Category creation started"), a sub-resource's update or removal says so ("Item image deletion"), acronyms with digits stay ("E2E data seeder"), and "Starting X..." becomes "X started" without leftover dots (#307).
 - A job that only hands its work to an executor gets no "completed" line; a started line goes after the job's leading `if (…) return;` guards; an event listener without a known rate gets no INFO outcome line; a class with several scheduled jobs names each by its method (#312).
 - MDC keys the code writes are added to a JSON encoder's `includeMdcKeyName` list in logback-spring.xml / logback.xml, so ids moved into MDC reach the JSON logs (MDC_KEY_NOT_IN_LOG_OUTPUT, #296).
 - A chain of labelled values (`thing {} order {}`) loses its nouns along with the values, instead of leaving "thing order" behind (#310).

@@ -551,9 +551,15 @@ public final class RepeatedValueRules {
         String body = text.substring(r.start(), r.end());
         List<DomainValues.Value> values = cs.stream().map(c -> new DomainValues.Value(c.key(), c.expr())).toList();
         int observedAt = EntrypointRules.observedMdcAt(m, text, r.start(), r.end());
+        int scopeAt = r.wholeBody() ? wholeBodyScope(m, text) : -1;
         if (observedAt >= 0) {
             // #20: the scope would be the whole observation: its MDC goes into the ObservedContext chain
             b.edit(Edit.insert(f.relPath(), observedAt, EntrypointRules.observedMdc(m, text, values)));
+        } else if (scopeAt >= 0) {
+            // #311: the body already is one MdcScope (an entrypoint's, an earlier round's): its keys go into that call,
+            // not into a second scope nested inside it
+            b.edit(Edit.insert(f.relPath(), scopeAt, String.join("", values.stream()
+                    .map(v -> ", \"" + v.key() + "\", " + v.expr()).toList())));
         } else {
             b.edit(Edit.replace(f.relPath(), r.start(), r.end(), r.indent() + "try (var " + var + " = "
                     + EntrypointRules.mdcScope(values) + ") {\n" + Text.reindent(body, unit) + r.indent() + "}\n"));
@@ -566,6 +572,27 @@ public final class RepeatedValueRules {
             (r.wholeBody() ? ctx.mdc.ownKeys() : ctx.mdc.localKeys()).computeIfAbsent(m.key(), x -> new TreeSet<>()).add(k);
             ctx.mdc.by().put(m.key() + "|" + k, id);
         }
+    }
+
+    /**
+     * #311: the offset of the closing parenthesis of {@code MdcScope.of(…)} when the method's body is one
+     * try-with-resources opening that scope, else -1.
+     */
+    static int wholeBodyScope(MethodInfo m, String text) {
+        J.Block body = m.decl().getBody();
+        if (body == null || body.getStatements().size() != 1 || !(body.getStatements().getFirst() instanceof J.Try t)
+                || t.getResources() == null || !t.getCatches().isEmpty() || t.getFinally() != null) {
+            return -1;
+        }
+        for (J.Try.Resource res : t.getResources()) {
+            if (res.getVariableDeclarations() instanceof J.VariableDeclarations vd && vd.getVariables().size() == 1
+                    && vd.getVariables().getFirst().getInitializer() instanceof J.MethodInvocation mi
+                    && mi.getSimpleName().equals("of") && mi.getSelect() instanceof J.Identifier id && id.getSimpleName().equals("MdcScope")) {
+                int end = Pos.end(mi) - 1;
+                return end > 0 && text.charAt(end) == ')' ? end : -1;
+            }
+        }
+        return -1;
     }
 
     /** Where the value exists and stays the same: whole body (parameter) or after its declaration (local). */

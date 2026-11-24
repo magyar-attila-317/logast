@@ -109,7 +109,8 @@ public final class Phrasing {
         for (Variant v : variants) {
             Matcher m = v.pattern().matcher(body);
             if (m.matches()) {
-                String subject = m.group("subject").strip();
+                // #307: "Starting database reset..." → "Database reset started", not "Database reset.. started"
+                String subject = m.group("subject").strip().replaceAll("(?:\\.{2,}|…|[.!:;,])+$", "").strip();
                 if (subject.isEmpty() || subject.split("\\s+").length > 8) {
                     return Optional.empty();
                 }

@@ -63,6 +63,71 @@ class JobWordingTest {
         assertThat(texts(orders, "AuditCleanupJob.purgeArchived")).contains("Audit cleanup (purge archived) started");
     }
 
+    /** #307: a collection endpoint names what it creates; a sub-resource's removal is not its upload; "..." goes. */
+    @Test
+    void endpointAndPhrasingWording(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve(".logast/decisions"));
+        Files.writeString(dir.resolve(".logast/decisions/traffic.yaml"), """
+                entrypoints:
+                  "POST /menu/categories": 10
+                  "POST /items/{id}/image": 10
+                  "DELETE /items/{id}/image": 10
+                """);
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("MenuController.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.DeleteMapping;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class MenuController {
+                    private static final Logger log = LoggerFactory.getLogger(MenuController.class);
+
+                    @PostMapping("/menu/categories")
+                    public void createCategory() {
+                        save();
+                    }
+
+                    @PostMapping("/items/{id}/image")
+                    public void uploadImage(@PathVariable String id) {
+                        save();
+                    }
+
+                    @DeleteMapping("/items/{id}/image")
+                    public void removeImage(@PathVariable String id) {
+                        save();
+                    }
+
+                    void reset() {
+                        log.info("Starting E2E database reset...");
+                    }
+
+                    void save() {
+                    }
+                }
+                """);
+        List<WorkOrder> orders = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))
+                .withTraffic(Traffic.load(dir.toAbsolutePath().normalize(), null))).orders();
+        assertThat(texts(orders, "MenuController.createCategory") + slots(orders, "MenuController.createCategory"))
+                .contains("Category creation started");
+        assertThat(slots(orders, "MenuController.uploadImage")).contains("Item image started");
+        assertThat(slots(orders, "MenuController.removeImage")).contains("Item image deletion started");
+        assertThat(texts(orders, "MenuController.reset") + slots(orders, "MenuController.reset"))
+                .contains("E2E database reset started").doesNotContain("..");
+    }
+
+    private static String slots(List<WorkOrder> orders, String method) {
+        StringBuilder sb = new StringBuilder();
+        orders.stream().filter(o -> method.equals(o.method())).forEach(o -> o.slots().values()
+                .forEach(sl -> sb.append(sl.generated()).append('|').append(sl.original()).append('\n')));
+        return sb.toString();
+    }
+
     private static String texts(List<WorkOrder> orders, String method) {
         StringBuilder sb = new StringBuilder();
         orders.stream().filter(o -> method.equals(o.method())).forEach(o -> o.edits().forEach(e -> sb.append(e.text()).append('\n')));

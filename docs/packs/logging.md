@@ -41,7 +41,7 @@ can end either way, the finding's note says why.
 | LOG_KEY_VALUE_IN_MDC | low | a `[k=v]` that repeats a key MDC already carries | AUTO: removed from the message |
 | **MDC** | | | |
 | MISSING_DOMAIN_MDC | medium | an entrypoint whose business id is not in MDC | AUTO: `MdcScope` around the body; report for a method returning a `Mono`/`Flux` (a scope would end before the pipeline runs: the note names the Reactor Context route) |
-| REPEATED_LOG_VALUE | medium | the same id logged by every message of a method and the methods it passes it to | AUTO: into MDC once |
+| REPEATED_LOG_VALUE | medium | the same id logged by every message of a method and the methods it passes it to | AUTO: into MDC once; into the method's existing whole-body `MdcScope.of(…)` when there is one, never a second scope nested in it (#311) |
 | MDC_NOT_CLOSEABLE | low | `MDC.put` never removed, or cleared in a `finally` | AUTO: one `MdcScope` (restores exactly what it changed) |
 | MDC_CLEAR | high | `MDC.clear()`: wipes the caller's context, trace ids included | report; folded into the MDC_NOT_CLOSEABLE fix |
 | MDC_NESTED_KEY | medium | a scope for a key already set on every path into the method | AUTO: unwrapped when the value is the caller's; report otherwise |
