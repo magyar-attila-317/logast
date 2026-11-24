@@ -5,12 +5,17 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+## 0.5.2
+
 **What logast writes**
 - Ids read into locals one after the other get one MdcScope after the last declaration, not one nested scope per id (#311).
 - A labelled value in parentheses (`not found (order {})`) goes with its noun (#310).
 - MDC_KEY_NOT_IN_LOG_OUTPUT no longer adds keys that shadow the encoder's own fields (`timestamp`, `level`, `message`, …), and no longer trips its self-check when other fixes of the same round add keys (#296).
 
 **CLI**
+- The test check (#279) compiles only the tests of classes whose API changed (signatures, supertypes, annotations, instance fields): log lines and MDC scopes cannot break a test, and compiling every test that mentions a changed class took most of an apply on a large service.
+- A Java package named `build` or `out` (`…common.build`) is source: parsed, copied into the scratch folder and written back (#313).
+- Install without a checkout: `curl -fsSL https://raw.githubusercontent.com/magyar-attila-317/logast/main/install.sh | bash` downloads the latest release (`--version x.y.z` a given one), checks its sha256 and installs it; `logast update [version]` replaces an install the same way. Releases carry `logast-x.y.z.zip.sha256` and a version-less `logast.zip` (the latest).
 - The compile check also sees constructors Lombok generates (`@RequiredArgsConstructor`) on classes a test or an edited file uses (#305).
 - Apply rounds re-parse only the files that changed, against classes compiled from the same work tree; a round parses in full when that cannot be exact (a removed file, a changed API, many changed files). `LOGAST_PARSE=full` restores full parses; `LOGAST_TIMING=1` shows what each round did (#308).
 
