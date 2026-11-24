@@ -209,7 +209,7 @@ public final class CompileCheck {
             if (diags == null) {
                 return out;   // javac itself failed: no verdict, the round goes on as before
             }
-            List<Path> lombokTypes = lombok == null || pass == 3 ? List.of() : lombokSources(diags, fileOf, roots, processed);
+            List<Path> lombokTypes = lombok == null || pass == 10 ? List.of() : lombokSources(diags, fileOf, roots, processed);
             if (lombokTypes.isEmpty()) {
                 break;
             }

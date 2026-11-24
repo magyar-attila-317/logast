@@ -251,7 +251,7 @@ public final class Applier {
         }
         Set<String> names = new HashSet<>();
         for (String f : changed) {
-            if (f.endsWith(".java") && f.contains("src/main/java/")) {
+            if (f.endsWith(".java") && f.contains("src/main/java/") && apiChanged(root.resolve(f), work.resolve(f))) {
                 names.add(f.substring(f.lastIndexOf('/') + 1, f.length() - ".java".length()));
             }
         }
@@ -278,6 +278,24 @@ public final class Applier {
         compile.brokenTests(root, work, tests).forEach((file, error) -> out.add(file + ": no longer compiles against the "
                 + "changed code (" + error + "): the fix changed a signature this test calls, update the test the same way"));
         return out;
+    }
+
+    /**
+     * #279, #308: whether a change can break a test: the class's API (signatures, supertypes, annotations, instance
+     * fields, {@link dev.logast.parse.ApiDigest}) differs. Log lines, MDC scopes and private helpers cannot; compiling
+     * every test that mentions a changed class took most of an apply on a large service.
+     */
+    private static boolean apiChanged(Path before, Path after) {
+        if (!Files.exists(before) || !Files.exists(after)) {
+            return true;   // a new or removed class: what tests see changed
+        }
+        try {
+            String was = dev.logast.parse.ApiDigest.of(dev.logast.parse.SourceText.read(before));
+            String now = dev.logast.parse.ApiDigest.of(dev.logast.parse.SourceText.read(after));
+            return was == null || !was.equals(now);
+        } catch (IOException e) {
+            return true;
+        }
     }
 
     /** Passes over the whole pipeline before apply stops (each pass only applies what is still open). */
@@ -862,7 +880,7 @@ public final class Applier {
 
     // ---- scratch copy -------------------------------------------------------------------------
 
-    private static Path copy(Path root) {
+    static Path copy(Path root) {
         try {
             // the copy keeps the project's folder name: what is derived from it (the service name when no
             // settings.gradle names it) must come out the same as on the project itself
@@ -875,7 +893,7 @@ public final class Applier {
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    if (!dir.equals(root) && skipped(dir)) {
+                    if (!dir.equals(root) && skipped(root, dir)) {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
                     Files.createDirectories(work.resolve(root.relativize(dir).toString()));
@@ -885,7 +903,8 @@ public final class Applier {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     // sockets, pipes and devices (e.g. a tool's daemon.sock) cannot be copied and are never edited
-                    if ((attrs.isRegularFile() || attrs.isSymbolicLink()) && !BUILD_OUTPUT.contains(String.valueOf(file.getParent().getFileName()))) {
+                    if ((attrs.isRegularFile() || attrs.isSymbolicLink())
+                            && (inSource(root.relativize(file).toString()) || !BUILD_OUTPUT.contains(String.valueOf(file.getParent().getFileName())))) {
                         Files.copy(file, work.resolve(root.relativize(file).toString()),
                                 StandardCopyOption.COPY_ATTRIBUTES, LinkOption.NOFOLLOW_LINKS);
                     }
@@ -909,7 +928,21 @@ public final class Applier {
      * Left out of the scratch copy: build output and tool folders, except the generated sources in build/ and target/
      * (#51: their types resolve the analysis; they are never compared or written back).
      */
-    private static boolean skipped(Path dir) {
+    /** Inside a source tree ({@code …/src/…}): a "build" or "out" folder there is a package (…common.build), not output. */
+    static boolean inSource(String rel) {
+        String[] segs = rel.replace('\\', '/').split("/");
+        for (int i = 0; i < segs.length - 1; i++) {
+            if (segs[i].equals("src")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean skipped(Path root, Path dir) {
+        if (inSource(root.relativize(dir).toString())) {
+            return false;
+        }
         String name = dir.getFileName().toString();
         if (BUILD_OUTPUT.contains(String.valueOf(dir.getParent().getFileName()))) {
             return !name.equals("generated") && !name.equals("generated-sources");
@@ -923,7 +956,7 @@ public final class Applier {
             try (var s = Files.walk(base)) {
                 s.filter(Files::isRegularFile)
                         .map(p -> base.relativize(p).toString().replace('\\', '/'))
-                        .filter(r -> Arrays.stream(r.split("/")).noneMatch(SKIP::contains))
+                        .filter(r -> inSource(r) || Arrays.stream(r.split("/")).noneMatch(SKIP::contains))
                         .forEach(rels::add);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);

@@ -150,6 +150,30 @@ class CompileCheckTest {
                 .as("a getter nothing generates is still an error").containsKey("src/main/java/a/Listener.java");
     }
 
+    /** #305: a chain of Lombok getters resolves link by link: each pass finds the next class to compile with Lombok. */
+    @Test
+    void aLongChainOfLombokGettersResolves() throws IOException {
+        List<Path> classpath = java.util.Arrays.stream(System.getProperty("logast.test.lombok").split(java.io.File.pathSeparator))
+                .map(Path::of).toList();
+        String[] names = {"Alert", "Shift", "Venue", "Region", "Tenant"};
+        for (int i = 0; i < names.length; i++) {
+            String field = i + 1 < names.length ? "private " + names[i + 1] + " " + names[i + 1].toLowerCase() + ";" : "private String code;";
+            write("src/main/java/a/" + names[i] + ".java", "package a;\n\n@lombok.Getter\npublic class " + names[i] + " {\n    "
+                    + field + "\n}\n");
+        }
+        String test = """
+                package a;
+
+                class AlertTest {
+                    String code(Alert alert) {
+                        return alert.getShift().getVenue().getRegion().getTenant().getCode();
+                    }
+                }
+                """;
+        assertThat(new CompileCheck(classpath).newErrors(work, Map.of("src/test/java/a/AlertTest.java", test)))
+                .as("five Lombok classes, one per link").isEmpty();
+    }
+
     /**
      * #305: a constructor Lombok generates (@RequiredArgsConstructor) on a class from the source path: the error names
      * it as "constructor X in class Y", and the class is compiled with Lombok too, so a test that calls it still compiles.

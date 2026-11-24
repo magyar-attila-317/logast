@@ -36,8 +36,8 @@ import java.util.stream.Stream;
  * against the project's own compiled classes; whenever those did not match the sources, calls into other files were
  * lost and the results changed.) A new file is parsed and compiled like a changed one (no unchanged file can use its
  * types yet). A changed file whose API changed (members, supertypes, annotations), a removed file, many changed files,
- * or a tree javac cannot compile: the caller parses in full. Private members are not
- * part of the API (a logger field logast adds keeps the other trees valid). The e2e matrix runs
+ * or a tree javac cannot compile: the caller parses in full. The API is {@link ApiDigest}'s: a logger, a private
+ * helper or a body edit keeps the other trees valid. The e2e matrix runs
  * every scenario both ways (incremental on the build JDK, full on Java 21) against the same snapshots.
  */
 public final class IncrementalParser {
@@ -130,7 +130,7 @@ public final class IncrementalParser {
             }
             SourceFileInfo now = ProjectParser.info(root, cu, ctx);
             SourceFileInfo old = files.get(now.relPath());
-            if (old != null && !api(old.cu()).equals(api(now.cu()))) {
+            if (old != null && !ApiDigest.of(old.cu()).equals(ApiDigest.of(now.cu()))) {
                 lastNote = "full parse (the API of " + now.relPath() + " changed)";
                 return null;
             }
@@ -217,6 +217,11 @@ public final class IncrementalParser {
             Boolean ok = javac.getTask(new StringWriter(), fm, diags, options, null, units).call();
             java.util.Set<Path> failed = new java.util.HashSet<>();
             if (!Boolean.TRUE.equals(ok)) {
+                if (System.getenv("LOGAST_TIMING") != null) {
+                    diags.getDiagnostics().stream().filter(d -> d.getKind() == javax.tools.Diagnostic.Kind.ERROR).limit(3)
+                            .forEach(d -> System.err.println("timing:   javac: " + (d.getSource() == null ? "-" : d.getSource().getName())
+                                    + ": " + d.getMessage(Locale.ROOT).replaceAll("\\s+", " ")));
+                }
                 for (var d : diags.getDiagnostics()) {
                     if (d.getKind() == javax.tools.Diagnostic.Kind.ERROR && d.getSource() != null && byUri.containsKey(d.getSource().toUri())) {
                         failed.add(byUri.get(d.getSource().toUri()));
@@ -229,51 +234,6 @@ public final class IncrementalParser {
             return failed;
         } catch (IOException | RuntimeException e) {
             return new java.util.HashSet<>(files);
-        }
-    }
-
-    /**
-     * What other files see of a file: its classes, their supertypes and annotations, and their members' signatures and
-     * annotations. A body edit (a log line, a scope) keeps it; then the other files' trees stay valid.
-     */
-    static String api(J.CompilationUnit cu) {
-        StringBuilder sb = new StringBuilder();
-        for (J.ClassDeclaration c : cu.getClasses()) {
-            api(c, sb);
-        }
-        return sb.toString();
-    }
-
-    private static void api(J.ClassDeclaration c, StringBuilder sb) {
-        JavaType.FullyQualified t = c.getType();
-        sb.append("class ").append(t == null ? c.getSimpleName() : t.getFullyQualifiedName()).append(' ').append(c.getKind())
-                .append(c.getModifiers().stream().map(m -> m.getType().name()).toList());
-        c.getLeadingAnnotations().forEach(a -> sb.append(" @").append(a.printTrimmed()));
-        if (t != null) {
-            sb.append(" extends ").append(t.getSupertype() == null ? "-" : t.getSupertype().toString())
-                    .append(" implements ").append(t.getInterfaces().stream().map(Object::toString).toList());
-        }
-        sb.append('\n');
-        for (Statement s : c.getBody().getStatements()) {
-            // a private member (the logger logast adds, a helper) is not visible to other files
-            if (s instanceof J.MethodDeclaration md && md.hasModifier(J.Modifier.Type.Private)
-                    || s instanceof J.VariableDeclarations v && v.hasModifier(J.Modifier.Type.Private)) {
-                continue;
-            }
-            if (s instanceof J.MethodDeclaration md) {
-                sb.append("  method ").append(md.getMethodType() == null ? md.getSimpleName() : md.getMethodType().toString())
-                        .append(md.getModifiers().stream().map(m -> m.getType().name()).toList());
-                md.getLeadingAnnotations().forEach(a -> sb.append(" @").append(a.printTrimmed()));
-                sb.append('\n');
-            } else if (s instanceof J.VariableDeclarations vd) {
-                sb.append("  field ").append(vd.getType() == null ? "?" : vd.getType().toString())
-                        .append(vd.getVariables().stream().map(J.VariableDeclarations.NamedVariable::getSimpleName).toList())
-                        .append(vd.getModifiers().stream().map(m -> m.getType().name()).toList());
-                vd.getLeadingAnnotations().forEach(a -> sb.append(" @").append(a.printTrimmed()));
-                sb.append('\n');
-            } else if (s instanceof J.ClassDeclaration inner) {
-                api(inner, sb);
-            }
         }
     }
 

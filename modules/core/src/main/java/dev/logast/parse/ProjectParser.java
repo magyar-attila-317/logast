@@ -190,6 +190,9 @@ public final class ProjectParser {
 
     private static boolean hasSkippedSegment(Path rel) {
         for (Path seg : rel) {
+            if (seg.toString().equals("src")) {
+                return false;   // inside a source tree a "build" or "out" folder is a package (…common.build)
+            }
             if (SKIP_DIRS.contains(seg.toString())) {
                 return true;
             }
