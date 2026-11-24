@@ -68,6 +68,23 @@ public final class Applier {
     }
 
     private Set<Rules.Step> skipped = EnumSet.noneOf(Rules.Step.class);
+    private java.util.function.Predicate<String> inPaths = file -> true;
+
+    /**
+     * #288: apply only orders on files matching one of these globs (relative to the project, e.g.
+     * {@code src/main/java/com/example/orders/**}); the setup step (build file, configuration, support classes) always
+     * applies, the code depends on it. Empty: every file.
+     */
+    public Applier paths(List<String> globs) {
+        if (globs.isEmpty()) {
+            inPaths = file -> true;
+            return this;
+        }
+        List<java.nio.file.PathMatcher> matchers = globs.stream()
+                .map(g -> java.nio.file.FileSystems.getDefault().getPathMatcher("glob:" + g)).toList();
+        inPaths = file -> file != null && matchers.stream().anyMatch(m -> m.matches(Path.of(file)));
+        return this;
+    }
 
     /** #287: leave these steps out of every pass: their orders stay open findings, the other steps apply as usual. */
     public Applier skip(Set<Rules.Step> steps) {
@@ -568,11 +585,14 @@ public final class Applier {
         }
     }
 
-    private static void select(ScanResult scan, Selection sel, Set<String> pending, Set<String> everSelected,
-                               Map<String, String> rejected, Set<String> applied, Rules.Step step, boolean first) {
+    private void select(ScanResult scan, Selection sel, Set<String> pending, Set<String> everSelected,
+                        Map<String, String> rejected, Set<String> applied, Rules.Step step, boolean first) {
         for (WorkOrder o : scan.orders()) {
             if (Rules.stepOf(o.rule()) != step) {
                 continue;   // picked up in its own step, against the code the earlier steps produced
+            }
+            if (step != Rules.Step.SETUP && !inPaths.test(o.file())) {
+                continue;   // #288: outside the batch this run applies
             }
             boolean wanted = sel.fills().containsKey(o.id()) || sel.only().contains(o.id())
                     || (sel.auto() && o.mechanical());

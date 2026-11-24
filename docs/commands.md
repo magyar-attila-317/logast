@@ -278,6 +278,11 @@ code. `logast scan .` shows the same without changing anything. Both also write 
   steps build on earlier ones, so drop from the end, or rerun with `--until <step>`. To keep some steps and not others,
   rerun with `--skip lines,levels`: the skipped steps change nothing (their findings stay open) and the rest apply on
   their own and compile (#287). Background: [pipeline-plan.md](pipeline-plan.md).
+- **Batches.** `--path 'src/main/java/com/example/orders/**'` (repeatable) applies only the findings in matching files, so
+  a big service can be adopted in PR-sized batches; setup changes (build file, configuration, support classes) always
+  apply (#288).
+- **Exit code.** 0 when everything selected was applied and checked; 1 when a change was REJECTED or a check FAILED,
+  so a script or an agent can tell "all" from "partial" (#288).
 - **Checks.** Every run checks its result before writing (no key both in MDC and in a message, no nested scope, one
   started/completed per method, the result still compiles) and prints `CHECK FAILED file:line` if something breaks
   that.

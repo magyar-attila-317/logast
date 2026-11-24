@@ -762,6 +762,26 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #288: a big service in batches: --path applies only the findings in files matching the glob (setup changes,
+     * which the code needs, still apply); the rest stay open for the next batch.
+     */
+    @Test
+    void pathLimitsAnApplyToOneBatch() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        git(app, "init", "--quiet");
+        git(app, "add", "-A");
+        git(app, "commit", "--quiet", "-m", "before");
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--path", "src/main/java/com/example/e2e/web/**",
+                "--classpath-file", CLASSPATH);
+        assertThat(out).as(out).doesNotContain("CHECK FAILED");
+        List<String> changed = git(app, "status", "--porcelain", "--", "src/main/java").lines()
+                .map(l -> l.substring(3)).filter(f -> !f.contains("/e2e/logging/")).toList();
+        assertThat(changed).as("only the batch's files (and the support classes setup copies)").isNotEmpty()
+                .allMatch(f -> f.startsWith("src/main/java/com/example/e2e/web/"));
+    }
+
+    /**
      * #287: steps of a pack can be left out (--skip=lines,levels): the others apply as usual and the result compiles,
      * the skipped steps change nothing and their findings stay open; an unknown step name is refused.
      */

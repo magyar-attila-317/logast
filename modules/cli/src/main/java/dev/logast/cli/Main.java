@@ -352,6 +352,8 @@ public final class Main {
         String until;
         @Option(names = "--skip", split = ",", description = "Leave these pipeline steps out (e.g. lines,levels): their findings stay open, the other steps apply")
         List<String> skip = new ArrayList<>();
+        @Option(names = "--path", description = "Apply only to files matching this glob (repeatable), e.g. 'src/main/java/com/example/orders/**': a big service in batches; setup changes always apply")
+        List<String> paths = new ArrayList<>();
         @Option(names = "--write", description = "Write changes (the default; kept for scripts)")
         boolean write;
         @Option(names = "--dry-run", description = "Print the diff only, change no file")
@@ -436,7 +438,7 @@ public final class Main {
                     return 2;
                 }
             }
-            Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).skip(skipSteps).compileWith(cp)
+            Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).skip(skipSteps).paths(paths).compileWith(cp)
                     .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files))
                     .onFinish(work -> {
                         // #125: the reports from the last scan, while the scratch copy it analysed is still there
@@ -727,7 +729,12 @@ public final class Main {
             if (write) {
                 Reports.printWritten();
             }
-            return rejected.isEmpty() ? 0 : 1;
+            return exitCode(rejected, violations);
+        }
+
+        /** #288: a run with REJECTED changes or CHECK FAILED results is not a success, whatever it applied. */
+        static int exitCode(Map<String, String> rejected, List<String> violations) {
+            return rejected.isEmpty() && violations.isEmpty() ? 0 : 1;
         }
     }
 
