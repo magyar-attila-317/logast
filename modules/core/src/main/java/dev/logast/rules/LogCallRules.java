@@ -350,11 +350,11 @@ final class LogCallRules {
         if (target == null || target.equals(lc.level().method()) || ctx.ignored(m.file(), line, Rules.LOG_LEVEL)) {
             return;
         }
-        if (target.equals("debug") && reportsASignal(lc)) {
+        if (target.equals("debug") && (reportsASignal(lc) || reportsAnOutcome(lc))) {
             // #286: a state change (a device going OFFLINE) or a mismatch (a price discrepancy) is what support looks
             // for, even once per item: a person decides, the line keeps its level
             ctx.order(Rules.LOG_LEVEL, m, line, "level" + ordinal)
-                    .title("INFO in a loop, kept: it reports a state change or a mismatch, which support needs to see")
+                    .title("INFO in a loop, kept: it reports a state change, a mismatch or an item's outcome, which support needs to see")
                     .suggestion("Keep it at INFO if each occurrence matters; else log a summary after the loop at INFO and "
                             + "this line at DEBUG.")
                     .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
@@ -365,6 +365,22 @@ final class LogCallRules {
                 .title(lc.level() + " → " + target.toUpperCase(Locale.ROOT) + ": " + why)
                 .edit(Edit.replace(m.file().relPath(), Pos.start(name), Pos.end(name), target))
                 .context(ctx.context(m, Pos.start(lc.call()), Text.oneLine(lc.call().printTrimmed(), 160), null));
+    }
+
+    /**
+     * #309: a line that states what became of each item ("Completed order {} for table {}", "Archived {} audit logs for
+     * tenant {}"): a business outcome per item is what support reads, even in a loop over query data. Kept and reported,
+     * like a signal (#286), not lowered.
+     */
+    private boolean reportsAnOutcome(LogCall lc) {
+        String raw = MessageTemplate.text(lc.template());
+        if (raw == null) {
+            return false;
+        }
+        String event = ctx.phrasing.eventOf(MessageTemplate.stripPlaceholders(raw));
+        return event != null && Set.of("completed", "failed", "created", "deleted", "archived", "paid", "cancelled", "rejected")
+                .contains(event)
+                || raw.matches("(?i)^(completed|archived|deleted|created|paid|cancelled|rejected)\\b.*");
     }
 
     /** A message that reports a transition or a mismatch: "status changed", "a -> b", "discrepancy", "went offline". */

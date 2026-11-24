@@ -275,8 +275,23 @@ public final class ServiceSetup {
      * The JSON log format a service already uses, from its build and logging config: logstash
      * (logstash-logback-encoder, LogstashEncoder), gelf (logback-gelf, GelfEncoder), ecs (co.elastic.logging); null if none.
      */
+    private static final java.util.regex.Pattern JSON_ENCODER = java.util.regex.Pattern.compile(
+            "class=\"[\\w.]*(LogstashEncoder|LoggingEventCompositeJsonEncoder|EcsEncoder|GelfEncoder|JsonEncoder|LogstashLayout|JsonLayout)\"");
+
+    /** #296: the text without comments: YAML and properties {@code #…}, XML {@code <!-- … -->}, Gradle {@code //…}. */
+    static String uncommented(String name, String text) {
+        if (name.endsWith(".xml")) {
+            return text.replaceAll("(?s)<!--.*?-->", "");
+        }
+        if (name.endsWith(".yml") || name.endsWith(".yaml") || name.endsWith(".properties") || name.endsWith(".toml")) {
+            return text.replaceAll("(?m)^\\s*[#!].*$", "").replaceAll("(?m)\\s+#.*$", "");
+        }
+        return text.replaceAll("(?m)//.*$", "");
+    }
+
     public static String detectLogFormat(Path root) {
         StringBuilder all = new StringBuilder();
+        StringBuilder ownEncoder = new StringBuilder();
         try (var files = java.nio.file.Files.walk(root, 6)) {
             files.filter(p -> !p.toString().contains("/build/") && !p.toString().contains("/.gradle/") && !p.toString().contains("/node_modules/"))
                     .filter(p -> {
@@ -286,13 +301,23 @@ public final class ServiceSetup {
                     })
                     .forEach(p -> {
                         try {
-                            all.append(dev.logast.parse.SourceText.read(p)).append('\n');
+                            String n = p.getFileName().toString();
+                            String text = uncommented(n, dev.logast.parse.SourceText.read(p));
+                            // #296: a logback file with a JSON encoder of its own owns the format; Boot's structured
+                            // logging property does nothing next to it
+                            if (n.startsWith("logback") && JSON_ENCODER.matcher(text).find()) {
+                                ownEncoder.append(n);
+                            }
+                            all.append(text).append('\n');
                         } catch (java.io.IOException | java.io.UncheckedIOException ignored) {
                             // unreadable file: not evidence either way
                         }
                     });
         } catch (java.io.IOException | java.io.UncheckedIOException e) {
             return null;
+        }
+        if (!ownEncoder.isEmpty()) {
+            return "none";
         }
         String t = all.toString();
         java.util.regex.Matcher configured = java.util.regex.Pattern
@@ -356,7 +381,8 @@ public final class ServiceSetup {
         sb.append("  rewriteExistingMessages: ").append(!keepWording).append('\n');
         sb.append("  # JSON log format (logging.structured.format.console): ecs, logstash or gelf, whichever your log\n");
         sb.append("  # backend reads. none: logast leaves the log format alone.\n");
-        sb.append("  structuredFormat: ").append(logFormat != null ? logFormat + "   # what this service already uses" : "logstash").append('\n');
+        sb.append("  structuredFormat: ").append(logFormat == null ? "logstash" : logFormat.equals("none")
+                ? "none   # the service's logback file configures its own JSON encoder" : logFormat + "   # what this service already uses").append('\n');
         sb.append("  # Messages that alerts or dashboards search for (regex): logast never changes them, it only reports.\n");
         sb.append("  # protectedMessages: [\"^ALERT:\"]\n\n");
         sb.append("""

@@ -106,4 +106,26 @@ class OneMdcScopeTest {
         assertThat(edits).as("one scope after both declarations").contains("MdcScope.of(\"orderId\", orderId, \"tableId\", tableId)")
                 .doesNotContain("mdc2");
     }
+
+    /** #241: a method whose parameters wrap: what logast adds is indented like the body, not like the wrapped line. */
+    @Test
+    void wrappedParametersDoNotSetTheIndent(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("logast.yaml"), """
+                vocabulary:
+                  owner:
+                    mdc: { key: ownerId, sources: { params: [ownerId] } }
+                """);
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        String owners = "package x;\n\nimport org.slf4j.Logger;\nimport org.slf4j.LoggerFactory;\n\npublic class Owners {\n"
+                + "\tprivate static final Logger log = LoggerFactory.getLogger(Owners.class);\n\n"
+                + "\tpublic void update(String name, String city, String ownerId,\n\t\t\tString phone) {\n"
+                + "\t\tlog.info(\"Owner checked [ownerId={}]\", ownerId);\n"
+                + "\t\tlog.info(\"Owner stored [ownerId={}]\", ownerId);\n"
+                + "\t\tlog.info(\"Owner updated [ownerId={}]\", ownerId);\n\t}\n}\n";
+        Files.writeString(src.resolve("Owners.java"), owners);
+        WorkOrder o = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))).orders().stream()
+                .filter(w -> w.rule().equals(Rules.REPEATED_LOG_VALUE) && "Owners.update".equals(w.method())).findFirst().orElseThrow();
+        String scope = o.edits().stream().map(Edit::text).filter(t -> t != null && t.contains("MdcScope.of")).findFirst().orElseThrow();
+        assertThat(scope).as("the body's indent (two tabs), not the wrapped line's (three)").startsWith("\t\ttry (var mdc");
+    }
 }

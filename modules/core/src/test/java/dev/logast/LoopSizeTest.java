@@ -73,6 +73,12 @@ class LoopSizeTest {
                         }
                     }
 
+                    void completeAll() {
+                        for (Item i : repository.findByActiveTrue()) {
+                            log.info("Completed item {} - all parts shipped", i.id());
+                        }
+                    }
+
                     void fixed() {
                         for (String s : List.of("a", "b")) {
                             log.info("Channel checked [channel={}]", s);
@@ -91,6 +97,9 @@ class LoopSizeTest {
                 .containsEntry("Items.hintedLarge", "debug")
                 .doesNotContainKey("Items.hinted")                                  // declared small: INFO stays
                 .doesNotContainKey("Items.fixed");                                  // two fixed items: INFO stays
+        // #309: an outcome per item over query data is kept at INFO and reported, not lowered
+        assertThat(r.orders()).filteredOn(o -> "Items.completeAll".equals(o.method()) && o.fixes().contains(Rules.LOG_LEVEL))
+                .allSatisfy(o -> assertThat(o.edits()).as("not lowered").isEmpty());
     }
 
     /**

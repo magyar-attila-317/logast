@@ -214,6 +214,27 @@ class ServiceSetupTest {
                 .contains("structuredFormat: logstash");
     }
 
+    /** #296: comments are no evidence; a logback file with its own JSON encoder owns the format. */
+    @Test
+    void commentsAreNoEvidenceAndALogbackEncoderOwnsTheFormat(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Path res = Files.createDirectories(dir.resolve("src/main/resources"));
+        Files.writeString(res.resolve("application.yaml"), "logging:\n#  structured:\n#    format:\n#      console: logstash\n  level:\n    root: INFO\n");
+        assertThat(ServiceSetup.detectLogFormat(dir)).as("commented out").isNull();
+        Files.writeString(res.resolve("logback-spring.xml"), """
+                <configuration>
+                    <!-- <encoder class="co.elastic.logging.logback.EcsEncoder"/> -->
+                    <springProfile name="json">
+                        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+                            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+                        </appender>
+                    </springProfile>
+                </configuration>
+                """);
+        assertThat(ServiceSetup.detectLogFormat(dir)).as("the logback file's encoder owns it").isEqualTo("none");
+        assertThat(ServiceSetup.policyTemplate(java.util.List.of(), java.util.List.of(), false, null, null, "none", null))
+                .contains("structuredFormat: none   # the service's logback file configures its own JSON encoder");
+    }
+
     @Test
     void logastYmlIsReadToo(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("logast.yml"), "logging:\n  structuredFormat: logstash\n");

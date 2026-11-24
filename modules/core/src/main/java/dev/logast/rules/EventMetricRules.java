@@ -179,7 +179,7 @@ final class EventMetricRules {
             return;
         }
         String unit = Text.indentUnit(text);
-        String indent = Text.indentAt(text, Pos.start(m.decl().getBody())) + unit;
+        String indent = Text.blockIndent(text, m.decl().getBody(), Pos.start(m.decl().getName()));
         Set<String> taken = ctx.taken(m, inner[0]);
         String body = text.substring(inner[0], inner[1]);
         // quiet: the method already logs the event itself; this adds the count, duration and span

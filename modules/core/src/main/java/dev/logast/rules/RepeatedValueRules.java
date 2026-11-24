@@ -664,7 +664,8 @@ public final class RepeatedValueRules {
             J.Block block = guarded != null ? guarded : body;
             int[] inner = JavaEdits.blockInner(text, block);
             if (inner != null) {
-                r = new Region(inner[0], inner[1], Text.indentAt(text, Pos.start(block)) + Text.indentUnit(text), guarded == null);
+                r = new Region(inner[0], inner[1], Text.blockIndent(text, block, guarded != null
+                        ? Pos.start(body.getStatements().getFirst()) : Pos.start(m.decl().getName())), guarded == null);
             }
         } else if (!param) {
             r = afterDeclaration(text, body, c.root());   // a loop variable changes every pass: never scoped

@@ -103,6 +103,12 @@ final class SupportCmd {
                 System.out.println("published " + group + ":" + artifact + ":" + v + " to " + url);
             }
             System.out.println();
+            // #295: run in a service, its logast.yaml learns where the starter is, so apply adds that repository to the
+            // build along with the dependency
+            String note = recordRepository(Path.of("").toAbsolutePath().resolve("logast.yaml"), url);
+            if (note != null) {
+                System.out.println(note);
+            }
             System.out.println("In the company policy (or each service's logast.yaml):");
             System.out.println("  support:");
             System.out.println("    mode: dependency");
@@ -110,6 +116,30 @@ final class SupportCmd {
             System.out.println("    repository: " + url);
             return 0;
         }
+    }
+
+    /**
+     * #295: in a service's logast.yaml without a support repository, sets {@code support.repository} (and
+     * {@code mode: dependency}); the note says what it did, null when there is no logast.yaml or it names one already.
+     */
+    static String recordRepository(Path policy, String url) throws IOException {
+        if (!Files.isRegularFile(policy)) {
+            return null;
+        }
+        String text = Files.readString(policy);
+        if (Pattern.compile("(?m)^\\s+repository:\\s*\\S").matcher(text).find()) {
+            return null;   // it names one: the team chose
+        }
+        Matcher support = Pattern.compile("(?m)^support:[ \\t]*\\R").matcher(text);
+        String updated;
+        if (support.find()) {
+            String block = "  repository: " + url + "\n" + (Pattern.compile("(?m)^\\s+mode:").matcher(text).find() ? "" : "  mode: dependency\n");
+            updated = text.substring(0, support.end()) + block + text.substring(support.end());
+        } else {
+            updated = text + (text.endsWith("\n") ? "" : "\n") + "\nsupport:\n  mode: dependency\n  repository: " + url + "\n";
+        }
+        Files.writeString(policy, updated);
+        return "logast.yaml: support.repository set to " + url + " (apply adds it to the build with the starter)";
     }
 
     /** {@code github.com/<owner>/<repo>} (with or without https://) is GitHub Packages; anything else a repository URL. */

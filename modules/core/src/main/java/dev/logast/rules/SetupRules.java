@@ -316,7 +316,15 @@ public final class SetupRules {
      */
     private void repository(OrderBuilder b, Path buildFile, String scriptsText) {
         String repo = ctx.policy.support().repository();
-        if (repo.isEmpty() || scriptsText.contains(repo)) {
+        if (repo.isEmpty()) {
+            // #295: nothing says where the starter is published: the build resolves it only if a repository it already
+            // has serves dev.logast
+            b.suggestion(b.suggestion + " No support.repository in logast.yaml: the build must already resolve "
+                    + ctx.policy.support().coordinates() + " (else `logast support publish --repo …` in this service publishes it "
+                    + "and records the repository, and the next apply adds it).");
+            return;
+        }
+        if (scriptsText.contains(repo)) {
             return;
         }
         Path dir = buildFile.getParent();

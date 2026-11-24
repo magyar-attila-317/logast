@@ -476,6 +476,29 @@ final class CoverageRules {
 
     // ---- STATE_CHANGE_UNLOGGED ------------------------------------------------------------------
 
+    /**
+     * #318: every caller path to {@code m} logs at INFO or above: a caller's own line, or a started line this scan
+     * plans for an entrypoint. A method nothing calls (an entrypoint) has no such context.
+     */
+    private boolean flowLogs(MethodInfo m, int depth, Set<String> seen) {
+        if (depth > 6 || !seen.add(m.key())) {
+            return false;
+        }
+        List<dev.logast.graph.CallGraph.Edge> callers = ctx.a.graph.in(m).stream().filter(e -> e.async() == dev.logast.graph.CallGraph.Async.NONE).toList();
+        if (callers.isEmpty()) {
+            return false;
+        }
+        for (dev.logast.graph.CallGraph.Edge e : callers) {
+            MethodInfo c = e.from();
+            boolean own = c.facts().logs.stream().anyMatch(l -> l.inCatch() == null && l.level().compareTo(Level.INFO) >= 0)
+                    || ctx.entry.silent().contains(c.key());
+            if (!own && !flowLogs(c, depth + 1, seen)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Whether the call sits in a loop of the method (for, for-each, while, do). */
     private static boolean inLoop(MethodInfo m, J.MethodInvocation call) {
         boolean[] found = {false};
@@ -526,7 +549,10 @@ final class CoverageRules {
         String level = ctx.policy.levels().addedInfo(ctx.busiestRate(m)) ? "info" : "debug";
         // E1: any line at DEBUG or above is its line: a line this rule added at INFO and the levels step lowered (a loop,
         // a busy path) must not bring the rule back, or each pass adds another
-        boolean logged = m.facts().logs.stream().anyMatch(l -> l.level().compareTo(Level.DEBUG) >= 0);
+        boolean logged = m.facts().logs.stream().anyMatch(l -> l.level().compareTo(Level.DEBUG) >= 0)
+                // #318: the flow around it already says what happened (every path to it logs at INFO): the write adds
+                // nothing of its own
+                || flowLogs(m, 0, new HashSet<>());
         // E1: a write per loop item gets no line per item: the loop's summary (BATCH_SUMMARY_MISSING) counts them
         if (!logged && inLoop(m, write[0])) {
             return;

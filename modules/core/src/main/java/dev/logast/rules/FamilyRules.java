@@ -50,7 +50,7 @@ final class FamilyRules {
         }
         String subject = has.values().stream().filter(s -> !s.isBlank()).findFirst()
                 .orElse(classWords(m.owner().simpleName()));
-        String indent = Text.indentAt(text, Pos.start(m.decl().getBody())) + Text.indentUnit(text);
+        String indent = Text.blockIndent(text, m.decl().getBody(), Pos.start(m.decl().getName()));
         boolean returns = hasReturn(m);
         OrderBuilder b = ctx.order(Rules.LIFECYCLE_UNEVEN, m, line, "lifecycle")
                 .title(m.label() + " is one of " + siblings + " implementations of " + base.label() + " and the only ones without "

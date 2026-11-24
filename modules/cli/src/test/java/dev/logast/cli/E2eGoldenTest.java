@@ -844,8 +844,8 @@ abstract class E2eGoldenTest {
 
     /**
      * #285: lines logast adds follow the measured rate. A quiet write endpoint (a traffic pattern says 10/day) gets its
-     * started line and an INFO saved line below it; an endpoint with no known rate gets no started line (the access
-     * log records it) and its saved line at DEBUG.
+     * started line, and its save no line of its own (#318: the flow already logs); an endpoint with no known rate gets
+     * no started line (the access log records it) and its saved line at DEBUG.
      */
     @Test
     void addedLinesFollowTheMeasuredRate() throws IOException {
@@ -911,7 +911,8 @@ abstract class E2eGoldenTest {
         String busy = controller.substring(controller.indexOf("void store("));
         assertThat(quiet).as("a quiet endpoint says it started\n" + controller).contains("log.info(");
         assertThat(busy).as("an endpoint with no known rate: the access log records it\n" + controller).doesNotContain("log.");
-        assertThat(desk.substring(desk.indexOf("void keep("), desk.indexOf("void store("))).as(desk).contains("log.info(");
+        assertThat(desk.substring(desk.indexOf("void keep("), desk.indexOf("void store("))).as("#318: the quiet path's started line "
+                + "already says what happened: the save adds no line of its own\n" + desk).doesNotContain("log.");
         assertThat(desk.substring(desk.indexOf("void store("))).as("saved on a path nobody measured: DEBUG\n" + desk)
                 .contains("log.debug(").doesNotContain("log.info(");
         String again = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);

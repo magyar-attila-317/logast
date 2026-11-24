@@ -173,7 +173,8 @@ final class ResilienceRules {
                         clientSite(site, mi, owner, name, getCursor());
                     }
                     if (executors && owner.equals("java.util.concurrent.Executors")
-                            && Set.of("newCachedThreadPool", "newFixedThreadPool", "newSingleThreadExecutor").contains(name)) {
+                            && Set.of("newCachedThreadPool", "newFixedThreadPool", "newSingleThreadExecutor").contains(name)
+                            && !(name.equals("newSingleThreadExecutor") && coalesced(mi, site.file().cu()))) {
                         executor(site, mi, name.equals("newCachedThreadPool")
                                 ? "creates threads without limit: a burst of tasks becomes a burst of threads"
                                 : "queues tasks without limit: under load the queue grows until memory runs out, and latency with it");
@@ -848,6 +849,77 @@ final class ResilienceRules {
     private static final List<String> SCHEDULER_LOCKS = List.of("net.javacrumbs.shedlock.spring.annotation.SchedulerLock",
             "net.javacrumbs.shedlock.core.SchedulerLock");
 
+    private static final java.util.regex.Pattern LOCK_METHOD = java.util.regex.Pattern.compile(
+            "runExclusive|executeWithLock|withLock|runLocked|lockAndRun|runWithLock|doInLock|executeLocked");
+
+    /**
+     * #299: a single-thread executor in a field that is only fed through a compare-and-set guard (an AtomicBoolean
+     * {@code pending.compareAndSet(false, true)} before the submit, reset when the task ends): at most one task is ever
+     * queued, so the queue is bounded in practice. Every method that submits to the field must hold such a guard.
+     */
+    private static boolean coalesced(J.MethodInvocation factory, J.CompilationUnit cu) {
+        // the field the factory call initialises, found by position (the visitor may run on a part of the file)
+        int at = Pos.start(factory);
+        J.ClassDeclaration owner = null;
+        J.VariableDeclarations.NamedVariable field = null;
+        for (J.ClassDeclaration c : cu.getClasses()) {
+            for (org.openrewrite.java.tree.Statement st : c.getBody().getStatements()) {
+                if (st instanceof J.VariableDeclarations vd) {
+                    for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
+                        if (v.getInitializer() != null && Pos.start(v.getInitializer()) <= at && at < Pos.end(v.getInitializer())) {
+                            owner = c;
+                            field = v;
+                        }
+                    }
+                }
+            }
+        }
+        if (owner == null) {
+            return false;
+        }
+        java.util.regex.Pattern submit = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(field.getSimpleName())
+                + "\\s*\\.\\s*(submit|execute)\\s*\\(");
+        int submitting = 0;
+        for (org.openrewrite.java.tree.Statement st : owner.getBody().getStatements()) {
+            if (st instanceof J.MethodDeclaration md && md.getBody() != null) {
+                String body = md.getBody().printTrimmed();
+                if (submit.matcher(body).find()) {
+                    submitting++;
+                    if (!body.contains(".compareAndSet(")) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return submitting > 0;
+    }
+
+    /**
+     * #298: the job's work goes through the team's own lock ({@code jobLock.runExclusive(TASK, this::runSweep)}, ShedLock's
+     * {@code LockingTaskExecutor.executeWithLock(…)}): a call that takes the work as a lambda or method reference, named
+     * like a lock call or made on a type whose name says lock; also inside a hand-off lambda.
+     */
+    static boolean runsThroughALock(MethodInfo m) {
+        if (m.decl().getBody() == null) {
+            return false;
+        }
+        boolean[] found = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                boolean takesWork = mi.getArguments().stream().anyMatch(a -> a instanceof J.Lambda || a instanceof J.MemberReference);
+                String receiver = mi.getSelect() == null || mi.getSelect().getType() == null ? ""
+                        : String.valueOf(org.openrewrite.java.tree.TypeUtils.asFullyQualified(mi.getSelect().getType()) == null ? ""
+                        : org.openrewrite.java.tree.TypeUtils.asFullyQualified(mi.getSelect().getType()).getClassName());
+                if (takesWork && (LOCK_METHOD.matcher(mi.getSimpleName()).matches() || receiver.contains("Lock"))) {
+                    found[0] = true;
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return found[0];
+    }
+
     /**
      * SCHEDULED_WITHOUT_LOCK (report): @Scheduled methods without a lock run on every instance at the same time once the
      * service is scaled out (double processing, duplicate sends). One finding for all of them; policy
@@ -857,6 +929,7 @@ final class ResilienceRules {
         List<MethodInfo> unlocked = ctx.a.entrypoints.stream().filter(ep -> ep.kind() == Entrypoint.Kind.SCHEDULED)
                 .map(Entrypoint::method)
                 .filter(m -> SCHEDULER_LOCKS.stream().noneMatch(m::hasAnnotation))
+                .filter(m -> !runsThroughALock(m))
                 .filter(m -> !ctx.ignored(m.file(), m.line(), Rules.SCHEDULED_WITHOUT_LOCK))
                 .sorted(Comparator.comparing((MethodInfo m) -> m.file().relPath()).thenComparingInt(MethodInfo::line)).toList();
         if (unlocked.isEmpty()) {

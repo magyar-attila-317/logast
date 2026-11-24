@@ -54,6 +54,10 @@ class StateChangeLineTest {
                         categories.deleteAll(categories.findByMenuId(menuId));
                     }
 
+                    public void purge(String menuId) {
+                        categories.deleteAll();
+                    }
+
                     public void copy(String menuId) {
                         for (MenuCategoryEntity c : categories.findByMenuId(menuId)) {
                             categories.save(c);
@@ -76,6 +80,11 @@ class StateChangeLineTest {
                         this.cleanup = cleanup;
                     }
 
+                    @org.springframework.web.bind.annotation.PostMapping("/menus/{menuId}/archive")
+                    public void archive(@PathVariable String menuId, MenuArchive archive) {
+                        archive.archive(menuId);
+                    }
+
                     @DeleteMapping("/menus/{menuId}/categories")
                     public void clear(@PathVariable String menuId) {
                         cleanup.clear(menuId);
@@ -92,6 +101,34 @@ class StateChangeLineTest {
         assertThat(edits).as("a line was added").contains("Menu categories deleted")
                 .as("the query is not run again").doesNotContain("findByMenuId(menuId).size()")
                 .doesNotContain("entitys");
+        // #318: the caller logs what happened at INFO: the save adds no line of its own
+        Files.writeString(src.resolve("MenuArchive.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.stereotype.Service;
+
+                @Service
+                public class MenuArchive {
+                    private static final Logger log = LoggerFactory.getLogger(MenuArchive.class);
+                    private final MenuCleanup cleanup;
+
+                    public MenuArchive(MenuCleanup cleanup) {
+                        this.cleanup = cleanup;
+                    }
+
+                    public void archive(String menuId) {
+                        cleanup.purge(menuId);
+                        log.info("Menu archived [menuId={}]", menuId);
+                    }
+                }
+                """);
+        List<WorkOrder> withContext = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))).orders();
+        assertThat(withContext).as("every path to purge logs at INFO already")
+                .noneMatch(o -> "MenuCleanup.purge".equals(o.method()) && o.rule().equals(Rules.STATE_CHANGE_UNLOGGED));
+        assertThat(withContext).as("clear's caller logs nothing: its line stays")
+                .anyMatch(o -> "MenuCleanup.clear".equals(o.method()) && o.rule().equals(Rules.STATE_CHANGE_UNLOGGED));
         // E1: a save per loop item gets no line per item (the loop's summary counts them)
         assertThat(orders).noneMatch(o -> "MenuCleanup.copy".equals(o.method()) && o.rule().equals(Rules.STATE_CHANGE_UNLOGGED));
     }

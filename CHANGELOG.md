@@ -5,7 +5,15 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+## 0.5.3
+
 **What logast writes**
+- SCHEDULED_WITHOUT_LOCK counts a job that runs its work through the team's own lock (`jobLock.runExclusive(TASK, this::run)`, ShedLock's `executeWithLock`) as locked (#298).
+- UNBOUNDED_EXECUTOR leaves out a single-thread executor fed only through a compare-and-set guard (at most one task queued) (#299).
+- The JSON log format is detected from the service's configuration without its comments; a logback file with its own JSON encoder (LogstashEncoder, …) owns the format: `structuredFormat: none`, no Boot property written next to it (#296).
+- Code added at the top of a method whose parameters wrap is indented like the body, not like the wrapped parameter line (#241).
+- A line that states an item's outcome ("Completed order {} …", "Archived {} …") keeps INFO in a loop over query data and is reported, not lowered (#309).
+- A repository write gets no line of its own when every path to it already logs at INFO (#318); its level stays rate-based (#285).
 - A catch that handles the outcome (a fallback value, a skip, a report entry) accepts any wording, not only "{subject} failed" (#319).
 - An MdcScope never evaluates a value whose chain the code null-checks (`t.getTable() == null`, then `t.getTable().getUuid()`): no scope there, or the entry value is read null-safe at that step; in a body that is one `try` with catches the scope opens inside the `try` (an exception reading the value stays the code's own to catch).
 - An id counts as in MDC only where a scope in the method covers the line: a line before the scope or in a catch outside it keeps its id.
@@ -15,6 +23,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 - Generated wording: "Menu categories saved" (no "Entity" suffix, English plurals); a pipeline is named after its source (`openOrderIds`, not `toList`); a startup check gets no "completed" line and no "event handling" wording; `(order {})` for an id in MDC goes with it (#310).
 
 **CLI**
+- `support publish --repo …`, run in a service, records `support.repository` (and dependency mode) in its logast.yaml, so apply adds that repository with the starter; without one, the starter order says the build must resolve it (#295).
 - A fix an earlier apply made and a person changed back is left as changed on the next apply (`Left as you changed them (N)`); `--redo` applies it again (#317).
 - Apply lists the changes beyond logging (code that can run differently: scopes, moved evaluations, deleted or added statements, build and configuration files) as `file:line method — what`, and writes `.logast/reports/behavioural.txt` (#316).
 - The test check no longer reports a static import from a library the main classpath lacks (Mockito, spring-test) as a break (#320).

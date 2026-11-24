@@ -20,6 +20,21 @@ public final class Text {
         return Math.min(lineEnd(s, offset) + 1, s.length());
     }
 
+    /**
+     * #241: the indent of a block's statements: its first statement's, else its owner's line (the method's name, the
+     * {@code try}) plus one unit. Never the line of the opening brace, which is a wrapped parameter line when a method's
+     * parameters wrap.
+     */
+    public static String blockIndent(String s, org.openrewrite.java.tree.J.Block block, int ownerStart) {
+        if (!block.getStatements().isEmpty()) {
+            int first = dev.logast.parse.Pos.start(block.getStatements().getFirst());
+            if (lineStart(s, first) > lineStart(s, dev.logast.parse.Pos.start(block))) {
+                return indentAt(s, first);
+            }
+        }
+        return indentAt(s, ownerStart) + indentUnit(s);
+    }
+
     public static String indentAt(String s, int offset) {
         int ls = lineStart(s, offset);
         int i = ls;

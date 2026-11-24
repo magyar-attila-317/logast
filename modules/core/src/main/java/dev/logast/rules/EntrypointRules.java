@@ -90,7 +90,8 @@ final class EntrypointRules {
             return;
         }
         String unit = Text.indentUnit(text);
-        Body body = new Body(inner, Text.indentAt(text, Pos.start(wrapped)) + unit, unit,
+        Body body = new Body(inner, Text.blockIndent(text, wrapped, guarded != null
+                ? Pos.start(m.decl().getBody().getStatements().getFirst()) : Pos.start(m.decl().getName())), unit,
                 text.substring(inner[0], inner[1]), ctx.taken(m, inner[0]));
         List<Edit> extra = new ArrayList<>();
         StringBuilder top = new StringBuilder(silent ? startLine(ep, m, b, extra) : "");

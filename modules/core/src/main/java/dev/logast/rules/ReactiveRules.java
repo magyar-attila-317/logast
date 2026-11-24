@@ -112,7 +112,7 @@ final class ReactiveRules {
         }
         SourceFileInfo f = main.file();
         String text = f.text();
-        String indent = Text.indentAt(text, Pos.start(main.decl().getBody())) + Text.indentUnit(text);
+        String indent = Text.blockIndent(text, main.decl().getBody(), Pos.start(main.decl().getName()));
         b.edit(Edit.insert(f.relPath(), inner[0], indent + "Hooks." + HOOK + "();\n"));
         b.edits(JavaEdits.imports(f, "reactor.core.publisher.Hooks"));
         b.suggestion("Calls Hooks.enableAutomaticContextPropagation() first in main (before any subscription): Reactor restores "
