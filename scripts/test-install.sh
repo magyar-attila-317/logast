@@ -158,7 +158,7 @@ mkdir -p "$REPO"
   git init -q . && git config user.email t@example.org && git config user.name t && git config commit.gpgsign false
   echo a >a.txt && git add a.txt && git commit -qm one
 ) >/dev/null 2>&1
-sha="$(git -C "$REPO" describe --always --abbrev=7)"
+sha="$(git -C "$REPO" describe --tags --always --abbrev=7)"
 in_repo() { (cd "$REPO" && "$@"); }
 holds "this commit is installed" in_repo source_installed "logast 1.0 ($sha)" 1.0
 fails "another version" in_repo source_installed "logast 0.9 ($sha)" 1.0

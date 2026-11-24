@@ -12,7 +12,7 @@ dependencies {
 
 // `logast --version` names the commit it was built from, so an install that did not update is visible
 val gitCommit = providers.exec {
-    commandLine("git", "describe", "--always", "--dirty", "--abbrev=7")
+    commandLine("git", "describe", "--tags", "--always", "--dirty", "--abbrev=7")
     isIgnoreExitValue = true
 }.standardOutput.asText.map { it.trim().ifEmpty { "unknown" } }
 

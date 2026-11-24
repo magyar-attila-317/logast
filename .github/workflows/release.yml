@@ -32,6 +32,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build, unit tests and the release zip
         run: ./gradlew build :cli:distZip -x :cli:e2e -x :cli:e2eJdk21 --console=plain
+      - name: The built CLI names the tag
+        # #302: a tag build checks out the pushed tag as a lightweight one, which plain `git describe` skips
+        run: |
+          dir="$RUNNER_TEMP/zip"; mkdir -p "$dir"
+          unzip -q "modules/cli/build/distributions/logast-${GITHUB_REF_NAME#v}.zip" -d "$dir"
+          v="$("$dir"/logast-*/bin/logast --version)"
+          echo "$v"
+          test "$v" = "logast ${GITHUB_REF_NAME#v} ($GITHUB_REF_NAME)"
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

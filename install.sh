@@ -167,7 +167,7 @@ without_credentials() { printf '%s' "$1" | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*:/
 source_installed() {   # $1: the installed `logast --version`, $2: the version in gradle.properties
   local commit
   [ -n "$1" ] || return 1
-  commit="$(git describe --always --dirty --abbrev=7 2>/dev/null)" || return 1
+  commit="$(git describe --tags --always --dirty --abbrev=7 2>/dev/null)" || return 1
   [ -z "$(git status --porcelain 2>/dev/null)" ] || return 1
   [ "$1" = "logast $2 ($commit)" ]
 }
@@ -232,7 +232,7 @@ BANNER
     v="$(echo "$target" | cut -d' ' -f2)"
   else
     v="$(prop version gradle.properties)"
-    info "from source: $(git describe --always --dirty --abbrev=7 2>/dev/null || echo 'this checkout')"
+    info "from source: $(git describe --tags --always --dirty --abbrev=7 2>/dev/null || echo 'this checkout')"
     [ "$FORCE" = 0 ] && source_installed "$old" "$v" && UPTODATE=1
   fi
   if [ "$UPTODATE" = 1 ]; then
