@@ -72,6 +72,7 @@ class JobWordingTest {
                   "POST /menu/categories": 10
                   "POST /items/{id}/image": 10
                   "DELETE /items/{id}/image": 10
+                  "POST /menu/tags": 10
                 """);
         Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
         Files.writeString(src.resolve("MenuController.java"), """
@@ -103,6 +104,12 @@ class JobWordingTest {
                         save();
                     }
 
+                    @PostMapping("/menu/tags")
+                    public void createTag(String name,
+                            String colour) {
+                        save();
+                    }
+
                     void reset() {
                         log.info("Starting E2E database reset...");
                     }
@@ -117,6 +124,9 @@ class JobWordingTest {
                 .contains("Category creation started");
         assertThat(slots(orders, "MenuController.uploadImage")).contains("Item image started");
         assertThat(slots(orders, "MenuController.removeImage")).contains("Item image deletion started");
+        assertThat(orders.stream().filter(o -> "MenuController.createTag".equals(o.method())).flatMap(o -> o.edits().stream())
+                .map(e -> e.text()).filter(t -> t != null && t.contains("{{MSG}}")).findFirst().orElseThrow())
+                .as("#241: the body's indent, not the wrapped parameter line's").startsWith("        log.info(");
         assertThat(texts(orders, "MenuController.reset") + slots(orders, "MenuController.reset"))
                 .contains("E2E database reset started").doesNotContain("..");
     }

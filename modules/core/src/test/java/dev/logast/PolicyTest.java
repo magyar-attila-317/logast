@@ -133,6 +133,7 @@ class PolicyTest {
         assertThat(ph.rewrite("[PIN-LOGIN] finished sweep")).contains("[PIN-LOGIN] Sweep completed");
         assertThat(ph.rewrite("Order sync failed")).isEmpty();           // already canonical
         assertThat(ph.rewrite("Order created")).isEmpty();               // not a lifecycle message
+        assertThat(ph.rewrite("NTAK call failed with an HTTP error")).as("G3: says failed already").isEmpty();
         assertThat(ph.matches("Payment charge failed, reconciliation will retry", "failed")).isTrue();
         assertThat(ph.matches("Could not charge payment", "failed")).isFalse();
     }

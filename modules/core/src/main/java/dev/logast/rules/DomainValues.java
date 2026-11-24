@@ -183,6 +183,10 @@ public final class DomainValues {
     }
 
     /** Name used inside {@code [k=v]} for an argument without a registry key. */
+    /** Calls that only reshape a value: it is named after what they start from. */
+    private static final Set<String> TRANSFORMS = Set.of("toLowerCase", "toUpperCase", "trim", "strip", "toString", "name",
+            "toPlainString", "intern");
+
     /** Stream and collection steps: a value they produce is named after what the pipeline starts from. */
     private static final Set<String> PIPELINE = Set.of("toList", "collect", "stream", "map", "filter", "sorted", "distinct",
             "limit", "values", "keySet", "entrySet", "toArray", "flatMap", "boxed", "mapToObj");
@@ -209,8 +213,27 @@ public final class DomainValues {
                     return ids ? singular(base) + "Ids" : base;
                 }
             }
+            // G2: e.getClass().getSimpleName() names the error's type, not "simpleName"
+            if (n.equals("getSimpleName") && mi.getSelect() instanceof J.MethodInvocation cls && cls.getSimpleName().equals("getClass")) {
+                String owner = cls.getSelect() == null ? null : derivedKey(cls.getSelect());
+                return owner == null || owner.matches("e|ex|exc|exception|t|th|throwable|err|error|cause") ? "errorType" : owner + "Type";
+            }
+            // G2: a transformation of a value is named after the value (kind.toLowerCase(…) → kind)
+            if (TRANSFORMS.contains(n) && mi.getSelect() != null) {
+                String inner = derivedKey(mi.getSelect());
+                if (inner != null) {
+                    return inner;
+                }
+            }
             if (n.startsWith("get") && n.length() > 3 && Character.isUpperCase(n.charAt(3))) {
                 n = Character.toLowerCase(n.charAt(3)) + n.substring(4);
+            }
+            // G1: the id of what a getter returns is that thing's id (token.getUser().getId() → userId, not id)
+            if (Set.of("id", "uuid", "name", "code", "key").contains(n) && mi.getSelect() instanceof J.MethodInvocation owner) {
+                String base = derivedKey(owner);
+                if (base != null && !base.isEmpty()) {
+                    return base + Character.toUpperCase(n.charAt(0)) + n.substring(1);
+                }
             }
             if ((n.equals("size") || n.equals("length") || n.equals("count")) && mi.getSelect() instanceof J.Identifier sel) {
                 return countKey(sel.getSimpleName());   // items.size() -> itemCount, pledgeIds.size() -> pledgeCount
@@ -268,6 +291,15 @@ public final class DomainValues {
      * and "email" does not match "emailTemplateId"... unless the words line up ("emailAddress" contains "email").
      */
     public boolean isPiiName(String name) {
+        // G1: an identifier (tokenDeviceId, emailTemplateId) names a record, not the personal value: not PII unless the
+        // term itself is an identifier (taxId)
+        List<String> w = words(name);
+        if (!w.isEmpty() && Set.of("id", "ids", "uuid", "uuids").contains(w.getLast())) {
+            return namesTerm(name, policy.pii().stream().filter(t -> {
+                List<String> tw = words(t);
+                return !tw.isEmpty() && Set.of("id", "ids", "uuid", "number").contains(tw.getLast());
+            }).toList());
+        }
         return namesTerm(name, policy.pii());
     }
 

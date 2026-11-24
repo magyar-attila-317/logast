@@ -237,6 +237,75 @@ class AppliedLoggingSafetyTest {
                 .as("the catch is outside the scope: its line keeps the id").doesNotContain("\"Broadcast failed\", ex");
     }
 
+    /** G4: a rejection a loop records and skips is the expected outcome: no WARN with a stack trace per item. */
+    @Test
+    void aRecordedRejectionInALoopGetsNoLine(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Importer.java"), """
+                package x;
+
+                import java.util.ArrayList;
+                import java.util.List;
+
+                public class Importer {
+                    private final List<String> skipped = new ArrayList<>();
+
+                    void load(List<String> rows) {
+                        for (String row : rows) {
+                            try {
+                                parse(row);
+                            } catch (IllegalArgumentException rejection) {
+                                skipped.add(row);
+                                continue;
+                            }
+                            store(row);
+                        }
+                    }
+
+                    void parse(String row) {
+                    }
+
+                    void store(String row) {
+                    }
+                }
+                """);
+        assertThat(scan(dir)).filteredOn(o -> "Importer.load".equals(o.method()) && o.rule().equals(Rules.SWALLOWED_EXCEPTION))
+                .allSatisfy(o -> assertThat(o.edits()).as("recorded and skipped: no line").isEmpty());
+    }
+
+    /** A noun left at the end of a sentence when its id moves to MDC goes with its preposition ("… for tenant"). */
+    @Test
+    void aTrailingNounGoesWithItsId(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("logast.yaml"), VOCABULARY);
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Lookup.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.slf4j.MDC;
+
+                public class Lookup {
+                    private static final Logger log = LoggerFactory.getLogger(Lookup.class);
+
+                    void load(String tenantId) {
+                        try (var c = MDC.putCloseable("tenantId", tenantId)) {
+                            try {
+                                call();
+                            } catch (IllegalStateException e) {
+                                log.warn("Lookup unavailable for tenant {}: {}", tenantId, e.getClass().getSimpleName());
+                            }
+                        }
+                    }
+
+                    void call() {
+                    }
+                }
+                """);
+        String edits = edits(scan(dir), "Lookup.load");
+        assertThat(edits).contains("Lookup unavailable").doesNotContain("for tenant [").doesNotContain("for tenant\"");
+    }
+
     private static List<WorkOrder> scan(Path dir) throws Exception {
         return Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))).orders();
     }

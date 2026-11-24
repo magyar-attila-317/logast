@@ -59,7 +59,9 @@ distributions {
 application {
     mainClass = "dev.logast.cli.Main"
     applicationName = "logast"
-    applicationDefaultJvmArgs = listOf("-XX:MaxRAMPercentage=50")
+    // #276: a third of the machine, so the JVM reaches its own limit (and says so) before the system's OOM killer ends it
+    // silently next to the build's other JVMs; LOGAST_OPTS=-Xmx… sets it
+    applicationDefaultJvmArgs = listOf("-XX:MaxRAMPercentage=35")
 }
 
 // Java 24+ warns on every run that OpenRewrite's Lombok support uses sun.misc.Unsafe. The flag that silences it does

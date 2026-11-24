@@ -248,7 +248,9 @@ final class EntrypointRules {
             at = m.decl().getBody();
             atInner = body.inner();
         }
-        b.edit(Edit.insert(m.file().relPath(), atInner[0], Text.indentAt(text, Pos.start(at)) + body.unit() + top));
+        // #241: the block's own statement indent, not the brace's line (a wrapped parameter line on a method)
+        b.edit(Edit.insert(m.file().relPath(), atInner[0], Text.blockIndent(text, at,
+                at == m.decl().getBody() ? Pos.start(m.decl().getName()) : Pos.start(at)) + top));
     }
 
     /**

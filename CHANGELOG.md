@@ -5,7 +5,15 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**What logast writes**
+- Suffix keys say what the value is: two values the vocabulary maps to one key keep their own names and are not taken for the MDC value; `token.getUser().getId()` → `userId`; `kind.toLowerCase(…)` → `kind`; `e.getClass().getSimpleName()` → `errorType`. A name ending in Id/Uuid (`tokenDeviceId`) is not personal data.
+- A text whose subject already says "failed" is not rephrased ("… failed with an HTTP error" stays).
+- A catch in a loop that records the case and moves on (a rejected import row) gets no WARN line of its own.
+- A noun left at the end of a sentence when its id moves to MDC goes with its preposition ("… for tenant" no longer dangles).
+- A started line in a method whose parameters wrap gets the body's indent (#241).
+
 **CLI**
+- The launcher lets the heap grow to a third of the machine (was half), and a run that runs out of heap says how to give it more or run less at once, instead of dying silently next to other JVMs (#276).
 - `apply --safe` holds back the source files whose changes go beyond logging in classes no test mentions, applies the rest, and lists what it held back (#316).
 - Apply says how many log lines no longer carry their ids in the text (they are in MDC now), so tests asserting ids in log messages can be found (#315).
 

@@ -109,6 +109,13 @@ public final class Phrasing {
         for (Variant v : variants) {
             Matcher m = v.pattern().matcher(body);
             if (m.matches()) {
+                // G3: a text whose subject already says the event in the house word ("NTAK call failed with an HTTP
+                // error") is not a variant of it: rewriting its trailing "error" would say "failed" twice
+                String word = canonical.get(v.event()) == null ? null : canonical.get(v.event()).replace("{subject}", "").strip();
+                if (word != null && !word.isEmpty()
+                        && Pattern.compile("(?i)\\b" + Pattern.quote(word) + "\\b").matcher(m.group("subject")).find()) {
+                    continue;
+                }
                 // #307: "Starting database reset..." → "Database reset started", not "Database reset.. started"
                 String subject = m.group("subject").strip().replaceAll("(?:\\.{2,}|…|[.!:;,])+$", "").strip();
                 if (subject.isEmpty() || subject.split("\\s+").length > 8) {

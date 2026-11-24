@@ -488,9 +488,25 @@ final class LogCallRules {
             args.add(new Arg(e, src(f, e), key, registry));
         }
 
+        // G1/G2: two values the vocabulary maps to one key (tokenDeviceId and bodyDeviceId → deviceId) are different
+        // values: each keeps its own name, and neither is the MDC value
+        Map<String, Long> perKey = new HashMap<>();
+        args.forEach(a -> perKey.merge(a.key(), 1L, Long::sum));
+        for (int i = 0; i < args.size(); i++) {
+            Arg a = args.get(i);
+            if (perKey.get(a.key()) > 1) {
+                String given = i < named.size() ? named.get(i) : null;
+                String own = given != null ? given : DomainValues.derivedKey(a.expr());
+                if (own != null && !own.isBlank()) {
+                    args.set(i, new Arg(a.expr(), a.src(), styled(own), false));
+                }
+            }
+        }
+
         // "Pledge {} published" with pledgeId in MDC: the placeholder right after its own noun goes, the sentence stays
         List<String> inPlaceDeps = new ArrayList<>();
         int idsOut = 0;   // #315: ids this rewrite takes out of the text (they are in MDC)
+        List<String> inPlaceStems = new ArrayList<>();   // nouns left where their id was: a trailing "for tenant" goes later
         if (MessageTemplate.count(raw) == args.size() && !args.isEmpty()) {
             Set<String> inMdcNow = lc.offThread() ? Set.of() : mdcAt(m, lc);   // another thread: MDC is empty there
             java.util.regex.Matcher ph = java.util.regex.Pattern.compile("\\{}").matcher(raw);
@@ -523,6 +539,7 @@ final class LogCallRules {
                     }
                     sb.append(before, 0, noun.end(1));
                     idsOut++;
+                    inPlaceStems.add(MessageTemplate.stem(a.key()));
                     String wrap = ctx.plannedBy(m, a.key());
                     if (wrap != null) {
                         inPlaceDeps.add(wrap);
@@ -619,6 +636,7 @@ final class LogCallRules {
         String base = compliant ? MessageTemplate.compliantBase(raw) : MessageTemplate.stripPlaceholders(raw);
         if (!compliant && mechanical) {
             List<String> stems = new ArrayList<>(droppedStems);
+            stems.addAll(inPlaceStems);
             kept.forEach(a -> stems.add(MessageTemplate.stem(a.key())));
             base = MessageTemplate.stripTrailingPhrase(base, stems);
         }

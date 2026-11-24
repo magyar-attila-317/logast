@@ -50,7 +50,19 @@ public final class Main {
 
     public static void main(String[] args) {
         Out.detectColor();
-        System.exit(new CommandLine(new Main()).execute(args));
+        try {
+            System.exit(new CommandLine(new Main()).execute(args));
+        } catch (OutOfMemoryError e) {
+            System.err.println(outOfMemory(Runtime.getRuntime().maxMemory()));
+            System.exit(3);
+        }
+    }
+
+    /** #276: what a run that ran out of heap says instead of a stack trace (or nothing). */
+    static String outOfMemory(long maxBytes) {
+        long mb = maxBytes / (1024 * 1024);
+        return "logast ran out of memory (" + mb + " MB heap). Give it more: LOGAST_OPTS=-Xmx" + Math.max(2, (mb * 2 + 1023) / 1024)
+                + "g logast …, or run fewer packs at a time (--pack logging) or one part of the service (--path 'src/main/java/…/**').";
     }
 
     private static final Set<String> WARNED = new HashSet<>();

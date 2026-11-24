@@ -1,6 +1,7 @@
 package dev.logast.rules;
 
 import dev.logast.model.CatchInfo;
+import org.openrewrite.java.tree.J;
 import dev.logast.model.MethodInfo;
 import dev.logast.orders.Edit;
 import dev.logast.orders.Slot;
@@ -52,6 +53,13 @@ final class ExceptionRules {
         b.about(f.relPath(), c.clause);
         ctx.swallowedOrders.put(c, b.id());
 
+        // G4: in a loop, a catch that records the case somewhere (a report, a list of rejects) and moves on is the flow's
+        // expected outcome (a rejected import row): a WARN with a stack trace per item would be noise
+        if (recordedInLoop(m, c)) {
+            b.severity("low").suggestion("Left as it is: the catch records the case (" + Text.oneLine(f.slice(Pos.start(c.clause.getBody()),
+                    Pos.end(c.clause.getBody())), 80) + ") and the loop moves on. Log it at DEBUG if the records are not enough.");
+            return;
+        }
         JavaEdits.LoggerPlan logger = ctx.logger(m);
         int open = Pos.start(c.clause.getBody());
         int close = Pos.end(c.clause.getBody()) - 1;
@@ -102,7 +110,51 @@ final class ExceptionRules {
                 fallback ? null : ctx.phrasing.canonicalOf("failed")));
     }
 
-    /** A callee (called inside this try) that logs and rethrows a type this catch handles. */
+    private static final java.util.regex.Pattern RECORDS = java.util.regex.Pattern.compile(
+            "(?i)(report|skip|reject|record|collect|fail|error|warning|invalid)\\w*\\s*\\(|\\.(add|put|increment\\w*)\\(");
+
+    /** G4: the catch sits in a loop, records the case (a call on a report, an add to a list) and continues. */
+    private static boolean recordedInLoop(MethodInfo m, CatchInfo c) {
+        java.util.List<org.openrewrite.java.tree.Statement> body = c.clause.getBody().getStatements();
+        if (body.isEmpty()) {
+            return false;
+        }
+        boolean moves = body.getLast() instanceof J.Continue || body.size() >= 1 && insideLoopTail(m, c);
+        String text = c.clause.getBody().printTrimmed();
+        if (!moves || !RECORDS.matcher(text).find()) {
+            return false;
+        }
+        int at = Pos.start(c.clause);
+        boolean[] loop = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public org.openrewrite.java.tree.Statement visitStatement(org.openrewrite.java.tree.Statement st, Integer p) {
+                if ((st instanceof J.ForEachLoop || st instanceof J.ForLoop || st instanceof J.WhileLoop || st instanceof J.DoWhileLoop)
+                        && at >= Pos.start(st) && at < Pos.end(st)) {
+                    loop[0] = true;
+                }
+                return super.visitStatement(st, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return loop[0];
+    }
+
+    /** The try is the last statement of the loop's body: after the catch the loop goes on anyway. */
+    private static boolean insideLoopTail(MethodInfo m, CatchInfo c) {
+        boolean[] tail = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Block visitBlock(J.Block block, Integer p) {
+                if (!block.getStatements().isEmpty() && block.getStatements().getLast() == c.tryStatement) {
+                    tail[0] = true;
+                }
+                return super.visitBlock(block, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return tail[0];
+    }
+
+    /** A callee (called inside this try) that logs and rethrows a type this catch handles. */    /** A callee (called inside this try) that logs and rethrows a type this catch handles. */
     private String calleeAlreadyLogs(MethodInfo m, CatchInfo c) {
         for (dev.logast.graph.CallGraph.Edge e : ctx.a.graph.out(m)) {
             if (!e.site().enclosingCatches().contains(c)) {
