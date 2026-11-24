@@ -18,6 +18,9 @@ tag="v$version"
 git fetch --quiet origin main --tags
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || fail "main is not the same as origin/main: push or pull first"
 ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null || fail "$tag exists already"
+# #294: a release says what changes in the code logast writes: CHANGELOG.md has its section
+grep -qx "## ${version}" CHANGELOG.md 2>/dev/null \
+  || fail "CHANGELOG.md has no '## ${version}' section: move the Unreleased entries under it, commit and push"
 
 current="$(sed -n 's/^version=//p' gradle.properties)"
 if [ "${RELEASE_SKIP_CI:-}" != 1 ]; then

@@ -31,6 +31,13 @@ while IFS= read -r -d $'\x1e' entry; do
   esac
 done < <(git log --reverse --no-merges --format='%H%x1f%s%x1f%b%x1e' "$range")
 
+# #294: the version's CHANGELOG.md section first (what changes in the code logast writes), then the commits
+version="${tag#v}"
+if [ -f CHANGELOG.md ] && grep -qx "## ${version}" CHANGELOG.md; then
+  awk -v v="## ${version}" '$0 == v {on=1; next} on && /^## / {exit} on' CHANGELOG.md
+  printf '\n## Commits\n\n'
+fi
+
 section() {   # $1: title, then the lines
   local title="$1"; shift
   [ $# -gt 0 ] || return 0
