@@ -393,6 +393,7 @@ final class LogCallRules {
                 && rawArgs.stream().noneMatch(a -> src(f, a).matches(java.util.regex.Pattern.quote(c.param) + "\\.get(Localized)?Message\\(\\).*"));
         if (throwable == null && c != null && !c.param.equals("_") && lc.level().compareTo(Level.WARN) >= 0 && !classOnly
                 && ctx.policy.logging().attachExceptions()   // #278: a team that never attaches the exception
+                && !RuleContext.deliberate(f, c, lc.call().printTrimmed())   // #290: withheld on purpose
                 && rawArgs.stream().noneMatch(a -> a instanceof J.Identifier id && id.getSimpleName().equals(c.param))) {
             throwableSrc = c.param;
             issues.add(Rules.LOST_THROWABLE);

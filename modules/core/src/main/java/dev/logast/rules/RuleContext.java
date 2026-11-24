@@ -390,6 +390,29 @@ public final class RuleContext {
         return max;
     }
 
+    /** A comment that says the code withholds the exception or its details on purpose (#290). */
+    private static final java.util.regex.Pattern DELIBERATE = java.util.regex.Pattern.compile(
+            "(?i)(deliberate|on purpose|intentional|never log|do not log|don'?t log|no cause|without (the )?cause"
+                    + "|must not be logged|redact|sensitive|personal data)");
+    /** A helper that redacts what it is given: what it builds is meant to replace the raw exception (#290). */
+    private static final java.util.regex.Pattern REDACTING = java.util.regex.Pattern.compile(
+            "(?i)\\b\\w*(redact|mask|sanitiz|scrub|anonymi[sz]|obfuscat)\\w*\\s*\\(");
+
+    /**
+     * #290: the catch withholds the exception on purpose: a comment in its block says so, or {@code expr} (what is
+     * thrown or logged) passes it through a redacting helper. Such code is reported, not changed.
+     */
+    static boolean deliberate(dev.logast.parse.SourceFileInfo f, CatchInfo c, String expr) {
+        String block = f.slice(dev.logast.parse.Pos.start(c.clause.getBody()), dev.logast.parse.Pos.end(c.clause.getBody()));
+        java.util.regex.Matcher comments = java.util.regex.Pattern.compile("//[^\\n]*|/\\*.*?\\*/", java.util.regex.Pattern.DOTALL).matcher(block);
+        while (comments.find()) {
+            if (DELIBERATE.matcher(comments.group()).find()) {
+                return true;
+            }
+        }
+        return expr != null && REDACTING.matcher(expr).find();
+    }
+
     boolean supportNameFree(String simpleName, dev.logast.parse.SourceFileInfo f) {
         java.util.regex.Matcher m = PACKAGE.matcher(f.text());
         String pkg = m.find() ? m.group(1) : "";

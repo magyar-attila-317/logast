@@ -102,6 +102,13 @@ final class CauseRules {
                     + ", or call initCause(" + c.param + ") before throwing.");
             return;
         }
+        if (RuleContext.deliberate(f, c, nc.printTrimmed())) {
+            // #290: a comment says the cause is left out on purpose, or the message comes from a redacting helper
+            b.suggestion("Left as is: the catch withholds " + c.param + " on purpose (a comment, or a redacting helper builds "
+                    + "the message). If its stack trace may be kept, pass " + c.param + " as the cause; else add // logast:ignore "
+                    + "CAUSE_DROPPED.");
+            return;
+        }
         // the closing parenthesis of the constructor call: append the cause before it
         String text = f.text();
         int close = text.lastIndexOf(')', Pos.end(nc) - 1);
