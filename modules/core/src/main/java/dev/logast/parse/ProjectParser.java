@@ -66,13 +66,7 @@ public final class ProjectParser {
             if (!(sf instanceof J.CompilationUnit cu) || generatedRel.contains(cu.getSourcePath())) {
                 continue;   // generated sources only give their types: never analysed, reported or edited
             }
-            Path abs = absRoot.resolve(cu.getSourcePath());
-            String text = read(abs);
-            // UpdateSourcePositions' visitor is stateful: one instance per file
-            J.CompilationUnit positioned = (J.CompilationUnit) new UpdateSourcePositions().getVisitor().visit(TypeRepair.repair(cu, ctx), ctx);
-            boolean editable = positioned != null && text.equals(positioned.printAll());
-            files.add(new SourceFileInfo(abs, cu.getSourcePath().toString().replace('\\', '/'), text,
-                    positioned == null ? cu : positioned, Hashing.sha256(text), editable));
+            files.add(info(absRoot, cu, ctx));
         }
         files.sort(Comparator.comparing(SourceFileInfo::relPath));
         // account for every discovered file: analysed, or named in the errors (never silently missing)
@@ -88,7 +82,18 @@ public final class ProjectParser {
                 new ClasspathProbe(classpath), kept.size() + sources.size());
     }
 
-    private static List<SourceFile> parseSlice(Path absRoot, List<Path> slice, List<Path> classpath, List<String> errors) {
+    /** One parsed file as the rules see it: positions, repaired types, its text and whether it prints back exactly. */
+    static SourceFileInfo info(Path absRoot, J.CompilationUnit cu, ExecutionContext ctx) {
+        Path abs = absRoot.resolve(cu.getSourcePath());
+        String text = read(abs);
+        // UpdateSourcePositions' visitor is stateful: one instance per file
+        J.CompilationUnit positioned = (J.CompilationUnit) new UpdateSourcePositions().getVisitor().visit(TypeRepair.repair(cu, ctx), ctx);
+        boolean editable = positioned != null && text.equals(positioned.printAll());
+        return new SourceFileInfo(abs, cu.getSourcePath().toString().replace('\\', '/'), text,
+                positioned == null ? cu : positioned, Hashing.sha256(text), editable);
+    }
+
+    static List<SourceFile> parseSlice(Path absRoot, List<Path> slice, List<Path> classpath, List<String> errors) {
         ExecutionContext ctx = new InMemoryExecutionContext(t -> errors.add(String.valueOf(t.getMessage())));
         return JavaParser.fromJavaVersion()
                 .classpath(classpath)
@@ -110,7 +115,7 @@ public final class ProjectParser {
     }
 
     /** All {@code src/main/java} trees under the root; falls back to every .java file outside test dirs. */
-    static List<Path> findSources(Path root) {
+    public static List<Path> findSources(Path root) {
         List<Path> mainRoots = new ArrayList<>();
         walkDirs(root, dir -> {
             if (dir.endsWith(Path.of("src", "main", "java"))) {
@@ -141,7 +146,7 @@ public final class ProjectParser {
      * implements). They are compiled with the sources so their types and annotations resolve, and are never analysed
      * or edited. A generated file declaring a class the sources declare too (a stale copy) is left out.
      */
-    static List<Path> generatedSources(Path root, List<Path> sources) {
+    public static List<Path> generatedSources(Path root, List<Path> sources) {
         Set<String> declared = new HashSet<>();
         sources.forEach(s -> declared.add(topLevelName(s)));
         List<Path> out = new ArrayList<>();
@@ -204,7 +209,7 @@ public final class ProjectParser {
         }
     }
 
-    private static String read(Path p) {
+    static String read(Path p) {
         return SourceText.readUnchecked(p);
     }
 

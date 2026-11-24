@@ -184,6 +184,8 @@ val e2eJdk21 by tasks.registering(Test::class) {
     description = "E2eGoldenTest on Java 21: the same e2e/expected files"
     e2eSetup()
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    // #308: every apply round parses in full here, and incrementally in `e2e`: both must give the same snapshots
+    systemProperty("logast.parse", "full")
 }
 
 if (providers.gradleProperty("e2e").isPresent || providers.environmentVariable("CI").isPresent) {

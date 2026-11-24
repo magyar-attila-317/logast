@@ -5,6 +5,9 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**CLI**
+- Apply rounds re-parse only the files that changed, against classes compiled from the same work tree; a round parses in full when that cannot be exact (a new or removed file, a changed API, many changed files). `LOGAST_PARSE=full` restores full parses; `LOGAST_TIMING=1` shows what each round did (#308).
+
 ## 0.5.1
 
 **What logast writes**
