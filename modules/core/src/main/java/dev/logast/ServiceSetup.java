@@ -99,8 +99,8 @@ public final class ServiceSetup {
             Files.writeString(policyFile, ownLayer(policyTemplate(extendsList, c.packs(), c.keepWording(), style, mode, logFormat, null),
                     fleet, parents));
             VocabularyHarvest.Result h = VocabularyHarvest.run(root, Logast.policy(root, null), 3);
-            Files.writeString(policyFile, ownLayer(policyTemplate(extendsList, c.packs(), c.keepWording(), style, mode, logFormat,
-                    VocabularyHarvest.yaml(h)), fleet, parents));
+            Files.writeString(policyFile, suggestClientErrors(ownLayer(policyTemplate(extendsList, c.packs(), c.keepWording(), style,
+                    mode, logFormat, VocabularyHarvest.yaml(h)), fleet, parents), root));
             terms = h.terms().size();
             if (dev.logast.policy.PolicyLoader.sets(parents, "logging.keyStyle") && c.keyStyle() == null) {
                 style = inherited.logging().keyStyle() + " (from " + (fleet.isEmpty() ? "an extended layer" : "fleet " + fleet) + ")";
@@ -235,6 +235,40 @@ public final class ServiceSetup {
     public static String policyTemplate(List<String> extendsList, List<String> packs, boolean keepWording, String keyStyle,
                                         String vocabulary) {
         return policyTemplate(extendsList, packs, keepWording, keyStyle, null, vocabulary);
+    }
+
+    private static final java.util.regex.Pattern CLIENT_STATUS = java.util.regex.Pattern.compile(
+            "@ResponseStatus\\s*\\((?:[^)]*?)HttpStatus\\.(BAD_REQUEST|UNAUTHORIZED|PAYMENT_REQUIRED|FORBIDDEN|NOT_FOUND|"
+                    + "METHOD_NOT_ALLOWED|NOT_ACCEPTABLE|CONFLICT|GONE|PRECONDITION_FAILED|PAYLOAD_TOO_LARGE|UNSUPPORTED_MEDIA_TYPE|"
+                    + "UNPROCESSABLE_ENTITY|UNPROCESSABLE_CONTENT|LOCKED|PRECONDITION_REQUIRED|TOO_MANY_REQUESTS)[^)]*\\)"
+                    + "(?:\\s|@\\w+(?:\\([^)]*\\))?)*public\\s+(?:final\\s+)?class\\s+(\\w+)\\s+extends\\s+\\w*(?:Exception|Error)\\b");
+
+    /**
+     * #279: the service's own exceptions that answer with a 4xx status ({@code @ResponseStatus(HttpStatus.CONFLICT)} on the
+     * class): caller errors, offered in the commented levels.clientErrors example for the owner to confirm.
+     */
+    static String suggestClientErrors(String policy, Path root) {
+        List<String> found = new ArrayList<>();
+        Path src = root.resolve("src/main/java");
+        if (Files.isDirectory(src)) {
+            try (var files = Files.walk(src)) {
+                for (Path f : files.filter(p -> p.toString().endsWith(".java")).sorted().toList()) {
+                    String text = Files.readString(f);
+                    java.util.regex.Matcher m = CLIENT_STATUS.matcher(text);
+                    if (m.find()) {
+                        java.util.regex.Matcher pkg = java.util.regex.Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;").matcher(text);
+                        found.add((pkg.find() ? pkg.group(1) + "." : "") + m.group(2));
+                    }
+                }
+            } catch (IOException e) {
+                return policy;
+            }
+        }
+        String example = "#   clientErrors: [com.example.BusinessRuleViolationException]";
+        if (found.isEmpty() || !policy.contains(example)) {
+            return policy;
+        }
+        return policy.replace(example, "#   clientErrors: [" + String.join(", ", found) + "]   # found: @ResponseStatus 4xx in the code");
     }
 
     /**
