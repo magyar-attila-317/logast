@@ -29,6 +29,14 @@ public final class Invariants {
 
     /** One line per violation: "file:line  what". */
     public static List<String> check(Analysis a, Collection<String> files) {
+        return check(a, files, true);
+    }
+
+    /**
+     * {@code messagesDone}: the messages step ran, which takes MDC values out of the texts; before it (apply --until,
+     * one commit per step, #288) a value in both is the expected state between steps, not a broken result.
+     */
+    public static List<String> check(Analysis a, Collection<String> files, boolean messagesDone) {
         if (!a.policy.packSelected("logging")) {
             return List.of();   // these are the logging pack's rules: other packs alone don't promise them
         }
@@ -48,7 +56,7 @@ public final class Invariants {
                     continue;
                 }
                 List<String> keys = MessageTemplate.compliantKeys(raw);
-                if (keys != null) {
+                if (keys != null && messagesDone) {
                     // in MDC where the line is: a scope of the method covers it, or callers set the key (as the rules decide)
                     Set<String> here = new HashSet<>(inside);
                     here.removeAll(paths.notCoveredAt(m, Pos.start(lc.call())));

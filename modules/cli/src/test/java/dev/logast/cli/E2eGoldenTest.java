@@ -813,6 +813,43 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #288: --commit-per-step makes one commit per step that changed something, each of which compiles on its own, and
+     * the last state is what one apply writes; a dirty tree is refused.
+     */
+    @Test
+    void commitPerStepMakesOneCommitPerStep() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        git(app, "init", "--quiet");
+        git(app, "config", "user.name", "e2e");
+        git(app, "config", "user.email", "e2e@localhost");
+        git(app, "config", "commit.gpgsign", "false");
+        git(app, "add", "-A");
+        git(app, "commit", "--quiet", "-m", "before");
+        Files.writeString(app.resolve("NOTES.md"), "draft\n");
+        STDERR.setLength(0);
+        run(app, "apply", app.toString(), "--commit-per-step", "--classpath-file", CLASSPATH);
+        assertThat(LAST_EXIT).isEqualTo(2);
+        assertThat(STDERR.toString()).contains("without uncommitted changes");
+        Files.delete(app.resolve("NOTES.md"));
+        String out = run(app, "apply", app.toString(), "--commit-per-step", "--classpath-file", CLASSPATH);
+        assertThat(out).as(out).doesNotContain("CHECK FAILED");
+        List<String> subjects = git(app, "log", "--format=%s", "--reverse").lines().toList();
+        assertThat(subjects).as(out).startsWith("before", "logast apply: setup step").contains("logast apply: messages step")
+                .hasSizeGreaterThan(4);
+        assertThat(git(app, "status", "--porcelain")).as("everything is committed").isBlank();
+        // each step's commit builds: the one after setup (support classes, build file) and the one after messages
+        for (String subject : List.of("logast apply: setup step", "logast apply: messages step")) {
+            String sha = git(app, "log", "--format=%h", "--grep=^" + subject + "$").strip();
+            Path at = tmp.resolve("at-" + sha);
+            git(app, "worktree", "add", "--quiet", "--detach", at.toString(), sha);
+            compile(at);
+        }
+        String again = run(app, "apply", app.toString(), "--commit-per-step", "--classpath-file", CLASSPATH);
+        assertThat(again).as(again).contains("0 commits: nothing to change");
+    }
+
+    /**
      * #287: steps of a pack can be left out (--skip=lines,levels): the others apply as usual and the result compiles,
      * the skipped steps change nothing and their findings stay open; an unknown step name is refused.
      */

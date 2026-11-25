@@ -378,6 +378,13 @@ public final class Main {
         boolean redo;
         @Option(names = "--force", description = "Write even though the git working tree has uncommitted changes")
         boolean force;
+        @Option(names = "--commit-per-step", description = "Commit each pipeline step on its own (setup, structure, lines, …, "
+                + "then what later passes add): each commit compiles, so a step is dropped with one git revert (#288). "
+                + "Needs a git working tree without uncommitted changes")
+        boolean commitPerStep;
+        /** #288: set on the runs --commit-per-step starts itself, one per step. */
+        @Option(names = "--step-run", hidden = true)
+        boolean stepRun;
         @Option(names = "--format", defaultValue = "text", description = "text | json")
         String format;
         @Option(names = "--without-classpath", description = "Apply even though the Gradle build has no classpath file "
@@ -415,6 +422,9 @@ public final class Main {
 
         @Override
         public Integer call() throws IOException {
+            if (commitPerStep && !stepRun && !refreshed) {
+                return commitPerStep();
+            }
             Carried earlier = refreshed ? carried : null;
             carried = null;
             // #126: what this run set up, said once at the top of the summary (of both runs, after a refresh)
@@ -469,7 +479,8 @@ public final class Main {
             }
             Applier applier = new Applier(scanner, new FillValidator(policy)).until(untilStep).skip(skipSteps).paths(paths).compileWith(cp)
                     .declined(redo ? Set.of() : ordersAppliedEarlier(root()), changedSinceApplied(root())).safe(safe)
-                    .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files))
+                    .onInvariants((work, files) -> scanner.lastAnalysis == null ? List.of() : dev.logast.Invariants.check(scanner.lastAnalysis, files,
+                            (untilStep == null || untilStep.compareTo(Rules.Step.MESSAGES) >= 0) && !skipSteps.contains(Rules.Step.MESSAGES)))
                     .onFinish(work -> {
                         // #125: the reports from the last scan, while the scratch copy it analysed is still there
                         if (write && scanner.lastAnalysis != null) {
@@ -697,6 +708,121 @@ public final class Main {
                 }
             }
             return null;
+        }
+
+        /**
+         * #288: one apply per pipeline step ({@code --until <step>}, so each result is checked and compiles on its own),
+         * each committed when it changed something; then one apply without --until for what later passes add. A run that
+         * fails (exit 2) stops the series; rejections (exit 1) are committed like the rest and make the exit code 1.
+         */
+        private int commitPerStep() throws IOException {
+            if (dryRun) {
+                System.err.println("apply: --commit-per-step writes commits; it does not go with --dry-run");
+                return 2;
+            }
+            List<String> dirty = uncommitted(root());
+            if (dirty == null) {
+                System.err.println("apply: --commit-per-step needs a git working tree (" + root() + " is not in one)");
+                return 2;
+            }
+            if (!dirty.isEmpty() || !gitOut("status", "--porcelain").isBlank()) {
+                System.err.println("apply: --commit-per-step needs a working tree without uncommitted changes: commit or stash them first");
+                return 2;
+            }
+            List<String> base = new ArrayList<>();
+            List<String> original = spec.commandLine().getParseResult().originalArgs();
+            for (int i = 0; i < original.size(); i++) {
+                String arg = original.get(i);
+                if (arg.equals("--commit-per-step") || arg.startsWith("--until=")) {
+                    continue;
+                }
+                if (arg.equals("--until")) {
+                    i++;
+                    continue;
+                }
+                base.add(arg);
+            }
+            base.add("--step-run");
+            Rules.Step last = until == null ? null : Rules.Step.valueOf(until.toUpperCase(java.util.Locale.ROOT));
+            Set<String> skipped = new HashSet<>();
+            skip.forEach(x -> skipped.add(x.strip().toLowerCase(java.util.Locale.ROOT)));
+            List<String> runs = new ArrayList<>();
+            for (Rules.Step step : Rules.Step.values()) {
+                if (last != null && step.ordinal() > last.ordinal()) {
+                    break;
+                }
+                String name = step.name().toLowerCase(java.util.Locale.ROOT);
+                if (!skipped.contains(name)) {
+                    runs.add(name);
+                }
+            }
+            if (last == null) {
+                runs.add(null);   // what later passes add: the full apply, on the steps' result
+            }
+            int rc = 0;
+            List<String[]> made = new ArrayList<>();
+            for (String step : runs) {
+                List<String> args = new ArrayList<>(base);
+                if (step != null) {
+                    args.add("--until");
+                    args.add(step);
+                }
+                System.out.println(Ansi.bold("== " + (step == null ? "later passes" : "step " + step)));
+                int code = new CommandLine(new Main()).execute(args.toArray(String[]::new));
+                if (code == 2) {
+                    System.err.println("apply: the " + (step == null ? "last" : step) + " run failed; the commits so far stay");
+                    return 2;
+                }
+                rc = Math.max(rc, code);
+                if (gitOut("status", "--porcelain").isBlank()) {
+                    continue;
+                }
+                git("add", "-A", "--", ".");
+                if (gitOut("diff", "--cached", "--name-only", "--", ".", ":(exclude).logast").isBlank() && !made.isEmpty()) {
+                    // only logast's own reports changed (nothing to apply): they belong to the last step's commit
+                    git("commit", "--quiet", "--no-verify", "--amend", "--no-edit");
+                    made.getLast()[0] = gitOut("rev-parse", "--short", "HEAD").strip();
+                    continue;
+                }
+                String subject = "logast apply: " + (step == null ? "later passes" : step + " step");
+                git("commit", "--quiet", "--no-verify", "-m", subject, "-m",
+                        "`logast apply" + (step == null ? "" : " --until " + step) + "`. "
+                                + "Each step is a commit of its own and compiles: revert one to drop it (#288).");
+                made.add(new String[]{gitOut("rev-parse", "--short", "HEAD").strip(), subject});
+            }
+            System.out.println();
+            System.out.println(Ansi.bold(made.size() + (made.size() == 1 ? " commit" : " commits")) + (made.isEmpty() ? ": nothing to change" : ":"));
+            made.forEach(c -> System.out.println("  " + c[0] + "  " + c[1]));
+            return rc;
+        }
+
+        private String gitOut(String... args) throws IOException {
+            List<String> cmd = new ArrayList<>(List.of("git"));
+            cmd.addAll(List.of(args));
+            Process p = new ProcessBuilder(cmd).directory(root().toFile()).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            try {
+                p.waitFor();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException(e);
+            }
+            return out;
+        }
+
+        private void git(String... args) throws IOException {
+            List<String> cmd = new ArrayList<>(List.of("git"));
+            cmd.addAll(List.of(args));
+            Process p = new ProcessBuilder(cmd).directory(root().toFile()).redirectErrorStream(true).start();
+            String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            try {
+                if (p.waitFor() != 0) {
+                    throw new IOException(String.join(" ", cmd) + " failed: " + out.strip());
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException(e);
+            }
         }
 
         /** The run's summary: what was set up, the change counts, rejections and checks, then what is left (#126). */

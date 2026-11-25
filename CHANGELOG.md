@@ -12,6 +12,10 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 - The commented `levels.clientErrors` example also lists the exceptions an `@ExceptionHandler` answers with a 4xx (`@ResponseStatus`, a `ResponseEntity` / `ProblemDetail` with a 4xx status) (#279).
 - traffic.yaml offers a commented pattern for each group of three or more endpoints without a rate under one path prefix (`"* /pledges/**"`): one value per group instead of one per endpoint (#279).
 
+**CLI**
+- `apply --commit-per-step`: one commit per pipeline step that changed something (then one for what later passes add); each compiles, so a step is dropped with one `git revert` (#288).
+- `apply --until <step>` before the messages step no longer reports an id in both MDC and the message as CHECK FAILED: the messages step takes it out of the text.
+
 ## 0.5.4
 
 **Log inventory**

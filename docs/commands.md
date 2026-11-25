@@ -293,6 +293,10 @@ code. `logast scan .` shows the same without changing anything. Both also write 
   steps build on earlier ones, so drop from the end, or rerun with `--until <step>`. To keep some steps and not others,
   rerun with `--skip lines,levels`: the skipped steps change nothing (their findings stay open) and the rest apply on
   their own and compile (#287). Background: [pipeline-plan.md](pipeline-plan.md).
+- **A commit per step.** `--commit-per-step` (on a git working tree without uncommitted changes) runs apply once per
+  step (`--until setup`, `--until structure`, …) and commits each result that changed something, then once more for
+  what later passes add: each commit compiles, so dropping a step is one `git revert` (#288). It takes as long as one
+  apply per step.
 - **Batches.** `--path 'src/main/java/com/example/orders/**'` (repeatable) applies only the findings in matching files, so
   a big service can be adopted in PR-sized batches; setup changes (build file, configuration, support classes) always
   apply (#288).
