@@ -300,6 +300,9 @@ code. `logast scan .` shows the same without changing anything. Both also write 
 - **Batches.** `--path 'src/main/java/com/example/orders/**'` (repeatable) applies only the findings in matching files, so
   a big service can be adopted in PR-sized batches; setup changes (build file, configuration, support classes) always
   apply (#288).
+- **Tests to run.** `.logast/reports/tests.txt` lists the tests whose source names a class the apply changed, as one
+  Gradle command (`./gradlew test --tests … :orders:test --tests …`), and the changed classes no test that captures
+  logs (ListAppender, LogCaptor, OutputCaptureExtension) names: their log lines are checked by nobody (#289).
 - **Exit code.** 0 when everything selected was applied and checked; 1 when a change was REJECTED or a check FAILED,
   so a script or an agent can tell "all" from "partial" (#288).
 - **Checks.** Every run checks its result before writing (no key both in MDC and in a message, no nested scope, one

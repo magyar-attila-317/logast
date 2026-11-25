@@ -14,6 +14,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 **CLI**
 - `apply --commit-per-step`: one commit per pipeline step that changed something (then one for what later passes add); each compiles, so a step is dropped with one `git revert` (#288).
+- After writing, apply lists in `.logast/reports/tests.txt` the tests that use a changed class (with the Gradle command that runs them, one test task per module) and the changed classes no log-capturing test names; the summary says how many (#289).
 - `apply --until <step>` before the messages step no longer reports an id in both MDC and the message as CHECK FAILED: the messages step takes it out of the text.
 
 ## 0.5.4

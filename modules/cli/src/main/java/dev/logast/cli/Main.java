@@ -947,6 +947,25 @@ public final class Main {
             // what is left: optional, in plain words (#126); the follow-up checks one line each
             dev.logast.orders.ScanResult left = write ? r.after() : r.before();
             dev.logast.Todo todo = dev.logast.Todo.of(root(), left, policy, scanner.lastAnalysis, applied, write, write);
+            if (write && !changed.isEmpty()) {
+                // #289: the tests that use what changed, and the changed classes no test checks the log lines of
+                String support = scanner.lastAnalysis == null ? null : "/" + scanner.lastAnalysis.supportPackage.replace('.', '/') + "/";
+                dev.logast.TouchedTests tt = dev.logast.TouchedTests.of(root(), changed, support);
+                try {
+                    Path report = root().resolve(dev.logast.TouchedTests.REPORT);
+                    Files.createDirectories(report.getParent());
+                    Files.writeString(report, tt.report());
+                } catch (IOException e) {
+                    Out.warn("tests: " + e.getMessage());
+                }
+                if (tt.count() > 0 || !tt.unchecked().isEmpty()) {
+                    String unchecked = tt.unchecked().isEmpty() ? "" : "; " + tt.unchecked().size()
+                            + (tt.unchecked().size() == 1 ? " changed class has no test that checks its log lines"
+                            : " changed classes have no test that checks their log lines");
+                    also.add(new dev.logast.Todo.Item(tt.count() > 0 ? "run the " + dev.logast.Todo.plural(tt.count(), "test") + " that use the changed classes"
+                            : "no test uses the changed classes", dev.logast.TouchedTests.REPORT + unchecked));
+                }
+            }
             also.addAll(todo.also());
             printBlocks(todo.worthALook(new dev.logast.Todo.View(next, "logast scan .", fu, mu)),
                     ledgerLines(ledger, List.of()), dev.logast.Todo.alsoShort(also));

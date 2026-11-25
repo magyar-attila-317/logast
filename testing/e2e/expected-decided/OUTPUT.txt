@@ -28,6 +28,7 @@ Worth a look (optional) — the service works without these:
 
 Log lines: 84 — 43 fixed, 23 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
+Also: no test uses the changed classes   .logast/reports/tests.txt; 31 changed classes have no test that checks their log lines
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?
 
@@ -72,6 +73,7 @@ Worth a look (optional) — the service works without these:
 
 Log lines: 84 — 50 fixed, 6 with a finding, 20 fine, 8 not checked (.logast/reports/coverage.txt)
 
+Also: no test uses the changed classes   .logast/reports/tests.txt; 22 changed classes have no test that checks their log lines
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?
 

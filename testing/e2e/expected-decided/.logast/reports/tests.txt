@@ -1,0 +1,26 @@
+# the tests that use a class this apply changed (#289): run them
+# none
+
+# changed classes whose log lines no test checks (no test that names them captures logs)
+src/main/java/com/example/e2e/edge/Audited.java
+src/main/java/com/example/e2e/edge/EdgeFlow.java
+src/main/java/com/example/e2e/edge/EdgeJob.java
+src/main/java/com/example/e2e/edge/EdgeMetrics.java
+src/main/java/com/example/e2e/job/ExportJob.java
+src/main/java/com/example/e2e/job/JobMetrics.java
+src/main/java/com/example/e2e/job/PreloadJob.java
+src/main/java/com/example/e2e/job/TallyJob.java
+src/main/java/com/example/e2e/messaging/MessagingMetrics.java
+src/main/java/com/example/e2e/messaging/PledgeMessages.java
+src/main/java/com/example/e2e/order/OrderMetrics.java
+src/main/java/com/example/e2e/order/OrderNotifications.java
+src/main/java/com/example/e2e/order/OrderService.java
+src/main/java/com/example/e2e/order/PaymentClient.java
+src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+src/main/java/com/example/e2e/pledge/PledgeLookup.java
+src/main/java/com/example/e2e/pledge/PledgeMetrics.java
+src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
+src/main/java/com/example/e2e/pledge/PledgeRepository.java
+src/main/java/com/example/e2e/pledge/PledgeSender.java
+src/main/java/com/example/e2e/pledge/PledgeService.java
+src/main/java/com/example/e2e/web/QuoteController.java
