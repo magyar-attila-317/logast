@@ -319,6 +319,32 @@ final class LogCallRules {
 
     // ---- LOG_LEVEL -------------------------------------------------------------------------------
 
+    /** Exception names that say the case is an expected business outcome, not a fault. */
+    private static final java.util.regex.Pattern OUTCOME_EXCEPTION = java.util.regex.Pattern.compile(
+            "(Conflict|Rejected|Rejection|NotFound|Invalid|Validation|Duplicate|AlreadyExists|Forbidden|Unauthorized|BadRequest|"
+                    + "StateConflict|NotAllowed|Denied)\\w*(Exception|Error)?$");
+
+    /**
+     * #326 L4: the caught exception is an expected signal, not a fault: a client error (levels.clientErrors), one named
+     * like a business outcome (…Rejected…, …Conflict…, …NotFound…, …Validation…), or the IllegalArgumentException an
+     * enum's valueOf throws for an unknown code. Its line says what happened; the stack trace adds nothing.
+     */
+    private boolean expectedSignal(CatchInfo c) {
+        List<String> client = ctx.policy.levels().clientErrors();
+        for (JavaType t : c.types) {
+            JavaType.FullyQualified fq = TypeUtils.asFullyQualified(t);
+            String simple = fq == null ? String.valueOf(t) : fq.getClassName();
+            if (client.stream().anyMatch(cl -> TypeUtils.isAssignableTo(cl, t)) || OUTCOME_EXCEPTION.matcher(simple).find()) {
+                return true;
+            }
+            if (fq != null && fq.getFullyQualifiedName().equals("java.lang.IllegalArgumentException")
+                    && c.tryStatement.getBody().printTrimmed().contains(".valueOf(")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Client errors are never ERROR; INFO per loop iteration becomes DEBUG. Edits only the method name. */
     private void level(MethodInfo m, LogCall lc, int ordinal) {
         if (lc.fluent() || !ctx.enabled(Rules.LOG_LEVEL)) {
@@ -449,6 +475,7 @@ final class LogCallRules {
         if (throwable == null && c != null && !c.param.equals("_") && lc.level().compareTo(Level.WARN) >= 0 && !classOnly
                 && ctx.policy.logging().attachExceptions()   // #278: a team that never attaches the exception
                 && !RuleContext.deliberate(f, c, lc.call().printTrimmed())   // #290: withheld on purpose
+                && !expectedSignal(c)   // #326 L4: a business outcome: a stack per such event is noise
                 && rawArgs.stream().noneMatch(a -> a instanceof J.Identifier id && id.getSimpleName().equals(c.param))) {
             throwableSrc = c.param;
             issues.add(Rules.LOST_THROWABLE);

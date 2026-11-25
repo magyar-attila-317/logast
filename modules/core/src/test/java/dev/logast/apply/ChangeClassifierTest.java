@@ -45,6 +45,15 @@ class ChangeClassifierTest {
         assertThat(classifier.compare("Payments.java", BEFORE, real)).as("a real change next to them is still listed").hasSize(1);
     }
 
+    /** #326 L5: a line on a logger field of another name (an audit logger) is logging too. */
+    @Test
+    void aLoggerOfAnyNameIsLogging() {
+        String withLogger = BEFORE.replace("public class Payments {\n",
+                "public class Payments {\n    private static final org.slf4j.Logger AUDIT = org.slf4j.LoggerFactory.getLogger(\"audit\");\n\n");
+        String after = withLogger.replace("        ledger.book(orderId);\n", "        ledger.book(orderId);\n        AUDIT.info(\"Order charged\");\n");
+        assertThat(classifier.compare("Payments.java", withLogger, after)).isEmpty();
+    }
+
     @Test
     void aScopeAroundCodeIsBehavioural() {
         String after = BEFORE.replace("        if (orderId == null) {\n            throw new IllegalArgumentException(\"no order\");\n        }\n        ledger.reverse(orderId);\n",

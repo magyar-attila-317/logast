@@ -184,4 +184,23 @@ class SuffixKeyNamingTest {
         String after = Files.readString(src.resolve("Devices.java"));
         assertThat(after).as(after).contains("request.deviceId()").containsPattern("bodyDeviceId=\\{}");
     }
+
+    /** #326 L6: a generic accessor (getUuid, getId) is named after what it is read from: phoneUuid, itemUuid. */
+    @Test
+    void aGenericAccessorTakesItsOwnersName() throws Exception {
+        org.openrewrite.java.tree.J.CompilationUnit cu = org.openrewrite.java.JavaParser.fromJavaVersion().build()
+                .parse("class A { Object f(P phone, P item) { return java.util.List.of(phone.getUuid(), item.getUuid(), this.getId()); } "
+                        + "Object getId() { return null; } }").findFirst().map(org.openrewrite.java.tree.J.CompilationUnit.class::cast).orElseThrow();
+        List<String> keys = new java.util.ArrayList<>();
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public org.openrewrite.java.tree.J.MethodInvocation visitMethodInvocation(org.openrewrite.java.tree.J.MethodInvocation mi, Integer p) {
+                if (mi.getSimpleName().startsWith("get")) {
+                    keys.add(dev.logast.rules.DomainValues.derivedKey(mi));
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(cu, 0);
+        assertThat(keys).containsExactly("phoneUuid", "itemUuid", "id");
+    }
 }

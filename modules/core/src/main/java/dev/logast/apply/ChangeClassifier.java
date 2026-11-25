@@ -118,12 +118,23 @@ public final class ChangeClassifier {
         if (parsed.size() != 1 || !(parsed.getFirst() instanceof J.CompilationUnit cu)) {
             return null;
         }
+        // #326 L5: the file's own logger fields count, whatever their name (an AUDIT or activityLog logger)
+        Set<String> fileLoggers = new java.util.HashSet<>(loggers);
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.VariableDeclarations visitVariableDeclarations(J.VariableDeclarations vd, Integer p) {
+                if (vd.getTypeExpression() != null && vd.getTypeExpression().printTrimmed().matches("(org\\.slf4j\\.)?Logger")) {
+                    vd.getVariables().forEach(v -> fileLoggers.add(v.getSimpleName()));
+                }
+                return super.visitVariableDeclarations(vd, p);
+            }
+        }.visit(cu, 0);
         J.CompilationUnit stripped = (J.CompilationUnit) new JavaIsoVisitor<Integer>() {
             @Override
             public J.Block visitBlock(J.Block block, Integer p) {
                 J.Block b = super.visitBlock(block, p);
                 // #324 M5: a counting call logast adds next to a log line is observability too, not a change of behaviour
-                return b.withStatements(b.getStatements().stream().filter(s -> !logStatement(s) && !metricStatement(s)).toList());
+                return b.withStatements(b.getStatements().stream().filter(s -> !logStatement(s, fileLoggers) && !metricStatement(s)).toList());
             }
         }.visitNonNull(cu, 0);
         Map<String, String> out = new LinkedHashMap<>();
@@ -175,7 +186,7 @@ public final class ChangeClassifier {
     }
 
     /** A call on a logger as a statement, a fluent one, or logast's AfterCommit.log(() -> …). */
-    private boolean logStatement(Statement s) {
+    private boolean logStatement(Statement s, Set<String> loggers) {
         if (!(s instanceof J.MethodInvocation mi)) {
             return false;
         }

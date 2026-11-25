@@ -107,7 +107,7 @@ public final class MetricsMap {
             while (trail < min - lead - 1 && sameAt(names, trail, false)) {
                 trail++;
             }
-            if (leadOnly ? lead == 0 : trail == 0) {
+            if (leadOnly ? lead == 0 || FAMILY_VERBS.contains(names.getFirst()[0]) : trail == 0) {
                 continue;
             }
             List<String> family = new ArrayList<>(List.of(names.getFirst()).subList(0, lead));
@@ -132,7 +132,7 @@ public final class MetricsMap {
      * e2e, test, dev, local, seed ({@code @Profile("e2e")}, not {@code @Profile("!prod")}), or it lives in a package named
      * like test data (testdata, seed, fixtures). A counter there measures nothing anyone looks at.
      */
-    static boolean testOnly(MethodInfo m) {
+    static boolean testOnly(Analysis a, MethodInfo m) {
         for (String part : m.owner().fqn().toLowerCase(Locale.ROOT).split("\\.")) {
             // (not "e2e" itself: a service's root package can be named so; its seeders are profile-gated, checked below)
             if (part.equals("testdata") || part.equals("seed") || part.equals("seeder") || part.equals("seeders") || part.equals("fixtures")) {
@@ -140,19 +140,76 @@ public final class MetricsMap {
             }
         }
         for (J.Annotation an : m.owner().decl().getLeadingAnnotations()) {
-            if (!an.getSimpleName().equals("Profile") || an.getArguments() == null) {
+            if (an.getArguments() == null) {
                 continue;
             }
-            List<String> profiles = new ArrayList<>();
-            Matcher lit = Pattern.compile("\"([^\"]*)\"").matcher(an.printTrimmed());
-            while (lit.find()) {
-                profiles.add(lit.group(1).strip().toLowerCase(Locale.ROOT));
+            String name = an.getSimpleName();
+            if (name.equals("Profile")) {
+                // #326 M4: a constant (@Profile(ThingSeeder.PROFILE)) counts as its value
+                List<String> profiles = new ArrayList<>();
+                for (org.openrewrite.java.tree.Expression arg : an.getArguments()) {
+                    collectStrings(a, arg instanceof J.Assignment as ? as.getAssignment() : arg, profiles);
+                }
+                if (!profiles.isEmpty() && profiles.stream().allMatch(p -> nonProduction(p))) {
+                    return true;
+                }
+            } else if (name.equals("ConditionalOnProperty") || name.equals("ConditionalOnExpression")) {
+                // #326 M4: on only when an e2e / dev / test / seed property says so
+                String text = an.printTrimmed().toLowerCase(Locale.ROOT);
+                Matcher first = Pattern.compile(name.equals("ConditionalOnProperty")
+                        ? "(?:name|value|prefix)\\s*=\\s*\\{?\\s*\"([^\"]+)\"|\\(\\s*\"([^\"]+)\""
+                        : "(?<!!)\\$\\{\\s*([\\w.-]+)").matcher(text);
+                if (first.find()) {
+                    String prop = first.group(1) != null ? first.group(1) : first.group(2);
+                    if (prop != null && nonProduction(prop.split("[.-]")[0])) {
+                        return true;
+                    }
+                }
             }
-            if (!profiles.isEmpty() && profiles.stream().allMatch(NON_PRODUCTION::contains)) {
+        }
+        return false;
+    }
+
+    /** "e2e", "e2e-tenant", "dev", "local-seed": a profile or property prefix that never runs in production. */
+    private static boolean nonProduction(String name) {
+        String n = name.strip().toLowerCase(Locale.ROOT);
+        if (NON_PRODUCTION.contains(n)) {
+            return true;
+        }
+        for (String part : n.split("[-_.]")) {
+            if (NON_PRODUCTION.contains(part)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /** The string values of an annotation argument: literals, an array of them, constants of the code resolved. */
+    private static void collectStrings(Analysis a, org.openrewrite.java.tree.Expression e, List<String> out) {
+        if (e instanceof J.Literal l && l.getValue() instanceof String str) {
+            out.add(str);
+        } else if (e instanceof J.NewArray na && na.getInitializer() != null) {
+            na.getInitializer().forEach(x -> collectStrings(a, x, out));
+        } else if (e instanceof J.FieldAccess || e instanceof J.Identifier) {
+            String field = e instanceof J.FieldAccess fa ? fa.getSimpleName() : ((J.Identifier) e).getSimpleName();
+            String owner = e instanceof J.FieldAccess fa ? fa.getTarget().printTrimmed() : null;
+            for (dev.logast.model.ClassInfo c : a.index.classes()) {
+                if (owner != null && !c.simpleName().equals(owner.substring(owner.lastIndexOf('.') + 1))) {
+                    continue;
+                }
+                for (org.openrewrite.java.tree.Statement st : c.decl().getBody().getStatements()) {
+                    if (st instanceof J.VariableDeclarations vd) {
+                        for (J.VariableDeclarations.NamedVariable v : vd.getVariables()) {
+                            if (v.getSimpleName().equals(field) && v.getInitializer() instanceof J.Literal init && init.getValue() instanceof String str) {
+                                out.add(str);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            out.add("?" + field);   // not known: counts as production
+        }
     }
 
     /** A family member's own name, as before families (the counter the map suggests for it names it). */
@@ -343,7 +400,7 @@ public final class MetricsMap {
         Set<String> catalogs = CatalogRules.catalogNames(a);   // OrderMetrics.ordersShipped() counts too
         for (MethodInfo m : a.index.methods()) {
             if (m.owner().fqn().startsWith(a.supportPackage + ".") || m.facts().logs.isEmpty() || hasMeter(m, metered)
-                    || testOnly(m)) {
+                    || testOnly(a, m)) {
                 continue;
             }
             String body = m.decl().getBody() == null ? "" : m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
@@ -662,14 +719,28 @@ public final class MetricsMap {
     private static final java.util.Set<String> SUBJECT_ENDS = java.util.Set.of("the", "a", "an", "this", "that", "these", "those",
             "is", "are", "was", "were", "be", "been", "has", "have", "had", "will", "would", "can", "could", "should", "not", "no",
             "of", "to", "for", "with", "via", "from", "on", "in", "at", "by", "because", "but", "and", "or", "as", "when", "while",
-            "after", "before", "than", "then", "so", "its", "it", "their", "our", "per", "into", "since", "until");
+            "after", "before", "than", "then", "so", "its", "it", "their", "our", "per", "into", "since", "until",
+            "without", "still", "already", "yet", "just", "only", "also", "again", "anymore");
     /** Role words of a class name that say nothing about the business ("RefundService" → "refund"). */
     private static final Pattern ROLE = Pattern.compile("(Service|Client|Controller|Publisher|Listener|Handler|Job|Repository|Impl|Manager|Component|Gateway|Adapter|Facade|Processor|Helper|Support)+$");
     private static final int NAME_WORDS = 4;
     /** Single words that name no business thing on their own ("line", "communicate"): they get the class's subject. */
     private static final java.util.Set<String> GENERIC = java.util.Set.of("line", "item", "row", "record", "entry", "value",
             "data", "request", "response", "message", "event", "task", "call", "communicate", "process", "handle", "send",
-            "receive", "run", "execute", "update", "check", "give", "sync", "operation", "action", "step", "result");
+            "receive", "run", "execute", "update", "check", "give", "sync", "operation", "action", "step", "result",
+            // #326 M3: bare verbs
+            "submit", "read", "queue", "publish", "print", "price", "persist", "mark", "nudge", "close", "open", "write",
+            "parse", "load", "save", "fetch", "notify", "release", "cancel", "retry", "refresh", "apply", "resolve",
+            "validate", "render", "convert", "delete", "create", "start", "stop", "poll", "consume", "emit", "store", "lookup");
+    /** #326 M3: adverbs that end a subject ("lazily close"): a list, since tally, family and supply end in -ly too. */
+    private static final java.util.Set<String> ADVERBS = java.util.Set.of("lazily", "eagerly", "quietly", "silently", "finally",
+            "partially", "fully", "manually", "automatically", "successfully", "completely", "temporarily", "permanently",
+            "immediately", "currently", "actually", "really", "usually", "simply", "directly", "asynchronously", "synchronously",
+            "safely", "gracefully", "periodically", "initially", "eventually", "explicitly", "implicitly");
+
+    /** #326 M3: a family led by one of these is "everything that handles something": no shared metric. */
+    private static final java.util.Set<String> FAMILY_VERBS = java.util.Set.of("handle", "process", "parse", "write", "read",
+            "run", "execute", "do", "perform", "get", "set", "update", "check", "validate", "load", "save");
 
     /**
      * #324 M3: a metric name from a message's subject that a dashboard can use: camelCase split (GoodsReceiptCreated →
@@ -678,23 +749,33 @@ public final class MetricsMap {
      * GrnImportService → grn.import.line).
      */
     static String metricName(String subject, String ownerClass) {
-        String spaced = subject.replaceAll("([a-z0-9])([A-Z])", "$1 $2").replaceAll("([A-Z]+)([A-Z][a-z])", "$1 $2");
+        // #326 M3: an acronym with digits stays one word (E2E, not "e2.e"); a hyphenated word stays one (write-off)
+        String spaced = subject.replaceAll("(\\w)-(\\w)", "$1$2")
+                .replaceAll("([A-Z0-9]*[A-Z])([A-Z][a-z])", "$1 $2").replaceAll("([a-z])([A-Z0-9])", "$1 $2");
         List<String> words = new ArrayList<>();
         for (String w : spaced.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
             if (w.isEmpty()) {
                 continue;
             }
-            if (SUBJECT_ENDS.contains(w) && !words.isEmpty()) {
+            boolean ends = SUBJECT_ENDS.contains(w) || ADVERBS.contains(w);   // not every -ly word: tally, family, supply
+            if (ends && !words.isEmpty()) {
                 break;
             }
-            if (!SUBJECT_ENDS.contains(w)) {
+            if (!ends) {
                 words.add(w);
             }
             if (words.size() == NAME_WORDS) {
                 break;
             }
         }
-        if (words.size() == 1 && GENERIC.contains(words.getFirst()) && ownerClass != null) {
+        // "Releasing diner order request" → diner.order.request: a leading gerund is the action, not the subject, when
+        // a subject of its own follows ("opening checklist record": the gerund is part of the noun, it stays)
+        if (words.size() > 3 && words.getFirst().endsWith("ing") && words.getFirst().length() > 5) {
+            words.removeFirst();
+        }
+        // a single generic word, or a bare participle ("queued"), says nothing of its own: the class's subject first
+        if (words.size() == 1 && (GENERIC.contains(words.getFirst()) || words.getFirst().endsWith("ed") && words.getFirst().length() > 4)
+                && ownerClass != null) {
             String owner = ROLE.matcher(ownerClass).replaceAll("");
             List<String> prefix = new ArrayList<>();
             for (String w : owner.replaceAll("([a-z0-9])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {

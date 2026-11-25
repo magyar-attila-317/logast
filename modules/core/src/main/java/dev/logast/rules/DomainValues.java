@@ -238,8 +238,10 @@ public final class DomainValues {
             if ((n.equals("size") || n.equals("length") || n.equals("count")) && mi.getSelect() instanceof J.Identifier sel) {
                 return countKey(sel.getSimpleName());   // items.size() -> itemCount, pledgeIds.size() -> pledgeCount
             }
-            if (Set.of("id", "name", "type", "status", "code", "key", "value").contains(n)
-                    && mi.getSelect() instanceof J.Identifier sel) {
+            // #326 L6: uuid too (phone.getUuid() → phoneUuid, item.getUuid() → itemUuid: "uuid" for both was one key for two
+            // values); this.getId() is the object's own id
+            if (Set.of("id", "uuid", "name", "type", "status", "code", "key", "value").contains(n)
+                    && mi.getSelect() instanceof J.Identifier sel && !sel.getSimpleName().equals("this")) {
                 return sel.getSimpleName() + Character.toUpperCase(n.charAt(0)) + n.substring(1);
             }
             return n;

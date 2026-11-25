@@ -47,6 +47,16 @@ class MetricsMapTest {
         java.nio.file.Files.writeString(src.resolve("ProdSeeder.java"), seeder.replace("PKG", "x").replace("PROFILE", "@Profile(\"!test\")").replace("NAME", "ProdSeeder"));
         java.nio.file.Path data = java.nio.file.Files.createDirectories(dir.resolve("src/main/java/x/testdata"));
         java.nio.file.Files.writeString(data.resolve("Fixtures.java"), seeder.replace("PKG", "x.testdata").replace("PROFILE", "").replace("NAME", "Fixtures"));
+        // #326 M4: a profile named by a constant, and conditions on e2e / dev properties
+        java.nio.file.Files.writeString(src.resolve("ThingSeeder.java"), seeder.replace("PKG", "x")
+                .replace("PROFILE", "@Profile(ThingSeeder.PROFILE)").replace("NAME", "ThingSeeder")
+                .replace("    private static final Logger log", "    static final String PROFILE = \"e2e-tenant\";\n    private static final Logger log"));
+        java.nio.file.Files.writeString(src.resolve("E2eBootstrap.java"), seeder.replace("PKG", "x")
+                .replace("PROFILE", "@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = \"e2e.enabled\", havingValue = \"true\")")
+                .replace("NAME", "E2eBootstrap"));
+        java.nio.file.Files.writeString(src.resolve("DevLogin.java"), seeder.replace("PKG", "x")
+                .replace("PROFILE", "@org.springframework.boot.autoconfigure.condition.ConditionalOnExpression(\"${dev.login.enabled:false} and !${e2e.enabled:false}\")")
+                .replace("NAME", "DevLogin"));
         MetricsMap.Map m = MetricsMap.of(Analysis.run(dir, Fixtures.classpath(), dev.logast.policy.Policy.resolve(dir, null)));
         assertThat(m.outcomes()).extracting(MetricsMap.Unmeasured::method).containsExactly("ProdSeeder.run");
     }

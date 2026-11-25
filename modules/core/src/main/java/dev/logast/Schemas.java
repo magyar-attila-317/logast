@@ -81,6 +81,9 @@ public final class Schemas {
             dev.logast.rules.Rules.packs().forEach(packs::add);
             ArrayNode rules = ((ObjectNode) props.get("rules")).putObject("propertyNames").putArray("enum");
             dev.logast.rules.Rules.all().forEach(rules::add);
+            // the support library of this logast as the example, so it never names an older release
+            ((ObjectNode) props.get("support").get("properties").get("coordinates")).putArray("examples")
+                    .add("dev.logast:logging-support:" + dev.logast.policy.Policy.Support.releaseVersion());
             return JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root) + "\n";
         } catch (IOException e) {
             throw new UncheckedIOException(e);

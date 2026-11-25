@@ -49,6 +49,16 @@ class MetricFamilyTest {
         assertThat(out).extracting(MetricsMap.Gap::kind).containsExactly("modifier.group.created", "preset.updated", "table.deleted", "");
     }
 
+    /** #326 M3: handle.x / handle.y / handle.z is "everything handled": not one metric. */
+    @Test
+    void aFamilyLedByAGenericVerbIsNone() {
+        List<MetricsMap.Gap> out = MetricsMap.families(List.of(
+                gap("handle.order.created", "failed", "src/a/A.java"),
+                gap("handle.invoice.paid", "failed", "src/b/B.java"),
+                gap("handle.stock.moved", "failed", "src/c/C.java")));
+        assertThat(out).extracting(MetricsMap.Gap::kind).containsOnly("");
+    }
+
     /** #324 M3: names a dashboard can use, not sentences. */
     @Test
     void namesAreSubjectsNotSentences() {
@@ -61,5 +71,15 @@ class MetricFamilyTest {
         assertThat(MetricsMap.metricName("line", "GrnImportService")).isEqualTo("grn.import.line");
         assertThat(MetricsMap.metricName("Order items", "OrderService")).isEqualTo("order.items");
         assertThat(MetricsMap.metricName("Audit", "AuditService")).as("a word that names a thing stays alone").isEqualTo("audit");
+        // #326 M3
+        assertThat(MetricsMap.metricName("E2E test data", "SeedService")).isEqualTo("e2e.test.data");
+        assertThat(MetricsMap.metricName("Write-off", "StockService")).isEqualTo("writeoff");
+        assertThat(MetricsMap.metricName("Opening checklist record without items", "ChecklistService")).isEqualTo("opening.checklist.record");
+        assertThat(MetricsMap.metricName("Lazily close", "PoolService")).isEqualTo("pool.close");
+        assertThat(MetricsMap.metricName("Still queued", "PrintQueue")).isEqualTo("print.queue.queued");
+        assertThat(MetricsMap.metricName("Releasing diner order request", "DinerService")).isEqualTo("diner.order.request");
+        assertThat(MetricsMap.metricName("Submit", "OrderService")).isEqualTo("order.submit");
+        assertThat(MetricsMap.metricName("Tally", "TallyJob")).as("a noun ending in -ly is no adverb").isEqualTo("tally");
+        assertThat(MetricsMap.metricName("Supply sync", "SupplyJob")).isEqualTo("supply.sync");
     }
 }
