@@ -950,6 +950,14 @@ public final class Main {
             }
             // #316: the short list to read; the rest of the diff only changes logging
             List<String> behavioural = r.behavioural() == null ? List.of() : r.behavioural();
+            if (behavioural.isEmpty() && write && !r.changedFiles().isEmpty()) {
+                // #324 M5: this run changed only logging and metrics: an earlier run's list would be read as this one's
+                try {
+                    Files.deleteIfExists(root().resolve(".logast/reports/behavioural.txt"));
+                } catch (java.io.IOException e) {
+                    // only a report
+                }
+            }
             if (!behavioural.isEmpty()) {
                 System.out.println("Changes beyond logging (" + behavioural.size() + "): code that can now run differently; the rest of the "
                         + "diff only changes log lines" + (write ? " (.logast/reports/behavioural.txt)" : ""));

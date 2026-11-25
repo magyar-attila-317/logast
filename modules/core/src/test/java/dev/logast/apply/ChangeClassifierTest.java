@@ -35,6 +35,16 @@ class ChangeClassifierTest {
         assertThat(classifier.compare("Payments.java", BEFORE, after)).isEmpty();
     }
 
+    /** #324 M5: a counting call next to a log line is observability, like the line: not in the list of changes to read. */
+    @Test
+    void metricCallsAreNotListed() {
+        String after = BEFORE.replace("        ledger.book(orderId);\n", "        ledger.book(orderId);\n        PaymentMetrics.charged();\n")
+                .replace("        ledger.reverse(orderId);\n", "        ledger.reverse(orderId);\n        Outcomes.count(\"refund\", \"reversed\");\n");
+        assertThat(classifier.compare("Payments.java", BEFORE, after)).isEmpty();
+        String real = after.replace("        ledger.reverse(orderId);\n", "        ledger.reverse(orderId);\n        ledger.close();\n");
+        assertThat(classifier.compare("Payments.java", BEFORE, real)).as("a real change next to them is still listed").hasSize(1);
+    }
+
     @Test
     void aScopeAroundCodeIsBehavioural() {
         String after = BEFORE.replace("        if (orderId == null) {\n            throw new IllegalArgumentException(\"no order\");\n        }\n        ledger.reverse(orderId);\n",

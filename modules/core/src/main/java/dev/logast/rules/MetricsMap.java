@@ -69,17 +69,30 @@ public final class MetricsMap {
      * and alerts hard to keep and cost money in hosted backends.
      */
     static List<Gap> families(List<Gap> gaps) {
+        List<Gap> out = new ArrayList<>(gaps);
+        java.util.Set<Integer> grouped = new java.util.HashSet<>();
+        // #324 M2: one shape across the service: the same event and the same first word, whatever the package
+        // (broadcast.modifier.group.created, broadcast.preset.updated, … → broadcast{kind=…}); then, for the rest, the
+        // same event and last word in one directory (#273)
+        group(gaps, out, grouped, (g, w) -> g.outcome().event() + " " + w[0], true);
+        group(gaps, out, grouped, (g, w) -> {
+            String file = g.outcome().file();
+            String dir = file.contains("/") ? file.substring(0, file.lastIndexOf('/')) : "";
+            return g.outcome().event() + " " + w[w.length - 1] + " " + dir;
+        }, false);
+        return out;
+    }
+
+    private static void group(List<Gap> gaps, List<Gap> out, java.util.Set<Integer> grouped,
+                              java.util.function.BiFunction<Gap, String[], String> key, boolean leadOnly) {
         java.util.Map<String, List<Integer>> groups = new java.util.LinkedHashMap<>();
         for (int i = 0; i < gaps.size(); i++) {
             Gap g = gaps.get(i);
             String[] w = g.name().split("\\.");
-            String file = g.outcome().file();
-            String dir = file.contains("/") ? file.substring(0, file.lastIndexOf('/')) : "";
-            if (w.length >= 2 && g.amounts().isEmpty()) {
-                groups.computeIfAbsent(g.outcome().event() + " " + w[w.length - 1] + " " + dir, k -> new ArrayList<>()).add(i);
+            if (!grouped.contains(i) && w.length >= 2 && g.amounts().isEmpty()) {
+                groups.computeIfAbsent(key.apply(g, w), k -> new ArrayList<>()).add(i);
             }
         }
-        List<Gap> out = new ArrayList<>(gaps);
         for (List<Integer> members : groups.values()) {
             List<String[]> names = members.stream().map(i -> gaps.get(i).name().split("\\.")).toList();
             if (names.stream().map(n -> String.join(".", n)).distinct().count() < FAMILY) {
@@ -94,7 +107,7 @@ public final class MetricsMap {
             while (trail < min - lead - 1 && sameAt(names, trail, false)) {
                 trail++;
             }
-            if (trail == 0) {
+            if (leadOnly ? lead == 0 : trail == 0) {
                 continue;
             }
             List<String> family = new ArrayList<>(List.of(names.getFirst()).subList(0, lead));
@@ -105,9 +118,41 @@ public final class MetricsMap {
                 Gap g = gaps.get(members.get(j));
                 out.set(members.get(j), new Gap(g.outcome(), g.method(), g.log(), String.join(".", family), g.tagAvailable(),
                         g.amounts(), kind));
+                grouped.add(members.get(j));
             }
         }
-        return out;
+    }
+
+    /** Profiles that never run in production: code active only there is not measured. */
+    private static final java.util.Set<String> NON_PRODUCTION = java.util.Set.of("test", "tests", "e2e", "it", "dev", "local",
+            "demo", "seed", "seeder", "testdata", "mock", "fake", "stub", "integration-test", "integrationtest");
+
+    /**
+     * #324 M4: code that only runs outside production: its class (or an enclosing one) is active only in profiles like
+     * e2e, test, dev, local, seed ({@code @Profile("e2e")}, not {@code @Profile("!prod")}), or it lives in a package named
+     * like test data (testdata, seed, fixtures). A counter there measures nothing anyone looks at.
+     */
+    static boolean testOnly(MethodInfo m) {
+        for (String part : m.owner().fqn().toLowerCase(Locale.ROOT).split("\\.")) {
+            // (not "e2e" itself: a service's root package can be named so; its seeders are profile-gated, checked below)
+            if (part.equals("testdata") || part.equals("seed") || part.equals("seeder") || part.equals("seeders") || part.equals("fixtures")) {
+                return true;
+            }
+        }
+        for (J.Annotation an : m.owner().decl().getLeadingAnnotations()) {
+            if (!an.getSimpleName().equals("Profile") || an.getArguments() == null) {
+                continue;
+            }
+            List<String> profiles = new ArrayList<>();
+            Matcher lit = Pattern.compile("\"([^\"]*)\"").matcher(an.printTrimmed());
+            while (lit.find()) {
+                profiles.add(lit.group(1).strip().toLowerCase(Locale.ROOT));
+            }
+            if (!profiles.isEmpty() && profiles.stream().allMatch(NON_PRODUCTION::contains)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A family member's own name, as before families (the counter the map suggests for it names it). */
@@ -297,7 +342,8 @@ public final class MetricsMap {
         List<Gap> gaps = new ArrayList<>();
         Set<String> catalogs = CatalogRules.catalogNames(a);   // OrderMetrics.ordersShipped() counts too
         for (MethodInfo m : a.index.methods()) {
-            if (m.owner().fqn().startsWith(a.supportPackage + ".") || m.facts().logs.isEmpty() || hasMeter(m, metered)) {
+            if (m.owner().fqn().startsWith(a.supportPackage + ".") || m.facts().logs.isEmpty() || hasMeter(m, metered)
+                    || testOnly(m)) {
                 continue;
             }
             String body = m.decl().getBody() == null ? "" : m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
@@ -329,7 +375,7 @@ public final class MetricsMap {
                 boolean inObservation = !inReactiveOperator(m, lc.call())
                         && eps.stream().anyMatch(e -> e.observedByFramework() || observedMethods.contains(e.method().key()));
                 String subject = subject(phrasing, text, event);
-                String metric = metricName(subject);
+                String metric = metricName(subject, m.owner().simpleName());
                 String tag = inObservation
                         ? "observationRegistry.getCurrentObservation().lowCardinalityKeyValue(\"outcome\", \"" + event + "\")  "
                         + "(tags the running " + (eps.isEmpty() ? "" : eps.getFirst().label()) + " timer; same thread only)"
@@ -610,6 +656,56 @@ public final class MetricsMap {
     static String metricName(String subject) {
         String n = subject.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", ".").replaceAll("^\\.|\\.$", "");
         return n.isEmpty() ? "outcome" : n;
+    }
+
+    /** Words that end a metric name's subject: articles, verbs, prepositions, conjunctions. */
+    private static final java.util.Set<String> SUBJECT_ENDS = java.util.Set.of("the", "a", "an", "this", "that", "these", "those",
+            "is", "are", "was", "were", "be", "been", "has", "have", "had", "will", "would", "can", "could", "should", "not", "no",
+            "of", "to", "for", "with", "via", "from", "on", "in", "at", "by", "because", "but", "and", "or", "as", "when", "while",
+            "after", "before", "than", "then", "so", "its", "it", "their", "our", "per", "into", "since", "until");
+    /** Role words of a class name that say nothing about the business ("RefundService" → "refund"). */
+    private static final Pattern ROLE = Pattern.compile("(Service|Client|Controller|Publisher|Listener|Handler|Job|Repository|Impl|Manager|Component|Gateway|Adapter|Facade|Processor|Helper|Support)+$");
+    private static final int NAME_WORDS = 4;
+    /** Single words that name no business thing on their own ("line", "communicate"): they get the class's subject. */
+    private static final java.util.Set<String> GENERIC = java.util.Set.of("line", "item", "row", "record", "entry", "value",
+            "data", "request", "response", "message", "event", "task", "call", "communicate", "process", "handle", "send",
+            "receive", "run", "execute", "update", "check", "give", "sync", "operation", "action", "step", "result");
+
+    /**
+     * #324 M3: a metric name from a message's subject that a dashboard can use: camelCase split (GoodsReceiptCreated →
+     * goods.receipt.created), cut at the first article, verb or preposition ("Broadcast the fire undone notice …" →
+     * broadcast), at most four words; a single generic word gets the class's subject in front ("line" in
+     * GrnImportService → grn.import.line).
+     */
+    static String metricName(String subject, String ownerClass) {
+        String spaced = subject.replaceAll("([a-z0-9])([A-Z])", "$1 $2").replaceAll("([A-Z]+)([A-Z][a-z])", "$1 $2");
+        List<String> words = new ArrayList<>();
+        for (String w : spaced.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            if (SUBJECT_ENDS.contains(w) && !words.isEmpty()) {
+                break;
+            }
+            if (!SUBJECT_ENDS.contains(w)) {
+                words.add(w);
+            }
+            if (words.size() == NAME_WORDS) {
+                break;
+            }
+        }
+        if (words.size() == 1 && GENERIC.contains(words.getFirst()) && ownerClass != null) {
+            String owner = ROLE.matcher(ownerClass).replaceAll("");
+            List<String> prefix = new ArrayList<>();
+            for (String w : owner.replaceAll("([a-z0-9])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
+                if (!w.isEmpty() && !w.equals(words.getFirst()) && prefix.size() < NAME_WORDS - 1) {
+                    prefix.add(w);
+                }
+            }
+            prefix.addAll(words);
+            words = prefix;
+        }
+        return words.isEmpty() ? "outcome" : String.join(".", words);
     }
 
     /** "low" when every path is a job/startup or within the traffic budget, else why not. */

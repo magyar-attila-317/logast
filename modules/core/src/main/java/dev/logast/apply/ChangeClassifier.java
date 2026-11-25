@@ -69,6 +69,13 @@ public final class ChangeClassifier {
                 continue;   // a new class (support classes, a metrics catalog): existing code only uses it through changes listed here
             }
             try {
+                if (dev.logast.parse.SourceText.read(after).contains("// logast:metrics-catalog")) {   // CatalogRules.MARKER
+                    continue;   // #324 M5: a metrics catalog logast keeps: its members count, nothing else changes
+                }
+            } catch (IOException e) {
+                // compared below
+            }
+            try {
                 out.addAll(compare(rel, dev.logast.parse.SourceText.read(before), dev.logast.parse.SourceText.read(after)));
             } catch (IOException e) {
                 out.add(new Behavioural(rel, 1, null, "could not be compared"));
@@ -115,7 +122,8 @@ public final class ChangeClassifier {
             @Override
             public J.Block visitBlock(J.Block block, Integer p) {
                 J.Block b = super.visitBlock(block, p);
-                return b.withStatements(b.getStatements().stream().filter(s -> !logStatement(s)).toList());
+                // #324 M5: a counting call logast adds next to a log line is observability too, not a change of behaviour
+                return b.withStatements(b.getStatements().stream().filter(s -> !logStatement(s) && !metricStatement(s)).toList());
             }
         }.visitNonNull(cu, 0);
         Map<String, String> out = new LinkedHashMap<>();
@@ -147,6 +155,23 @@ public final class ChangeClassifier {
                 out.merge("class " + c.getSimpleName(), norm(s.printTrimmed()), (a, b) -> a + " " + b);
             }
         }
+    }
+
+    /**
+     * #324 M5: a metric call as a statement: a member of a metric catalog ({@code OrderMetrics.shipped()}), the support
+     * library's {@code Outcomes.count/tag/countKind/…}, or a counter's {@code increment()}.
+     */
+    private static boolean metricStatement(Statement s) {
+        if (!(s instanceof J.MethodInvocation mi)) {
+            return false;
+        }
+        Expression root = mi;
+        while (root instanceof J.MethodInvocation call && call.getSelect() != null) {
+            root = call.getSelect();
+        }
+        String owner = root instanceof J.Identifier id ? id.getSimpleName() : root instanceof J.FieldAccess fa ? fa.getSimpleName() : "";
+        return owner.equals("Outcomes") || owner.endsWith("Metrics") && Character.isUpperCase(owner.charAt(0))
+                || mi.getSimpleName().equals("increment") && mi.printTrimmed().contains("Counter");
     }
 
     /** A call on a logger as a statement, a fluent one, or logast's AfterCommit.log(() -> …). */
