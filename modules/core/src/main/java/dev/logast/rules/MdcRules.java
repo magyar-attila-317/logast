@@ -47,10 +47,109 @@ final class MdcRules {
                 method(m);
                 clears(m);
                 nestedKeys(m);
+                unvalidatedInput(m);
             }
         }
         appOwnedKeys();
     }
+
+    /** A read of what the caller sent: a request header, a query parameter, a cookie. */
+    private static final java.util.regex.Pattern REQUEST_INPUT = java.util.regex.Pattern.compile(
+            "\\.getHeader\\(|\\.getHeaders\\(\\)\\.getFirst\\(|\\.getFirstHeader\\(|\\.getParameter\\(|\\.getCookies\\(");
+    /** Parameters Spring binds from the request headers or cookies. */
+    private static final Set<String> INPUT_PARAMETERS = Set.of("RequestHeader", "CookieValue");
+
+    /**
+     * MDC_VALUE_UNVALIDATED (#278): an MDC value the caller chooses (a request header, a parameter, a cookie) goes into
+     * every log line of the request as it was sent. A forged one can fake a correlation id, carry line breaks or a
+     * huge payload into the logs. Reported when nothing checks it first: a pattern, a UUID parse, a length check or a
+     * validating helper on the value (or a variable it came from) counts as a check.
+     */
+    private void unvalidatedInput(MethodInfo m) {
+        if (!ctx.enabled(Rules.MDC_VALUE_UNVALIDATED) || m.decl().getBody() == null) {
+            return;
+        }
+        String body = m.decl().getBody().printTrimmed();
+        Set<String> inputParams = new HashSet<>();
+        for (org.openrewrite.java.tree.Statement p : m.decl().getParameters()) {
+            if (p instanceof J.VariableDeclarations vd && vd.getLeadingAnnotations().stream()
+                    .anyMatch(a -> INPUT_PARAMETERS.contains(a.getSimpleName()))) {
+                vd.getVariables().forEach(v -> inputParams.add(v.getSimpleName()));
+            }
+        }
+        for (MdcOp op : m.facts().mdc) {
+            if (!(op.kind() == MdcOp.Kind.PUT || op.kind() == MdcOp.Kind.PUT_CLOSEABLE) || valueOf(op) == null) {
+                continue;
+            }
+            Expression value = valueOf(op);
+            Set<String> names = new java.util.LinkedHashSet<>();
+            if (!fromRequest(value.printTrimmed(), body, inputParams, names, 0)) {
+                continue;
+            }
+            if (checked(value, body, names)) {
+                continue;
+            }
+            int line = Pos.line(op.call());
+            if (ctx.ignored(m.file(), line, Rules.MDC_VALUE_UNVALIDATED)) {
+                continue;
+            }
+            String key = op.key() != null ? op.key() : Text.oneLine(op.keyExpr().printTrimmed(), 40);
+            OrderBuilder b = ctx.order(Rules.MDC_VALUE_UNVALIDATED, m, line, "input:" + key);
+            b.context(ctx.context(m, Pos.start(op.call()), Text.oneLine(op.call().printTrimmed(), 160), null));
+            b.title("MDC key '" + key + "' is set from what the caller sent (" + Text.oneLine(value.printTrimmed(), 60)
+                            + ") without a check")
+                    .suggestion("Every log line of the request carries this value as sent: a forged one fakes the id, or "
+                            + "brings line breaks or a long payload into the logs. Accept it only if it matches the expected "
+                            + "form (a UUID, a pattern with a length limit) and generate one otherwise.");
+        }
+    }
+
+    /** {@code text} reads request input, directly or through local variables assigned from it (collected in {@code names}). */
+    private static boolean fromRequest(String text, String body, Set<String> inputParams, Set<String> names, int depth) {
+        if (REQUEST_INPUT.matcher(text).find()) {
+            return true;
+        }
+        if (depth > 3) {
+            return false;
+        }
+        var ids = java.util.regex.Pattern.compile("\\b[a-zA-Z_][a-zA-Z0-9_]*\\b").matcher(text);
+        while (ids.find()) {
+            String id = ids.group();
+            if (names.contains(id)) {
+                continue;
+            }
+            if (inputParams.contains(id)) {
+                names.add(id);
+                return true;
+            }
+            var assigned = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(id) + "\\s*=(?!=)\\s*([^;]+);").matcher(body);
+            while (assigned.find()) {
+                names.add(id);
+                if (fromRequest(assigned.group(1), body, inputParams, names, depth + 1)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** A check of the value or a variable it came from: a pattern, a UUID parse, a length check, a validating helper. */
+    private static boolean checked(Expression value, String body, Set<String> names) {
+        if (value instanceof J.MethodInvocation mi && CHECKING.matcher(mi.getSimpleName()).find()) {
+            return true;
+        }
+        for (String n : names) {
+            String q = java.util.regex.Pattern.quote(n);
+            if (java.util.regex.Pattern.compile("\\b" + q + "\\s*\\.\\s*(matches|length)\\s*\\(|"
+                    + "(matcher|fromString|" + CHECKING.pattern() + ")[A-Za-z]*\\s*\\(\\s*" + q + "\\b").matcher(body).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final java.util.regex.Pattern CHECKING = java.util.regex.Pattern.compile(
+            "(?i)valid|saniti|clean|normali|check|verify|safe|parse|trunc|abbreviate|limit");
 
     /** A value read from the tracer: OpenTelemetry's Span / SpanContext, Micrometer Tracing's Tracer / TraceContext. */
     private static final java.util.regex.Pattern FROM_TRACER = java.util.regex.Pattern.compile(

@@ -18,7 +18,7 @@ public class CorrelationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         MDC.put("request.id", UUID.randomUUID().toString()); // expect: MDC_NOT_CLOSEABLE
-        MDC.put("traceId", request.getHeader("X-Trace-Id")); // expect: TRACE_KEY_HOLDS_APP_ID
+        MDC.put("traceId", request.getHeader("X-Trace-Id")); // expect: TRACE_KEY_HOLDS_APP_ID, MDC_VALUE_UNVALIDATED
         MDC.put("spanId", Span.current().getSpanContext().getSpanId()); // expect: MANUAL_TRACE_MDC
         try {
             chain.doFilter(request, response);

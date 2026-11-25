@@ -62,6 +62,7 @@ class RuleLedgerTest {
     /** Unit tests (Class#method) that assert the rule stays silent on a near miss. */
     static final Map<String, String> SILENT_IN_UNIT_TEST = Map.ofEntries(
             Map.entry(Rules.LOG_VOLUME, "VolumeTest#volumeNeedsProvidedTrafficAndUsesTheBudget"),   // no traffic, below budget
+            Map.entry(Rules.MDC_VALUE_UNVALIDATED, "UnvalidatedMdcValueTest#callerChosenMdcValuesNeedACheck"),   // a pattern, a UUID parse, a generated id
             Map.entry(Rules.LOG_IN_LOOP, "LoopSizeTest#infoPerItemDependsOnTheLoopSize"),            // declared small, fixed loops
             Map.entry(Rules.RUNTIME_TRACE_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss"),
             Map.entry(Rules.RUNTIME_MDC_LOST, "RuntimeVerifierTest#sameThreadOrNoPriorContextIsNotALoss"),

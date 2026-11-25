@@ -21,7 +21,7 @@ public class TenantFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        MDC.put("tenantId", request.getHeader("X-Tenant")); // expect: MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS // expect-not: MANUAL_TRACE_MDC, MDC_CLEAR
+        MDC.put("tenantId", request.getHeader("X-Tenant")); // expect: MDC_NOT_CLOSEABLE, MDC_KEY_ALIAS, MDC_VALUE_UNVALIDATED // expect-not: MANUAL_TRACE_MDC, MDC_CLEAR
         try {
             chain.doFilter(request, response);
         } finally {

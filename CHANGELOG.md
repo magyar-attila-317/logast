@@ -5,6 +5,9 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**Findings**
+- MDC_VALUE_UNVALIDATED (logging): an MDC value taken from a request header, a `@RequestHeader` / `@CookieValue` parameter or a query parameter with nothing that checks it first is reported (#278).
+
 ## 0.5.4
 
 **Log inventory**
