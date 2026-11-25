@@ -45,6 +45,7 @@ src/main/java/com/example/e2e/messaging/PledgeMessages.java:40        fixed    M
 src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:14  checked  no finding
 src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:16  checked  no finding
 src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17  reported METRIC_OUTCOME_UNMEASURED OUM-798439
+src/main/java/com/example/e2e/order/LoyaltyClient.java:23             reported MESSAGE_SUGGESTED SUG-1f466d
 src/main/java/com/example/e2e/order/OrderEvents.java:18               checked  no finding
 src/main/java/com/example/e2e/order/OrderEvents.java:21               checked  no finding
 src/main/java/com/example/e2e/order/OrderNotifications.java:16        fixed    METRIC_OUTCOME_UNMEASURED OUM-0f37ab

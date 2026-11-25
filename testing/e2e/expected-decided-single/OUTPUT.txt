@@ -1,7 +1,7 @@
 === logast apply . --auto --write
-✓ 86 changes in 48 files (<t>)
+✓ 87 changes in 49 files (<t>)
   41 log lines rewritten in the standard format
-  13 log lines added where something happened silently
+  14 log lines added where something happened silently
   10 business ids put into MDC
   7 setup changes (dependencies, configuration, tracing)
   7 MDC keys tidied
@@ -26,9 +26,9 @@ Worth a look (optional) — the service works without these:
   18 log lines could say more, 24 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 84 — 43 fixed, 23 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 85 — 43 fixed, 24 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
-Also: no test uses the changed classes   .logast/reports/tests.txt; 30 changed classes have no test that checks their log lines
+Also: no test uses the changed classes   .logast/reports/tests.txt; 31 changed classes have no test that checks their log lines
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?
 
@@ -41,7 +41,7 @@ Worth a look (optional) — the service works without these:
   18 log lines could say more, 24 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 84 — 43 fixed, 23 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 85 — 43 fixed, 24 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?
@@ -71,7 +71,7 @@ Worth a look (optional) — the service works without these:
   5 log lines could say more, 3 outcomes could be counted → logast review   (3 in metrics.yaml cannot be written: see "_problem")
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 84 — 50 fixed, 6 with a finding, 20 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 85 — 50 fixed, 7 with a finding, 20 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also: no test uses the changed classes   .logast/reports/tests.txt; 18 changed classes have no test that checks their log lines
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there

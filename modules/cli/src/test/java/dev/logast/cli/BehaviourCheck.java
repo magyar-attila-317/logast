@@ -27,8 +27,7 @@ final class BehaviourCheck {
      * blank lines and braces dropped, string literals kept as written.
      */
     static List<String> behaviour(String java) {
-        String text = java.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?m)//.*$", "")
-                .replaceAll("(?m)^\\s*(import|package) .*$", "");
+        String text = withoutComments(java).replaceAll("(?m)^\\s*(import|package) .*$", "");
         List<String> out = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
         boolean inString = false;
@@ -46,6 +45,42 @@ final class BehaviourCheck {
         }
         add(out, cur.toString());
         return inlineLocals(out);
+    }
+
+    /**
+     * The source without its comments; a {@code //} or {@code /*} inside a string or char literal is text
+     * ({@code "http://loyalty"}), not a comment.
+     */
+    static String withoutComments(String java) {
+        StringBuilder out = new StringBuilder();
+        char quote = 0;
+        for (int i = 0; i < java.length(); i++) {
+            char c = java.charAt(i);
+            char next = i + 1 < java.length() ? java.charAt(i + 1) : 0;
+            if (quote != 0) {
+                out.append(c);
+                if (c == '\\' && next != 0) {
+                    out.append(next);
+                    i++;
+                } else if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == '/' && next == '/') {
+                while (i < java.length() && java.charAt(i) != '\n') {
+                    i++;
+                }
+                out.append('\n');
+            } else if (c == '/' && next == '*') {
+                int end = java.indexOf("*/", i + 2);
+                i = end < 0 ? java.length() : end + 1;
+            } else {
+                if (c == '"' || c == '\'') {
+                    quote = c;
+                }
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     /**

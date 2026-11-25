@@ -8,8 +8,7 @@ REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/audit/AuditLog
 REPORT-ONLY AUDIT_RECORD_INCOMPLETE src/main/java/com/example/e2e/edge/Audited.java:10
 REPORT-ONLY LOG_HELPER src/main/java/com/example/e2e/edge/EdgeLogHelper.java:13
 REPORT-ONLY RABBIT_NO_ERROR_HANDLER src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
-NEEDS TEXT SWALLOWED_EXCEPTION src/main/java/com/example/e2e/order/LoyaltyClient.java:20
-REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:21
+REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:24
 REPORT-ONLY KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/order/OrderEvents.java:15
 REPORT-ONLY REMOTE_CALL_IN_TRANSACTION src/main/java/com/example/e2e/order/OrderService.java:26
 REPORT-ONLY LOG_AND_RETHROW src/main/java/com/example/e2e/order/PaymentClient.java:19
@@ -46,6 +45,7 @@ NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/job/TallyJob.java:15
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:40
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/order/LoyaltyClient.java:23
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:16
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:23
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/order/OrderRecord.java:6

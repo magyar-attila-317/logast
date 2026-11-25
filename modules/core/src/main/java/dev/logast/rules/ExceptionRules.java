@@ -101,13 +101,67 @@ final class ExceptionRules {
             b.suggestion("Note: " + upstream + " already logs this exception before rethrowing it. After this fix that "
                     + "log becomes an EXCEPTION_LOGGED_TWICE order to delete (log once, where it is handled).");
         }
-        b.slot("MSG", new Slot("What failed and what happens next, for " + c.typeNames() + " thrown by `" + tryBody + "`"
+        Slot slot = new Slot("What failed and what happens next, for " + c.typeNames() + " thrown by `" + tryBody + "`"
                 + (comment.isEmpty() ? "" : " (code comment: \"" + comment + "\")") + ". The [k=v] suffix and the exception are added by the tool.",
                 values.stream().map(v -> ctx.policy.logKey(v.key())).toList(), ctx.glossary.terms(), null,
                 // #319: a catch with code of its own (a fallback value, a skip, an entry in a report) handles the outcome:
                 // "Content type treated as plain text", "Image copy skipped"; only a catch that drops it is a failure
                 fallback || ctx.phrasing.canonicalOf("failed") == null ? null : "failed",
-                fallback ? null : ctx.phrasing.canonicalOf("failed")));
+                fallback ? null : ctx.phrasing.canonicalOf("failed"));
+        // #292: a catch that falls back to a value says which, in words from the code; written marked // logast:wording
+        String fellBack = fallback ? fallbackText(m.decl().getSimpleName(), c.clause.getBody().getStatements()) : null;
+        b.slot("MSG", fellBack == null ? slot : slot.withGenerated(fellBack));
+    }
+
+    /**
+     * #292: "Fell back to default currency" for a catch whose last statement returns or assigns a value named in the
+     * code (a constant, a field, a variable, a literal, an empty collection); null when the code does not say.
+     */
+    static String fallbackText(String method, List<org.openrewrite.java.tree.Statement> body) {
+        if (body.isEmpty()) {
+            return null;
+        }
+        org.openrewrite.java.tree.Expression value = body.getLast() instanceof J.Return r ? r.getExpression()
+                : body.getLast() instanceof J.Assignment a ? a.getAssignment() : null;
+        String what = valueWords(value);
+        if (what == null) {
+            return null;
+        }
+        // a named value says what it is ("default currency"); a literal or an empty result needs its subject:
+        // "Balance fell back to 0", from the method's name
+        boolean named = value instanceof J.Identifier || value instanceof J.FieldAccess;
+        String subject = Wording.phrase(method.replaceFirst("^(get|find|load|fetch|read|lookup|resolve)(?=[A-Z])", ""));
+        return named || subject.isBlank() ? "Fell back to " + what : Wording.capital(subject) + " fell back to " + what;
+    }
+
+    private static String valueWords(org.openrewrite.java.tree.Expression v) {
+        if (v instanceof J.Identifier id) {
+            return named(id.getSimpleName());
+        }
+        if (v instanceof J.FieldAccess fa) {
+            return named(fa.getSimpleName());
+        }
+        if (v instanceof J.Literal l) {
+            if (l.getValue() == null) {
+                return null;   // null says nothing a reader can use
+            }
+            return l.getValue() instanceof String str ? (str.isEmpty() ? "an empty text" : "\"" + Text.oneLine(str, 40) + "\"")
+                    : String.valueOf(l.getValue());
+        }
+        if (v instanceof J.MethodInvocation mi && mi.getArguments().stream().allMatch(a -> a instanceof J.Empty)) {
+            String n = mi.getSimpleName();
+            if (n.equals("empty") || n.equals("of") || n.startsWith("empty")) {
+                return "an empty " + (n.startsWith("empty") && n.length() > 5 ? Wording.words(n.substring(5)) : "result");
+            }
+        }
+        return null;
+    }
+
+    /** {@code DEFAULT_CURRENCY} / {@code defaultCurrency} → "default currency"; one letter or {@code result} says nothing. */
+    private static String named(String name) {
+        String words = name.equals(name.toUpperCase(java.util.Locale.ROOT)) ? Wording.words(name.toLowerCase(java.util.Locale.ROOT))
+                : Wording.words(name);
+        return words.length() < 3 || Set.of("result", "res", "ret", "value", "out", "response").contains(words) ? null : words;
     }
 
     private static final java.util.regex.Pattern RECORDS = java.util.regex.Pattern.compile(

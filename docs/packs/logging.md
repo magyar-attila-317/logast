@@ -18,7 +18,7 @@ can end either way, the finding's note says why.
 | rule | severity | finds | fix |
 |---|---|---|---|
 | **Exceptions** | | | |
-| SWALLOWED_EXCEPTION | high | a caught exception dropped without a log line | NEEDS TEXT: logast adds the line (level `logging.swallowedLevel`), you write the message |
+| SWALLOWED_EXCEPTION | high | a caught exception dropped without a log line | NEEDS TEXT: logast adds the line (level `logging.swallowedLevel`), you write the message. A catch that falls back to a value gets generated wording from the code ("Fell back to default currency", "Balance fell back to 0", marked `// logast:wording`, #292) |
 | LOST_THROWABLE | medium | a log line in a catch block that does not pass the exception to the logger | AUTO Not where a comment says the exception is withheld on purpose or a redacting helper is used (#290). |
 | LOG_AND_RETHROW | medium | an exception logged and rethrown | AUTO: the line goes once every caller path logs it; report otherwise |
 | EXCEPTION_LOGGED_TWICE | medium | the same exception logged here and again where it is handled | AUTO: log once, where it is handled |
