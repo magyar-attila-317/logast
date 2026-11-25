@@ -5,6 +5,9 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**Log inventory**
+- `.logast/inventory.jsonl`: every log call with an id that lasts across runs, whether logast added it, who last changed its text (logast, a person, generated wording) and a short history; a line keeps its id when lines are added above it or its text changes (#281).
+
 **What logast writes**
 - Counters added by default carry no `// logast:metric review` comment in the code: apply lists them, with how sure each name is, in `.logast/reports/metrics-review.txt` (#273).
 - Call sites of one shape (three or more outcomes with the same event and last word in a package) share one metric with a `kind` tag (`Outcomes.countKind`) instead of a name each; an outcome the service's own metrics helper already counts gets no second counter (#273).

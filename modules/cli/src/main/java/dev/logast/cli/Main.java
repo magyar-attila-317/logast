@@ -445,6 +445,17 @@ public final class Main {
                 Policy p = dev.logast.policy.PolicyLoader.load(root, null, List.of(), project);
                 return packs.isEmpty() ? p : p.withPacks(packs);
             });
+            // #281: the inventory sees the code before this run's changes on the first scan (a person's edits since)
+            if (write) {
+                scanner.onFirst = a -> {
+                    try {
+                        inventory = dev.logast.LogInventory.load(root());
+                        inventory.observe(a, dev.logast.LogInventory.PERSON);
+                    } catch (RuntimeException e) {
+                        inventory = null;   // only a record
+                    }
+                };
+            }
             Rules.Step untilStep = until == null ? null : Rules.Step.valueOf(until.toUpperCase(java.util.Locale.ROOT));
             Set<Rules.Step> skipSteps = EnumSet.noneOf(Rules.Step.class);
             for (String s : skip) {
@@ -583,6 +594,9 @@ public final class Main {
         }
 
         /** The last-apply record (#101), the applied hashes (#131), the ledger, the round trace and one diff per step. */
+        /** #281: the log inventory, from the first scan of a writing apply. */
+        private dev.logast.LogInventory inventory;
+
         private Written writeReports(Applier.Result r, List<String> applied, List<String> changed, dev.logast.RoundScanner scanner,
                                      Policy policy, dev.logast.apply.FillsFile.Update fu, dev.logast.apply.FillsFile.Update mu)
                 throws IOException {
@@ -600,6 +614,15 @@ public final class Main {
             }
             if (write && !applied.isEmpty()) {   // #317: what later runs leave alone once someone changes it back
                 recordAppliedOrders(root(), applied);
+            }
+            // #281: every log call with an id that lasts across runs: what a person changed since, then what this run did
+            if (write && inventory != null && scanner.lastAnalysis != null) {
+                try {
+                    inventory.observe(scanner.lastAnalysis, dev.logast.LogInventory.LOGAST);
+                    inventory.save(root());
+                } catch (IOException | RuntimeException e) {
+                    Out.warn("inventory: " + e.getMessage());   // only a record: the apply stands
+                }
             }
             // every log call of the result, with the ones this run fixed (#72); the logging pack's report, as in scan
             List<dev.logast.LogLedger.Entry> ledger = null;

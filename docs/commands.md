@@ -45,6 +45,7 @@ File by file:
 | `.logast/decisions/retry.yaml` | every `@Retryable` usage, to mark the ones that need settings of their own (resilience pack) | `scan`, `apply` | yes |
 | `.logast/baseline.json` | the findings CI accepts as known | `init --baseline`, `scan --update-baseline` | yes |
 | `.logast/classpath-*.txt` | the service's compile classpath, so logast understands types (Gradle runs once, nothing is compiled) | `init`, `classpath`; `apply` after a build-file change | no (machine-specific) |
+| `.logast/inventory.jsonl` | every log call with an id that lasts across runs: there before logast or added by it, its wording (original, logast, generated, person) and its history ([details](#the-log-inventory)) | `apply` (not a dry run) | yes |
 | `.logast/reports/orders.json` | the last scan's work orders, in full | `scan` | no |
 | `.logast/reports/coverage.txt` | every log call and what logast did with it: fixed, reported, ignored, skipped (with the reason) or checked ([details](#every-log-call-is-accounted-for)) | `scan`, `apply` (logging pack) | no |
 | `.logast/reports/steps/*.diff` | one diff per apply step, to review or drop a kind of change | `apply` | no |
@@ -223,6 +224,20 @@ tracing`, …) neither writes nor changes it, and a dry-run `apply` does not wri
 and static blocks are not in it (logast analyses method and constructor bodies). Source markers
 (`reporting.sourceComments: true`, see [configuration](configuration.md)) are an off-by-default debugging aid;
 `coverage.txt` is the answer to "did logast look at this line?".
+
+### The log inventory
+
+`.logast/inventory.jsonl` keeps every log call across runs (#281), one JSON object a line:
+
+```
+{"id":"LOG-7fb3c35a","method":"x.Shipping#ship(java.lang.String)","file":"src/main/java/x/Shipping.java","line":11,"level":"INFO","text":"Shipping order","origin":"existing","wording":"logast","run":2,"history":["run 1: found","run 2: logast changed the text"]}
+```
+
+coverage.txt is keyed by file and line, so a line added above shifts every entry below it; the inventory matches a
+call to its entry by method, then by text, then by the words the texts share, then by order, so it keeps its id and
+history while the code around it moves and its text changes. A writing apply looks twice: before its changes (what a
+person changed since the last run: `wording: person`) and after them (what logast changed: `logast`, or `generated`
+for a text it wrote with `// logast:wording`). `origin: added` is a line logast added. A dry run keeps nothing.
 
 ## apply
 

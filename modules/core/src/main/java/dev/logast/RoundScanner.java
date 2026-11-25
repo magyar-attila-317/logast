@@ -33,6 +33,9 @@ public final class RoundScanner implements Function<Path, ScanResult> {
 
     /** The analysis behind the latest scan (entrypoints, policy), for what comes after an apply. */
     public volatile Analysis lastAnalysis;
+    /** Called with the first scan's analysis, the code before this apply changed it (#281); not kept after. */
+    public volatile java.util.function.Consumer<Analysis> onFirst;
+    private boolean first = true;
     /** The lifecycle plan of the latest scan (#125: apply writes .logast/reports/lifecycle.txt from it). */
     public volatile dev.logast.rules.LifecyclePlan lastLifecycle;
 
@@ -57,6 +60,12 @@ public final class RoundScanner implements Function<Path, ScanResult> {
         Analysis a = Analysis.of(parsed, policy.apply(abs)).withTraffic(Traffic.load(abs, null));
         long t2 = System.nanoTime();
         lastAnalysis = a;
+        if (first) {
+            first = false;
+            if (onFirst != null) {
+                onFirst.accept(a);
+            }
+        }
         ScanResult r = Rules.scan(a);
         lastLifecycle = Rules.lastLifecycle;
         lastTiming = how + ": parse " + (t1 - t0) / 1_000_000 + " ms, analysis " + (t2 - t1) / 1_000_000 + " ms, rules "
