@@ -201,7 +201,20 @@ final class ExceptionRules {
         if (body.isEmpty()) {
             return false;
         }
-        String text = c.clause.getBody().printTrimmed();
+        // #329: a catch that throws does not move on to the next item; a log line is not a record of the case
+        // (log.error( read as "error(" before)
+        boolean throwsOut = new org.openrewrite.java.JavaIsoVisitor<boolean[]>() {
+            @Override
+            public J.Throw visitThrow(J.Throw t, boolean[] found) {
+                found[0] = true;
+                return t;
+            }
+        }.reduce(c.clause.getBody(), new boolean[1])[0];
+        if (throwsOut) {
+            return false;
+        }
+        String text = c.clause.getBody().printTrimmed()
+                .replaceAll("\\b(?:log|logger|LOG|LOGGER|AUDIT|audit)\\s*\\.\\s*\\w+\\s*\\([^;]*\\);", "");
         if (!RECORDS.matcher(text).find()) {
             return false;
         }
