@@ -49,11 +49,11 @@ class LogastPluginTest {
         LogastApply apply = (LogastApply) p.getTasks().getByName("logastApply");
         assertThat(apply.getGroup()).isEqualTo("logast");
         assertThat(apply.getDryRun().get()).isFalse();
-        assertThat(apply.command()).containsExactly("apply", "--auto", "--write");
+        assertThat(apply.command()).containsExactly("apply", "--auto", "--write", "--no-format");
         assertThat(apply.getScanClasspath().getFrom()).isNotEmpty();   // compileClasspath, as for the scan tasks
 
         apply.getDryRun().set(true);
-        assertThat(apply.command()).containsExactly("apply", "--auto", "--dry-run");
+        assertThat(apply.command()).containsExactly("apply", "--auto", "--dry-run", "--no-format");
     }
 
     @Test

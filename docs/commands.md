@@ -300,6 +300,10 @@ code. `logast scan .` shows the same without changing anything. Both also write 
 - **Batches.** `--path 'src/main/java/com/example/orders/**'` (repeatable) applies only the findings in matching files, so
   a big service can be adopted in PR-sized batches; setup changes (build file, configuration, support classes) always
   apply (#288).
+- **The build's formatter.** A build that applies `io.spring.javaformat` or `com.diffplug.spotless` gets its fix task
+  (`format`, `spotlessApply`) run once after apply writes, with the project's wrapper, so its format check still passes;
+  the summary says so. `--no-format` leaves it out; the Gradle plugin's `logastApply` is finalized by that task instead
+  (#237). Checkstyle rules beyond formatting stay the build's findings.
 - **Tests to run.** `.logast/reports/tests.txt` lists the tests whose source names a class the apply changed, as one
   Gradle command (`./gradlew test --tests … :orders:test --tests …`), and the changed classes no test that captures
   logs (ListAppender, LogCaptor, OutputCaptureExtension) names: their log lines are checked by nobody (#289).

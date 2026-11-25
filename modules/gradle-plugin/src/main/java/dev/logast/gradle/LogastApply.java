@@ -27,6 +27,7 @@ public abstract class LogastApply extends LogastTask {
     protected List<String> command() {
         List<String> cmd = new ArrayList<>(List.of("apply", "--auto"));
         cmd.add(getDryRun().get() ? "--dry-run" : "--write");   // apply writes by default (#122): a preview says so
+        cmd.add("--no-format");   // #237: no Gradle run inside this one; the plugin finalizes with the format task instead
         return cmd;
     }
 

@@ -382,6 +382,9 @@ public final class Main {
                 + "then what later passes add): each commit compiles, so a step is dropped with one git revert (#288). "
                 + "Needs a git working tree without uncommitted changes")
         boolean commitPerStep;
+        @Option(names = "--no-format", description = "Do not run the build's formatter (spring-javaformat's format, Spotless's "
+                + "spotlessApply) on the result (#237)")
+        boolean noFormat;
         /** #288: set on the runs --commit-per-step starts itself, one per step. */
         @Option(names = "--step-run", hidden = true)
         boolean stepRun;
@@ -528,6 +531,18 @@ public final class Main {
                 fu = dev.logast.apply.FillsFile.update(root(), (write ? r.after() : r.before()).orders(), ranRule(), write,
                         policy.logging().wordingQueue());
                 mu = dev.logast.apply.MetricsFile.update(root(), (write ? r.after() : r.before()).orders(), ranRule(), write);
+            }
+            if (write && !noFormat && !r.changedFiles().isEmpty()) {
+                // #237: the build checks its format: logast's own layout would fail it; before the applied state is recorded
+                BuildFormatter formatter = BuildFormatter.of(root());
+                if (formatter != null) {
+                    String failed = formatter.run(root());
+                    if (failed == null) {
+                        header.add("formatted with the build's " + formatter.plugin() + " (" + formatter.task() + ")");
+                    } else {
+                        Out.warn("format: " + failed + "; run it before the build's format check");
+                    }
+                }
             }
             Written written = writeReports(r, applied, changed, scanner, policy, fu, mu);
             Outcome outcome = new Outcome(r, applied, changed, rejected, violations, header, t0);

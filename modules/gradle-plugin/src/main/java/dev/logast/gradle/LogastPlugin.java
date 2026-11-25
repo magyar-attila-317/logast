@@ -43,6 +43,11 @@ public class LogastPlugin implements Plugin<Project> {
                 t.getDryRun().convention(project.getProviders().gradleProperty("logastDryRun")
                         .map(v -> !v.equalsIgnoreCase("false")).orElse(false));
             });
+            // #237: a build that formats its sources (spring-javaformat, Spotless) formats what logastApply wrote
+            for (String[] f : new String[][]{{"io.spring.javaformat", "format"}, {"com.diffplug.spotless", "spotlessApply"}}) {
+                project.getPluginManager().withPlugin(f[0], p -> project.getTasks().named("logastApply")
+                        .configure(t -> t.finalizedBy(f[1])));
+            }
             project.getTasks().withType(LogastTask.class).configureEach(t -> {
                 t.setGroup(GROUP);
                 t.getProjectRoot().convention(project.getLayout().getProjectDirectory());

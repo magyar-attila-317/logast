@@ -813,6 +813,33 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #237: a build that applies a formatter plugin gets its fix task run once after apply writes (a stand-in wrapper
+     * records the call here); --no-format leaves it out, and a build without one runs nothing.
+     */
+    @Test
+    void theBuildsFormatterRunsAfterApply() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Path build = app.resolve("build.gradle.kts");
+        Files.writeString(build, Files.readString(build).replace("plugins { java }",
+                "plugins {\n    java\n    id(\"io.spring.javaformat\") version \"0.0.47\"\n}"));
+        Path wrapper = app.resolve("gradlew");
+        Files.writeString(wrapper, "#!/bin/sh\necho \"$@\" >> \"$(dirname \"$0\")/formatted.txt\"\n");
+        wrapper.toFile().setExecutable(true);
+        String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(out).as(out).contains("formatted with the build's io.spring.javaformat (format)").doesNotContain("CHECK FAILED");
+        assertThat(Files.readString(app.resolve("formatted.txt"))).isEqualTo("-q --console=plain format\n");
+        Path other = tmp.resolve("other");
+        copy(BEFORE, other);
+        Files.writeString(other.resolve("build.gradle.kts"), Files.readString(build));
+        Files.copy(wrapper, other.resolve("gradlew"));
+        other.resolve("gradlew").toFile().setExecutable(true);
+        String skipped = run(other, "apply", other.toString(), "--auto", "--write", "--no-format", "--classpath-file", CLASSPATH);
+        assertThat(skipped).as(skipped).doesNotContain("formatted with");
+        assertThat(other.resolve("formatted.txt")).doesNotExist();
+    }
+
+    /**
      * #288: --commit-per-step makes one commit per step that changed something, each of which compiles on its own, and
      * the last state is what one apply writes; a dirty tree is refused.
      */

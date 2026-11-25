@@ -348,7 +348,7 @@ public final class ServiceSetup {
             "class=\"[\\w.]*(LogstashEncoder|LoggingEventCompositeJsonEncoder|EcsEncoder|GelfEncoder|JsonEncoder|LogstashLayout|JsonLayout)\"");
 
     /** #296: the text without comments: YAML and properties {@code #…}, XML {@code <!-- … -->}, Gradle {@code //…}. */
-    static String uncommented(String name, String text) {
+    public static String uncommented(String name, String text) {
         if (name.endsWith(".xml")) {
             return text.replaceAll("(?s)<!--.*?-->", "");
         }
