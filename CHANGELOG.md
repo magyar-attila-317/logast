@@ -7,6 +7,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 **Findings**
 - MDC_VALUE_UNVALIDATED (logging): an MDC value taken from a request header, a `@RequestHeader` / `@CookieValue` parameter or a query parameter with nothing that checks it first is reported (#278).
+- AUDIT_RECORD_INCOMPLETE judges a published audit event with its listener: a listener that adds the acting user (it reads the security context, or calls a method that does) completes the record. AUDIT_RECORD_SECRET follows an entity on an event into the listener: one that writes chosen fields (the account's id) does not put the entity's password in the record (#282).
 
 **Setup**
 - The commented `levels.clientErrors` example also lists the exceptions an `@ExceptionHandler` answers with a 4xx (`@ResponseStatus`, a `ResponseEntity` / `ProblemDetail` with a 4xx status) (#279).

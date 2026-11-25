@@ -1674,6 +1674,153 @@ class RemedyTest {
     }
 
     /**
+     * #282: central enrichment. The publisher names the action and the record; the audit listener adds the acting user
+     * (through a helper that reads the security context). Judged with its listener, the record is complete; with a
+     * listener that adds no user it is not.
+     */
+    @Test
+    void anAuditListenerThatAddsTheActorCompletesTheRecord() throws IOException {
+        String listener = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.context.event.EventListener;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class AuditTrail {
+                    private static final Logger AUDIT = LoggerFactory.getLogger("audit");
+                    private final CurrentUser users;
+
+                    public AuditTrail(CurrentUser users) {
+                        this.users = users;
+                    }
+
+                    @EventListener
+                    public void on(PledgeAuditEvent e) {
+                        AUDIT.info("Audit record [action={}, pledgeId={}, actor={}]", e.action(), e.pledgeId(), ACTOR);
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(
+                java("PledgeAuditEvent"), """
+                        package x;
+
+                        public record PledgeAuditEvent(String action, String pledgeId) {
+                        }
+                        """,
+                java("CurrentUser"), """
+                        package x;
+
+                        import org.springframework.security.core.context.SecurityContextHolder;
+                        import org.springframework.stereotype.Component;
+
+                        @Component
+                        public class CurrentUser {
+                            public String id() {
+                                return SecurityContextHolder.getContext().getAuthentication().getName();
+                            }
+                        }
+                        """,
+                java("PledgeController"), """
+                        package x;
+
+                        import org.springframework.context.ApplicationEventPublisher;
+                        import org.springframework.web.bind.annotation.PathVariable;
+                        import org.springframework.web.bind.annotation.PostMapping;
+                        import org.springframework.web.bind.annotation.RestController;
+
+                        @RestController
+                        public class PledgeController {
+                            private final ApplicationEventPublisher events;
+
+                            public PledgeController(ApplicationEventPublisher events) {
+                                this.events = events;
+                            }
+
+                            @PostMapping("/pledges/{pledgeId}/cancel")
+                            public void cancel(@PathVariable String pledgeId) {
+                                events.publishEvent(new PledgeAuditEvent("pledge.cancel", pledgeId));
+                            }
+                        }
+                        """,
+                java("AuditTrail"), listener.replace("ACTOR", "\"system\""));
+        fires(Rules.AUDIT_RECORD_INCOMPLETE, before);
+        gone(Rules.AUDIT_RECORD_INCOMPLETE, "the listener adds the acting user", with(before, java("AuditTrail"),
+                listener.replace("ACTOR", "users.id()")));
+    }
+
+    /**
+     * #282: an entity with a password field on an audit event. A listener that builds the record from chosen fields
+     * (the action, the account's id) never writes the password: silent. A listener that hands the whole account on is
+     * reported.
+     */
+    @Test
+    void anEntityOnAnEventIsFollowedIntoTheListener() throws IOException {
+        String listener = """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.context.event.EventListener;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                public class AccountAuditTrail {
+                    private static final Logger AUDIT = LoggerFactory.getLogger("audit");
+
+                    @EventListener
+                    public void on(AccountAuditEvent e) {
+                        AUDIT.info("Audit record [action={}, account={}]", e.action(), PART);
+                    }
+                }
+                """;
+        Map<String, String> before = Map.of(
+                java("Account"), """
+                        package x;
+
+                        public class Account {
+                            private String id;
+                            private String password;
+
+                            public String getId() {
+                                return id;
+                            }
+                        }
+                        """,
+                java("AccountAuditEvent"), """
+                        package x;
+
+                        public record AccountAuditEvent(String action, Account account) {
+                        }
+                        """,
+                java("AccountService"), """
+                        package x;
+
+                        import org.springframework.context.ApplicationEventPublisher;
+                        import org.springframework.stereotype.Service;
+
+                        @Service
+                        public class AccountService {
+                            private final ApplicationEventPublisher events;
+
+                            public AccountService(ApplicationEventPublisher events) {
+                                this.events = events;
+                            }
+
+                            public void rename(Account account) {
+                                events.publishEvent(new AccountAuditEvent("account.rename", account));
+                            }
+                        }
+                        """,
+                java("AccountAuditTrail"), listener.replace("PART", "e.account()"));
+        fires(Rules.AUDIT_RECORD_SECRET, before);
+        gone(Rules.AUDIT_RECORD_SECRET, "the listener writes the account's id, not the account", with(before, java("AccountAuditTrail"),
+                listener.replace("PART", "e.account().getId()")));
+    }
+
+    /**
      * #282: listeners on an audit event interface routed by SpEL conditions (one @Async @EventListener, one AFTER_COMMIT
      * @TransactionalEventListener): logast cannot tell which runs, so a conditional async sibling is no proof that the
      * record leaves before commit. Without a condition, the async listener runs for every event: reported.

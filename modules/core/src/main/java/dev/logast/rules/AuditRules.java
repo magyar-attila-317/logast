@@ -641,6 +641,153 @@ final class AuditRules {
         return selfActor;
     }
 
+    private List<MethodInfo> listeners;
+
+    /** Methods that receive application events: @EventListener, @TransactionalEventListener, onApplicationEvent. */
+    private List<MethodInfo> listeners() {
+        if (listeners == null) {
+            listeners = new ArrayList<>();
+            for (MethodInfo m : ctx.a.index.methods()) {
+                boolean annotated = m.decl().getLeadingAnnotations().stream().anyMatch(a -> a.getSimpleName().equals("EventListener")
+                        || a.getSimpleName().equals("TransactionalEventListener"));
+                if ((annotated || m.decl().getSimpleName().equals("onApplicationEvent")) && m.decl().getBody() != null
+                        && !m.decl().getParameters().isEmpty() && m.decl().getParameters().getFirst() instanceof J.VariableDeclarations) {
+                    listeners.add(m);
+                }
+            }
+        }
+        return listeners;
+    }
+
+    /**
+     * #282: a published audit event whose listener fills in the acting user itself (central enrichment: the listener
+     * builds the record and reads the security context, or calls a method that does). The publisher only names the
+     * action and the record; judging it alone would report every call site of the service.
+     */
+    private boolean enrichedByListener(J.MethodInvocation mi) {
+        if (!mi.getMethodType().getName().startsWith("publish")) {
+            return false;
+        }
+        for (Expression arg : mi.getArguments()) {
+            for (MethodInfo l : listenersOf(arg.getType())) {
+                if (readsActor(l, 2, new HashSet<>())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** The listeners an event of this type reaches (their parameter type is the type or a supertype). */
+    private List<MethodInfo> listenersOf(JavaType type) {
+        JavaType.FullyQualified event = TypeUtils.asFullyQualified(type);
+        if (event == null) {
+            return List.of();
+        }
+        List<MethodInfo> out = new ArrayList<>();
+        for (MethodInfo l : listeners()) {
+            JavaType.FullyQualified param = TypeUtils.asFullyQualified(((J.VariableDeclarations) l.decl().getParameters().getFirst()).getType());
+            if (param != null && !param.getFullyQualifiedName().equals("java.lang.Object")
+                    && TypeUtils.isAssignableTo(param.getFullyQualifiedName(), event)) {
+                out.add(l);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * #282: every listener of the published event builds its record from chosen fields: what it hands on from the
+     * event (to a call or a constructor) is a plain value not named as a secret, never the event or an object on it.
+     * An entity on such an event is not serialised into the record, so its password field is not in it.
+     */
+    private boolean recordBuiltFromChosenFields(J.MethodInvocation mi) {
+        if (mi.getMethodType() == null || !mi.getMethodType().getName().startsWith("publish")) {
+            return false;
+        }
+        boolean any = false;
+        for (Expression arg : mi.getArguments()) {
+            for (MethodInfo l : listenersOf(arg.getType())) {
+                any = true;
+                if (!picksFields(l)) {
+                    return false;
+                }
+            }
+        }
+        return any;
+    }
+
+    private boolean picksFields(MethodInfo l) {
+        String param = ((J.VariableDeclarations) l.decl().getParameters().getFirst()).getVariables().getFirst().getSimpleName();
+        boolean[] whole = {false};
+        new JavaIsoVisitor<Integer>() {
+            private void handedOn(List<Expression> args) {
+                for (Expression a : args) {
+                    Expression root = a;
+                    String last = null;
+                    while (root instanceof J.MethodInvocation call && call.getSelect() != null || root instanceof J.FieldAccess) {
+                        if (root instanceof J.MethodInvocation call) {
+                            last = last == null ? call.getSimpleName().replaceFirst("^get(?=[A-Z])", "") : last;
+                            root = call.getSelect();
+                        } else {
+                            J.FieldAccess fa = (J.FieldAccess) root;
+                            last = last == null ? fa.getSimpleName() : last;
+                            root = fa.getTarget();
+                        }
+                    }
+                    if (root instanceof J.Identifier id && id.getSimpleName().equals(param)) {
+                        JavaType.FullyQualified t = TypeUtils.asFullyQualified(a.getType());
+                        boolean enumValue = t != null && t.getKind() == JavaType.FullyQualified.Kind.Enum;
+                        if (!(valueType(a.getType()) || enumValue) || last != null && DomainValues.isSecretName(last)) {
+                            whole[0] = true;
+                        }
+                    }
+                }
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation call, Integer p) {
+                handedOn(call.getArguments());
+                return super.visitMethodInvocation(call, p);
+            }
+
+            @Override
+            public J.NewClass visitNewClass(J.NewClass nc, Integer p) {
+                handedOn(nc.getArguments());
+                return super.visitNewClass(nc, p);
+            }
+        }.visit(l.decl().getBody(), 0);
+        return !whole[0];
+    }
+
+    /** The method reads the security context, or calls (up to {@code depth} calls away) a method that does. */
+    private boolean readsActor(MethodInfo m, int depth, Set<String> seen) {
+        if (!seen.add(m.key()) || m.decl().getBody() == null) {
+            return false;
+        }
+        if (selfActor().contains(m.key())) {
+            return true;
+        }
+        if (depth == 0) {
+            return false;
+        }
+        boolean[] found = {false};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation call, Integer p) {
+                if (!found[0] && call.getMethodType() != null) {
+                    for (MethodInfo t : ctx.a.index.resolve(call.getMethodType())) {
+                        if (readsActor(t, depth - 1, seen)) {
+                            found[0] = true;
+                            break;
+                        }
+                    }
+                }
+                return found[0] ? call : super.visitMethodInvocation(call, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return found[0];
+    }
+
     private static String body(MethodInfo m) {
         return m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
     }
@@ -678,7 +825,8 @@ final class AuditRules {
         List<Expression> args = new ArrayList<>();
         mi.getArguments().forEach(a -> parts(a, args));
         J.Annotation client = null;
-        boolean actor = ctx.a.index.resolve(mi.getMethodType()).stream().anyMatch(t -> selfActor.contains(t.key())) || noUser(m);
+        boolean actor = ctx.a.index.resolve(mi.getMethodType()).stream().anyMatch(t -> selfActor.contains(t.key())) || noUser(m)
+                || enrichedByListener(mi);
         for (Expression a : args) {
             if (actor) {
                 break;
@@ -1595,10 +1743,11 @@ final class AuditRules {
     private void secrets() {
         for (AuditCall c : auditCalls()) {
             Set<String> found = new LinkedHashSet<>();
+            boolean chosen = recordBuiltFromChosenFields(c.mi());
             for (Expression a : args(c)) {
                 if (ctx.domain.isSecret(a) || ctx.values().sources(a, c.m()).stream().anyMatch(s -> ctx.domain.isSecret(s.value()))) {
                     found.add(a.printTrimmed());
-                } else if (!(a instanceof J.NewClass) && !(a instanceof J.MethodInvocation call && builtByBuilder(call))
+                } else if (!chosen && !(a instanceof J.NewClass) && !(a instanceof J.MethodInvocation call && builtByBuilder(call))
                         && !(a instanceof J.Identifier id && id.getSimpleName().equals("this"))) {   // #282: an event's source
                     String field = secretField(a.getType());
                     if (field != null) {
