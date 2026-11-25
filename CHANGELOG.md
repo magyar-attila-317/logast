@@ -5,6 +5,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+## 0.5.4
+
 **Log inventory**
 - `.logast/inventory.jsonl`: every log call with an id that lasts across runs, whether logast added it, who last changed its text (logast, a person, generated wording) and a short history; a line keeps its id when lines are added above it or its text changes (#281).
 
