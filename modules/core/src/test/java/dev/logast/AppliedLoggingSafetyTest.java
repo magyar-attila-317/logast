@@ -273,6 +273,58 @@ class AppliedLoggingSafetyTest {
                 .allSatisfy(o -> assertThat(o.edits()).as("recorded and skipped: no line").isEmpty());
     }
 
+    /**
+     * #325 / #326 L3: a loop whose body is the try itself, recording the item in a list; a loop that counts the dropped
+     * row (dropped++) and moves on: both are expected outcomes, no WARN line.
+     */
+    @Test
+    void aCheckedOrCountedItemInALoopGetsNoLine(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Readiness.java"), """
+                package x;
+
+                import java.util.ArrayList;
+                import java.util.List;
+
+                public class Readiness {
+                    List<String> blockers(List<String> items) {
+                        List<String> blockers = new ArrayList<>();
+                        for (String item : items)
+                            try {
+                                price(item);
+                            } catch (IllegalStateException e) {
+                                blockers.add(item);
+                            }
+                        return blockers;
+                    }
+
+                    int load(List<String> lines) {
+                        int dropped = 0;
+                        String firstReason = null;
+                        for (String line : lines) {
+                            try {
+                                price(line);
+                            } catch (IllegalArgumentException rejection) {
+                                dropped++;
+                                firstReason = firstReason == null ? rejection.getMessage() : firstReason;
+                                continue;
+                            }
+                            store(line);
+                        }
+                        return dropped;
+                    }
+
+                    void price(String item) {
+                    }
+
+                    void store(String line) {
+                    }
+                }
+                """);
+        assertThat(scan(dir)).filteredOn(o -> o.rule().equals(Rules.SWALLOWED_EXCEPTION) && o.method().startsWith("Readiness."))
+                .hasSize(2).allSatisfy(o -> assertThat(o.edits()).as(o.method() + ": recorded and moved on: no line").isEmpty());
+    }
+
     /** #323 H2: the same in a forEach lambda: the lambda's end (or a return) moves on to the next row. */
     @Test
     void aRecordedRejectionInAForEachLambdaGetsNoLine(@TempDir Path dir) throws Exception {

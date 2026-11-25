@@ -60,6 +60,15 @@ final class ExceptionRules {
                     Pos.end(c.clause.getBody())), 80) + ") and the loop moves on. Log it at DEBUG if the records are not enough.");
             return;
         }
+        // #325: a catch that returns (or sets) a value is a designed default (fail-closed validation, an unknown code
+        // mapped to OTHER, a missing key read as false): not a failure to shout about. Its line is DEBUG, without the
+        // stack; in a record (a DTO) it is only reported: no logger goes into a value type
+        boolean designedDefault = designedDefault(c.clause.getBody().getStatements());
+        if (designedDefault && m.owner().decl().getKind() == J.ClassDeclaration.Kind.Type.Record) {
+            b.severity("low").suggestion("Left as it is: " + m.owner().simpleName() + " is a record and the catch returns a "
+                    + "designed default. Log where the value is used if the fallback matters.");
+            return;
+        }
         JavaEdits.LoggerPlan logger = ctx.logger(m);
         int open = Pos.start(c.clause.getBody());
         int close = Pos.end(c.clause.getBody()) - 1;
@@ -78,12 +87,13 @@ final class ExceptionRules {
         List<DomainValues.Value> values = new ArrayList<>(ctx.domain.fromVars(ctx.vars(m, open + 1)).stream()
                 .filter(v -> !inMdc.contains(v.key())).toList());
         // #278: a team that logs exceptions by class only gets [errorType=…] instead of the exception (stack and message)
-        boolean attach = ctx.policy.logging().attachExceptions();
+        boolean attach = ctx.policy.logging().attachExceptions() && !designedDefault;
         if (!attach) {
             values.add(new DomainValues.Value("errorType", c.param + ".getClass().getSimpleName()"));
         }
         String args = String.join("", values.stream().map(v -> ", " + v.expr()).toList());
-        String call = logger.name() + "." + ctx.policy.logging().swallowedLevel() + "(\"{{MSG}}\"" + args + "{{ARGS}}"
+        String level = designedDefault ? "debug" : ctx.policy.logging().swallowedLevel();
+        String call = logger.name() + "." + level + "(\"{{MSG}}\"" + args + "{{ARGS}}"
                 + (attach ? ", " + c.param : "") + ");";
 
         String unit = Text.indentUnit(text);
@@ -109,7 +119,7 @@ final class ExceptionRules {
                 fallback || ctx.phrasing.canonicalOf("failed") == null ? null : "failed",
                 fallback ? null : ctx.phrasing.canonicalOf("failed"));
         // #292: a catch that falls back to a value says which, in words from the code; written marked // logast:wording
-        String fellBack = fallback ? fallbackText(m.decl().getSimpleName(), c.clause.getBody().getStatements()) : null;
+        String fellBack = designedDefault ? fallbackText(c.clause.getBody().getStatements()) : null;
         b.slot("MSG", fellBack == null ? slot : slot.withGenerated(fellBack));
     }
 
@@ -117,21 +127,28 @@ final class ExceptionRules {
      * #292: "Fell back to default currency" for a catch whose last statement returns or assigns a value named in the
      * code (a constant, a field, a variable, a literal, an empty collection); null when the code does not say.
      */
-    static String fallbackText(String method, List<org.openrewrite.java.tree.Statement> body) {
+    static String fallbackText(List<org.openrewrite.java.tree.Statement> body) {
         if (body.isEmpty()) {
             return null;
         }
         org.openrewrite.java.tree.Expression value = body.getLast() instanceof J.Return r ? r.getExpression()
                 : body.getLast() instanceof J.Assignment a ? a.getAssignment() : null;
-        String what = valueWords(value);
-        if (what == null) {
+        // #325: only a value named in words that say something (DEFAULT_CURRENCY); a literal, an empty result or a one-word
+        // constant (OTHER, UNKNOWN) leaves the text to a person, and the method's name is never the subject
+        if (!(value instanceof J.Identifier || value instanceof J.FieldAccess)) {
             return null;
         }
-        // a named value says what it is ("default currency"); a literal or an empty result needs its subject:
-        // "Balance fell back to 0", from the method's name
-        boolean named = value instanceof J.Identifier || value instanceof J.FieldAccess;
-        String subject = Wording.phrase(method.replaceFirst("^(get|find|load|fetch|read|lookup|resolve)(?=[A-Z])", ""));
-        return named || subject.isBlank() ? "Fell back to " + what : Wording.capital(subject) + " fell back to " + what;
+        String what = valueWords(value);
+        return what == null || what.split(" ").length < 2 ? null : "Fell back to " + what;
+    }
+
+    /** #325: the catch ends by returning or setting a value: the method goes on with a default it chose. */
+    static boolean designedDefault(List<org.openrewrite.java.tree.Statement> body) {
+        if (body.isEmpty()) {
+            return false;
+        }
+        org.openrewrite.java.tree.Statement last = body.getLast();
+        return last instanceof J.Return r && r.getExpression() != null || last instanceof J.Assignment;
     }
 
     private static String valueWords(org.openrewrite.java.tree.Expression v) {
@@ -168,7 +185,9 @@ final class ExceptionRules {
     private static final Set<String> LAMBDA_LOOPS = Set.of("forEach", "forEachOrdered", "forEachRemaining");
 
     private static final java.util.regex.Pattern RECORDS = java.util.regex.Pattern.compile(
-            "(?i)(report|skip|reject|record|collect|fail|error|warning|invalid)\\w*\\s*\\(|\\.(add|put|increment\\w*)\\(");
+            "(?i)(report|skip|reject|record|collect|fail|error|warning|invalid)\\w*\\s*\\(|\\.(add|put|increment\\w*)\\("
+                    // #326 L3: a counter of what was dropped (dropped++, skipped += 1) records it too
+                    + "|\\b\\w+\\s*\\+\\+|\\+\\+\\s*\\w+|\\b\\w+\\s*\\+=");
 
     /** G4: the catch sits in a loop, records the case (a call on a report, an add to a list) and continues. */
     private static boolean recordedInLoop(MethodInfo m, CatchInfo c) {
@@ -219,6 +238,14 @@ final class ExceptionRules {
                     tail[0] = true;
                 }
                 return super.visitBlock(block, p);
+            }
+
+            @Override
+            public J.ForEachLoop visitForEachLoop(J.ForEachLoop loop, Integer p) {
+                if (loop.getBody() == c.tryStatement) {   // #325: for (item : items) try { … } catch …: the try is the body
+                    tail[0] = true;
+                }
+                return super.visitForEachLoop(loop, p);
             }
         }.visit(m.decl().getBody(), 0);
         return tail[0];
