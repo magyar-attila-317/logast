@@ -1,0 +1,6 @@
+# decisions of the first apply on messaging-rabbitmq (#328); after a deliberate change: ./gradlew :cli:corpus -Pcorpus.updateDecisions
+log lines added:
+  info: 2
+existing lines given the exception: 0
+metrics: 1 names, 0 of one word, 0 of more than three
+  runner.run

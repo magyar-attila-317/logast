@@ -1,0 +1,5 @@
+# decisions of the first apply on scheduling-tasks (#328); after a deliberate change: ./gradlew :cli:corpus -Pcorpus.updateDecisions
+log lines added:
+  info: 1
+existing lines given the exception: 0
+metrics: 0 names, 0 of one word, 0 of more than three
