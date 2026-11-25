@@ -23,7 +23,7 @@ public class PledgeSender {
             }
         } catch (IllegalStateException e) {
             log.warn("Pledge resend failed [pledge.id={}]", pledgeId, e);
-            PledgeMetrics.pledgeResendFailed(); // logast:metric review, confidence: medium
+            PledgeMetrics.pledgeResendFailed();
             return false;
         }
     }

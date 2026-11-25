@@ -41,7 +41,7 @@ public class OrderService {
     public void ship(java.util.List<Order> orders, int batchNumber) {
         if (orders.isEmpty()) {
             log.info("Order shipment skipped");
-            OrderMetrics.orderShipmentSkipped(); // logast:metric review, confidence: medium
+            OrderMetrics.orderShipmentSkipped();
             return;
         }
         orders.forEach(payments::charge);

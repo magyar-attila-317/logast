@@ -8,6 +8,7 @@
   8 other changes
   support code copied into com/example/e2e/logging (16 files)
   review: git diff   (one diff per kind: .logast/reports/steps/)
+38 log lines no longer carry their ids in the text (they are in MDC now): a test that asserts an id in a log message needs the MDC value instead
 Changes beyond logging (31): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
   src/main/java/com/example/e2e/edge/Audited.java:10 Audited.audit — code changed besides logging
   src/main/java/com/example/e2e/edge/EdgeFlow.java:18 EdgeFlow.process — code changed besides logging

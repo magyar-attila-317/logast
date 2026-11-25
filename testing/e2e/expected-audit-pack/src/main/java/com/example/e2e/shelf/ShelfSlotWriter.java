@@ -22,21 +22,21 @@ public class ShelfSlotWriter {
     public int block(String slotId) {
         int rows = jdbc.update("update shelf_slot set status = 'BLOCKED' where id = ?", slotId);
         AfterCommit.log(() -> log.info("Shelf slot updated [rows={}]", rows)); // logast:wording
-        ShelfMetrics.shelfSlotUpdated(rows); // logast:metric review, confidence: low
+        ShelfMetrics.shelfSlotUpdated(rows);
         return rows;
     }
 
     public int release(String slotId, String by) {
         int rows = jdbc.update("update shelf_slot set status = 'FREE', last_modified_by = ? where id = ?", by, slotId);
         AfterCommit.log(() -> log.info("Shelf slot updated [rows={}]", rows)); // logast:wording
-        ShelfMetrics.shelfSlotUpdated(rows); // logast:metric review, confidence: low
+        ShelfMetrics.shelfSlotUpdated(rows);
         return rows;
     }
 
     public int add(String slotId) {
         int rows = client.sql(ADD_SLOT).param(slotId).param("FREE").update();
         AfterCommit.log(() -> log.info("Shelf slot inserted [rows={}]", rows)); // logast:wording
-        ShelfMetrics.shelfSlotInserted(rows); // logast:metric review, confidence: low
+        ShelfMetrics.shelfSlotInserted(rows);
         return rows;
     }
 }

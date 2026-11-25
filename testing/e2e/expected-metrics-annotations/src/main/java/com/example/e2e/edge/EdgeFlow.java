@@ -43,7 +43,7 @@ public class EdgeFlow implements Audited {
         log.info("Pledge parsed [pledgeId={}]", UUID.nameUUIDFromBytes(kioskData.pledgeId().getBytes())); // a transformed value
         new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
         log.info("Edge processing completed [pledgeId={}]", kioskData.pledgeId());
-        EdgeMetrics.edgeProcessingCompleted(); // logast:metric review, confidence: medium
+        EdgeMetrics.edgeProcessingCompleted();
     }
 
     private void publishOne(KioskTotals row) {

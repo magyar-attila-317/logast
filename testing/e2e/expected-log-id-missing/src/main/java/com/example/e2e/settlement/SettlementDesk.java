@@ -14,19 +14,19 @@ public class SettlementDesk {
             charge(amountCents);
         } catch (IllegalStateException e) {
             log.warn("Order settlement failed [orderId={}]", orderId, e);
-            SettlementMetrics.orderSettlementFailed(); // logast:metric review, confidence: medium
+            SettlementMetrics.orderSettlementFailed();
         }
     }
 
     public void reconcile(String orderId, String pledgeId) {
         log.error("Pledge reconciliation failed");
-        SettlementMetrics.pledgeReconciliationFailed(); // logast:metric review, confidence: medium
+        SettlementMetrics.pledgeReconciliationFailed();
     }
 
     public void close(String orderId) {
         try (var mdc = MdcScope.of("orderId", orderId)) {
             log.warn("Order closing failed");
-            SettlementMetrics.orderClosingFailed(); // logast:metric review, confidence: medium
+            SettlementMetrics.orderClosingFailed();
         }
     }
 

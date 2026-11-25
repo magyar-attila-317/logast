@@ -11,7 +11,7 @@ public class CodeNormalizer {
         try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
             var result = pledgeId.trim();
             log.info("Code normalizer completed [trim={}]", result); // logast:wording
-            IntakeMetrics.codeNormalizerCompleted(); // logast:metric review, confidence: low
+            IntakeMetrics.codeNormalizerCompleted();
             return result;
         }
     }

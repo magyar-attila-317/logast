@@ -114,7 +114,7 @@ index 950243e..a45c601 100644
                  .run(() -> {
                      job.execute();
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
-index 91f6866..2e1263a 100644
+index 91f6866..b2798e7 100644
 --- a/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 +++ b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
 @@ -17,7 +17,7 @@ 
@@ -130,7 +130,7 @@ index 91f6866..2e1263a 100644
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge return received");
              log.info("Pledge messages (return) completed"); // logast:wording
-+            MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
++            MessagingMetrics.pledgeMessagesCompleted();
          }
      }
  
@@ -138,113 +138,113 @@ index 91f6866..2e1263a 100644
          try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
              log.info("Pledge audit received");
              log.info("Pledge messages (audit) completed"); // logast:wording
-+            MessagingMetrics.pledgeMessagesCompleted(); // logast:metric review, confidence: low
++            MessagingMetrics.pledgeMessagesCompleted();
          }
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-index 35921a9..b71454a 100644
+index 35921a9..82eba1c 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 @@ -25,6 +25,7 @@ 
      public void close(String pledgeId) {
          int rows = jdbcTemplate.update(CLOSE, pledgeId);
          AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
-+        PledgeMetrics.pledgesUpdated(rows); // logast:metric review, confidence: low
++        PledgeMetrics.pledgesUpdated(rows);
      }
  
      public int countUse(String pledgeId) {
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
-index 7445ba3..af22602 100644
+index 7445ba3..58c77f6 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
 +++ b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 @@ -51,6 +51,7 @@ 
                  log.info("Pledge parsed"); // a transformed value
                  new PledgeTask(kioskData.pledgeId()).run();                                // an id kept in an instance field
                  log.info("Edge processing completed");
-+                EdgeMetrics.edgeProcessingCompleted(); // logast:metric review, confidence: medium
++                EdgeMetrics.edgeProcessingCompleted();
              }
          }
      }
 diff --git a/src/main/java/com/example/e2e/order/OrderService.java b/src/main/java/com/example/e2e/order/OrderService.java
-index 5f70c44..8537b6b 100644
+index 5f70c44..2fc2ee3 100644
 --- a/src/main/java/com/example/e2e/order/OrderService.java
 +++ b/src/main/java/com/example/e2e/order/OrderService.java
 @@ -41,6 +41,7 @@ 
      public void ship(java.util.List<Order> orders, int batchNumber) {
          if (orders.isEmpty()) {
              log.info("Order shipment skipped");
-+            OrderMetrics.orderShipmentSkipped(); // logast:metric review, confidence: medium
++            OrderMetrics.orderShipmentSkipped();
              return;
          }
          orders.forEach(payments::charge);
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
-index 883cb52..5e6d4e1 100644
+index 883cb52..16ad798 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 @@ -23,6 +23,7 @@ 
              }
          } catch (IllegalStateException e) {
              log.warn("Pledge resend failed [pledgeId={}]", pledgeId, e);
-+            PledgeMetrics.pledgeResendFailed(); // logast:metric review, confidence: medium
++            PledgeMetrics.pledgeResendFailed();
              return false;
          }
      }
 diff --git a/src/main/java/com/example/e2e/job/ExportJob.java b/src/main/java/com/example/e2e/job/ExportJob.java
-index 4f47def..8e84b9d 100644
+index 4f47def..aa58b71 100644
 --- a/src/main/java/com/example/e2e/job/ExportJob.java
 +++ b/src/main/java/com/example/e2e/job/ExportJob.java
 @@ -12,5 +12,6 @@ 
      protected void doExecute() {
          log.info("Export job started"); // logast:wording
          log.info("Export job completed"); // logast:wording
-+        JobMetrics.exportJobCompleted(); // logast:metric review, confidence: low
++        JobMetrics.exportJobCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/PreloadJob.java b/src/main/java/com/example/e2e/job/PreloadJob.java
-index 64835f7..6948134 100644
+index 64835f7..101b627 100644
 --- a/src/main/java/com/example/e2e/job/PreloadJob.java
 +++ b/src/main/java/com/example/e2e/job/PreloadJob.java
 @@ -14,5 +14,6 @@ 
      protected void doExecute() {
          log.info("Preload export started");
          log.info("Preload export completed");
-+        JobMetrics.preloadExportCompleted(); // logast:metric review, confidence: medium
++        JobMetrics.preloadExportCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/order/PaymentClient.java b/src/main/java/com/example/e2e/order/PaymentClient.java
-index fff6c96..f5d20a9 100644
+index fff6c96..ea9ca43 100644
 --- a/src/main/java/com/example/e2e/order/PaymentClient.java
 +++ b/src/main/java/com/example/e2e/order/PaymentClient.java
 @@ -17,6 +17,7 @@ 
              }
          } catch (IllegalStateException e) {
              log.error("Charge failed [orderId={}]", order.id(), e);
-+            OrderMetrics.chargeFailed(); // logast:metric review, confidence: medium
++            OrderMetrics.chargeFailed();
              throw new PaymentException("charge failed", e);
          }
      }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-index ee13ea4..5fa1ff3 100644
+index ee13ea4..c79b8c8 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 @@ -20,6 +20,7 @@ 
              return load(pledgeId);
          } catch (IllegalStateException e) {
              log.warn("Pledge lookup failed", e);
-+            PledgeMetrics.pledgeLookupFailed(); // logast:metric review, confidence: medium
++            PledgeMetrics.pledgeLookupFailed();
              throw new PledgeMissing(pledgeId, e);
          }
      }
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
-index c682b53..21f4832 100644
+index c682b53..64a8309 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java
 +++ b/src/main/java/com/example/e2e/job/TallyJob.java
 @@ -14,5 +14,6 @@ 
      protected void doExecute() {
          log.info("Tally started"); // logast:wording
          log.info("Tally completed");
-+        JobMetrics.tallyCompleted(); // logast:metric review, confidence: medium
++        JobMetrics.tallyCompleted();
      }
  }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeMetrics.java b/src/main/java/com/example/e2e/edge/EdgeMetrics.java

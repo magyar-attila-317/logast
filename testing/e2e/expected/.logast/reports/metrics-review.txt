@@ -1,0 +1,12 @@
+# counters logast added by default: file:line  metric{outcome}, how sure the name is (#273); keep, rename or remove each
+src/main/java/com/example/e2e/edge/EdgeFlow.java:53  edge.processing{outcome=completed}, confidence: medium
+src/main/java/com/example/e2e/job/ExportJob.java:14  export.job{outcome=completed}, confidence: low
+src/main/java/com/example/e2e/job/PreloadJob.java:16  preload.export{outcome=completed}, confidence: medium
+src/main/java/com/example/e2e/job/TallyJob.java:16  tally{outcome=completed}, confidence: medium
+src/main/java/com/example/e2e/messaging/PledgeMessages.java:31  pledge.messages{outcome=completed}, confidence: low
+src/main/java/com/example/e2e/messaging/PledgeMessages.java:39  pledge.messages{outcome=completed}, confidence: low
+src/main/java/com/example/e2e/order/OrderService.java:43  order.shipment{outcome=skipped}, confidence: medium
+src/main/java/com/example/e2e/order/PaymentClient.java:19  charge{outcome=failed}, confidence: medium
+src/main/java/com/example/e2e/pledge/PledgeLookup.java:22  pledge.lookup{outcome=failed}, confidence: medium
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:27  pledges{outcome=updated}, confidence: low
+src/main/java/com/example/e2e/pledge/PledgeSender.java:25  pledge.resend{outcome=failed}, confidence: medium

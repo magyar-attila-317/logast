@@ -13,6 +13,6 @@ public class TallyJob extends SettlementJob {
     @Override
     protected void doExecute() {
         log.info("Tally done");
-        JobMetrics.tallyCompleted(); // logast:metric review, confidence: medium
+        JobMetrics.tallyCompleted();
     }
 }

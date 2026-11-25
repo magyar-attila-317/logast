@@ -18,7 +18,7 @@ public class OrderDesk {
         try (var mdc = MdcScope.of("orderId", order.id())) {
             feed.load();
             log.info("Order desk completed"); // logast:wording
-            IntakeMetrics.orderDeskCompleted(); // logast:metric review, confidence: low
+            IntakeMetrics.orderDeskCompleted();
         }
     }
 }

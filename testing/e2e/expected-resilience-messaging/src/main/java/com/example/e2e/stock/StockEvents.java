@@ -18,7 +18,7 @@ public class StockEvents {
         log.info("Return started"); // logast:wording
         ledger.refill(itemId);
         log.info("Stock events (return) completed"); // logast:wording
-        StockMetrics.stockEventsCompleted(); // logast:metric review, confidence: low
+        StockMetrics.stockEventsCompleted();
     }
 
     @RabbitListener(queues = "stock-audits", ackMode = "MANUAL")
@@ -26,6 +26,6 @@ public class StockEvents {
         log.info("Audit started"); // logast:wording
         ledger.refill(itemId);
         log.info("Stock events (audit) completed"); // logast:wording
-        StockMetrics.stockEventsCompleted(); // logast:metric review, confidence: low
+        StockMetrics.stockEventsCompleted();
     }
 }

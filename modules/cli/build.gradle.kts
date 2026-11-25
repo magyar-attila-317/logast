@@ -109,8 +109,10 @@ fun Test.e2eSetup() {
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform()
     filter { includeTestsMatching(e2eShards) }
-    // scenarios run logast in-process (System.out is captured): parallel only as separate JVMs, up to 4, 2 GB each
-    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
+    // scenarios run logast in-process (System.out is captured): parallel only as separate JVMs, up to 4, 2 GB each;
+    // -Pe2e.forks=1 on a machine short on memory
+    maxParallelForks = providers.gradleProperty("e2e.forks").map(String::toInt).orNull
+        ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
     dependsOn(":fixtures:sample-app:writeClasspath", ":logging-support:classes")
     // dependency mode: javac compiles the migrated service against the starter's classes (it is not on the classpath logast reads)
     systemProperty("logast.e2e.support", project(":logging-support").layout.buildDirectory.dir("classes/java/main").get().asFile.absolutePath)

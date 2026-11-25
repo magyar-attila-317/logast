@@ -27,7 +27,10 @@ final class CatalogRules {
     static final String MARKER = "// logast:metrics-catalog";
 
     /** What a member stands for: kind count / count-amount / record-amount / name, with its literal values. */
-    record Key(String kind, String name, String outcome, String amount) {
+    record Key(String kind, String name, String outcome, String amount, String label) {
+        Key(String kind, String name, String outcome, String amount) {
+            this(kind, name, outcome, amount, "");
+        }
     }
 
     /** A call site to rewrite: the tree replaced, the key, the amount expression's source (or null). */
@@ -247,6 +250,10 @@ final class CatalogRules {
         if (n == null || o == null) {
             return null;
         }
+        // #273: Outcomes.countKind(name, kind, outcome): one metric for call sites of one shape
+        if (mi.getSimpleName().equals("countKind") && args.size() == 3 && literal(args.get(2)) != null) {
+            return new Key("kind", n, literal(args.get(2)), "", o);
+        }
         if (mi.getSimpleName().equals("count") && args.size() == 2) {
             return new Key("count", n, o, "");
         }
@@ -346,7 +353,7 @@ final class CatalogRules {
         } else if (k.kind().equals("tag")) {
             base = "tag" + capitalize(camel(words(k.outcome())));
         } else {
-            base = camel(words(k.name() + "." + k.outcome()));
+            base = camel(words(k.name() + (k.label().isEmpty() ? "" : "." + k.label()) + "." + k.outcome()));
             // the same outcome with another amount: a second method with the same parameter list needs its own name
             boolean clash = !k.amount().isEmpty() && c.members.keySet().stream().anyMatch(o -> !o.kind().equals("name")
                     && !o.amount().isEmpty() && o.name().equals(k.name()) && o.outcome().equals(k.outcome()) && !o.equals(k));
@@ -379,6 +386,13 @@ final class CatalogRules {
             return "\n    /** outcome=\"" + k.outcome() + "\" on the timer already running (same thread). */\n"
                     + "    public static void " + member + "() {\n"
                     + "        Outcomes.tag(" + Text.javaString(k.outcome()) + ");\n"
+                    + "    }\n";
+        }
+        if (k.kind().equals("kind")) {
+            return "\n    /** " + k.name() + "{kind=\"" + k.label() + "\", outcome=\"" + k.outcome() + "\"} +1. */\n"
+                    + "    public static void " + member + "() {\n"
+                    + "        Outcomes.countKind(" + Text.javaString(k.name()) + ", " + Text.javaString(k.label()) + ", "
+                    + Text.javaString(k.outcome()) + ");\n"
                     + "    }\n";
         }
         String meter = k.name() + "{outcome=\"" + k.outcome() + "\"}";
@@ -448,6 +462,8 @@ final class CatalogRules {
         for (Key k : keys) {
             String line = switch (k.kind()) {
                 case "count" -> "Outcomes.register(" + Text.javaString(k.name()) + ", " + Text.javaString(k.outcome()) + ");";
+                case "kind" -> "Outcomes.registerKind(" + Text.javaString(k.name()) + ", " + Text.javaString(k.label()) + ", "
+                        + Text.javaString(k.outcome()) + ");";
                 case "total" -> "Outcomes.registerTotal(" + Text.javaString(k.name()) + ", " + Text.javaString(k.outcome()) + ", "
                         + Text.javaString(k.amount()) + ");";
                 case "per-run" -> "Outcomes.registerPerRun(" + Text.javaString(k.name()) + ", " + Text.javaString(k.outcome()) + ", "

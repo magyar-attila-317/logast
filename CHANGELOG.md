@@ -6,6 +6,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- Counters added by default carry no `// logast:metric review` comment in the code: apply lists them, with how sure each name is, in `.logast/reports/metrics-review.txt` (#273).
+- Call sites of one shape (three or more outcomes with the same event and last word in a package) share one metric with a `kind` tag (`Outcomes.countKind`) instead of a name each; an outcome the service's own metrics helper already counts gets no second counter (#273).
 - Suffix keys say what the value is: two values the vocabulary maps to one key keep their own names and are not taken for the MDC value; `token.getUser().getId()` → `userId`; `kind.toLowerCase(…)` → `kind`; `e.getClass().getSimpleName()` → `errorType`. A name ending in Id/Uuid (`tokenDeviceId`) is not personal data.
 - A text whose subject already says "failed" is not rephrased ("… failed with an HTTP error" stays).
 - A catch in a loop that records the case and moves on (a rejected import row) gets no WARN line of its own.

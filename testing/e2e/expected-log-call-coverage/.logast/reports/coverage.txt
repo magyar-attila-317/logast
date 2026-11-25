@@ -92,24 +92,24 @@ src/main/java/com/example/e2e/web/AuditController.java:16             checked  n
 src/main/java/com/example/e2e/web/QuoteController.java:30             reported MESSAGE_SUGGESTED SUG-08dd18
 # fixed lines are kept while their file is unchanged:
 # src/main/java/com/example/e2e/edge/Audited.java 07531fcd0582
-# src/main/java/com/example/e2e/edge/EdgeFlow.java 5ab7303198d6
+# src/main/java/com/example/e2e/edge/EdgeFlow.java 576709f0eb1d
 # src/main/java/com/example/e2e/edge/Exclusion.java bbb7ff1b0284
 # src/main/java/com/example/e2e/edge/OriginCheck.java 19a4b2924b6f
 # src/main/java/com/example/e2e/edge/PledgeRules.java 2f9c54079884
 # src/main/java/com/example/e2e/edge/PledgeTask.java f38d6b534ceb
-# src/main/java/com/example/e2e/job/ExportJob.java 3cac394b1312
-# src/main/java/com/example/e2e/job/PreloadJob.java 3eec3af4278e
+# src/main/java/com/example/e2e/job/ExportJob.java 7cebab2029bd
+# src/main/java/com/example/e2e/job/PreloadJob.java c850d944983b
 # src/main/java/com/example/e2e/job/PublishRunJob.java 0881a2c40c07
-# src/main/java/com/example/e2e/job/TallyJob.java f59ca6e360a0
+# src/main/java/com/example/e2e/job/TallyJob.java c12d8f12143c
 # src/main/java/com/example/e2e/ledger/GatewayCalls.java 4e67d6337a73
-# src/main/java/com/example/e2e/messaging/PledgeMessages.java 4c309decbf02
+# src/main/java/com/example/e2e/messaging/PledgeMessages.java 6dc01fc77c66
 # src/main/java/com/example/e2e/order/OrderNotifications.java 5587152a2e82
-# src/main/java/com/example/e2e/order/OrderService.java 3e84740bdd33
-# src/main/java/com/example/e2e/order/PaymentClient.java bb2677227d4c
+# src/main/java/com/example/e2e/order/OrderService.java 14c52644249f
+# src/main/java/com/example/e2e/order/PaymentClient.java cdbcae7bead9
 # src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java 85728efdb638
-# src/main/java/com/example/e2e/pledge/PledgeLookup.java 1c296b3934e6
-# src/main/java/com/example/e2e/pledge/PledgeRepository.java a8c968c778d8
-# src/main/java/com/example/e2e/pledge/PledgeSender.java c31a1e97b71e
+# src/main/java/com/example/e2e/pledge/PledgeLookup.java 3e07ea72f19c
+# src/main/java/com/example/e2e/pledge/PledgeRepository.java ecc95e3a5820
+# src/main/java/com/example/e2e/pledge/PledgeSender.java 705483eb1b97
 # src/main/java/com/example/e2e/pledge/PledgeService.java 2f9401c79e7f
 # src/main/java/com/example/e2e/stipend/PledgeChecks.java 64aaa89f9d86
 # src/main/java/com/example/e2e/stipend/StipendCalculator.java f4bdb836fbc9

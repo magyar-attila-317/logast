@@ -11,7 +11,7 @@ class PurgeJob {
             step.run();
         } catch (IllegalStateException e) {
             LOG.warn("Step failed", e);
-            LoggersMetrics.stepFailed(); // logast:metric review, confidence: medium
+            LoggersMetrics.stepFailed();
         }
     }
 }

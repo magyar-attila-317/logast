@@ -46,12 +46,13 @@ public final class Applier {
                          @com.fasterxml.jackson.annotation.JsonIgnore Map<String, String> stepDiffs,
                          @com.fasterxml.jackson.annotation.JsonIgnore List<String> trace,
                          @com.fasterxml.jackson.annotation.JsonIgnore Map<String, TreeMap<Integer, Set<String>>> fixed,
-                         List<String> behavioural, List<String> keptByHand, int linesLosingIds, List<String> heldBack) {
+                         List<String> behavioural, List<String> keptByHand, int linesLosingIds, List<String> heldBack,
+                         List<String> metricReview) {
         public Result(List<String> applied, Map<String, String> rejected, List<String> resolvedIndirectly,
                       List<String> changedFiles, String diff, int rounds, ScanResult before, ScanResult after,
                       List<String> violations, Map<String, String> stepDiffs) {
             this(applied, rejected, resolvedIndirectly, changedFiles, diff, rounds, before, after, violations, stepDiffs, List.of(), Map.of(),
-                    List.of(), List.of(), 0, List.of());
+                    List.of(), List.of(), 0, List.of(), List.of());
         }
     }
 
@@ -105,6 +106,7 @@ public final class Applier {
     private java.util.function.Predicate<String> changedSince = f -> false;
     private final Set<String> keptByHand = new java.util.TreeSet<>();
     private final Set<String> idsOutOfText = new java.util.TreeSet<>();
+    private final Map<String, String> metricReview = new java.util.TreeMap<>();
     private boolean safe;
     private final Set<String> heldBack = new java.util.TreeSet<>();
 
@@ -452,7 +454,8 @@ public final class Applier {
                 copyBack(root, work, changed);
             }
             return new Result(applied, rejected, indirect, changed, diff.toString(), round, before, scan, violations, stepDiffs, trace, fixed,
-                    behavioural, List.copyOf(keptByHand), idsOutOfText.size(), List.copyOf(heldBack));
+                    behavioural, List.copyOf(keptByHand), idsOutOfText.size(), List.copyOf(heldBack),
+                    metricReview.values().stream().sorted().toList());
         }
 
         /** One pass over the steps; false when the passes stop (nothing applied, --until, or a pass undoing another). */
@@ -657,6 +660,9 @@ public final class Applier {
                     }
                     if (!applied.contains(id)) {
                         applied.add(id);
+                    }
+                    if (o.data() != null && o.data().get("review") != null) {
+                        metricReview.put(id, o.file() + ":" + o.line() + "  " + o.data().get("review"));   // #273
                     }
                     if (o.data() != null && o.data().get("idsOutOfText") instanceof Number) {
                         idsOutOfText.add(id);   // #315: a log line whose ids moved out of its text

@@ -23,7 +23,7 @@ public class WeeklyCloseRunner implements CommandLineRunner {
             log.info("Weekly close started");
             close();
             log.info("Weekly close completed");
-            WeeklyMetrics.weeklyCloseCompleted(); // logast:metric review, confidence: medium
+            WeeklyMetrics.weeklyCloseCompleted();
         }
     }
 

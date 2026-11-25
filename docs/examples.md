@@ -4,8 +4,8 @@ Before and after, per pack. Every snippet is shortened from the end-to-end test 
 `testing/e2e/expected`, and the scenario snapshots in `testing/e2e/expected-*`); `// …` marks lines left out, and a few long lines
 are wrapped.
 
-A line ending in `// logast:wording` carries a message logast wrote for review; `// logast:metric review` marks a
-metric it added. What logast cannot decide on its own, it reports instead of changing ([last section](#audit)).
+A line ending in `// logast:wording` carries a message logast wrote for review; the counters it added by default are
+listed in `.logast/reports/metrics-review.txt` (#273), not marked in the code. What logast cannot decide on its own, it reports instead of changing ([last section](#audit)).
 
 - [Logging: messages](#logging-messages)
 - [Logging: exceptions](#logging-exceptions)
@@ -202,7 +202,7 @@ void run(Runnable step) {
         step.run();
     } catch (IllegalStateException e) {
         log.warn("Step failed", e);
-        LoggersMetrics.stepFailed(); // logast:metric review, confidence: medium
+        LoggersMetrics.stepFailed();
     }
 }
 ```
@@ -711,7 +711,7 @@ try {
     return true;
 } catch (IllegalStateException e) {
     log.warn("Pledge resend failed", e);
-    PledgeMetrics.pledgeResendFailed(); // logast:metric review, confidence: medium
+    PledgeMetrics.pledgeResendFailed();
     return false;
 }
 ```

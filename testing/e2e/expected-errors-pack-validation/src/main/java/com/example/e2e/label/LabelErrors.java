@@ -14,7 +14,7 @@ class LabelErrors {
     @ExceptionHandler(Exception.class)
     ProblemDetail unexpected(Exception e) {
         log.error("Label request failed", e);
-        LabelMetrics.labelRequestFailed(); // logast:metric review, confidence: medium
+        LabelMetrics.labelRequestFailed();
         return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
     }
 

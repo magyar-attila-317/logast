@@ -14,6 +14,6 @@ public class TallyJob extends SettlementJob {
     protected void doExecute() {
         log.info("Tally started"); // logast:wording
         log.info("Tally completed");
-        JobMetrics.tallyCompleted(); // logast:metric review, confidence: medium
+        JobMetrics.tallyCompleted();
     }
 }

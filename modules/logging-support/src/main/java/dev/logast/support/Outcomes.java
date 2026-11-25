@@ -89,6 +89,30 @@ public final class Outcomes {
                 k -> Counter.builder(name).tag("outcome", outcome).register(Metrics.globalRegistry));
     }
 
+    /**
+     * #273: counts {@code name{kind, outcome}}: one metric for call sites of one shape (the publish of each event type),
+     * told apart by {@code kind}, instead of a metric name per call site.
+     */
+    public static void countKind(String name, String kind, String outcome) {
+        kindCounter(name, kind, outcome).increment();
+    }
+
+    /** Registers {@code name{kind, outcome}} at 0 without counting, as {@link #register} does. */
+    public static void registerKind(String name, String kind, String outcome) {
+        kindCounter(name, kind, outcome);
+    }
+
+    private static Counter kindCounter(String name, String kind, String outcome) {
+        return COUNTERS.computeIfAbsent(name + '\u0000' + kind + '\u0000' + outcome,
+                k -> Counter.builder(name).tag("kind", kind).tag("outcome", outcome).register(Metrics.globalRegistry));
+    }
+
+    /** Present from the version with {@link #countKind}: logast looks for it on a service's classpath. */
+    public static final class Kinds {
+        private Kinds() {
+        }
+    }
+
     /** Tags the observation running on this thread (an HTTP request, a job, an ObservedContext); no-op without one. */
     public static void tag(String outcome) {
         Observation current = ObservationRegistryHolder.get().getCurrentObservation();

@@ -17,7 +17,7 @@ public class PaymentClient {
             }
         } catch (IllegalStateException e) {
             log.error("Charge failed [orderId={}]", order.id(), e);
-            OrderMetrics.chargeFailed(); // logast:metric review, confidence: medium
+            OrderMetrics.chargeFailed();
             throw new PaymentException("charge failed", e);
         }
     }

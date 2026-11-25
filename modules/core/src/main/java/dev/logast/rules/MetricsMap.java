@@ -51,7 +51,83 @@ public final class MetricsMap {
      * @param amounts numbers the line logs, by suffix key ([rows={}] → rows → its argument)
      */
     record Gap(Unmeasured outcome, MethodInfo method, LogCall log, String name, boolean tagAvailable,
-               java.util.Map<String, org.openrewrite.java.tree.Expression> amounts) {
+               java.util.Map<String, org.openrewrite.java.tree.Expression> amounts, String kind) {
+        Gap(Unmeasured outcome, MethodInfo method, LogCall log, String name, boolean tagAvailable,
+            java.util.Map<String, org.openrewrite.java.tree.Expression> amounts) {
+            this(outcome, method, log, name, tagAvailable, amounts, "");
+        }
+    }
+
+    /** Call sites of one shape before a family shares one metric (#273). */
+    static final int FAMILY = 3;
+
+    /**
+     * #273: outcomes of one shape (the publish of each event type: thing.created.publish, thing.updated.publish, …, all
+     * "failed", in one package) share one metric, told apart by a kind tag: thing.publish{kind=created|updated}. A
+     * family is at least {@link #FAMILY} names with the same event and last word in one package; the shared name is
+     * their common leading and trailing words, the kind what lies between. Hundreds of metric names make dashboards
+     * and alerts hard to keep and cost money in hosted backends.
+     */
+    static List<Gap> families(List<Gap> gaps) {
+        java.util.Map<String, List<Integer>> groups = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < gaps.size(); i++) {
+            Gap g = gaps.get(i);
+            String[] w = g.name().split("\\.");
+            String file = g.outcome().file();
+            String dir = file.contains("/") ? file.substring(0, file.lastIndexOf('/')) : "";
+            if (w.length >= 2 && g.amounts().isEmpty()) {
+                groups.computeIfAbsent(g.outcome().event() + " " + w[w.length - 1] + " " + dir, k -> new ArrayList<>()).add(i);
+            }
+        }
+        List<Gap> out = new ArrayList<>(gaps);
+        for (List<Integer> members : groups.values()) {
+            List<String[]> names = members.stream().map(i -> gaps.get(i).name().split("\\.")).toList();
+            if (names.stream().map(n -> String.join(".", n)).distinct().count() < FAMILY) {
+                continue;
+            }
+            int min = names.stream().mapToInt(n -> n.length).min().orElse(0);
+            int lead = 0;
+            while (lead < min - 1 && sameAt(names, lead, true)) {
+                lead++;
+            }
+            int trail = 0;
+            while (trail < min - lead - 1 && sameAt(names, trail, false)) {
+                trail++;
+            }
+            if (trail == 0) {
+                continue;
+            }
+            List<String> family = new ArrayList<>(List.of(names.getFirst()).subList(0, lead));
+            family.addAll(List.of(names.getFirst()).subList(names.getFirst().length - trail, names.getFirst().length));
+            for (int j = 0; j < members.size(); j++) {
+                String[] n = names.get(j);
+                String kind = String.join(".", List.of(n).subList(lead, n.length - trail));
+                Gap g = gaps.get(members.get(j));
+                out.set(members.get(j), new Gap(g.outcome(), g.method(), g.log(), String.join(".", family), g.tagAvailable(),
+                        g.amounts(), kind));
+            }
+        }
+        return out;
+    }
+
+    /** A family member's own name, as before families (the counter the map suggests for it names it). */
+    static String familyMember(Gap g) {
+        Matcher m = Pattern.compile("^Counter\\.builder\\(\"([^\"]*)\"").matcher(g.outcome().counter());
+        return m.find() ? m.group(1) : g.name();
+    }
+
+    /** Whether every name has the same word at {@code at} from the start (or the end). */
+    private static boolean sameAt(List<String[]> names, int at, boolean fromStart) {
+        String first = null;
+        for (String[] n : names) {
+            String w = fromStart ? n[at] : n[n.length - 1 - at];
+            if (first == null) {
+                first = w;
+            } else if (!first.equals(w)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** {@code call} sits in a lambda of a method that returns a Mono/Flux: an operator callback of the pipeline. */
@@ -240,7 +316,7 @@ public final class MetricsMap {
                 }
                 String text = MessageTemplate.compliantBase(raw).strip();
                 String event = eventOf(phrasing, text);
-                if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(a, m, lc, catalogs)) {
+                if (event == null || NOT_OUTCOMES.contains(event) || text.isBlank() || countedOrSkipped(a, m, lc, catalogs, meters)) {
                     continue;
                 }
                 // a plain "completed"/"failed" of an entrypoint the framework or a wrapper times, or of an @Observed method, is in its timer already
@@ -267,6 +343,7 @@ public final class MetricsMap {
         }
         outcomes.sort(Comparator.comparing(Unmeasured::file).thenComparingInt(Unmeasured::line));
         gaps.sort(Comparator.comparing((Gap g) -> g.outcome().file()).thenComparingInt(g -> g.outcome().line()));
+        gaps = families(gaps);
         return new Map(exporters, note, identity, measured, unmeasuredEps, repositories, meters, outcomes, gaps);
     }
 
@@ -395,6 +472,9 @@ public final class MetricsMap {
                             }
                         }
                     }
+                } else if (mi.getMethodType() != null && countsItself(a, mi, meters)) {
+                    // #273: the service's own metrics helper (eventMetrics.publishFailed(type)) that counts in its body
+                    points.add(new Point(line, simpleOwner(mi) + "." + mi.getSimpleName() + "()", "the service's own counter"));
                 } else if (mi.getSimpleName().equals("increment")) {
                     // a counter kept in a field: the meter registered where the field is assigned
                     String field = mi.getSelect() instanceof J.Identifier id ? id.getSimpleName()
@@ -417,8 +497,40 @@ public final class MetricsMap {
         return points;
     }
 
+    /**
+     * #273: a call to a method of the project whose body counts (a registered counter, an {@code increment()}, a
+     * {@code Counter.builder(…)}): the service already measures there, a second counter would count the same event.
+     */
+    private static boolean countsItself(Analysis a, J.MethodInvocation mi, List<MeterCatalog.Meter> meters) {
+        String owner = mi.getMethodType().getDeclaringType().getFullyQualifiedName();
+        if (owner.startsWith("java.") || owner.startsWith("io.micrometer.") || owner.startsWith(a.supportPackage + ".")) {
+            return false;
+        }
+        for (MethodInfo target : a.index.methodsOf(owner)) {
+            if (!target.name().equals(mi.getSimpleName()) || target.decl().getBody() == null) {
+                continue;
+            }
+            String rel = target.file().relPath();
+            int from = Pos.line(target.decl());
+            int to = Pos.endLine(target.decl().getBody());
+            if (meters.stream().anyMatch(mt -> mt.file().equals(rel) && mt.line() >= from && mt.line() <= to)) {
+                return true;
+            }
+            String body = target.decl().getBody().printTrimmed();
+            if (body.contains(".increment(") || body.contains("Counter.builder(")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String simpleOwner(J.MethodInvocation mi) {
+        String fqn = mi.getMethodType().getDeclaringType().getFullyQualifiedName();
+        return fqn.substring(fqn.lastIndexOf('.') + 1);
+    }
+
     /** An Outcomes.count/tag right after the log line, or an ignore comment for this rule on it, above it or for the file. */
-    private static boolean countedOrSkipped(Analysis a, MethodInfo m, LogCall lc, Set<String> catalogs) {
+    private static boolean countedOrSkipped(Analysis a, MethodInfo m, LogCall lc, Set<String> catalogs, List<MeterCatalog.Meter> meters) {
         int line = Pos.line(lc.call());
         if (Suppressions.fileIgnores(m.file().text()).contains(Rules.METRIC_OUTCOME_UNMEASURED)) {
             a.ledger.ignored(m.file().relPath(), line, Rules.METRIC_OUTCOME_UNMEASURED);
@@ -435,7 +547,7 @@ public final class MetricsMap {
                 continue;
             }
             String code = t.strip();
-            if (l > line - 1 && (t.contains("Outcomes.count(") || t.contains("Outcomes.record(") || t.contains("Outcomes.tag(")
+            if (l > line - 1 && (t.contains("Outcomes.count(") || t.contains("Outcomes.countKind(") || t.contains("Outcomes.record(") || t.contains("Outcomes.tag(")
                     || catalogs.stream().anyMatch(c -> code.startsWith(c + ".") && code.contains("(")))) {
                 return true;
             }
@@ -444,7 +556,21 @@ public final class MetricsMap {
                 return true;
             }
         }
-        return false;
+        // #273: right after the line, a call to the service's own metrics helper (or a counter's increment) counts it
+        int lastLine = last;
+        boolean[] own = {false};
+        new org.openrewrite.java.JavaIsoVisitor<Integer>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                int l = Pos.line(mi.getName());
+                if (l > line && l <= lastLine + 1 && (mi.getSimpleName().equals("increment")
+                        || mi.getMethodType() != null && countsItself(a, mi, meters))) {
+                    own[0] = true;
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
+        }.visit(m.decl().getBody(), 0);
+        return own[0];
     }
 
     private static boolean hasMeter(MethodInfo m, Set<String> metered) {

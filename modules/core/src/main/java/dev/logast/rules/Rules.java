@@ -404,7 +404,9 @@ public final class Rules {
                 // counted by default (metrics.defaults), best effort: marked for review, with how sure the name is
                 d = new dev.logast.apply.MetricsFile.Decision("counter", "", "", u.file(), u.method(), u.event(),
                         category.equals("db-writes") && !ctx.policy.metrics().amounts().equals("off") ? "rows" : "", "");
-                marker = "// logast:metric review, confidence: " + confidence(ctx, g);
+                // #273: no review comment in the code: the review list is .logast/reports/metrics-review.txt
+                b.data("review", g.name() + "{" + (g.kind().isEmpty() ? "" : "kind=" + g.kind() + ", ") + "outcome=" + u.event()
+                        + "}, confidence: " + confidence(ctx, g));
             }
             String why = decide(ctx, b, g, d, amountMeters, marker);
             if (why != null && category == null && d != null) {
@@ -578,7 +580,9 @@ public final class Rules {
         String text = f.text();
         int[] lines = JavaEdits.statementLines(text, stmt);
         String indent = Text.indentAt(text, dev.logast.parse.Pos.start(stmt));
-        String name = d.name().isBlank() ? g.name() : d.name();
+        // a family's shared name only with the kind tag (an older support library: the call site's own name)
+        String name = !d.name().isBlank() ? d.name() : !g.kind().isEmpty() && !ctx.supportHasKinds()
+                ? MetricsMap.familyMember(g) : g.name();
         String outcome = d.outcome().isBlank() ? g.outcome().event() : d.outcome();
         switch (d.count()) {
             case "skip" -> {
@@ -597,6 +601,10 @@ public final class Rules {
                     return "Needs Micrometer and a logging-support version with Outcomes.";
                 }
                 String call = d.count().equals("tag") ? "Outcomes.tag(\"" + outcome + "\");" : "Outcomes.count(\"" + name + "\", \"" + outcome + "\");";
+                // #273: one of a family of call sites (same shape, same package): the shared metric, told apart by kind
+                if (d.count().equals("counter") && d.name().isBlank() && d.amount().isBlank() && !g.kind().isEmpty() && ctx.supportHasKinds()) {
+                    call = "Outcomes.countKind(\"" + name + "\", \"" + g.kind() + "\", \"" + outcome + "\");";
+                }
                 if (!d.amount().isBlank()) {
                     String problem = amountProblem(ctx, g, d);
                     if (problem != null) {

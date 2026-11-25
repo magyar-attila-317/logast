@@ -1190,10 +1190,10 @@ index 0000000..5a8f49f
 +}
 diff --git a/src/main/java/com/example/e2e/logging/Outcomes.java b/src/main/java/com/example/e2e/logging/Outcomes.java
 new file mode 100644
-index 0000000..747b9ea
+index 0000000..4477db9
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/logging/Outcomes.java
-@@ -0,0 +1,101 @@ 
+@@ -0,0 +1,125 @@ 
 +// Copied by logast (support.mode: vendor) from logging-support. Keep in sync or switch to the starter.
 +// Source: logast, https://github.com/magyar-attila-317/logast (Apache License 2.0)
 +package com.example.e2e.logging;
@@ -1285,6 +1285,30 @@ index 0000000..747b9ea
 +    private static Counter counter(String name, String outcome) {
 +        return COUNTERS.computeIfAbsent(name + '\u0000' + outcome,
 +                k -> Counter.builder(name).tag("outcome", outcome).register(Metrics.globalRegistry));
++    }
++
++    /**
++     * #273: counts {@code name{kind, outcome}}: one metric for call sites of one shape (the publish of each event type),
++     * told apart by {@code kind}, instead of a metric name per call site.
++     */
++    public static void countKind(String name, String kind, String outcome) {
++        kindCounter(name, kind, outcome).increment();
++    }
++
++    /** Registers {@code name{kind, outcome}} at 0 without counting, as {@link #register} does. */
++    public static void registerKind(String name, String kind, String outcome) {
++        kindCounter(name, kind, outcome);
++    }
++
++    private static Counter kindCounter(String name, String kind, String outcome) {
++        return COUNTERS.computeIfAbsent(name + '\u0000' + kind + '\u0000' + outcome,
++                k -> Counter.builder(name).tag("kind", kind).tag("outcome", outcome).register(Metrics.globalRegistry));
++    }
++
++    /** Present from the version with {@link #countKind}: logast looks for it on a service's classpath. */
++    public static final class Kinds {
++        private Kinds() {
++        }
 +    }
 +
 +    /** Tags the observation running on this thread (an HTTP request, a job, an ObservedContext); no-op without one. */

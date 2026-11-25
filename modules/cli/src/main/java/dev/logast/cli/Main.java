@@ -735,6 +735,22 @@ public final class Main {
                 System.out.println("Left as you changed them (" + kept.size() + "): fixes an earlier apply made and someone changed "
                         + "back; --redo applies them again" + (verbose ? ": " + String.join(" ", kept) : ""));
             }
+            // #273: counters added by default, to review: the list, not comments in the code
+            List<String> review = r.metricReview() == null ? List.of() : r.metricReview();
+            if (!review.isEmpty()) {
+                System.out.println(review.size() + (review.size() == 1 ? " counter" : " counters") + " added by default (metrics.defaults): "
+                        + "review them" + (write ? " in .logast/reports/metrics-review.txt" : ""));
+                if (write) {
+                    try {
+                        Path reports = root().resolve(".logast/reports");
+                        Files.createDirectories(reports);
+                        Files.writeString(reports.resolve("metrics-review.txt"), "# counters logast added by default: file:line  "
+                                + "metric{outcome}, how sure the name is (#273); keep, rename or remove each\n" + String.join("\n", review) + "\n");
+                    } catch (java.io.IOException e) {
+                        // only a report
+                    }
+                }
+            }
             // #315: tests that assert an id in a log message read it from MDC now
             if (r.linesLosingIds() > 0) {
                 System.out.println(r.linesLosingIds() + (r.linesLosingIds() == 1 ? " log line no longer carries its id" : " log lines no longer carry their ids")

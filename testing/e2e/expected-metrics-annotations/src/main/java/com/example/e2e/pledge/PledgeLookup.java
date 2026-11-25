@@ -20,7 +20,7 @@ public class PledgeLookup {
             return load(pledgeId);
         } catch (IllegalStateException e) {
             log.warn("Pledge lookup failed", e);
-            PledgeMetrics.pledgeLookupFailed(); // logast:metric review, confidence: medium
+            PledgeMetrics.pledgeLookupFailed();
             throw new PledgeMissing(pledgeId, e);
         }
     }
@@ -31,7 +31,7 @@ public class PledgeLookup {
             load("all");
         } catch (IllegalStateException e) {
             log.error("Pledge reload failed", e);
-            PledgeMetrics.pledgeReloadFailed(); // logast:metric review, confidence: medium
+            PledgeMetrics.pledgeReloadFailed();
             throw e;
         }
     }

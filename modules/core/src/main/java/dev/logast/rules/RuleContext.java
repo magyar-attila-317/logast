@@ -432,6 +432,18 @@ public final class RuleContext {
         return a.index.clazz(support(simpleName)) != null || a.project.probe().hasClass(support(simpleName));
     }
 
+    /** #273: whether generated code may use Outcomes.countKind (added in the support library after 0.5.3). */
+    boolean supportHasKinds() {
+        if (!a.supportStarterPresent || supportUpdateOrderId != null) {
+            return true;
+        }
+        var cls = a.index.clazz(support("Outcomes"));
+        if (cls != null) {
+            return cls.file().text().contains("countKind(");
+        }
+        return a.project.probe().hasClass(support("Outcomes") + "$Kinds");
+    }
+
     /** The order that brings already-copied (vendor mode) support classes up to date, if any. */
     String supportUpdateOrderId;
 

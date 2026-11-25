@@ -15,6 +15,6 @@ public class StockRejects {
             throw new AmqpRejectAndDontRequeueException("blank item id");
         }
         log.info("Stock rejects completed"); // logast:wording
-        StockMetrics.stockRejectsCompleted(); // logast:metric review, confidence: low
+        StockMetrics.stockRejectsCompleted();
     }
 }

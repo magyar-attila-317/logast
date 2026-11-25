@@ -14,6 +14,6 @@ public class PreloadJob extends SettlementJob {
     protected void doExecute() {
         log.info("Preload export started");
         log.info("Preload export completed");
-        JobMetrics.preloadExportCompleted(); // logast:metric review, confidence: medium
+        JobMetrics.preloadExportCompleted();
     }
 }
