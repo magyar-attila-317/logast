@@ -5,6 +5,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+## 0.5.5
+
 **What logast writes**
 - Two inline names ending in the same word (`source item={}`, `clone item={}`) no longer become one key twice: each value keeps its own name (`sourceId`, `cloneId`) (#323).
 - A personal-data term counts only as the name's head noun (`customerEmail`, `accessToken`, `phoneNumber`): `tokenAuthority`, `tokenType`, `tokenBucket`, `emailVerified` stay in log lines (#323).
