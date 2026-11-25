@@ -1531,8 +1531,8 @@ abstract class E2eGoldenTest {
             Files.delete(dir.resolve(e.getKey()));
         }
         // metrics.md and lifecycle.txt came with the reports/ folder (#125), behavioural.txt later (#316): an earlier
-        // logast never wrote them
-        Set<String> newer = Set.of("metrics.md", "lifecycle.txt", "behavioural.txt");
+        // logast never wrote them; tests.txt (#289) and wording-todo.txt (#292) neither
+        Set<String> newer = Set.of("metrics.md", "lifecycle.txt", "behavioural.txt", "tests.txt", "wording-todo.txt");
         for (String sub : List.of("decisions", "reports")) {
             try (Stream<Path> s = Files.list(dir.resolve(sub))) {
                 for (Path p : s.toList()) {

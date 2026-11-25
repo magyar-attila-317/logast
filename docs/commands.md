@@ -304,6 +304,8 @@ code. `logast scan .` shows the same without changing anything. Both also write 
   (`format`, `spotlessApply`) run once after apply writes, with the project's wrapper, so its format check still passes;
   the summary says so. `--no-format` leaves it out; the Gradle plugin's `logastApply` is finalized by that task instead
   (#237). Checkstyle rules beyond formatting stay the build's findings.
+- **Wording to do.** `.logast/reports/wording-todo.txt` lists the log lines whose text is still logast's generated
+  wording (`// logast:wording`), with their lasting id from the inventory; a line leaves it once someone rewords it (#292).
 - **Tests to run.** `.logast/reports/tests.txt` lists the tests whose source names a class the apply changed, as one
   Gradle command (`./gradlew test --tests … :orders:test --tests …`), and the changed classes no test that captures
   logs (ListAppender, LogCaptor, OutputCaptureExtension) names: their log lines are checked by nobody (#289).

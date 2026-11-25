@@ -190,6 +190,27 @@ public final class LogInventory {
         Files.writeString(file, sb.toString(), StandardCharsets.UTF_8);
     }
 
+    public static final String WORDING_TODO = LogastDir.DIR + "/reports/wording-todo.txt";
+
+    /**
+     * #292: the log lines whose text is still logast's generated wording, by their lasting id, so the to-do list lives
+     * outside the source: a line leaves it once someone rewords it (its wording becomes "person").
+     */
+    public String wordingTodo() {
+        List<Entry> todo = entries().stream().filter(e -> "generated".equals(e.wording())).toList();
+        StringBuilder sb = new StringBuilder("# log lines still in logast's generated words (#292): give each the words of the domain, "
+                + "in the code or in .logast/decisions/messages.yaml; " + todo.size() + (todo.size() == 1 ? " line\n" : " lines\n"));
+        todo.forEach(e -> sb.append(e.file()).append(':').append(e.line()).append("  ").append(e.id()).append("  ")
+                .append(e.level()).append(" \"").append(e.text()).append("\"\n"));
+        return sb.toString();
+    }
+
+    public void saveWordingTodo(Path root) throws IOException {
+        Path file = root.resolve(WORDING_TODO);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, wordingTodo(), StandardCharsets.UTF_8);
+    }
+
     /** The message text as written (a literal), else the code that builds it. */
     static String text(LogCall lc) {
         String t = lc.template() == null ? null : MessageTemplate.text(lc.template());

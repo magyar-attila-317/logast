@@ -646,6 +646,7 @@ public final class Main {
                 try {
                     inventory.observe(scanner.lastAnalysis, dev.logast.LogInventory.LOGAST);
                     inventory.save(root());
+                    inventory.saveWordingTodo(root());   // #292: the lines still in logast's words, out of the source
                 } catch (IOException | RuntimeException e) {
                     Out.warn("inventory: " + e.getMessage());   // only a record: the apply stands
                 }

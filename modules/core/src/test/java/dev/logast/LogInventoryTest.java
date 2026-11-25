@@ -62,4 +62,19 @@ class LogInventoryTest {
         assertThat(third.entries().get(1).wording()).isEqualTo("person");
         assertThat(third.entries().getFirst().origin()).isEqualTo("added");
     }
+
+    /** #292: the generated lines are listed by id outside the source; a person's rewording takes a line off the list. */
+    @Test
+    void generatedLinesAreListedUntilSomeoneRewordsThem(@TempDir Path dir) throws Exception {
+        LogInventory first = LogInventory.load(dir);
+        first.observe(write(dir, "        log.warn(\"Fell back to default currency\"); // logast:wording\n", "Shipping order {}"), LogInventory.LOGAST);
+        first.saveWordingTodo(dir);
+        String todo = Files.readString(dir.resolve(LogInventory.WORDING_TODO));
+        assertThat(todo).contains("; 1 line\n").containsPattern("src/main/java/x/Shipping.java:10  LOG-[0-9a-f]{8}  WARN \"Fell back to default currency\"")
+                .doesNotContain("Shipping order");
+        first.save(dir);
+        LogInventory second = LogInventory.load(dir);
+        second.observe(write(dir, "        log.warn(\"Rate missing: used the default currency\");\n", "Shipping order {}"), LogInventory.PERSON);
+        assertThat(second.wordingTodo()).contains("; 0 lines\n").doesNotContain("currency");
+    }
 }
