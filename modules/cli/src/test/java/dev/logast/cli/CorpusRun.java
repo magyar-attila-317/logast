@@ -67,6 +67,7 @@ class CorpusRun {
                 .as(name + ": the classpath resolved\n" + classpath).isTrue();
 
         String first = cli("apply", app.toString(), "--auto", "--write");
+        decisions(name, clone);
         String trace = Files.readString(app.resolve(".logast/reports/apply-trace.txt"));
         String afterPass1 = trace.contains("== pass 2") ? trace.substring(trace.indexOf("== pass 2")) : "";
         assertThat(afterPass1).as(name + ": pass 2 of the first apply applies nothing\n" + trace).doesNotContain("applying");
@@ -113,6 +114,26 @@ class CorpusRun {
             }
         }
         assertThat(changed).as(name + ": non-observability statements the logging pack changed").isEmpty();
+    }
+
+    /**
+     * #328: the first apply's judgement calls (catches, exceptions attached, metric names and families) against the
+     * committed baseline testing/corpus/decisions/<service>.txt; written there with -Pcorpus.updateDecisions (and when
+     * there is none yet), else a difference fails the run with the diff.
+     */
+    private static void decisions(String name, Path clone) throws Exception {
+        exec(clone, "git", "add", "-A", "--intent-to-add");   // new files (catalogs) show in the diff too
+        String now = DecisionSummary.of(name, exec(clone, "git", "diff", "--", ".", ":(exclude)**/.logast/**"));
+        Path baseline = Path.of(System.getProperty("logast.corpus.decisions")).resolve(name + ".txt");
+        boolean update = Boolean.getBoolean("logast.corpus.updateDecisions");
+        if (update || !Files.exists(baseline)) {
+            Files.createDirectories(baseline.getParent());
+            Files.writeString(baseline, now);
+            System.out.println(name + ": decisions written to " + baseline + (update ? "" : " (no baseline yet: review and commit it)"));
+            return;
+        }
+        assertThat(now).as(name + ": the apply's decisions differ from " + baseline + " (-Pcorpus.updateDecisions after a deliberate "
+                + "change, with the commit that explains it)").isEqualTo(Files.readString(baseline));
     }
 
     /** logast in-process; its output. */

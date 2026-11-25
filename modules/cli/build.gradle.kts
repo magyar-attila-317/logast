@@ -148,6 +148,9 @@ val corpus by tasks.registering(Test::class) {
     filter { includeTestsMatching(corpusRun) }
     systemProperty("logast.corpus.file", rootProject.file("testing/corpus/corpus.yaml").absolutePath)
     providers.gradleProperty("corpus.only").orNull?.let { systemProperty("logast.corpus.only", it) }
+    // #328: the first apply's decisions against testing/corpus/decisions/<service>.txt; -Pcorpus.updateDecisions rewrites them
+    systemProperty("logast.corpus.decisions", rootProject.file("testing/corpus/decisions").absolutePath)
+    systemProperty("logast.corpus.updateDecisions", providers.gradleProperty("corpus.updateDecisions").isPresent.toString())
     outputs.upToDateWhen { false }
     maxHeapSize = "4g"
     testLogging { events("passed", "failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
