@@ -54,18 +54,6 @@ reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain me
   13 log lines rewritten in the standard format
   1 metric, error-handling or audit fix
   review: git diff   (one diff per kind: .logast/reports/steps/)
-Changes beyond logging (41): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
-  src/main/java/com/example/e2e/edge/Audited.java:11 Audited.audit — code changed besides logging
-  src/main/java/com/example/e2e/edge/EdgeFlow.java:19 EdgeFlow.process — code changed besides logging
-  src/main/java/com/example/e2e/job/ExportJob.java:13 ExportJob.doExecute — code changed besides logging
-  src/main/java/com/example/e2e/job/PreloadJob.java:15 PreloadJob.doExecute — code changed besides logging
-  src/main/java/com/example/e2e/job/TallyJob.java:15 TallyJob.doExecute — code changed besides logging
-  src/main/java/com/example/e2e/messaging/PledgeMessages.java:29 PledgeMessages.onReturn — code changed besides logging
-  src/main/java/com/example/e2e/messaging/PledgeMessages.java:38 PledgeMessages.onAudit — code changed besides logging
-  src/main/java/com/example/e2e/metrics/BusinessMetrics.java:25 BusinessMetrics.tagAudited — method added
-  src/main/java/com/example/e2e/metrics/BusinessMetrics.java:30 BusinessMetrics.pledgeParsed — method added
-  src/main/java/com/example/e2e/metrics/BusinessMetrics.java:35 BusinessMetrics.edgeProcessingCompleted — method added
-  … and 31 more
 
 Worth a look (optional) — the service works without these:
   5 log lines could say more, 3 outcomes could be counted → logast review   (3 in metrics.yaml cannot be written: see "_problem")

@@ -12,14 +12,14 @@ public final class DepartureMetrics {
     private DepartureMetrics() {
     }
 
-    /** delay.push.to.subscriber{outcome="failed"} +1. */
-    public static void delayPushToSubscriberFailed() {
-        Outcomes.count("delay.push.to.subscriber", "failed");
+    /** push{kind="delay", outcome="failed"} +1. */
+    public static void pushDelayFailed() {
+        Outcomes.countKind("push", "delay", "failed");
     }
 
-    /** cancellation.push{outcome="failed"} +1. */
-    public static void cancellationPushFailed() {
-        Outcomes.count("cancellation.push", "failed");
+    /** push{kind="cancellation", outcome="failed"} +1. */
+    public static void pushCancellationFailed() {
+        Outcomes.countKind("push", "cancellation", "failed");
     }
 
     /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
@@ -27,8 +27,8 @@ public final class DepartureMetrics {
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
         @Override
         public void afterSingletonsInstantiated() {
-            Outcomes.register("delay.push.to.subscriber", "failed");
-            Outcomes.register("cancellation.push", "failed");
+            Outcomes.registerKind("push", "delay", "failed");
+            Outcomes.registerKind("push", "cancellation", "failed");
         }
     }
 }

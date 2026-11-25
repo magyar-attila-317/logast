@@ -7,7 +7,7 @@ class CleanupJob extends BaseJob {
             step.run();
         } catch (IllegalStateException e) {
             log.warn("Step failed", e);
-            LoggersMetrics.stepFailed();
+            LoggersMetrics.cleanupStepFailed();
         }
     }
 }

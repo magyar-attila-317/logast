@@ -1122,10 +1122,12 @@ abstract class E2eGoldenTest {
         String desk = Files.readString(order.resolve("RecordDesk.java"));
         String quiet = controller.substring(controller.indexOf("void keep("), controller.indexOf("void store("));
         String busy = controller.substring(controller.indexOf("void store("));
-        assertThat(quiet).as("a quiet endpoint says it started\n" + controller).contains("log.info(");
+        // #323 H4: at DEBUG: the access log records the request at INFO
+        assertThat(quiet).as("a quiet endpoint says it started\n" + controller).contains("log.debug(");
         assertThat(busy).as("an endpoint with no known rate: the access log records it\n" + controller).doesNotContain("log.");
-        assertThat(desk.substring(desk.indexOf("void keep("), desk.indexOf("void store("))).as("#318: the quiet path's started line "
-                + "already says what happened: the save adds no line of its own\n" + desk).doesNotContain("log.");
+        // #323 H4: the quiet path's started line is DEBUG now, so the save says what happened, at INFO (the path is quiet)
+        assertThat(desk.substring(desk.indexOf("void keep("), desk.indexOf("void store("))).as("saved on a quiet path: INFO\n" + desk)
+                .contains("log.info(\"Order saved");
         assertThat(desk.substring(desk.indexOf("void store("))).as("saved on a path nobody measured: DEBUG\n" + desk)
                 .contains("log.debug(").doesNotContain("log.info(");
         String again = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
@@ -2113,8 +2115,8 @@ abstract class E2eGoldenTest {
         Map<String, String> actual = files(app);
         String controller = actual.get("src/main/java/com/example/e2e/locker/LockerController.java");
         assertThat(controller).as("#12: the started line is inside the scope the method opens with")
-                .contains("try (var mdc = MdcScope.of(\"lockerCode\", lockerCode)) {\n            log.info(\"Locker change started\");")
-                .doesNotContain("{\n        log.info(\"Locker change started\");\n        try (var mdc");
+                .contains("try (var mdc = MdcScope.of(\"lockerCode\", lockerCode)) {\n            log.debug(\"Locker change started\");")
+                .doesNotContain("{\n        log.debug(\"Locker change started\");\n        try (var mdc");
         String sweep = actual.get("src/main/java/com/example/e2e/locker/LockerSweepJob.java");
         assertThat(sweep).as("#79: a derived value is not the caller's: its scope stays (restoring) and is still logged")
                 .contains("MdcScope.of(\"lockerCode\", slot)").contains("MdcScope.of(\"lockerCode\", lockerCode.strip())")

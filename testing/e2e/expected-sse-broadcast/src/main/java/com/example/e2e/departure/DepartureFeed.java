@@ -45,7 +45,7 @@ public class DepartureFeed {
                 entry.getValue().send(departure);
             } catch (IOException e) {
                 log.warn("Delay push to subscriber {} failed", entry.getKey(), e);
-                DepartureMetrics.delayPushToSubscriberFailed();
+                DepartureMetrics.pushDelayFailed();
             }
         }
     }
@@ -56,7 +56,7 @@ public class DepartureFeed {
                 emitter.send(departure);
             } catch (IOException e) {
                 log.warn("Cancellation push failed [emitter={}]", emitter, e);
-                DepartureMetrics.cancellationPushFailed();
+                DepartureMetrics.pushCancellationFailed();
             }
         }
     }

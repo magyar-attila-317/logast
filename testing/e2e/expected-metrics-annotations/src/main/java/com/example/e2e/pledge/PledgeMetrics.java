@@ -12,19 +12,19 @@ public final class PledgeMetrics {
     private PledgeMetrics() {
     }
 
-    /** pledge.lookup{outcome="failed"} +1. */
+    /** pledge{kind="lookup", outcome="failed"} +1. */
     public static void pledgeLookupFailed() {
-        Outcomes.count("pledge.lookup", "failed");
+        Outcomes.countKind("pledge", "lookup", "failed");
     }
 
-    /** pledge.reload{outcome="failed"} +1. */
+    /** pledge{kind="reload", outcome="failed"} +1. */
     public static void pledgeReloadFailed() {
-        Outcomes.count("pledge.reload", "failed");
+        Outcomes.countKind("pledge", "reload", "failed");
     }
 
-    /** pledge.resend{outcome="failed"} +1. */
+    /** pledge{kind="resend", outcome="failed"} +1. */
     public static void pledgeResendFailed() {
-        Outcomes.count("pledge.resend", "failed");
+        Outcomes.countKind("pledge", "resend", "failed");
     }
 
     /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
@@ -32,9 +32,9 @@ public final class PledgeMetrics {
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
         @Override
         public void afterSingletonsInstantiated() {
-            Outcomes.register("pledge.lookup", "failed");
-            Outcomes.register("pledge.reload", "failed");
-            Outcomes.register("pledge.resend", "failed");
+            Outcomes.registerKind("pledge", "lookup", "failed");
+            Outcomes.registerKind("pledge", "reload", "failed");
+            Outcomes.registerKind("pledge", "resend", "failed");
         }
     }
 }

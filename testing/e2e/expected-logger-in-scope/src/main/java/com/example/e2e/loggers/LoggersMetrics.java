@@ -12,9 +12,14 @@ public final class LoggersMetrics {
     private LoggersMetrics() {
     }
 
-    /** step{outcome="failed"} +1. */
-    public static void stepFailed() {
-        Outcomes.count("step", "failed");
+    /** cleanup.step{outcome="failed"} +1. */
+    public static void cleanupStepFailed() {
+        Outcomes.count("cleanup.step", "failed");
+    }
+
+    /** worker.step{outcome="failed"} +1. */
+    public static void workerStepFailed() {
+        Outcomes.count("worker.step", "failed");
     }
 
     /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
@@ -22,7 +27,8 @@ public final class LoggersMetrics {
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
         @Override
         public void afterSingletonsInstantiated() {
-            Outcomes.register("step", "failed");
+            Outcomes.register("cleanup.step", "failed");
+            Outcomes.register("worker.step", "failed");
         }
     }
 }

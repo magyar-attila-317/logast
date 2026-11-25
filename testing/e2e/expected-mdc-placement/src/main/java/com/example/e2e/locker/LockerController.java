@@ -27,7 +27,7 @@ public class LockerController {
     @PostMapping("/lockers/{lockerCode}/open")
     public void open(@PathVariable String lockerCode) {
         try (var mdc = MdcScope.of("lockerCode", lockerCode)) {
-            log.info("Locker change started");
+            log.debug("Locker change started");
             store.open(lockerCode);
         }
     }
@@ -35,7 +35,7 @@ public class LockerController {
     @PostMapping("/lockers/{lockerCode}/close")
     public void close(@PathVariable String lockerCode) {
         try (var mdc = MdcScope.of("lockerCode", lockerCode)) {
-            log.info("Locker change started");
+            log.debug("Locker change started");
             store.close(lockerCode);
         }
     }
@@ -43,14 +43,14 @@ public class LockerController {
     @PostMapping("/lockers/{lockerCode}/reopen")
     public void reopen(@PathVariable String lockerCode) {
         try (var mdc = MdcScope.of("lockerCode", lockerCode)) {
-            log.info("Locker change started");
+            log.debug("Locker change started");
             store.open(lockerCode);
         }
     }
 
     @PostMapping("/lockers/{lockerCode}/swap")
     public void swap(@PathVariable String lockerCode, String otherCode) {
-        log.info("Locker change started");
+        log.debug("Locker change started");
         store.close(lockerCode);
         try (var mdc = MdcScope.of("lockerCode", otherCode)) {
             store.open(otherCode);

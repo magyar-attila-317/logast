@@ -6,6 +6,14 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- Two inline names ending in the same word (`source item={}`, `clone item={}`) no longer become one key twice: each value keeps its own name (`sourceId`, `cloneId`) (#323).
+- A personal-data term counts only as the name's head noun (`customerEmail`, `accessToken`, `phoneNumber`): `tokenAuthority`, `tokenType`, `tokenBucket`, `emailVerified` stay in log lines (#323).
+- A catch in a `forEach` lambda that records the rejected item and moves on (returns, or ends the lambda) gets no WARN line, like one in a loop (#323).
+- The started line logast adds to an HTTP endpoint is DEBUG: the access log and http.server.requests already record each request at INFO; jobs and listeners keep `logging.entryLevel` (#323).
+- Metric families group by event and first word across the whole service (`broadcast{kind=modifier.group.created}` for one service per entity, each in its own package), then by event and last word in one package (#324).
+- Metric names from a message are subjects, not sentences: camelCase split, cut at the first article, verb or preposition, at most four words; a generic single word ("line") gets its class's subject (#324).
+- Code active only in a test or seed profile (`@Profile("e2e")`) or in a test-data package gets no counter (#324).
+- The list of changes beyond logging leaves out counting calls (catalog members, `Outcomes.*`, counter increments) and the catalogs logast keeps: what is left is code that can run differently (#324).
 - A metric catalog's `Registration` bean is named after the catalog's full name (`@Component("com.example.orders.OrderMetrics.Registration")`): two packages with a catalog of the same name no longer clash at startup (ConflictingBeanDefinitionException); a registration written unnamed by 0.5.4 gets the name when its catalog changes (#322).
 
 **Files you edit**

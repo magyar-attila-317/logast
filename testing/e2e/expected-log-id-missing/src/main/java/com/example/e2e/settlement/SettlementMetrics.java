@@ -17,9 +17,9 @@ public final class SettlementMetrics {
         Outcomes.count("order.settlement", "failed");
     }
 
-    /** pledge.reconciliation{outcome="failed"} +1. */
+    /** pledge{kind="reconciliation", outcome="failed"} +1. */
     public static void pledgeReconciliationFailed() {
-        Outcomes.count("pledge.reconciliation", "failed");
+        Outcomes.countKind("pledge", "reconciliation", "failed");
     }
 
     /** order.closing{outcome="failed"} +1. */
@@ -33,7 +33,7 @@ public final class SettlementMetrics {
         @Override
         public void afterSingletonsInstantiated() {
             Outcomes.register("order.settlement", "failed");
-            Outcomes.register("pledge.reconciliation", "failed");
+            Outcomes.registerKind("pledge", "reconciliation", "failed");
             Outcomes.register("order.closing", "failed");
         }
     }
