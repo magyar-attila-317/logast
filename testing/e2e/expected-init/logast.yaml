@@ -29,6 +29,11 @@ logging:
   structuredFormat: ecs   # what this service already uses
   # Messages that alerts or dashboards search for (regex): logast never changes them, it only reports.
   # protectedMessages: ["^ALERT:"]
+  # How a caught exception is logged: exceptionStack attach (the default) passes it to the logger with
+  # its stack trace, never logs its class only; exceptionMessage keep (the default) or never (its class
+  # instead: a message may hold personal data).
+  # exceptionStack: never
+  # exceptionMessage: never
 
 # Callers' trace context (traceparent, baggage): true continues their traces (services behind one
 # gateway share one trace); false for a service the internet reaches directly, where a caller could

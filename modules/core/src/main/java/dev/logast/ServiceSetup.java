@@ -99,8 +99,12 @@ public final class ServiceSetup {
             Files.writeString(policyFile, ownLayer(policyTemplate(extendsList, c.packs(), c.keepWording(), style, mode, logFormat, null),
                     fleet, parents));
             VocabularyHarvest.Result h = VocabularyHarvest.run(root, Logast.policy(root, null), 3);
-            Files.writeString(policyFile, suggestClientErrors(ownLayer(policyTemplate(extendsList, c.packs(), c.keepWording(), style,
-                    mode, logFormat, VocabularyHarvest.yaml(h)), fleet, parents), root));
+            String own = suggestClientErrors(ownLayer(policyTemplate(extendsList, c.packs(), c.keepWording(), style,
+                    mode, logFormat, VocabularyHarvest.yaml(h)), fleet, parents), root);
+            // #290: how the code logs a caught exception, unless a parent layer decides it
+            boolean parentDecides = dev.logast.policy.PolicyLoader.sets(parents, "logging.exceptionStack")
+                    || dev.logast.policy.PolicyLoader.sets(parents, "logging.exceptionMessage");
+            Files.writeString(policyFile, parentDecides ? own : suggestExceptionPolicy(own, root));
             terms = h.terms().size();
             if (dev.logast.policy.PolicyLoader.sets(parents, "logging.keyStyle") && c.keyStyle() == null) {
                 style = inherited.logging().keyStyle() + " (from " + (fleet.isEmpty() ? "an extended layer" : "fleet " + fleet) + ")";
@@ -250,6 +254,77 @@ public final class ServiceSetup {
     private static final java.util.regex.Pattern CLIENT_ANSWER = java.util.regex.Pattern.compile(
             "HttpStatus\\." + CLIENT_CODES + "\\b|ResponseEntity\\s*\\.\\s*(badRequest|notFound|unprocessableEntity)\\s*\\("
                     + "|(status|valueOf)\\s*\\(\\s*4\\d\\d\\s*\\)");
+
+    /** A catch clause and the name of the caught exception. */
+    private static final java.util.regex.Pattern CATCH = java.util.regex.Pattern.compile("catch\\s*\\(\\s*(?:final\\s+)?[\\w.|\\s]+?\\s(\\w+)\\s*\\)\\s*\\{");
+    private static final java.util.regex.Pattern LOG_CALL = java.util.regex.Pattern.compile(
+            "\\b(?:log|logger|LOG|LOGGER)\\s*\\.\\s*(?:error|warn|info|debug)\\s*\\(");
+    /** At least this many catch-block log lines before the code's habit is written as the policy. */
+    static final int EXCEPTION_SAMPLES = 5;
+
+    /**
+     * #290: how the code logs a caught exception, from its catch blocks: when (of at least {@link #EXCEPTION_SAMPLES}
+     * log lines) at most a fifth pass the exception to the logger, {@code exceptionStack: never}; when at most a tenth log
+     * its message and at least half its class, {@code exceptionMessage: never}. Written with what was counted, for the
+     * owner to confirm; otherwise the two settings are offered commented.
+     */
+    static String suggestExceptionPolicy(String policy, Path root) {
+        String anchor = "  # protectedMessages: [\"^ALERT:\"]\n";
+        if (!policy.contains(anchor)) {
+            return policy;
+        }
+        int lines = 0;
+        int stack = 0;
+        int message = 0;
+        int classOnly = 0;
+        Path src = root.resolve("src/main/java");
+        if (Files.isDirectory(src)) {
+            try (var files = Files.walk(src)) {
+                for (Path f : files.filter(p -> p.toString().endsWith(".java")).sorted().toList()) {
+                    String text = Files.readString(f);
+                    java.util.regex.Matcher c = CATCH.matcher(text);
+                    while (c.find()) {
+                        int close = closingBrace(text, c.end() - 1);
+                        if (close < 0) {
+                            continue;
+                        }
+                        String var = java.util.regex.Pattern.quote(c.group(1));
+                        String block = text.substring(c.end(), close);
+                        java.util.regex.Matcher l = LOG_CALL.matcher(block);
+                        while (l.find()) {
+                            int end = block.indexOf(");", l.end());
+                            if (end < 0) {
+                                continue;
+                            }
+                            String call = block.substring(l.end(), end + 1);
+                            lines++;
+                            if (call.matches("(?s).*,\\s*" + var + "\\s*\\)$")) {
+                                stack++;
+                            }
+                            if (call.matches("(?s).*\\b" + var + "\\s*\\.\\s*get(Localized)?Message\\s*\\(.*")) {
+                                message++;
+                            } else if (call.matches("(?s).*\\b" + var + "\\s*\\.\\s*getClass\\s*\\(.*")) {
+                                classOnly++;
+                            }
+                        }
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                return policy;
+            }
+        }
+        String header = "  # How a caught exception is logged: exceptionStack attach (the default) passes it to the logger with\n"
+                + "  # its stack trace, never logs its class only; exceptionMessage keep (the default) or never (its class\n"
+                + "  # instead: a message may hold personal data).\n";
+        boolean noStack = lines >= EXCEPTION_SAMPLES && stack * 5 <= lines;
+        boolean noMessage = lines >= EXCEPTION_SAMPLES && message * 10 <= lines && classOnly * 2 >= lines;
+        String counted = " of " + lines + " log lines in catch blocks";
+        String stackLine = noStack ? "  exceptionStack: never     # found: " + (lines - stack) + counted + " pass no exception\n"
+                : "  # exceptionStack: never\n";
+        String messageLine = noMessage ? "  exceptionMessage: never   # found: " + classOnly + counted + " log its class, " + message + " its message\n"
+                : "  # exceptionMessage: never\n";
+        return policy.replace(anchor, anchor + header + stackLine + messageLine);
+    }
 
     /**
      * #279: the service's own exceptions that answer with a 4xx status ({@code @ResponseStatus(HttpStatus.CONFLICT)} on the

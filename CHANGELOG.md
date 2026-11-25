@@ -12,6 +12,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 **Setup**
 - The commented `levels.clientErrors` example also lists the exceptions an `@ExceptionHandler` answers with a 4xx (`@ResponseStatus`, a `ResponseEntity` / `ProblemDetail` with a 4xx status) (#279).
 - traffic.yaml offers a commented pattern for each group of three or more endpoints without a rate under one path prefix (`"* /pledges/**"`): one value per group instead of one per endpoint (#279).
+- The first logast.yaml follows how the code logs a caught exception: when most catch-block log lines pass no exception, `logging.exceptionStack: never`; when they log its class and almost never its message, `logging.exceptionMessage: never`; each with what was counted. Otherwise both are offered commented (#290).
 
 **CLI**
 - `apply --commit-per-step`: one commit per pipeline step that changed something (then one for what later passes add); each compiles, so a step is dropped with one `git revert` (#288).
