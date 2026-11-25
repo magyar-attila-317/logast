@@ -5,6 +5,14 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**What logast writes**
+- A catch that returns or sets a value is a designed default (a fail-closed check, an unknown code mapped to OTHER, a missing key read as false): its line is DEBUG, with the exception's class as a key and no stack; its wording is generated only from a value named in words (DEFAULT_CURRENCY), never from the method's name; a record gets no logger. 0.5.5 wrote a WARN with the stack there (#325).
+- A per-item check whose loop body is the try itself, and a loop that counts what it drops (`dropped++`), get no WARN line (#325, #326).
+- An existing WARN in a catch of an expected signal (a client error, an exception named …Rejected / …Conflict / …NotFound / …Validation…, the IllegalArgumentException of an enum's valueOf) is not given the exception: no stack per business event (#326).
+- A generic accessor takes its owner's name for uuid too (`phone.getUuid()` → `phoneUuid`) (#326).
+- Metrics: a `@Profile` named by a constant, and `@ConditionalOnProperty` / `@ConditionalOnExpression` on an e2e / dev / test / seed property, count as test-only code; names keep acronyms with digits (e2e) and hyphenated words, stop at adverbs and "without", drop a leading gerund before a subject of its own, and a bare verb or participle gets its class's subject; a family led by a generic verb (handle, process, parse, …) is none (#326).
+- The list of changes beyond logging knows a class's own logger fields, whatever their name (#326).
+
 ## 0.5.5
 
 **What logast writes**

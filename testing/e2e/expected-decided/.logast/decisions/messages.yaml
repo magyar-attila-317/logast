@@ -12,10 +12,10 @@
 #   SUG-1a2b3c:
 #     MSG: Refund sent to the payment provider
 #     _where: src/main/java/com/example/refund/RefundService.java:42 RefundService.send
-SUG-1f466d:
+SWA-91b292:
   MSG: ""
-  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Balance fell back to 0"
-  _where: src/main/java/com/example/e2e/order/LoyaltyClient.java:23 LoyaltyClient.balance
+  _MSG: "What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri(\"/balances/{customerId}\", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | suffix keys added by the tool: [errorType]"
+  _where: src/main/java/com/example/e2e/order/LoyaltyClient.java:20 LoyaltyClient.balance
 FMT-93dcb8:
   MSG: ""
   _MSG: "Reword this DEBUG message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: Charging order with {} cents | suffix keys added by the tool: [amountCents]"

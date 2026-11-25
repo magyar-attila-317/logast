@@ -34,30 +34,6 @@ index b8de35d..d2e6686 100644
      }
  
      /** Every caller passes the run code: the parameter is the value MDC already carries. */
-diff --git a/src/main/java/com/example/e2e/order/LoyaltyClient.java b/src/main/java/com/example/e2e/order/LoyaltyClient.java
-index 23781c2..8ecfef5 100644
---- a/src/main/java/com/example/e2e/order/LoyaltyClient.java
-+++ b/src/main/java/com/example/e2e/order/LoyaltyClient.java
-@@ -1,9 +1,11 @@ 
- package com.example.e2e.order;
- 
-+import lombok.extern.slf4j.Slf4j;
- import org.springframework.stereotype.Component;
- import org.springframework.web.client.RestClient;
- 
- /** A remote service: each call waits for the network. */
-+@Slf4j
- @Component
- public class LoyaltyClient {
-     private final RestClient rest;
-@@ -18,6 +20,7 @@
-             Long points = rest.get().uri("/balances/{customerId}", customerId).retrieve().body(Long.class);
-             return points == null ? 0L : points;
-         } catch (Exception e) {
-+            log.warn("Balance fell back to 0", e); // logast:wording
-             return 0L;
-         }
-     }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 index 65fac35..1c941f2 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java

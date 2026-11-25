@@ -1,7 +1,7 @@
 === logast apply . --auto --write
-✓ 99 changes in 54 files (<t>)
+✓ 98 changes in 53 files (<t>)
   41 log lines rewritten in the standard format
-  14 log lines added where something happened silently
+  13 log lines added where something happened silently
   11 outcomes counted (a metric next to their log line)
   10 business ids put into MDC
   7 setup changes (dependencies, configuration, tracing)
@@ -10,8 +10,7 @@
   review: git diff   (one diff per kind: .logast/reports/steps/)
 11 counters added by default (metrics.defaults): review them in .logast/reports/metrics-review.txt
 38 log lines no longer carry their ids in the text (they are in MDC now): a test that asserts an id in a log message needs the MDC value instead
-Changes beyond logging (31): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
-  src/main/java/com/example/e2e/edge/Audited.java:10 Audited.audit — code changed besides logging
+Changes beyond logging (30): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
   src/main/java/com/example/e2e/edge/EdgeFlow.java:18 EdgeFlow.process — code changed besides logging
   src/main/java/com/example/e2e/edge/EdgeJob.java:22 EdgeJob.run — code changed besides logging
   src/main/java/com/example/e2e/job/BaseRunJob.java:9 BaseRunJob.doExecute — code changed besides logging
@@ -21,15 +20,16 @@ Changes beyond logging (31): code that can now run differently; the rest of the 
   src/main/java/com/example/e2e/messaging/PledgeMessages.java:28 PledgeMessages.onReturn — code changed besides logging
   src/main/java/com/example/e2e/messaging/PledgeMessages.java:37 PledgeMessages.onAudit — code changed besides logging
   src/main/java/com/example/e2e/order/OrderEvents.java:15 OrderEvents.onOrder — code changed besides logging
-  … and 21 more
+  src/main/java/com/example/e2e/order/OrderService.java:26 OrderService.placeAndReward — code changed besides logging
+  … and 20 more
 
 Worth a look (optional) — the service works without these:
   18 log lines could say more, 13 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 85 — 50 fixed, 17 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 84 — 50 fixed, 16 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
-Also: no test uses the changed classes   .logast/reports/tests.txt; 36 changed classes have no test that checks their log lines
+Also: no test uses the changed classes   .logast/reports/tests.txt; 35 changed classes have no test that checks their log lines
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?
 
@@ -42,7 +42,7 @@ Worth a look (optional) — the service works without these:
   18 log lines could say more, 13 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 85 — 50 fixed, 17 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 84 — 50 fixed, 16 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?

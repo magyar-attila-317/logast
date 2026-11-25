@@ -11,7 +11,8 @@ REPORT-ONLY CLIENT_ERROR_AS_SERVER_ERROR src/main/java/com/example/e2e/label/Lab
 REPORT-ONLY ERROR_HANDLER_STATUS_OK src/main/java/com/example/e2e/label/LabelErrors.java:23
 REPORT-ONLY UNMAPPED_EXCEPTION src/main/java/com/example/e2e/label/LabelStore.java:15
 REPORT-ONLY RABBIT_NO_ERROR_HANDLER src/main/java/com/example/e2e/messaging/PledgeMessages.java:28
-REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:24
+NEEDS TEXT SWALLOWED_EXCEPTION src/main/java/com/example/e2e/order/LoyaltyClient.java:20
+REPORT-ONLY CATCH_ALL_DEFAULT src/main/java/com/example/e2e/order/LoyaltyClient.java:21
 REPORT-ONLY KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/order/OrderEvents.java:15
 REPORT-ONLY REMOTE_CALL_IN_TRANSACTION src/main/java/com/example/e2e/order/OrderService.java:26
 REPORT-ONLY EXCEPTION_LOGGED_TWICE src/main/java/com/example/e2e/order/PaymentClient.java:19
@@ -49,7 +50,6 @@ REPORT-ONLY RETRY_RECOMMENDED src/main/java/com/example/e2e/label/LabelStore.jav
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:31
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/messaging/PledgeMessages.java:40
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/order/LoyaltyClient.java:23
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:16
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderNotifications.java:23
 REPORT-ONLY DATA_CHANGES_UNAUDITED src/main/java/com/example/e2e/order/OrderRecord.java:6

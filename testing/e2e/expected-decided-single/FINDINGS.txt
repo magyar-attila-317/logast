@@ -53,10 +53,18 @@ REH-4df675  medium  REPORT-ONLY  RABBIT_NO_ERROR_HANDLER  src/main/java/com/exam
   why: Spring Boot: "if retries are disabled and the listener throws an exception, the delivery is retried indefinitely"; the Spring configuration sets neither spring.rabbitmq.listener.simple.retry.enabled: true nor spring.rabbitmq.listener.simple.default-requeue-rejected: false, no source configures the container's requeue or advice chain, and the listeners neither set an ackMode nor throw AmqpRejectAndDontRequeueException
   note: Turn on listener retries (spring.rabbitmq.listener.simple.retry.enabled: true): once they are exhausted the message is rejected without requeue, and dropped unless the queue has a dead-letter exchange (x-dead-letter-exchange), so declare one to keep it. Or set spring.rabbitmq.listener.simple.default-requeue-rejected: false, or throw AmqpRejectAndDontRequeueException for failures a redelivery cannot fix.
   done when: spring.rabbitmq.listener.simple.retry.enabled: true or spring.rabbitmq.listener.simple.default-requeue-rejected: false is set, a source calls setDefaultRequeueRejected / setAdviceChain or uses RetryInterceptorBuilder, or the listener's class throws AmqpRejectAndDontRequeueException
-CAD-265862  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:24  LoyaltyClient.balance
+SWA-91b292  medium  NEEDS TEXT  SWALLOWED_EXCEPTION  src/main/java/com/example/e2e/order/LoyaltyClient.java:20  LoyaltyClient.balance
+  Exception is caught and dropped without a log line in LoyaltyClient.balance (falls back silently)
+  + log.debug("{{MSG}}", e.getClass().getSimpleName(){{ARGS}});
+  (+2 more edits)
+  MSG: What failed and what happens next, for Exception thrown by `{ Long points = rest.get().uri("/balances/{customerId}", customerId).retrieve().body(Long.class); return points == null…`. The [k=v] suffix and the exception are added by the tool. | suffix keys: [errorType]
+  mdc: []  vars: customerId:String, e:Exception
+  related: CAD-265862 (CATCH_ALL_DEFAULT)  (same code: decide them together)
+CAD-265862  medium  REPORT-ONLY  CATCH_ALL_DEFAULT  src/main/java/com/example/e2e/order/LoyaltyClient.java:21  LoyaltyClient.balance
   catch (Exception) returns 0L: the caller cannot tell a failure from an empty result
   note: Let the exception through (or wrap it), catch only the exceptions that really mean "nothing there", or return a result type that carries the failure.
   done when: the catch no longer returns a default value (null, 0, false, "", an empty collection or Optional), or catches something narrower than Exception, RuntimeException or Throwable
+  related: SWA-91b292 (SWALLOWED_EXCEPTION)  (same code: decide them together)
 KEH-b1f2de  medium  REPORT-ONLY  KAFKA_NO_ERROR_HANDLER  src/main/java/com/example/e2e/order/OrderEvents.java:15
   Kafka listeners on the default error handling: a failing record is retried 9 times without delay, then logged and skipped (lost)
   also fixes: KAFKA_NO_ERROR_HANDLER src/main/java/com/example/e2e/messaging/PledgeMessages.java:20
@@ -273,12 +281,6 @@ OUM-798439  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
   "Pledge lookup failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.lookup", "failed")) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
-SUG-1f466d  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/order/LoyaltyClient.java:23  LoyaltyClient.balance
-  Generated wording "Balance fell back to 0": say it in domain terms
-  - "Balance fell back to 0"
-  + "{{MSG}}"
-  (+1 more edits)
-  MSG: What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: "Balance fell back to 0"
 OUM-0f37ab  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/order/OrderNotifications.java:16  OrderNotifications.onPlaced
   "Order confirmation sent" is logged but not counted (outcome=sent, frequency unknown: no rate for "POST /orders" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("order.confirmation", "sent")), tag (Outcomes.tag("sent") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
@@ -412,7 +414,7 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 87 changes in 49 files (git diff to review)
+Applied earlier: 86 changes in 48 files (git diff to review)
 
 Optional (78) — left as is, each keeps its default:
   18 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
@@ -421,7 +423,7 @@ Optional (78) — left as is, each keeps its default:
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
-Log lines: 85 — 43 fixed, 24 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 84 — 43 fixed, 23 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there

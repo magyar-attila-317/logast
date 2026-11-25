@@ -20,7 +20,6 @@ src/main/java/com/example/e2e/job/TallyJob.java
 src/main/java/com/example/e2e/ledger/GatewayCalls.java
 src/main/java/com/example/e2e/messaging/MessagingMetrics.java
 src/main/java/com/example/e2e/messaging/PledgeMessages.java
-src/main/java/com/example/e2e/order/LoyaltyClient.java
 src/main/java/com/example/e2e/order/OrderEvents.java
 src/main/java/com/example/e2e/order/OrderMetrics.java
 src/main/java/com/example/e2e/order/OrderNotifications.java

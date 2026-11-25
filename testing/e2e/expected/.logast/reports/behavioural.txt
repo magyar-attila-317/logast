@@ -1,5 +1,4 @@
 # changes beyond logging: file:line method — what (#316)
-src/main/java/com/example/e2e/edge/Audited.java:10 Audited.audit — code changed besides logging
 src/main/java/com/example/e2e/edge/EdgeFlow.java:18 EdgeFlow.process — code changed besides logging
 src/main/java/com/example/e2e/edge/EdgeJob.java:22 EdgeJob.run — code changed besides logging
 src/main/java/com/example/e2e/job/BaseRunJob.java:9 BaseRunJob.doExecute — code changed besides logging

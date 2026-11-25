@@ -1,4 +1,4 @@
-# log lines still in logast's generated words (#292): give each the words of the domain, in the code or in .logast/decisions/messages.yaml; 17 lines
+# log lines still in logast's generated words (#292): give each the words of the domain, in the code or in .logast/decisions/messages.yaml; 16 lines
 src/main/java/com/example/e2e/edge/EdgeFlow.java:48  LOG-22028f1b  ERROR "Edge flow async work failed"
 src/main/java/com/example/e2e/edge/EdgeJob.java:23  LOG-3d08a233  INFO "Edge started"
 src/main/java/com/example/e2e/edge/EdgeJob.java:28  LOG-91f3a289  INFO "Edge completed [kioskTotalsCount={}]"
@@ -7,7 +7,6 @@ src/main/java/com/example/e2e/job/ExportJob.java:14  LOG-0af77cd1  INFO "Export 
 src/main/java/com/example/e2e/job/TallyJob.java:15  LOG-352545c5  INFO "Tally started"
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:31  LOG-f8eee904  INFO "Pledge messages (return) completed"
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:40  LOG-b4c7e808  INFO "Pledge messages (audit) completed"
-src/main/java/com/example/e2e/order/LoyaltyClient.java:23  LOG-daf14271  WARN "Balance fell back to 0"
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23  LOG-7c8f2d06  INFO "Pledge cleanup started"
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29  LOG-3e9f2774  INFO "Pledge cleanup completed [pledgeCount={}]"
 src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:18  LOG-7331ae9b  INFO "Pledge reload started"

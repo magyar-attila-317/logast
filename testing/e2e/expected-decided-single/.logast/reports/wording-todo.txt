@@ -1,5 +1,4 @@
-# log lines still in logast's generated words (#292): give each the words of the domain, in the code or in .logast/decisions/messages.yaml; 4 lines
-src/main/java/com/example/e2e/order/LoyaltyClient.java:23  LOG-daf14271  WARN "Balance fell back to 0"
+# log lines still in logast's generated words (#292): give each the words of the domain, in the code or in .logast/decisions/messages.yaml; 3 lines
 src/main/java/com/example/e2e/pledge/PledgeRepository.java:28  LOG-e1be8124  DEBUG "Pledges updated [rows={}]"
 src/main/java/com/example/e2e/pledge/PledgeRepository.java:34  LOG-04eeb040  INFO "Pledge usage saved [uses={}]"
 src/main/java/com/example/e2e/pledge/PledgeRepository.java:41  LOG-db15de56  DEBUG "Pledges read [count={}]"
