@@ -135,13 +135,19 @@ final class CatalogRules {
                 // #118: the new counters are registered at startup too: in the catalog's Registration, or a new one with all
                 String body = String.join("", c.added);
                 int reg = text.indexOf(REGISTRATION_OPEN);
+                // #322: a registration written unnamed (0.5.4) gets its catalog's full name, so same-named catalogs coexist
+                int unnamed = text.indexOf(UNNAMED_COMPONENT);
+                if (unnamed >= 0) {
+                    int at = unnamed + "    ".length();
+                    b.edit(Edit.replace(c.file.relPath(), at, at + "@org.springframework.stereotype.Component".length(), component(c)));
+                }
                 if (reg >= 0) {
                     String lines = registrations(c.addedKeys);
                     if (!lines.isEmpty()) {
                         b.edit(Edit.insert(c.file.relPath(), reg + REGISTRATION_OPEN.length(), lines));
                     }
                 } else {
-                    body += registration(registrations(new ArrayList<>(c.members.keySet())));
+                    body += registration(c, registrations(new ArrayList<>(c.members.keySet())));
                 }
                 b.edit(Edit.insert(c.file.relPath(), close, body));
                 if (c.addsMethods) {
@@ -430,7 +436,7 @@ final class CatalogRules {
                 .append("public final class ").append(c.simpleName()).append(" {\n")
                 .append("    private ").append(c.simpleName()).append("() {\n    }\n");
         c.added.forEach(sb::append);
-        sb.append(registration(registrations(c.addedKeys)));
+        sb.append(registration(c, registrations(c.addedKeys)));
         return sb.append("}\n").toString();
     }
 
@@ -442,18 +448,31 @@ final class CatalogRules {
      * increase() has its first sample; "0 for an hour" can alert). Micrometer adds meters of the global registry to
      * each registry bound to it later (Micrometer reference, Meter registries: global registry).
      */
-    private static String registration(String lines) {
+    private static String registration(Catalog c, String lines) {
         if (lines.isEmpty()) {
             return "";
         }
         return "\n    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */\n"
-                + "    @org.springframework.stereotype.Component\n"
+                + "    " + component(c) + "\n"
                 + "    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {\n"
                 + "        @Override\n"
                 + REGISTRATION_OPEN
                 + lines
                 + "        }\n"
                 + "    }\n";
+    }
+
+    /** The registration's unnamed bean annotation as 0.5.4 and earlier wrote it. */
+    static final String UNNAMED_COMPONENT = "    @org.springframework.stereotype.Component\n    static final class Registration ";
+
+    /**
+     * #322: the registration bean, named after its catalog's full name. Spring names an unnamed nested component after
+     * its short class name ("serviceMetrics.Registration"), so two packages with a catalog of the same name clash and
+     * the application does not start (ConflictingBeanDefinitionException).
+     */
+    static String component(Catalog c) {
+        String fqn = c.pkg().isEmpty() ? c.simpleName() : c.pkg() + "." + c.simpleName();
+        return "@org.springframework.stereotype.Component(\"" + fqn + ".Registration\")";
     }
 
     /** One register line per counting key (observation names and outcome tags have no counter of their own). */
