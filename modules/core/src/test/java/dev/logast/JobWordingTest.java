@@ -73,6 +73,8 @@ class JobWordingTest {
                   "POST /items/{id}/image": 10
                   "DELETE /items/{id}/image": 10
                   "POST /menu/tags": 10
+                  "POST /orders/assign": 10
+                  "POST /menu/validate-combination": 10
                 """);
         Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
         Files.writeString(src.resolve("MenuController.java"), """
@@ -110,6 +112,16 @@ class JobWordingTest {
                         save();
                     }
 
+                    @PostMapping("/orders/assign")
+                    public void assign() {
+                        save();
+                    }
+
+                    @PostMapping("/menu/validate-combination")
+                    public void validateCombination() {
+                        save();
+                    }
+
                     void reset() {
                         log.info("Starting E2E database reset...");
                     }
@@ -123,6 +135,9 @@ class JobWordingTest {
         assertThat(texts(orders, "MenuController.createCategory") + slots(orders, "MenuController.createCategory"))
                 .contains("Category creation started");
         assertThat(slots(orders, "MenuController.uploadImage")).contains("Item image started");
+        // #329: an action at the end of the path is what starts, not a creation
+        assertThat(slots(orders, "MenuController.assign")).contains("Order assign started").doesNotContain("creation");
+        assertThat(slots(orders, "MenuController.validateCombination")).contains("Validate combination started").doesNotContain("creation");
         assertThat(slots(orders, "MenuController.removeImage")).contains("Item image deletion started");
         assertThat(orders.stream().filter(o -> "MenuController.createTag".equals(o.method())).flatMap(o -> o.edits().stream())
                 .map(e -> e.text()).filter(t -> t != null && t.contains("{{MSG}}")).findFirst().orElseThrow())

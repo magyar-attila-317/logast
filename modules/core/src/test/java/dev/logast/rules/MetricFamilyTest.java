@@ -81,5 +81,8 @@ class MetricFamilyTest {
         assertThat(MetricsMap.metricName("Submit", "OrderService")).isEqualTo("order.submit");
         assertThat(MetricsMap.metricName("Tally", "TallyJob")).as("a noun ending in -ly is no adverb").isEqualTo("tally");
         assertThat(MetricsMap.metricName("Supply sync", "SupplyJob")).isEqualTo("supply.sync");
+        // #329
+        assertThat(MetricsMap.metricName("Schema migrations complete", "TenantService")).isEqualTo("schema.migrations");
+        assertThat(MetricsMap.metricName("Build", "ReportService")).isEqualTo("report.build");
     }
 }

@@ -728,7 +728,9 @@ public final class MetricsMap {
             "is", "are", "was", "were", "be", "been", "has", "have", "had", "will", "would", "can", "could", "should", "not", "no",
             "of", "to", "for", "with", "via", "from", "on", "in", "at", "by", "because", "but", "and", "or", "as", "when", "while",
             "after", "before", "than", "then", "so", "its", "it", "their", "our", "per", "into", "since", "until",
-            "without", "still", "already", "yet", "just", "only", "also", "again", "anymore");
+            "without", "still", "already", "yet", "just", "only", "also", "again", "anymore",
+            // #329: a lifecycle word is the event, not the subject (tenant{kind="schema.migrations.complete", outcome="failed"})
+            "complete", "completed", "done", "finished");
     /** Role words of a class name that say nothing about the business ("RefundService" → "refund"). */
     private static final Pattern ROLE = Pattern.compile("(Service|Client|Controller|Publisher|Listener|Handler|Job|Repository|Impl|Manager|Component|Gateway|Adapter|Facade|Processor|Helper|Support)+$");
     private static final int NAME_WORDS = 4;
@@ -739,7 +741,8 @@ public final class MetricsMap {
             // #326 M3: bare verbs
             "submit", "read", "queue", "publish", "print", "price", "persist", "mark", "nudge", "close", "open", "write",
             "parse", "load", "save", "fetch", "notify", "release", "cancel", "retry", "refresh", "apply", "resolve",
-            "validate", "render", "convert", "delete", "create", "start", "stop", "poll", "consume", "emit", "store", "lookup");
+            "validate", "render", "convert", "delete", "create", "start", "stop", "poll", "consume", "emit", "store", "lookup",
+            "build", "compute", "deliver");
     /** #326 M3: adverbs that end a subject ("lazily close"): a list, since tally, family and supply end in -ly too. */
     private static final java.util.Set<String> ADVERBS = java.util.Set.of("lazily", "eagerly", "quietly", "silently", "finally",
             "partially", "fully", "manually", "automatically", "successfully", "completely", "temporarily", "permanently",

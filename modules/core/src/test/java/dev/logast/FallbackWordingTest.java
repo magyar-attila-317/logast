@@ -55,6 +55,14 @@ class FallbackWordingTest {
                         }
                     }
 
+                    String approver(String code, String approverUuid) {
+                        try {
+                            return lookup(code);
+                        } catch (IllegalStateException e) {
+                            return approverUuid;
+                        }
+                    }
+
                     String category(String code) {
                         try {
                             return lookup(code);
@@ -109,7 +117,8 @@ class FallbackWordingTest {
         assertThat(generated).containsEntry("Rates.currency", "Fell back to default currency")
                 .as("no wording from a method name, a literal, a one-word constant or an empty result")
                 .containsEntry("Rates.validateAccessToken", "null").containsEntry("Rates.category", "null")
-                .containsEntry("Rates.history", "null");
+                .containsEntry("Rates.history", "null")
+                .as("#329: a variable is no designed default's name").containsEntry("Rates.approver", "null");
         Map<String, String> lines = swallowed.stream().filter(o -> !o.edits().isEmpty()).collect(Collectors.toMap(WorkOrder::method,
                 o -> o.edits().stream().map(Edit::text).filter(t -> t != null && t.contains("{{MSG}}")).findFirst().orElse("")));
         for (String designed : List.of("Rates.currency", "Rates.validateAccessToken", "Rates.category", "Rates.history")) {

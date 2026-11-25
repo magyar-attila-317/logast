@@ -138,6 +138,12 @@ final class ExceptionRules {
         if (!(value instanceof J.Identifier || value instanceof J.FieldAccess)) {
             return null;
         }
+        // #329: only a constant names a designed default (DEFAULT_CURRENCY); a variable (approverUuid, originMismatch) is
+        // whatever the method had at hand: "Fell back to approver uuid" says nothing
+        String simple = value instanceof J.Identifier id ? id.getSimpleName() : ((J.FieldAccess) value).getSimpleName();
+        if (!simple.equals(simple.toUpperCase(java.util.Locale.ROOT))) {
+            return null;
+        }
         String what = valueWords(value);
         return what == null || what.split(" ").length < 2 ? null : "Fell back to " + what;
     }
@@ -190,7 +196,7 @@ final class ExceptionRules {
                     + "|\\b\\w+\\s*\\+\\+|\\+\\+\\s*\\w+|\\b\\w+\\s*\\+=");
 
     /** G4: the catch sits in a loop, records the case (a call on a report, an add to a list) and continues. */
-    private static boolean recordedInLoop(MethodInfo m, CatchInfo c) {
+    static boolean recordedInLoop(MethodInfo m, CatchInfo c) {
         java.util.List<org.openrewrite.java.tree.Statement> body = c.clause.getBody().getStatements();
         if (body.isEmpty()) {
             return false;

@@ -20,6 +20,14 @@ final class Wording {
     private static final Map<String, String> VERBS = Map.of("POST", "creation", "PUT", "update", "PATCH", "update",
             "DELETE", "deletion");
 
+    /** #329: path words that are an action on a resource, not a resource created by a POST. */
+    private static final java.util.Set<String> ACTION_VERBS = java.util.Set.of("validate", "assign", "begin", "preview", "start",
+            "stop", "cancel", "approve", "reject", "submit", "confirm", "close", "open", "reopen", "publish", "archive", "restore",
+            "refresh", "sync", "import", "export", "send", "resend", "retry", "complete", "finish", "pay", "refund", "lock",
+            "unlock", "enable", "disable", "reset", "move", "copy", "merge", "split", "check", "verify", "calculate", "compute",
+            "login", "logout", "register", "apply", "accept", "decline", "revoke", "release", "reserve", "book", "schedule",
+            "generate", "upload", "download", "search", "quote", "transfer", "void", "settle", "sign", "test", "simulate");
+
     private Wording() {
     }
 
@@ -53,6 +61,12 @@ final class Wording {
                     String[] segs = parts[1].replaceAll("/+$", "").split("/");
                     boolean afterId = segs.length >= 2 && segs[segs.length - 2].startsWith("{");
                     if (!afterId) {
+                        // #329: a path ending in an action (POST /orders/assign, /combinations/validate-all): the action
+                        // on the resource before it, not "Assign creation"
+                        if (ACTION_VERBS.contains(tail.split("[-_]")[0])) {
+                            return capital(tail.contains("-") || tail.contains("_") || words.size() == 1 ? words(tail)
+                                    : singular(words.get(words.size() - 2)) + " " + words(tail));
+                        }
                         return capital(singular(tail) + " " + VERBS.get(parts[0]));
                     }
                     // an action of its own after a resource: /orders/{id}/cancel; a sub-resource changed or removed

@@ -347,6 +347,16 @@ final class LogCallRules {
         return false;
     }
 
+    /** A throw in the catch that answers the caller with a 4xx (a status, a ResponseStatusException, a …BadRequest… type). */
+    private static final java.util.regex.Pattern THROWS_CLIENT_ERROR = java.util.regex.Pattern.compile(
+            "throw\\b[^;]*(HttpStatus\\.(BAD_REQUEST|UNAUTHORIZED|FORBIDDEN|NOT_FOUND|CONFLICT|GONE|PRECONDITION_FAILED|"
+                    + "UNPROCESSABLE_ENTITY|UNPROCESSABLE_CONTENT|TOO_MANY_REQUESTS|METHOD_NOT_ALLOWED)|BadRequest|NotFound|Conflict|"
+                    + "Forbidden|Unauthorized|Invalid\\w*Exception)");
+
+    private static boolean answersClientError(CatchInfo c) {
+        return THROWS_CLIENT_ERROR.matcher(c.clause.getBody().printTrimmed()).find();
+    }
+
     /** Client errors are never ERROR; INFO per loop iteration becomes DEBUG. Edits only the method name. */
     private void level(MethodInfo m, LogCall lc, int ordinal) {
         if (lc.fluent() || !ctx.enabled(Rules.LOG_LEVEL)) {
@@ -465,7 +475,11 @@ final class LogCallRules {
         CatchInfo c = lc.inCatch();
         // #278: a team that never attaches the exception: the caught one becomes [errorType=…] (its class)
         Expression detached = null;
-        if (throwable != null && c != null && !ctx.policy.logging().attachExceptions() && throwableSrc.equals(c.param)) {
+        // #329: a line that already names the exception's class, in a catch that answers the caller with a 4xx: an expected
+        // rejection, the stack adds nothing
+        boolean namesClass = c != null && rawArgs.stream().anyMatch(a -> src(f, a).startsWith(c.param + ".getClass()"));
+        if (throwable != null && c != null && throwableSrc.equals(c.param)
+                && (!ctx.policy.logging().attachExceptions() || namesClass && answersClientError(c))) {
             detached = throwable;
             throwableSrc = null;
             issues.add(Rules.LOG_FORMAT);
@@ -478,6 +492,7 @@ final class LogCallRules {
                 && ctx.policy.logging().attachExceptions()   // #278: a team that never attaches the exception
                 && !RuleContext.deliberate(f, c, lc.call().printTrimmed())   // #290: withheld on purpose
                 && !expectedSignal(c)   // #326 L4: a business outcome: a stack per such event is noise
+                && !ExceptionRules.recordedInLoop(m, c)   // #329: an item recorded and skipped: a stack per item is noise
                 && rawArgs.stream().noneMatch(a -> a instanceof J.Identifier id && id.getSimpleName().equals(c.param))) {
             throwableSrc = c.param;
             issues.add(Rules.LOST_THROWABLE);

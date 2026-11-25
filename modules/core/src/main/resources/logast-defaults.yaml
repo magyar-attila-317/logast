@@ -87,7 +87,7 @@ metrics:
                  process, handle, send, receive, run, execute, update, check, give, sync, operation, action, step, result,
                  submit, read, queue, publish, print, price, persist, mark, nudge, close, open, write, parse, load, save,
                  fetch, notify, release, cancel, retry, refresh, apply, resolve, validate, render, convert, delete, create,
-                 start, stop, poll, consume, emit, store, lookup]
+                 start, stop, poll, consume, emit, store, lookup, build, compute, deliver]
   # #326/#327: outcomes whose names start with one of these share no metric ("everything handled" is no family)
   familyVerbs: [handle, process, parse, write, read, run, execute, do, perform, get, set, update, check, validate, load, save]
   amounts: total                   # an outcome line that logs a number ([rows={}]) can count it too, if metrics.yaml

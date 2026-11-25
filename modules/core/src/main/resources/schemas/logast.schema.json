@@ -1107,7 +1107,10 @@
             "consume",
             "emit",
             "store",
-            "lookup"
+            "lookup",
+            "build",
+            "compute",
+            "deliver"
           ],
           "description": "Words that make no metric name on their own: a name of only one of them gets its class's subject first (line in GrnImportService: grn.import.line). A layer adds to the list",
           "examples": [
