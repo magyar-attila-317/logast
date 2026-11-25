@@ -140,6 +140,31 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #7 (metamorphic relation): the order logast visits the files in changes nothing. With the files analysed in
+     * reverse order, every source file of e2e/before migrates exactly as in the main snapshot. Catches a rule that
+     * keeps state across files (a first-seen name, a counter, a key chosen by whichever file came first).
+     */
+    @Test
+    void theFileOrderChangesNothing() throws IOException {
+        System.setProperty(dev.logast.parse.ProjectParser.REVERSE_ORDER, "true");
+        Map<String, String> actual;
+        try {
+            actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            });
+        } finally {
+            System.clearProperty(dev.logast.parse.ProjectParser.REVERSE_ORDER);
+        }
+        Map<String, String> expected = files(EXPECTED);
+        List<String> differ = new ArrayList<>();
+        for (var e : expected.entrySet()) {
+            if (e.getKey().startsWith("src/") && !e.getValue().equals(actual.get(e.getKey()))) {
+                differ.add(e.getKey());
+            }
+        }
+        assertThat(differ).as("source files that migrate differently when the files are visited in reverse order").isEmpty();
+    }
+
+    /**
      * #7 ("behaviour preserved"): with the logging pack alone, a migration changes only observability code. Every Java
      * file of e2e/before, compared with its migrated version after both are reduced to the statements that are not
      * logging, MDC, metrics or observation code (comments, imports, blank lines and braces dropped: MDC and observation

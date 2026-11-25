@@ -17,6 +17,9 @@ import java.util.stream.Stream;
 
 /** Parses all main sources of a project once, with full type attribution against the given classpath. */
 public final class ProjectParser {
+    /** #7 (tests only): analyse the files in reverse order; a rule whose result depends on the order fails the relation. */
+    public static final String REVERSE_ORDER = "logast.test.reverseFileOrder";
+
     private static final Set<String> SKIP_DIRS = Set.of("build", "target", ".git", ".gradle", ".idea", "node_modules", ".logast", "out");
 
     /**
@@ -69,6 +72,9 @@ public final class ProjectParser {
             files.add(info(absRoot, cu, ctx));
         }
         files.sort(Comparator.comparing(SourceFileInfo::relPath));
+        if (Boolean.getBoolean(REVERSE_ORDER)) {
+            java.util.Collections.reverse(files);   // #7: a test of the relation "file order changes nothing"
+        }
         // account for every discovered file: analysed, or named in the errors (never silently missing)
         Set<String> analysed = new HashSet<>();
         files.forEach(f -> analysed.add(f.relPath()));
