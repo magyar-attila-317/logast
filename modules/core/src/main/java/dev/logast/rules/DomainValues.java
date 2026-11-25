@@ -300,7 +300,28 @@ public final class DomainValues {
                 return !tw.isEmpty() && Set.of("id", "ids", "uuid", "number").contains(tw.getLast());
             }).toList());
         }
-        return namesTerm(name, policy.pii());
+        // #323 H3: the term is what the name is about only as its head noun, maybe with a word that still is the value
+        // (customerEmail, emailAddress, phoneNumber): tokenAuthority, tokenType, emailVerified name something else
+        return headTerm(name, policy.pii());
+    }
+
+    /** Words after a personal-data term that still name the value itself (emailAddress, phoneNumber, nameRaw). */
+    private static final Set<String> STILL_THE_VALUE = Set.of("address", "number", "no", "value", "raw", "plain", "text",
+            "string", "full", "original", "given", "first", "last");
+
+    /** {@code name} has one of the terms, followed only by words that still name the value (see {@link #STILL_THE_VALUE}). */
+    static boolean headTerm(String name, Collection<String> terms) {
+        List<String> words = words(name);
+        for (String term : terms) {
+            List<String> t = words(term);
+            for (int i = 0; i + t.size() <= words.size(); i++) {
+                if (words.subList(i, i + t.size()).equals(t)
+                        && words.subList(i + t.size(), words.size()).stream().allMatch(STILL_THE_VALUE::contains)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** {@code name}'s words contain one of the terms' words in a row (the whole-word match of {@link #isPiiName}). */

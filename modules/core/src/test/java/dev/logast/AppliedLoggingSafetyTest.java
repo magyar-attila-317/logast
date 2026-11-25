@@ -273,6 +273,63 @@ class AppliedLoggingSafetyTest {
                 .allSatisfy(o -> assertThat(o.edits()).as("recorded and skipped: no line").isEmpty());
     }
 
+    /** #323 H2: the same in a forEach lambda: the lambda's end (or a return) moves on to the next row. */
+    @Test
+    void aRecordedRejectionInAForEachLambdaGetsNoLine(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Report.java"), "package x;\n\npublic class Report {\n    void skipped(String row, String why) { }\n}\n");
+        Files.writeString(src.resolve("RecipeImport.java"), """
+                package x;
+
+                import java.util.List;
+
+                public class RecipeImport {
+                    private final Report report = new Report();
+
+                    void lines(List<String> rows) {
+                        rows.forEach(row -> {
+                            try {
+                                parse(row);
+                            } catch (IllegalArgumentException rejection) {
+                                report.skipped(row, rejection.getMessage());
+                            }
+                        });
+                    }
+
+                    void assignments(List<String> rows) {
+                        rows.forEach(row -> {
+                            try {
+                                parse(row);
+                            } catch (IllegalArgumentException rejection) {
+                                report.skipped(row, rejection.getMessage());
+                                return;
+                            }
+                            store(row);
+                        });
+                    }
+
+                    void once(String row) {
+                        try {
+                            parse(row);
+                        } catch (IllegalArgumentException rejection) {
+                            report.skipped(row, rejection.getMessage());
+                        }
+                    }
+
+                    void parse(String row) {
+                    }
+
+                    void store(String row) {
+                    }
+                }
+                """);
+        var orders = scan(dir).stream().filter(o -> o.rule().equals(Rules.SWALLOWED_EXCEPTION)).toList();
+        assertThat(orders).filteredOn(o -> o.method().equals("RecipeImport.lines") || o.method().equals("RecipeImport.assignments"))
+                .hasSize(2).allSatisfy(o -> assertThat(o.edits()).as(o.method() + ": recorded and skipped: no line").isEmpty());
+        assertThat(orders).filteredOn(o -> o.method().equals("RecipeImport.once")).singleElement()
+                .satisfies(o -> assertThat(o.edits()).as("not in a loop: the line is added").isNotEmpty());
+    }
+
     /** A noun left at the end of a sentence when its id moves to MDC goes with its preposition ("… for tenant"). */
     @Test
     void aTrailingNounGoesWithItsId(@TempDir Path dir) throws Exception {

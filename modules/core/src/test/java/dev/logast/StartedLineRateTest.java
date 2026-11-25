@@ -77,4 +77,44 @@ class StartedLineRateTest {
         return orders.stream().filter(o -> method.equals(o.method()))
                 .anyMatch(o -> o.edits().stream().anyMatch(e -> e.text() != null && e.text().contains("started")));
     }
+
+    /**
+     * #323 H4: a write endpoint known to be quiet gets its started line at DEBUG: the access log and
+     * http.server.requests already record each request at INFO. A second scan does not add another.
+     */
+    @Test
+    void anEndpointsStartedLineIsDebug(@TempDir Path dir) throws Exception {
+        Path decisions = Files.createDirectories(dir.resolve(".logast/decisions"));
+        Files.writeString(decisions.resolve("traffic.yaml"), "entrypoints:\n  \"POST /things\": 10\n");
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("ThingController.java"), """
+                package x;
+
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class ThingController {
+                    @PostMapping("/things")
+                    public void create(@RequestBody String body) {
+                        store(body);
+                    }
+
+                    void store(String body) {
+                    }
+                }
+                """);
+        List<WorkOrder> orders = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))
+                .withTraffic(Traffic.load(dir, null))).orders();
+        List<String> entry = orders.stream().filter(o -> o.rule().equals(Rules.ENTRYPOINT_SILENT) && "ThingController.create".equals(o.method()))
+                .flatMap(o -> o.edits().stream()).map(e -> e.text()).filter(t -> t != null && t.contains("{{MSG}}")).toList();
+        assertThat(entry).as("a started line, at DEBUG").singleElement().satisfies(t -> assertThat(t).contains(".debug(\"{{MSG}}\")"));
+        Files.writeString(src.resolve("ThingController.java"), Files.readString(src.resolve("ThingController.java"))
+                .replace("        store(body);", "        log.debug(\"Thing creation started\");\n        store(body);")
+                .replace("public class ThingController {", "public class ThingController {\n    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ThingController.class);"));
+        List<WorkOrder> again = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))
+                .withTraffic(Traffic.load(dir, null))).orders();
+        assertThat(again).as("the DEBUG line ends its silence").noneMatch(o -> o.rule().equals(Rules.ENTRYPOINT_SILENT));
+    }
 }

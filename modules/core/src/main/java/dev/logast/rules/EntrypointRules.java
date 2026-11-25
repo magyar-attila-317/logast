@@ -179,7 +179,9 @@ final class EntrypointRules {
         return !readEndpoint && !busyOrUnknown && !ctx.lifecycle().frequentRun(ep)   // #272: no INFO line per run of a sweep
                 && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
                 && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(m.file(), m.line(), Rules.ENTRYPOINT_SILENT)
-                && !LifecyclePlan.ownFlowLogs(ctx, m, Level.parse(ctx.policy.logging().minEntrypointLevel()));
+                // #323 H4: an HTTP endpoint's started line is DEBUG: a line at DEBUG already ends its silence
+                && !LifecyclePlan.ownFlowLogs(ctx, m, LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.HTTP ? Level.DEBUG
+                : Level.parse(ctx.policy.logging().minEntrypointLevel()));
     }
 
     /** The started line (its text a slot, #231: generated wording when nobody writes one); "" when no logger can be added. */
@@ -200,7 +202,12 @@ final class EntrypointRules {
                 List.of(), ctx.glossary.terms(), null,
                 ctx.phrasing.canonicalOf("started") == null ? null : "started", ctx.phrasing.canonicalOf("started"),
                 subject == null ? null : Wording.event(ctx, subject, "started")));
-        return logger.name() + "." + ctx.policy.logging().entryLevel() + "(\"{{MSG}}\");\n";
+        // #323 H4: on an HTTP endpoint the access log and http.server.requests already record each request: a started
+        // line at INFO is a second line for one request; DEBUG keeps it for tracing a flow (jobs and listeners have
+        // no access log: they keep logging.entryLevel)
+        String level = LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.HTTP && Level.parse(ctx.policy.logging().entryLevel()).compareTo(Level.DEBUG) > 0
+                ? "debug" : ctx.policy.logging().entryLevel();
+        return logger.name() + "." + level + "(\"{{MSG}}\");\n";
     }
 
     /** The body inside an ObservedContext with the entry's MDC, its quartz trace (#234) and its outcome level. */

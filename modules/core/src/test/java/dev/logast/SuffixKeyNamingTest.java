@@ -70,4 +70,118 @@ class SuffixKeyNamingTest {
                 .as("the source of a transformation").contains("kind={}").doesNotContain("toLowerCase={}")
                 .as("an exception's class").contains("errorType={}").doesNotContain("simpleName={}");
     }
+
+    /**
+     * #323 H1/H3 (a large service's dry run): two inline names that end in the same word ("source item={}", "clone
+     * item={}") keep apart; the values a line compares (the authority a token is bound to and the one required, the
+     * token's and the body's device, the user and the token type) all stay.
+     */
+    @Test
+    void valuesALineComparesAllStay(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("logast.yaml"), """
+                vocabulary:
+                  device:
+                    mdc: { key: deviceId, sources: { params: [deviceId, tokenDeviceId], types: { x.Request: "deviceId()" } } }
+                """);
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Request.java"), "package x;\n\npublic record Request(String deviceId) {\n}\n");
+        Files.writeString(src.resolve("Jwt.java"), "package x;\n\npublic class Jwt {\n    String extractTokenType(String jwt) { return jwt; }\n}\n");
+        Files.writeString(src.resolve("Guard.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public class Guard {
+                    private static final Logger log = LoggerFactory.getLogger(Guard.class);
+                    private final Jwt jwtUtil = new Jwt();
+
+                    void copy(String sourceId, String cloneId) {
+                        try {
+                            run();
+                        } catch (IllegalStateException e) {
+                            log.error("Copy failed (source item={}, clone item={}): {}", sourceId, cloneId, e.getMessage());
+                        }
+                    }
+
+                    void authorize(String tokenAuthority, String requiredAuthority) {
+                        log.warn("Token bound to {} but {} was required", tokenAuthority, requiredAuthority);
+                    }
+
+                    void device(String tokenDeviceId, Request request) {
+                        log.warn("Device mismatch tokenDeviceId={} bodyDeviceId={}", tokenDeviceId, request.deviceId());
+                    }
+
+                    @org.springframework.web.bind.annotation.PostMapping("/devices/{tokenDeviceId}/check")
+                    public void check(@org.springframework.web.bind.annotation.PathVariable String tokenDeviceId,
+                                      @org.springframework.web.bind.annotation.RequestBody Request request) {
+                        log.warn("Device mismatch tokenDeviceId={} bodyDeviceId={}", tokenDeviceId, request.deviceId());
+                    }
+
+                    void login(String username, String jwt) {
+                        log.info("Authenticated user {} with token type {}", username, jwtUtil.extractTokenType(jwt));
+                    }
+
+                    void run() {
+                    }
+                }
+                """);
+        List<WorkOrder> orders = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))).orders();
+        java.util.Map<String, String> byMethod = new java.util.TreeMap<>();
+        for (WorkOrder o : orders) {
+            if (o.method() != null && o.method().startsWith("Guard.")) {
+                String t = java.util.stream.Stream.concat(o.edits().stream().map(Edit::text).filter(x -> x != null),
+                        o.slots().values().stream().flatMap(sl -> sl.keys().stream().map(k -> k + "={}"))).reduce("", (a, b) -> a + "\n" + b);
+                byMethod.merge(o.method(), o.rule() + ": " + t, (a, b) -> a + "\n" + b);
+            }
+        }
+        String copy = byMethod.getOrDefault("Guard.copy", "");
+        assertThat(copy).as(copy).doesNotContain("item={}, item={}").containsPattern("source\\w*=\\{}").containsPattern("clone\\w*=\\{}");
+        assertThat(byMethod.getOrDefault("Guard.authorize", "")).as(byMethod.toString()).doesNotContain("[requiredAuthority={}]\")");
+        String device = byMethod.getOrDefault("Guard.device", "");
+        assertThat(device).as(device).doesNotContain("[tokenDeviceId={}]\"");
+        String login = byMethod.getOrDefault("Guard.login", "");
+        assertThat(login).as(login).doesNotContain("\"Authenticated user {}\"");
+    }
+
+    /** #323 H3, applied: once tokenDeviceId is in MDC the body's device id still stays in the line it is compared in. */
+    @Test
+    void aComparedValueSurvivesTheApply(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("logast.yaml"), """
+                packs: [logging]
+                vocabulary:
+                  device:
+                    mdc: { key: deviceId, sources: { params: [deviceId], types: { x.Request: "deviceId()" } } }
+                """);
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Request.java"), "package x;\n\npublic record Request(String deviceId) {\n}\n");
+        Files.writeString(src.resolve("Devices.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.web.bind.annotation.PathVariable;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestBody;
+                import org.springframework.web.bind.annotation.RestController;
+
+                @RestController
+                public class Devices {
+                    private static final Logger log = LoggerFactory.getLogger(Devices.class);
+
+                    @PostMapping("/devices/{deviceId}/check")
+                    public void check(@PathVariable String deviceId, @RequestBody Request request) {
+                        String tokenDeviceId = deviceId.trim();
+                        if (!tokenDeviceId.equals(request.deviceId())) {
+                            log.warn("Device mismatch tokenDeviceId={} bodyDeviceId={}", tokenDeviceId, request.deviceId());
+                        }
+                    }
+                }
+                """);
+        java.util.function.Function<Path, dev.logast.orders.ScanResult> scan = p -> Logast.scan(p, Fixtures.classpath(), Logast.policy(p, null));
+        dev.logast.apply.Applier applier = new dev.logast.apply.Applier(scan, new dev.logast.apply.FillValidator(Logast.policy(dir, null)));
+        applier.apply(dir, new dev.logast.apply.Applier.Selection(true, java.util.Set.of(), java.util.Map.of()), true);
+        String after = Files.readString(src.resolve("Devices.java"));
+        assertThat(after).as(after).contains("request.deviceId()").containsPattern("bodyDeviceId=\\{}");
+    }
 }

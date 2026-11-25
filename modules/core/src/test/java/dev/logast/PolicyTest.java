@@ -146,6 +146,13 @@ class PolicyTest {
         assertThat(d.isPiiName("customerCardNumber")).isTrue();
         assertThat(d.isPiiName("shippingReason")).isFalse();   // "pin" is not a word here
         assertThat(d.isPiiName("reason")).isFalse();
-        assertThat(d.isPiiName("tokenBucket")).isTrue();        // conservative: "token" is a word
+        // #323: the term as the head noun is the value; with another noun after it, the name is about something else
+        assertThat(d.isPiiName("accessToken")).isTrue();
+        assertThat(d.isPiiName("emailAddress")).isTrue();
+        assertThat(d.isPiiName("phoneNumber")).isTrue();
+        assertThat(d.isPiiName("tokenBucket")).isFalse();       // a rate limiter's bucket
+        assertThat(d.isPiiName("tokenAuthority")).isFalse();
+        assertThat(d.isPiiName("tokenType")).isFalse();
+        assertThat(d.isPiiName("emailVerified")).isFalse();
     }
 }

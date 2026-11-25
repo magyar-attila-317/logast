@@ -502,6 +502,21 @@ final class LogCallRules {
                 }
             }
         }
+        // #323 H1: names written in the text can end in the same word ("source item={}", "clone item={}"): still one
+        // key twice. Then the values' own names (sourceId, cloneId), else the key numbered
+        Map<String, Long> stillTwice = new HashMap<>();
+        args.forEach(a -> stillTwice.merge(a.key(), 1L, Long::sum));
+        Map<String, Integer> seen = new HashMap<>();
+        for (int i = 0; i < args.size(); i++) {
+            Arg a = args.get(i);
+            if (stillTwice.get(a.key()) <= 1) {
+                continue;
+            }
+            String derived = DomainValues.derivedKey(a.expr());
+            String key = derived != null && !derived.isBlank() && args.stream().noneMatch(o -> o != a && styled(derived).equals(o.key()))
+                    ? styled(derived) : a.key() + (seen.merge(a.key(), 1, Integer::sum));
+            args.set(i, new Arg(a.expr(), a.src(), key, false));
+        }
 
         // "Pledge {} published" with pledgeId in MDC: the placeholder right after its own noun goes, the sentence stays
         List<String> inPlaceDeps = new ArrayList<>();

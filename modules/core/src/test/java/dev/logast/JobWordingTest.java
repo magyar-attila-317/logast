@@ -126,7 +126,7 @@ class JobWordingTest {
         assertThat(slots(orders, "MenuController.removeImage")).contains("Item image deletion started");
         assertThat(orders.stream().filter(o -> "MenuController.createTag".equals(o.method())).flatMap(o -> o.edits().stream())
                 .map(e -> e.text()).filter(t -> t != null && t.contains("{{MSG}}")).findFirst().orElseThrow())
-                .as("#241: the body's indent, not the wrapped parameter line's").startsWith("        log.info(");
+                .as("#241: the body's indent, not the wrapped parameter line's").startsWith("        log.debug(");   // #323 H4: an endpoint's started line is DEBUG
         assertThat(texts(orders, "MenuController.reset") + slots(orders, "MenuController.reset"))
                 .contains("E2E database reset started").doesNotContain("..");
     }

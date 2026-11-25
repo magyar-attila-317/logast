@@ -164,6 +164,9 @@ final class ExceptionRules {
         return words.length() < 3 || Set.of("result", "res", "ret", "value", "out", "response").contains(words) ? null : words;
     }
 
+    /** Calls that run a lambda once per item. */
+    private static final Set<String> LAMBDA_LOOPS = Set.of("forEach", "forEachOrdered", "forEachRemaining");
+
     private static final java.util.regex.Pattern RECORDS = java.util.regex.Pattern.compile(
             "(?i)(report|skip|reject|record|collect|fail|error|warning|invalid)\\w*\\s*\\(|\\.(add|put|increment\\w*)\\(");
 
@@ -173,13 +176,13 @@ final class ExceptionRules {
         if (body.isEmpty()) {
             return false;
         }
-        boolean moves = body.getLast() instanceof J.Continue || body.size() >= 1 && insideLoopTail(m, c);
         String text = c.clause.getBody().printTrimmed();
-        if (!moves || !RECORDS.matcher(text).find()) {
+        if (!RECORDS.matcher(text).find()) {
             return false;
         }
         int at = Pos.start(c.clause);
         boolean[] loop = {false};
+        boolean[] lambdaLoop = {false};
         new org.openrewrite.java.JavaIsoVisitor<Integer>() {
             @Override
             public org.openrewrite.java.tree.Statement visitStatement(org.openrewrite.java.tree.Statement st, Integer p) {
@@ -189,8 +192,21 @@ final class ExceptionRules {
                 }
                 return super.visitStatement(st, p);
             }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, Integer p) {
+                // #323 H2: rows.forEach(row -> { try … catch … { report.skipped(..); } }): one item per call of the lambda
+                if (LAMBDA_LOOPS.contains(mi.getSimpleName()) && mi.getArguments().stream().anyMatch(a -> a instanceof J.Lambda l
+                        && at >= Pos.start(l) && at < Pos.end(l))) {
+                    lambdaLoop[0] = true;
+                }
+                return super.visitMethodInvocation(mi, p);
+            }
         }.visit(m.decl().getBody(), 0);
-        return loop[0];
+        // moving on: continue in a loop, the end of the loop body, or (in a forEach lambda) a return or the lambda's end
+        boolean moves = body.getLast() instanceof J.Continue || insideLoopTail(m, c)
+                || lambdaLoop[0] && body.getLast() instanceof J.Return ret && ret.getExpression() == null;
+        return moves && (loop[0] || lambdaLoop[0]);
     }
 
     /** The try is the last statement of the loop's body: after the catch the loop goes on anyway. */
