@@ -165,6 +165,54 @@ abstract class E2eGoldenTest {
     }
 
     /**
+     * #7 (metamorphic relation): a call through an interface with a single implementation migrates like the direct
+     * call. PledgeController gets OrderService behind an interface of its three public methods; mapped back (the field
+     * and parameter type, the import, the implements clause), every source file equals the main snapshot. Catches a rule
+     * that loses a callee, an MDC key or a value when the call goes through interface dispatch.
+     */
+    @Test
+    void aCallThroughASingleImplementationInterfaceMigratesLikeTheDirectCall() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path order = app.resolve("src/main/java/com/example/e2e/order");
+            Files.writeString(order.resolve("Orders.java"), """
+                    package com.example.e2e.order;
+
+                    public interface Orders {
+                        void placeAndReward(Order order);
+
+                        void place(Order order);
+
+                        void ship(java.util.List<Order> orders, int batchNumber);
+                    }
+                    """);
+            Path service = order.resolve("OrderService.java");
+            Files.writeString(service, Files.readString(service).replace("public class OrderService {", "public class OrderService implements Orders {"));
+            Path controller = app.resolve("src/main/java/com/example/e2e/web/PledgeController.java");
+            Files.writeString(controller, Files.readString(controller).replace("import com.example.e2e.order.OrderService;",
+                    "import com.example.e2e.order.Orders;").replace("private final OrderService orders;", "private final Orders orders;")
+                    .replace("PledgeRepository repository, OrderService orders)", "PledgeRepository repository, Orders orders)"));
+        });
+        Map<String, String> expected = files(EXPECTED);
+        List<String> differ = new ArrayList<>();
+        for (var e : expected.entrySet()) {
+            if (!e.getKey().startsWith("src/")) {
+                continue;
+            }
+            String got = actual.get(e.getKey());
+            if (got != null) {
+                got = got.replace("public class OrderService implements Orders {", "public class OrderService {")
+                        .replace("import com.example.e2e.order.Orders;", "import com.example.e2e.order.OrderService;")
+                        .replace("private final Orders orders;", "private final OrderService orders;")
+                        .replace("PledgeRepository repository, Orders orders)", "PledgeRepository repository, OrderService orders)");
+            }
+            if (!e.getValue().equals(got)) {
+                differ.add(e.getKey());
+            }
+        }
+        assertThat(differ).as("source files that migrate differently when the call goes through an interface").isEmpty();
+    }
+
+    /**
      * #7 ("behaviour preserved"): with the logging pack alone, a migration changes only observability code. Every Java
      * file of e2e/before, compared with its migrated version after both are reduced to the statements that are not
      * logging, MDC, metrics or observation code (comments, imports, blank lines and braces dropped: MDC and observation
