@@ -536,7 +536,9 @@ public final class SetupRules {
             }
             String current = vendoredFor(cls, ctx.a.supportPackage);
             String existing = read(target);
-            if (existing.strip().equals(current.strip())) {
+            // #237: the build's formatter (spring-javaformat, Spotless) reformats the copies after an apply: the same code
+            // in another layout is up to date, or every apply would copy them again and the formatter undo it
+            if (existing.replaceAll("\\s+", "").equals(current.replaceAll("\\s+", ""))) {
                 continue;
             }
             if (b == null) {

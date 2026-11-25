@@ -898,11 +898,17 @@ abstract class E2eGoldenTest {
         Files.writeString(build, Files.readString(build).replace("plugins { java }",
                 "plugins {\n    java\n    id(\"io.spring.javaformat\") version \"0.0.47\"\n}"));
         Path wrapper = app.resolve("gradlew");
-        Files.writeString(wrapper, "#!/bin/sh\necho \"$@\" >> \"$(dirname \"$0\")/formatted.txt\"\n");
+        // like a real formatter: it lays out every file its own way (here: a tab for the first indent level)
+        Files.writeString(wrapper, "#!/bin/sh\necho \"$@\" >> \"$(dirname \"$0\")/formatted.txt\"\n"
+                + "find \"$(dirname \"$0\")/src\" -name '*.java' -exec sed -i 's/^    /\\t/' {} +\n");
         wrapper.toFile().setExecutable(true);
         String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         assertThat(out).as(out).contains("formatted with the build's io.spring.javaformat (format)").doesNotContain("CHECK FAILED");
         assertThat(Files.readString(app.resolve("formatted.txt"))).isEqualTo("-q --console=plain format\n");
+        // the corpus found it on a service with spring-javaformat: the reformatted support copies are up to date, or every
+        // apply copied them again (and the formatter undid it)
+        String again = run(app, "apply", app.toString(), "--auto", "--write", "--force", "--classpath-file", CLASSPATH);
+        assertThat(again).as(again).contains("nothing to change");
         Path other = tmp.resolve("other");
         copy(BEFORE, other);
         Files.writeString(other.resolve("build.gradle.kts"), Files.readString(build));
