@@ -26,7 +26,7 @@ src/main/java/com/example/e2e/metrics/BusinessMetrics.java:105 BusinessMetrics.p
 src/main/java/com/example/e2e/metrics/BusinessMetrics.java:110 BusinessMetrics.pledgeResendFailed — method added
 src/main/java/com/example/e2e/metrics/BusinessMetrics.java:115 BusinessMetrics.pledgePublished — method added
 src/main/java/com/example/e2e/metrics/BusinessMetrics.java:120 BusinessMetrics.pledgeAllotmentCompleted — method added
-src/main/java/com/example/e2e/metrics/BusinessMetrics.java:126 Registration — method added
+src/main/java/com/example/e2e/metrics/BusinessMetrics.java:125 Registration — method added
 src/main/java/com/example/e2e/metrics/BusinessMetrics.java:128 Registration.afterSingletonsInstantiated — method added
 src/main/java/com/example/e2e/order/OrderNotifications.java:16 OrderNotifications.onPlaced — code changed besides logging
 src/main/java/com/example/e2e/order/OrderNotifications.java:24 OrderNotifications.onCommitted — code changed besides logging

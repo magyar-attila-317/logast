@@ -116,7 +116,8 @@ public final class FleetHome {
         paths.put(name, dir.toAbsolutePath().normalize().toString());
         try {
             Files.createDirectories(e.configFile().getParent());
-            YAML.writeValue(e.configFile().toFile(), root);
+            // #321: the user config names its schema on top, so the IDE completes it
+            Files.writeString(e.configFile(), dev.logast.Schemas.stamp(e.configFile(), YAML.writeValueAsString(root), dev.logast.Schemas.CONFIG));
         } catch (IOException ex) {
             throw new UncheckedIOException("cannot write " + e.configFile(), ex);
         }

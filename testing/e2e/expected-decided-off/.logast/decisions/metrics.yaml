@@ -1,3 +1,5 @@
+# $schema: ../schemas/metrics.schema.json
+# yaml-language-server: $schema=../schemas/metrics.schema.json
 # Optional. One entry per outcome the logs report and no metric counts. Left blank: no metric is added. Set count to
 # counter (Outcomes.count(name, outcome): a counter name{outcome=...}), tag (Outcomes.tag(outcome) on the timer
 # already running; only where _tag says available) or skip (a // logast:ignore comment). Edit name and outcome
@@ -6,6 +8,18 @@
 # empty as takes metrics.amounts from logast.yaml. Leave amount empty to count how often only. Then: logast apply .
 # `logast explain metrics . --format json` has the context. Keys starting with _ are hints (_where and _event find
 # the line again when its id changes: keep them).
+#
+# Example:
+#   OUM-1a2b3c:
+#     count: counter        # counter | tag | skip; empty: undecided (no metric)
+#     name: refund
+#     outcome: sent
+#   OUM-4d5e6f:
+#     count: counter
+#     name: import
+#     outcome: completed
+#     amount: rows          # one of _amounts; empty: count how often only
+#     as: total             # total | per-run; empty: metrics.amounts from logast.yaml
 OUM-3c3200:
   count: counter
   name: pledge

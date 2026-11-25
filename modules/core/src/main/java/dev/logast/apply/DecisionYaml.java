@@ -57,6 +57,16 @@ public final class DecisionYaml {
         return sb.toString();
     }
 
+    /**
+     * #321: a filled-in example entry as comment lines below the header text, indentation kept: what a decided
+     * entry looks like, next to the entries that wait.
+     */
+    public static String example(String yaml) {
+        StringBuilder sb = new StringBuilder("#\n# Example:\n");
+        yaml.strip().lines().forEach(l -> sb.append("#   ").append(l).append('\n'));
+        return sb.toString();
+    }
+
     /** {@code header} followed by {@code body} as YAML. */
     public static String text(String header, JsonNode body) {
         try {
@@ -68,7 +78,7 @@ public final class DecisionYaml {
 
     /** Writes the file (and its folder) unless it already reads exactly so; returns whether it was written. */
     public static boolean write(Path file, String header, JsonNode body) {
-        String text = text(header, body);
+        String text = dev.logast.Schemas.stamp(file, text(header, body));   // #321: its schema named on top
         try {
             if (Files.isRegularFile(file) && Files.readString(file, StandardCharsets.UTF_8).equals(text)) {
                 return false;
@@ -81,7 +91,7 @@ public final class DecisionYaml {
         }
     }
 
-    /** The comment lines at the top of the file (the header logast wrote), or "" when there is no file. */
+    /** The comment lines at the top of the file (the header logast wrote, without the schema lines), or "" when there is no file. */
     public static String header(Path file) {
         if (!Files.isRegularFile(file)) {
             return "";
@@ -94,7 +104,7 @@ public final class DecisionYaml {
                 }
                 sb.append(l).append('\n');
             }
-            return sb.toString();
+            return dev.logast.Schemas.withoutModelines(sb.toString());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

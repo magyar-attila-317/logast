@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "logast metrics.yaml",
+  "description": "Optional. One entry per outcome the logs report and no metric counts; left blank, no metric is added. Then run logast apply .",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "description": "One logged outcome (its id)",
+    "properties": {
+      "count": {
+        "type": "string",
+        "enum": [
+          "",
+          "counter",
+          "tag",
+          "skip"
+        ],
+        "default": "",
+        "description": "counter: Outcomes.count(name, outcome), a counter name{outcome=…}; tag: Outcomes.tag(outcome) on the timer already running (only where _tag says available); skip: never offered again (a // logast:ignore comment); empty: undecided"
+      },
+      "name": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(\\.[a-z0-9]+)*$",
+        "description": "The metric name: lower case, dots",
+        "examples": [
+          "refund"
+        ]
+      },
+      "outcome": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$",
+        "description": "The outcome tag value",
+        "examples": [
+          "sent",
+          "rejected"
+        ]
+      },
+      "amount": {
+        "type": "string",
+        "default": "",
+        "description": "Where the line logs a number (_amounts): the one to count too; empty: count how often only",
+        "examples": [
+          "rows"
+        ]
+      },
+      "as": {
+        "type": "string",
+        "enum": [
+          "",
+          "total",
+          "per-run"
+        ],
+        "default": "",
+        "description": "total: a counter name.<amount> grows by it; per-run: each value one sample of a distribution summary; empty: metrics.amounts from logast.yaml"
+      }
+    },
+    "patternProperties": {
+      "^_": {
+        "description": "A hint logast writes (keys starting with _): keep it, logast finds the line again with it"
+      }
+    },
+    "additionalProperties": false
+  }
+}

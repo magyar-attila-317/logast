@@ -112,7 +112,7 @@ final class Init implements Callable<Integer> {
                 Path file = r.resolve(dev.logast.LogastDir.TRAFFIC);
                 Traffic existing = Files.exists(file) ? Traffic.load(r, file) : Traffic.none();
                 Files.createDirectories(file.getParent());
-                Files.writeString(file, Traffic.template(a.entrypoints, existing));
+                Files.writeString(file, dev.logast.Schemas.stamp(file, Traffic.template(a.entrypoints, existing)));
                 Out.step(".logast/decisions/traffic.yaml", a.entrypoints.size() + " entrypoints; optional: add calls/day so logast can judge log volume");
             }
         }

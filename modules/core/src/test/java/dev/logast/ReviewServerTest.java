@@ -58,7 +58,7 @@ class ReviewServerTest {
             // the yaml files stay the stored form: what scan / apply read back
             assertThat(dev.logast.apply.MetricsFile.read(tmp).get("OUM-000001").count()).isEqualTo("counter");
             assertThat(dev.logast.apply.MetricsFile.read(tmp).get("OUM-000001").name()).isEqualTo("pledge.use");
-            assertThat(Files.readString(metrics)).startsWith("# One entry per outcome.\n").contains("_where:");
+            assertThat(dev.logast.Schemas.withoutModelines(Files.readString(metrics))).startsWith("# One entry per outcome.\n").contains("_where:");
             assertThat(dev.logast.rules.RetrySettingsRules.candidateMarks(tmp)).containsEntry("RateClient.history", "no")
                     .containsEntry("RateClient.current", "");
             assertThat(Files.readString(retry)).contains("    retry: \"no\"    # yes: one quick retry");

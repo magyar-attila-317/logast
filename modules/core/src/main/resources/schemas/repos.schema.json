@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "logast fleet repos.yaml",
+  "description": "A fleet kept in a git repo: its members by URL. Each is cloned shallow into .cache/repos/<name> and scanned read-only.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "fleet": {
+      "type": "string",
+      "description": "The fleet's name",
+      "examples": [
+        "platform"
+      ]
+    },
+    "repos": {
+      "type": "array",
+      "description": "The members: a git URL, or an entry with a name, a branch and the tables to export",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "A git URL (ssh or https); the name is the repo's",
+            "examples": [
+              "git@github.com:example/orders.git"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "A member",
+            "additionalProperties": false,
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "Its git URL"
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name in the fleet (default: the repo's)"
+              },
+              "branch": {
+                "type": "string",
+                "description": "The branch to scan (default: the repo's default branch)"
+              },
+              "rows": {
+                "type": "array",
+                "description": "Tables whose rows its Flyway migrations seed and that become facts (schema.table)",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "orchestration.job_definition"
+                  ]
+                ]
+              }
+            },
+            "required": [
+              "url"
+            ]
+          }
+        ]
+      },
+      "examples": [
+        [
+          "git@github.com:example/orders.git",
+          {
+            "url": "git@github.com:example/billing.git",
+            "branch": "main"
+          }
+        ]
+      ]
+    }
+  }
+}

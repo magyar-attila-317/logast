@@ -80,7 +80,7 @@ class CommandsCliTest {
         while (m.find()) {
             listed.add(m.group(1));
         }
-        assertThat(listed).containsExactly("apply", "scan", "review", "verify", "explain", "fleet", "init", "update");
+        assertThat(listed).containsExactly("apply", "scan", "review", "verify", "explain", "fleet", "init", "update", "schemas", "completion");
         assertThat(new CommandLine(new Main()).getSubcommands().keySet()).as("hidden, but still there")
                 .contains("shape", "classpath", "traffic", "vocabulary", "metrics", "queries", "why", "lifecycle", "policy", "rules", "facts", "export", "mcp");
         assertThat(new CommandLine(new Main()).getSubcommands().get("explain").getSubcommands().keySet())

@@ -137,6 +137,8 @@ public final class Traffic {
                 .append("# Regenerate with `logast traffic <root>`: filled-in values are kept, new entrypoints are added.\n")
                 .append("# patterns: a rate for every entrypoint whose label matches and has no value below (* within a path segment,\n")
                 .append("#   ** across segments; the most specific match wins), e.g. \"* /api/admin/**\": 10\n")
+                .append("#\n# Example:\n#   patterns:\n#     \"* /api/admin/**\": 10\n#   entrypoints:\n#     \"POST /orders\": 120000"
+                        + "    # a value of its own wins over a pattern and a schedule\n")
                 .append("patterns:");
         if (existing.patterns.isEmpty()) {
             sb.append(" {}\n");

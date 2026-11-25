@@ -5,12 +5,12 @@ src/main/java/com/example/e2e/job/ExportJob.java:12 ExportJob.doExecute — code
 src/main/java/com/example/e2e/job/JobMetrics.java:22 JobMetrics.exportJobCompleted — method added
 src/main/java/com/example/e2e/job/JobMetrics.java:27 JobMetrics.preloadExportCompleted — method added
 src/main/java/com/example/e2e/job/JobMetrics.java:32 JobMetrics.tallyCompleted — method added
-src/main/java/com/example/e2e/job/JobMetrics.java:38 Registration — method added
+src/main/java/com/example/e2e/job/JobMetrics.java:37 Registration — method added
 src/main/java/com/example/e2e/job/JobMetrics.java:40 Registration.afterSingletonsInstantiated — method added
 src/main/java/com/example/e2e/job/PreloadJob.java:14 PreloadJob.doExecute — code changed besides logging
 src/main/java/com/example/e2e/job/TallyJob.java:14 TallyJob.doExecute — code changed besides logging
 src/main/java/com/example/e2e/messaging/MessagingMetrics.java:19 MessagingMetrics.pledgeMessagesCompleted — method added
-src/main/java/com/example/e2e/messaging/MessagingMetrics.java:25 Registration — method added
+src/main/java/com/example/e2e/messaging/MessagingMetrics.java:24 Registration — method added
 src/main/java/com/example/e2e/messaging/MessagingMetrics.java:27 Registration.afterSingletonsInstantiated — method added
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:28 PledgeMessages.onReturn — code changed besides logging
 src/main/java/com/example/e2e/messaging/PledgeMessages.java:37 PledgeMessages.onAudit — code changed besides logging

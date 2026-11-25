@@ -1,0 +1,310 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "logast fact mapping",
+  "description": "Company-specific facts without code (#158): each rule matches facts, may look up other nodes, and writes nodes and edges from templates with {attribute} placeholders. A template with a placeholder that has no value is skipped.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mappings"
+  ],
+  "properties": {
+    "needs": {
+      "type": "object",
+      "description": "What the mapping reads",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "type": "array",
+          "description": "Tables whose rows it needs (schema.table): a fleet exports them",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "orchestration.job_definition"
+            ]
+          ]
+        }
+      }
+    },
+    "mappings": {
+      "type": "array",
+      "description": "The rules, applied in order",
+      "items": {
+        "type": "object",
+        "description": "One rule",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Its name in traces and stats"
+          },
+          "match": {
+            "type": "object",
+            "description": "Which facts it applies to: a kind or an id prefix, and conditions on attributes",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Node kind",
+                "examples": [
+                  "row",
+                  "job"
+                ]
+              },
+              "idPrefix": {
+                "type": "string",
+                "description": "Node id prefix",
+                "examples": [
+                  "row:orchestration.job_definition:"
+                ]
+              },
+              "where": {
+                "type": "object",
+                "description": "Attribute → a value it must equal, or a condition",
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ],
+                      "description": "Equal to this value"
+                    },
+                    {
+                      "type": "object",
+                      "description": "A condition",
+                      "additionalProperties": false,
+                      "properties": {
+                        "not": {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ],
+                          "description": "Not equal"
+                        },
+                        "in": {
+                          "type": "array",
+                          "description": "One of these values",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "regex": {
+                          "type": "string",
+                          "description": "Matches this regex (find)"
+                        },
+                        "contains": {
+                          "type": "string",
+                          "description": "Contains this text"
+                        },
+                        "exists": {
+                          "type": "boolean",
+                          "description": "true: the attribute is there; false: it is not"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "each": {
+            "type": "object",
+            "description": "One pass per element of a JSON array in an attribute",
+            "additionalProperties": false,
+            "properties": {
+              "attr": {
+                "type": "string",
+                "description": "The attribute holding the array"
+              },
+              "path": {
+                "type": "string",
+                "description": "A dotted path inside it"
+              },
+              "as": {
+                "type": "string",
+                "description": "Name of the element in templates",
+                "default": "item"
+              }
+            },
+            "required": [
+              "attr"
+            ]
+          },
+          "lookup": {
+            "type": "array",
+            "description": "Other nodes the templates need",
+            "items": {
+              "type": "object",
+              "description": "A lookup",
+              "additionalProperties": false,
+              "properties": {
+                "as": {
+                  "type": "string",
+                  "description": "Its name in templates ({as.attribute})"
+                },
+                "id": {
+                  "type": "string",
+                  "description": "Its id, from a template"
+                },
+                "idSuffix": {
+                  "type": "string",
+                  "description": "Or: the end of its id"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "Its kind (with idSuffix)"
+                },
+                "where": {
+                  "type": "object",
+                  "description": "Attribute → a value it must equal, or a condition",
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ],
+                        "description": "Equal to this value"
+                      },
+                      {
+                        "type": "object",
+                        "description": "A condition",
+                        "additionalProperties": false,
+                        "properties": {
+                          "not": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ],
+                            "description": "Not equal"
+                          },
+                          "in": {
+                            "type": "array",
+                            "description": "One of these values",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "regex": {
+                            "type": "string",
+                            "description": "Matches this regex (find)"
+                          },
+                          "contains": {
+                            "type": "string",
+                            "description": "Contains this text"
+                          },
+                          "exists": {
+                            "type": "boolean",
+                            "description": "true: the attribute is there; false: it is not"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "ignoreCase": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Compare ids ignoring case"
+                }
+              },
+              "required": [
+                "as"
+              ]
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "description": "Nodes to write",
+            "items": {
+              "type": "object",
+              "description": "A node",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Id template",
+                  "examples": [
+                    "job:{service}:{name}"
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "Its kind: the id's prefix"
+                },
+                "attrs": {
+                  "type": "object",
+                  "description": "Attribute → template with {attribute} placeholders",
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "kind"
+              ]
+            }
+          },
+          "edges": {
+            "type": "array",
+            "description": "Edges to write",
+            "items": {
+              "type": "object",
+              "description": "An edge",
+              "additionalProperties": false,
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "description": "From id template"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "Edge kind",
+                  "examples": [
+                    "runs",
+                    "after",
+                    "has"
+                  ]
+                },
+                "to": {
+                  "type": "string",
+                  "description": "To id template"
+                },
+                "attrs": {
+                  "type": "object",
+                  "description": "Attribute → template with {attribute} placeholders",
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "from",
+                "kind",
+                "to"
+              ]
+            }
+          }
+        },
+        "required": [
+          "match"
+        ]
+      }
+    }
+  }
+}

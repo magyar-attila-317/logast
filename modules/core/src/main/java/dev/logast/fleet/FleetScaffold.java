@@ -127,7 +127,7 @@ public final class FleetScaffold {
                     continue;
                 }
                 Files.createDirectories(f.getParent());
-                Files.writeString(f, e.getValue());
+                Files.writeString(f, dev.logast.Schemas.stamp(f, e.getValue()));   // #321: company.yaml names its schema
                 done.put(e.getKey(), true);
             }
         } catch (IOException e) {

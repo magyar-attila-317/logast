@@ -23,7 +23,7 @@ public final class ShelfMetrics {
     }
 
     /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
-    @org.springframework.stereotype.Component
+    @org.springframework.stereotype.Component("com.example.e2e.shelf.ShelfMetrics.Registration")
     static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
         @Override
         public void afterSingletonsInstantiated() {

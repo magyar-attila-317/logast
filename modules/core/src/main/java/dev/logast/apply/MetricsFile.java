@@ -29,6 +29,20 @@ public final class MetricsFile {
             + "how often only. Then: logast apply . `logast explain metrics . --format json` has the context. Keys starting "
             + "with _ are hints (_where and _event find the line again when its id changes: keep them).";
 
+    /** #321: what decided entries look like: a counter, and a counter that counts a logged amount too. */
+    private static final String EXAMPLE = DecisionYaml.example("""
+            OUM-1a2b3c:
+              count: counter        # counter | tag | skip; empty: undecided (no metric)
+              name: refund
+              outcome: sent
+            OUM-4d5e6f:
+              count: counter
+              name: import
+              outcome: completed
+              amount: rows          # one of _amounts; empty: count how often only
+              as: total             # total | per-run; empty: metrics.amounts from logast.yaml
+            """);
+
     /**
      * A decision read from the file, with where its log line was (file, method, event) for when the line's id changed.
      */
@@ -163,7 +177,7 @@ public final class MetricsFile {
             return new FillsFile.Update(0, 0, 0, 0, false);
         }
         ObjectNode out = DecisionYaml.MAPPER.createObjectNode();
-        String header = DecisionYaml.comment(README);
+        String header = DecisionYaml.comment(README) + EXAMPLE;
         // decisions written under an id that changed move to the outcome's current id instead of being dropped
         Map<String, Decision> decidedBefore = new LinkedHashMap<>();
         previous.forEach((id, n) -> {

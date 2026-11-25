@@ -517,7 +517,8 @@ abstract class E2eGoldenTest {
         long differ;
         try (Stream<Path> s = Files.walk(app)) {   // every file, the copied support classes too (files() leaves them out)
             differ = s.filter(Files::isRegularFile).map(p -> app.relativize(p).toString().replace('\\', '/'))
-                    .filter(rel -> !rel.startsWith(".logast/") && !rel.equals("gradlew"))
+                    // #321: logast.yml only gained the two lines naming its schema: not a change of the migration
+                    .filter(rel -> !rel.startsWith(".logast/") && !rel.equals("gradlew") && !rel.equals("logast.yml"))
                     .filter(rel -> {
                         try {
                             Path was = BEFORE.resolve(rel);
@@ -910,6 +911,81 @@ abstract class E2eGoldenTest {
         String skipped = run(other, "apply", other.toString(), "--auto", "--write", "--no-format", "--classpath-file", CLASSPATH);
         assertThat(skipped).as(skipped).doesNotContain("formatted with");
         assertThat(other.resolve("formatted.txt")).doesNotExist();
+    }
+
+    /**
+     * #322: two packages with a catalog of the same name (job.JobMetrics, billing.job.JobMetrics): each catalog's
+     * registration bean is named after the catalog's full name. Unnamed, Spring names both "jobMetrics.Registration"
+     * and the application does not start (ConflictingBeanDefinitionException).
+     */
+    @Test
+    void sameNamedCatalogsInTwoPackagesGetBeansOfTheirOwn() throws IOException {
+        Map<String, String> actual = migrate(tmp.resolve("app"), CLASSPATH, app -> {
+            Path dir = Files.createDirectories(app.resolve("src/main/java/com/example/e2e/billing/job"));
+            Files.writeString(dir.resolve("InvoiceRunJob.java"), """
+                    package com.example.e2e.billing.job;
+
+                    import com.example.e2e.job.SettlementJob;
+                    import org.slf4j.Logger;
+                    import org.slf4j.LoggerFactory;
+                    import org.springframework.context.annotation.Profile;
+                    import org.springframework.stereotype.Component;
+
+                    @Component
+                    @Profile("invoices")
+                    public class InvoiceRunJob extends SettlementJob {
+                        private static final Logger log = LoggerFactory.getLogger(InvoiceRunJob.class);
+
+                        @Override
+                        protected void doExecute() {
+                            log.info("Invoice run done");
+                        }
+                    }
+                    """);
+        });
+        List<String> beans = new ArrayList<>();
+        for (String catalog : List.of("src/main/java/com/example/e2e/job/JobMetrics.java", "src/main/java/com/example/e2e/billing/job/JobMetrics.java")) {
+            assertThat(actual).as(catalog).containsKey(catalog);
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("@org\\.springframework\\.stereotype\\.Component\\(\"([^\"]+)\"\\)\\s+static final class Registration")
+                    .matcher(actual.get(catalog));
+            assertThat(m.find()).as(catalog + " names its registration bean\n" + actual.get(catalog)).isTrue();
+            beans.add(m.group(1));
+        }
+        assertThat(beans).containsExactly("com.example.e2e.job.JobMetrics.Registration", "com.example.e2e.billing.job.JobMetrics.Registration");
+    }
+
+    /**
+     * #321: an apply leaves the schemas the IDE checks logast's files with in .logast/schemas/ (kept in git), and every
+     * YAML file it writes or reads names its own for IntelliJ and VS Code; the first logast.yaml ends with every setting
+     * and its default.
+     */
+    @Test
+    void schemasComeWithTheFiles() throws IOException {
+        Path app = tmp.resolve("app");
+        copy(BEFORE, app);
+        Files.delete(app.resolve("logast.yml"));
+        run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        for (String name : List.of("logast", "messages", "metrics", "retry", "traffic", "vocabulary-worksheet")) {
+            assertThat(app.resolve(".logast/schemas/" + name + ".schema.json")).as(name).isRegularFile();
+        }
+        String policy = Files.readString(app.resolve("logast.yaml"));
+        assertThat(policy).startsWith("# $schema: .logast/schemas/logast.schema.json\n# yaml-language-server: $schema=.logast/schemas/logast.schema.json\n")
+                .contains("# Every setting with its built-in default", "#   keyStyle: camel   #");
+        for (String decision : List.of("messages.yaml", "metrics.yaml", "traffic.yaml")) {
+            String name = decision.replace(".yaml", "");
+            assertThat(Files.readString(app.resolve(".logast/decisions/" + decision))).as(decision)
+                    .startsWith("# $schema: ../schemas/" + name + ".schema.json\n").contains("# Example:\n");
+        }
+        assertThat(Files.readString(app.resolve(".gitignore"))).contains("!.logast/schemas/");
+        // an existing logast.yaml gets the two lines on top, once
+        Path other = tmp.resolve("other");
+        copy(BEFORE, other);
+        run(other, "apply", other.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        String once = Files.readString(other.resolve("logast.yml"));
+        assertThat(once).startsWith("# $schema: .logast/schemas/logast.schema.json\n")
+                .endsWith(Files.readString(BEFORE.resolve("logast.yml")));
+        run(other, "apply", other.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
+        assertThat(Files.readString(other.resolve("logast.yml"))).isEqualTo(once);
     }
 
     /**
@@ -8568,9 +8644,9 @@ abstract class E2eGoldenTest {
             // #139: the worksheet names the fleet's own command and has its schema; deciding = uncommenting a line, and
             // the plain overview publishes it (no --vocabulary, no --central)
             String sheet = Files.readString(worksheet);
-            assertThat(sheet).startsWith("# $schema: ./vocabulary-worksheet.schema.json\n").contains("#     `logast fleet payments-fleet`\n")
+            assertThat(sheet).startsWith("# $schema: schemas/vocabulary-worksheet.schema.json\n").contains("#     `logast fleet payments-fleet`\n")
                     .doesNotContain("--central");
-            assertThat(fleet.resolve("vocabulary-worksheet.schema.json")).isRegularFile();
+            assertThat(fleet.resolve("schemas/vocabulary-worksheet.schema.json")).isRegularFile();
             String termLine = sheet.lines().filter(l -> l.startsWith("    # term: payment ")).findFirst().orElseThrow();
             Files.writeString(worksheet, sheet.replaceFirst(java.util.regex.Pattern.quote(termLine), "    term: payment")
                     .replace("  payment_id:\n", "  payment_id:\n    same_as: paymentId\n"));
@@ -8817,7 +8893,8 @@ abstract class E2eGoldenTest {
             assertThat(git(fleetRepo, "status", "--porcelain", "--untracked-files=all").lines().map(l -> l.substring(3)).toList())
                     .as("only what the owner edits and commits; clones, snapshots, report and members.yaml are ignored")
                     .containsExactlyInAnyOrder(".github/workflows/logast-fleet.yml", ".gitignore", "README.md", "company.yaml", "repos.yaml",
-                            "classpath/build.gradle.kts", "classpath/settings.gradle.kts", "kb/knowledge.yml", "kb/mappings/README.md");
+                            "classpath/build.gradle.kts", "classpath/settings.gradle.kts", "kb/knowledge.yml", "kb/mappings/README.md",
+                            "schemas/logast.schema.json", "schemas/repos.schema.json");   // #321: their schemas, committed with them
 
             // #182: the fleet's knowledge base: every member's facts in kb/<member>/, the fleet's mappings applied
             assertThat(Files.readString(fleetRepo.resolve(".github/workflows/logast-fleet.yml"))).contains("--refresh --kb", "Commit the knowledge base");
@@ -10933,9 +11010,10 @@ abstract class E2eGoldenTest {
         try (Stream<Path> s = Files.walk(root)) {
             for (Path p : s.filter(Files::isRegularFile).toList()) {
                 String rel = root.relativize(p).toString().replace('\\', '/');
-                // the copied support classes are logast's own code: compiled, not compared
+                // the copied support classes are logast's own code: compiled, not compared; so are the schemas it copies
+                // (#321: checked against the policy records by SchemasTest, and in schemasComeWithTheFiles)
                 if (rel.startsWith("out/") || rel.startsWith("build/") || rel.startsWith(".gradle/") || SKIP.contains(rel)
-                        || rel.startsWith("src/main/java/com/example/e2e/logging/")) {
+                        || rel.startsWith("src/main/java/com/example/e2e/logging/") || rel.endsWith(".schema.json")) {
                     continue;
                 }
                 out.put(rel, text(Files.readAllBytes(p)));

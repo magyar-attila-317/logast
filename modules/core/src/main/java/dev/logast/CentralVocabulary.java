@@ -22,13 +22,10 @@ import java.util.stream.Collectors;
  */
 public final class CentralVocabulary {
     public static final String WORKSHEET = "vocabulary-worksheet.yaml";
-    /** #139: the worksheet's JSON schema, written next to it: an IDE completes and checks the decisions. */
-    public static final String SCHEMA = "vocabulary-worksheet.schema.json";
-
-    public static void writeSchema(Path dir) throws IOException {
-        try (java.io.InputStream in = CentralVocabulary.class.getResourceAsStream("/" + SCHEMA)) {
-            Files.write(dir.resolve(SCHEMA), java.util.Objects.requireNonNull(in, SCHEMA).readAllBytes());
-        }
+    /** #139, #321: the worksheet as written: its schema (in schemas/ beside it) named on top, so an IDE checks the decisions. */
+    public static void writeWorksheet(Path file, String text) throws IOException {
+        Files.createDirectories(file.toAbsolutePath().getParent());
+        Files.writeString(file, Schemas.stamp(file, text));
     }
     public static final String COMPANY = "company.yaml";
 
@@ -452,8 +449,7 @@ public final class CentralVocabulary {
         Result r = build(uses, services.keySet(), read(worksheet), known);
         try {
             Files.createDirectories(dir);
-            Files.writeString(worksheet, r.worksheet());
-            writeSchema(dir);
+            writeWorksheet(worksheet, r.worksheet());
             writeCompany(dir.resolve(COMPANY), r.company());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -474,7 +470,7 @@ public final class CentralVocabulary {
     public static void writeCompany(Path file, String generated) throws IOException {
         String existing = Files.exists(file) ? Files.readString(file) : null;
         Files.createDirectories(file.toAbsolutePath().getParent());
-        Files.writeString(file, mergeCompany(existing, generated));
+        Files.writeString(file, Schemas.stamp(file, mergeCompany(existing == null ? null : Schemas.withoutModelines(existing), generated)));
     }
 
     public static String mergeCompany(String existing, String generated) {
@@ -628,7 +624,6 @@ public final class CentralVocabulary {
 
         StringBuilder ws = new StringBuilder();
         ws.append("""
-                # $schema: ./%s
                 # logast vocabulary worksheet: every MDC / [k=v] key the services use, and where.
                 #
                 # What to do: under each key that has "# decide:" lines, uncomment ONE of them (the first one is
@@ -644,7 +639,7 @@ public final class CentralVocabulary {
                 # Per area (section `areas`), packages: [..] is yours to set too. Everything else is rewritten on each run.
                 #
                 # Summary of this run:
-                """.formatted(SCHEMA, CENTRAL_RERUN));
+                """.formatted(CENTRAL_RERUN));
         summary.forEach(s -> ws.append("#   ").append(s).append('\n'));
         if (!areaNames.isEmpty()) {
             ws.append("areas:\n");

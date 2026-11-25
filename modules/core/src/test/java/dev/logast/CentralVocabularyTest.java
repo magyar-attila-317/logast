@@ -58,8 +58,11 @@ class CentralVocabularyTest {
                 .as("#139: the choices as lines to uncomment, the suggestion first")
                 .contains("  batchId:\n    # local: true   # decide: suggested, only billing uses it: not published\n"
                         + "    # term: batch   # decide: a company-wide term; batchId is its key in logs\n")
-                .startsWith("# $schema: ./vocabulary-worksheet.schema.json\n");
-        assertThat(central.resolve(CentralVocabulary.SCHEMA)).as("the schema next to the worksheet").isRegularFile();
+                .startsWith("# logast vocabulary worksheet");
+        assertThat(Files.readString(central.resolve(CentralVocabulary.WORKSHEET))).as("#321: the written file names its schema")
+                .startsWith("# $schema: schemas/vocabulary-worksheet.schema.json\n"
+                        + "# yaml-language-server: $schema=schemas/vocabulary-worksheet.schema.json\n");
+        assertThat(central.resolve("schemas/vocabulary-worksheet.schema.json")).as("the schema beside the worksheet").isRegularFile();
         assertThat(first.terms()).isZero();
 
         Path ws = central.resolve(CentralVocabulary.WORKSHEET);
@@ -73,7 +76,7 @@ class CentralVocabularyTest {
         assertThat(second.summary()).contains("to decide: 1 (0 new): batchId")
                 .contains("  invoice_id (same_as invoiceId) still in payments: apply renames it in services that extend company.yaml");
         Path company = central.resolve(CentralVocabulary.COMPANY);
-        assertThat(Files.readString(company)).startsWith("# >>> logast").contains("# GENERATED").contains("invoice:\n", "key: invoiceId", "aliases: [invoice_id]",
+        assertThat(Files.readString(company)).startsWith("# $schema: schemas/logast.schema.json\n").contains("\n# >>> logast").contains("# GENERATED").contains("invoice:\n", "key: invoiceId", "aliases: [invoice_id]",
                 "params: [invoiceId]").doesNotContain("batchId");
 
         // a valid policy layer: a service that extends it gets the alias

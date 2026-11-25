@@ -1,3 +1,5 @@
+# $schema: ../schemas/retry.schema.json
+# yaml-language-server: $schema=../schemas/retry.schema.json
 # Optional. Every retry decision of the service. Then run: logast apply .
 # Left blank: a candidate gets no retry; a usage keeps logast's choice (below).
 #
@@ -13,6 +15,16 @@
 # settings then move into application.yml like any usage's); no: not recommended again. Say no when a gateway
 # or service mesh already retries, or the remote side must not see the call twice. specific: and values:
 # work here as under usages and are taken over by the usage yes creates.
+#
+# Example:
+#   usages:
+#     ParcelClient.track:
+#       specific: true     # its own block, starting from these values
+#       values:
+#         max-retries: 5
+#   candidates:
+#     ParcelClient.quote:
+#       retry: "yes"       # yes | no; empty: undecided (no retry)
 usages:
   ParcelClient.track:    # Spring Framework @Retryable, src/main/java/com/example/e2e/parcel/ParcelClient.java:11
     specific: false

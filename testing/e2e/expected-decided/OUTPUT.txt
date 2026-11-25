@@ -61,7 +61,7 @@ Changes beyond logging (27): code that can now run differently; the rest of the 
   src/main/java/com/example/e2e/job/JobMetrics.java:22 JobMetrics.exportJobCompleted — method added
   src/main/java/com/example/e2e/job/JobMetrics.java:27 JobMetrics.preloadExportCompleted — method added
   src/main/java/com/example/e2e/job/JobMetrics.java:32 JobMetrics.tallyCompleted — method added
-  src/main/java/com/example/e2e/job/JobMetrics.java:38 Registration — method added
+  src/main/java/com/example/e2e/job/JobMetrics.java:37 Registration — method added
   src/main/java/com/example/e2e/job/JobMetrics.java:40 Registration.afterSingletonsInstantiated — method added
   src/main/java/com/example/e2e/job/PreloadJob.java:14 PreloadJob.doExecute — code changed besides logging
   src/main/java/com/example/e2e/job/TallyJob.java:14 TallyJob.doExecute — code changed besides logging

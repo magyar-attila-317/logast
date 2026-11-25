@@ -476,6 +476,16 @@ BANNER
   else
     version="$old"
   fi
+  # #321: shell completion for every command and option, from the installed command itself (so it matches it);
+  # bash-completion loads ~/.local/share/bash-completion/completions/<command> on demand
+  comp_dir="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}/completions"
+  if mkdir -p "$comp_dir" 2>/dev/null && "$BIN_DIR/logast" completion bash > "$comp_dir/logast.tmp" 2>/dev/null; then
+    mv "$comp_dir/logast.tmp" "$comp_dir/logast"
+    ok "bash completion: $(home "$comp_dir/logast")  ${D}(zsh: add 'source <(logast completion zsh)' to ~/.zshrc)${N}"
+  else
+    rm -f "$comp_dir/logast.tmp"
+    warn "bash completion not installed: run 'source <(logast completion)' in ~/.bashrc instead"
+  fi
   if [ "$SKILL" = 1 ] || [ -f "$HOME/.claude/skills/logast/SKILL.md" ]; then   # re-runs refresh an installed skill
     mkdir -p "$HOME/.claude/skills/logast"
     cp "$PREFIX/claude-skill/logast/SKILL.md" "$HOME/.claude/skills/logast/SKILL.md"

@@ -6,6 +6,16 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- A metric catalog's `Registration` bean is named after the catalog's full name (`@Component("com.example.orders.OrderMetrics.Registration")`): two packages with a catalog of the same name no longer clash at startup (ConflictingBeanDefinitionException); a registration written unnamed by 0.5.4 gets the name when its catalog changes (#322).
+
+**Files you edit**
+- JSON schemas for logast.yaml (and company.yaml), messages.yaml, metrics.yaml, retry.yaml, traffic.yaml and the vocabulary worksheet: apply copies them into `.logast/schemas/` (kept in git) and every file names its schema on its first two lines (`# $schema:` for IntelliJ, `# yaml-language-server:` for VS Code), so the IDE completes and checks keys and values. A new logast.yaml ends with every setting and its default, commented; each decision file's header shows a filled-in example (#321).
+- Schemas for the other files people edit: a fleet's repos.yaml, the knowledge files (knowledge.yml, .proposed, .decisions), fact mappings and the user config; `logast schemas [dir]` writes them all and `logast schemas --check <file>` checks a file against its schema (#321).
+
+**CLI**
+- Shell completion: `logast completion [bash|zsh]` prints a script for every command, option and option value (packs, steps), generated from the commands; install.sh installs the bash one where bash-completion finds it (#321).
+
+**What logast writes**
 - A catch that falls back to a value logs which, in words from the code, instead of waiting for a text: "Fell back to default currency" for a named value, "Balance fell back to 0" for a literal or an empty result (the method's subject first); marked `// logast:wording` like every generated line (#292).
 - `.logast/reports/wording-todo.txt` lists the lines still in logast's generated words by their lasting inventory id; a line leaves the list once someone rewords it (#292).
 

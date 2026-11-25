@@ -55,8 +55,7 @@ final class FleetOverview {
         // #139: every overview keeps the worksheet and company.yaml's vocabulary current once a worksheet exists (decisions
         // are kept), so deciding is: edit the worksheet, run `logast fleet <name>`; --vocabulary writes the first one
         if (vocabulary || Files.exists(dir.resolve(CentralVocabulary.WORKSHEET))) {
-            Files.writeString(dir.resolve(CentralVocabulary.WORKSHEET), vocab.worksheet());
-            CentralVocabulary.writeSchema(dir);
+            CentralVocabulary.writeWorksheet(dir.resolve(CentralVocabulary.WORKSHEET), vocab.worksheet());
             CentralVocabulary.writeCompany(dir.resolve(CentralVocabulary.COMPANY), vocab.company());
         }
         // #129: what the members agree on, as commented suggestions in company.yaml

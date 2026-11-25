@@ -202,7 +202,7 @@ index d616b2f..b8a109a 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/job/JobMetrics.java b/src/main/java/com/example/e2e/job/JobMetrics.java
-index 6a320c3..fa60b13 100644
+index 6a320c3..cdc16da 100644
 --- a/src/main/java/com/example/e2e/job/JobMetrics.java
 +++ b/src/main/java/com/example/e2e/job/JobMetrics.java
 @@ -1,5 +1,7 @@ 
@@ -234,7 +234,7 @@ index 6a320c3..fa60b13 100644
 +    }
 +
 +    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
-+    @org.springframework.stereotype.Component
++    @org.springframework.stereotype.Component("com.example.e2e.job.JobMetrics.Registration")
 +    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
 +        @Override
 +        public void afterSingletonsInstantiated() {
@@ -245,7 +245,7 @@ index 6a320c3..fa60b13 100644
 +    }
  }
 diff --git a/src/main/java/com/example/e2e/messaging/MessagingMetrics.java b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
-index 00cb87d..77391a0 100644
+index 00cb87d..3105282 100644
 --- a/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
 +++ b/src/main/java/com/example/e2e/messaging/MessagingMetrics.java
 @@ -1,5 +1,7 @@ 
@@ -267,7 +267,7 @@ index 00cb87d..77391a0 100644
 +    }
 +
 +    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
-+    @org.springframework.stereotype.Component
++    @org.springframework.stereotype.Component("com.example.e2e.messaging.MessagingMetrics.Registration")
 +    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
 +        @Override
 +        public void afterSingletonsInstantiated() {
@@ -277,7 +277,7 @@ index 00cb87d..77391a0 100644
  }
 diff --git a/src/main/java/com/example/e2e/edge/EdgeMetrics.java b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
 new file mode 100644
-index 0000000..6cce5ea
+index 0000000..0d297ab
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/edge/EdgeMetrics.java
 @@ -0,0 +1,39 @@ 
@@ -311,7 +311,7 @@ index 0000000..6cce5ea
 +    }
 +
 +    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
-+    @org.springframework.stereotype.Component
++    @org.springframework.stereotype.Component("com.example.e2e.edge.EdgeMetrics.Registration")
 +    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
 +        @Override
 +        public void afterSingletonsInstantiated() {
@@ -322,7 +322,7 @@ index 0000000..6cce5ea
 +}
 diff --git a/src/main/java/com/example/e2e/order/OrderMetrics.java b/src/main/java/com/example/e2e/order/OrderMetrics.java
 new file mode 100644
-index 0000000..47f77e8
+index 0000000..9185002
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/order/OrderMetrics.java
 @@ -0,0 +1,58 @@ 
@@ -371,7 +371,7 @@ index 0000000..47f77e8
 +    }
 +
 +    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
-+    @org.springframework.stereotype.Component
++    @org.springframework.stereotype.Component("com.example.e2e.order.OrderMetrics.Registration")
 +    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
 +        @Override
 +        public void afterSingletonsInstantiated() {
@@ -386,7 +386,7 @@ index 0000000..47f77e8
 +}
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeMetrics.java b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 new file mode 100644
-index 0000000..c04e6a7
+index 0000000..2b47d4f
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 @@ -0,0 +1,64 @@ 
@@ -440,7 +440,7 @@ index 0000000..c04e6a7
 +    }
 +
 +    /** Registers this catalog's counters at 0 when the application has started: a series exists before the first event. */
-+    @org.springframework.stereotype.Component
++    @org.springframework.stereotype.Component("com.example.e2e.pledge.PledgeMetrics.Registration")
 +    static final class Registration implements org.springframework.beans.factory.SmartInitializingSingleton {
 +        @Override
 +        public void afterSingletonsInstantiated() {

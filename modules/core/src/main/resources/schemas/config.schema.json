@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "logast user config (~/.config/logast/config.yaml)",
+  "description": "Settings of this machine's logast user: where fleets and the knowledge base live. $XDG_CONFIG_HOME/logast/config.yaml, else ~/.config/logast/config.yaml.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "fleets": {
+      "type": "object",
+      "description": "Named fleets",
+      "additionalProperties": false,
+      "properties": {
+        "dir": {
+          "type": "string",
+          "description": "Folder that holds the named fleets (default: $XDG_DATA_HOME/logast/fleets, else ~/.local/share/logast/fleets; LOGAST_FLEETS and --fleets-dir win)",
+          "examples": [
+            "~/work/fleets"
+          ]
+        },
+        "paths": {
+          "type": "object",
+          "description": "A fleet kept elsewhere (a clone of its git repo): name → folder",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "examples": [
+            {
+              "platform": "~/src/platform-logast-fleet"
+            }
+          ]
+        }
+      }
+    },
+    "kb": {
+      "type": "object",
+      "description": "The knowledge base logast mcp and the kb commands read",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "description": "Fact files or folders to load (LOGAST_KB and --kb win)",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "examples": [
+            [
+              "~/kb/facts",
+              "~/kb/knowledge.yml"
+            ]
+          ]
+        }
+      }
+    },
+    "install.gradle": {
+      "type": [
+        "string",
+        "boolean"
+      ],
+      "description": "install.sh: a remembered \"no\" to the Gradle setup (plugin in Maven Local, init script); install.sh --ask asks again",
+      "enum": [
+        "no",
+        false
+      ]
+    },
+    "install.supportLocal": {
+      "type": [
+        "string",
+        "boolean"
+      ],
+      "description": "install.sh: a remembered \"no\" to putting the support library into Maven Local",
+      "enum": [
+        "no",
+        false
+      ]
+    },
+    "install.supportRemote": {
+      "type": [
+        "string",
+        "boolean"
+      ],
+      "description": "install.sh: \"no\", or <target>@<version> the support library was last published to (--publish-to)",
+      "examples": [
+        "no",
+        "nexus@0.5.4"
+      ]
+    }
+  }
+}

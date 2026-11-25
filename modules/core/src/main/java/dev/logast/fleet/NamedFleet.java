@@ -119,7 +119,8 @@ public final class NamedFleet {
                 Files.writeString(fleet.resolve(MEMBERS), membersYaml(Map.of(), Map.of()));
             }
             if (!Files.exists(fleet.resolve(CentralVocabulary.COMPANY))) {
-                Files.writeString(fleet.resolve(CentralVocabulary.COMPANY), CompanyPolicy.initial(name));
+                Files.writeString(fleet.resolve(CentralVocabulary.COMPANY),
+                        dev.logast.Schemas.stamp(fleet.resolve(CentralVocabulary.COMPANY), CompanyPolicy.initial(name)));
             }
         } catch (IOException e) {
             throw new UncheckedIOException("cannot create " + fleet, e);

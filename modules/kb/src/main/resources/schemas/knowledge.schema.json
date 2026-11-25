@@ -1,0 +1,193 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "logast knowledge (knowledge.yml, knowledge.proposed.yml, knowledge.decisions.yml)",
+  "description": "What people decided, loaded with the facts: terms, abbreviations, service names, flows, summaries and link decisions. knowledge.proposed.yml holds proposals (an approved entry of the same name wins); knowledge.decisions.yml the link decisions of logast kb review.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "about": {
+      "type": "string",
+      "description": "What this knowledge covers, in a sentence"
+    },
+    "glossary": {
+      "type": "object",
+      "description": "Business terms: term → its definition, or {definition, source, aliases}",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "The definition"
+          },
+          {
+            "type": "object",
+            "description": "A term",
+            "additionalProperties": false,
+            "properties": {
+              "definition": {
+                "type": "string",
+                "description": "What it means"
+              },
+              "source": {
+                "type": "string",
+                "description": "Where the definition comes from (a document, a person)"
+              },
+              "aliases": {
+                "type": "array",
+                "description": "Other words for it",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "examples": [
+        {
+          "pledge": "A customer's promise to buy, held for 24 hours"
+        }
+      ]
+    },
+    "abbreviations": {
+      "type": "object",
+      "description": "Abbreviation → what it stands for",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "examples": [
+        {
+          "grn": "goods received note"
+        }
+      ]
+    },
+    "services": {
+      "type": "object",
+      "description": "Service → the other names it goes by (repo names, hostnames)",
+      "additionalProperties": {
+        "type": "array",
+        "description": "Its other names",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "flows": {
+      "type": "object",
+      "description": "Named business flows: name → its nodes in order",
+      "additionalProperties": {
+        "type": "object",
+        "description": "A flow",
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "What the flow does"
+          },
+          "nodes": {
+            "type": "array",
+            "description": "Fact ids in order",
+            "items": {
+              "type": "string"
+            },
+            "examples": [
+              [
+                "endpoint:orders:POST /orders",
+                "job:billing:invoice-run"
+              ]
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "description": "Where it was taken from",
+            "items": {
+              "type": "string"
+            }
+          },
+          "by": {
+            "type": "string",
+            "description": "Who wrote it (a person, llm)"
+          },
+          "evidence": {
+            "type": "object",
+            "description": "Claim → where it is shown",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "summaries": {
+      "type": "object",
+      "description": "Fact id → a summary of it",
+      "additionalProperties": {
+        "type": "object",
+        "description": "A summary",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The summary"
+          },
+          "sources": {
+            "type": "array",
+            "description": "Where it was taken from",
+            "items": {
+              "type": "string"
+            }
+          },
+          "by": {
+            "type": "string",
+            "description": "Who wrote it"
+          },
+          "evidence": {
+            "type": "object",
+            "description": "Claim → where it is shown",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "description": "Link decisions: a link logast inferred, approved or rejected",
+      "items": {
+        "type": "object",
+        "description": "A decision",
+        "additionalProperties": false,
+        "properties": {
+          "link": {
+            "type": "string",
+            "description": "The link, as logast kb review shows it"
+          },
+          "decision": {
+            "type": "string",
+            "description": "approve or reject",
+            "enum": [
+              "approve",
+              "reject"
+            ]
+          },
+          "env": {
+            "type": "string",
+            "description": "Only in this environment"
+          },
+          "by": {
+            "type": "string",
+            "description": "Who decided"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "Why"
+          }
+        },
+        "required": [
+          "link",
+          "decision"
+        ]
+      }
+    }
+  }
+}

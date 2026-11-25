@@ -25,6 +25,13 @@ public final class FillsFile {
             + "Keys starting with _ are hints (_where and \"was:\" find the line again when its id changes: keep them). "
             + "`logast scan` keeps this file up to date and keeps what you wrote.";
 
+    /** #321: what a written text looks like. */
+    private static final String EXAMPLE = DecisionYaml.example("""
+            SUG-1a2b3c:
+              MSG: Refund sent to the payment provider
+              _where: src/main/java/com/example/refund/RefundService.java:42 RefundService.send
+            """);
+
     private FillsFile() {
     }
 
@@ -178,7 +185,7 @@ public final class FillsFile {
                 ? "Nothing needs a message text right now: every finding is fixed automatically or only reported."
                 : out.size() + " finding(s) below need a message text.")
                 + (waiting == 0 ? "" : "\n" + waiting + " more keep their generated wording for now and come up here once these are "
-                + "done (the most severe first; logging.wordingQueue)."));
+                + "done (the most severe first; logging.wordingQueue).")) + EXAMPLE;
         boolean exists = Files.exists(file);
         ObjectNode before = DecisionYaml.withoutNotes(OrderJson.MAPPER.valueToTree(previous));
         boolean changed = !exists || added > 0 || removed > 0 || !out.equals(before) || !DecisionYaml.header(file).equals(header);
@@ -266,7 +273,7 @@ public final class FillsFile {
             }
         });
         String header = DecisionYaml.header(file);
-        DecisionYaml.write(file, header.isEmpty() ? DecisionYaml.comment(README) : header, raw);
+        DecisionYaml.write(file, header.isEmpty() ? DecisionYaml.comment(README) + EXAMPLE : header, raw);
     }
 
     /** Explicit file (--fills: YAML, or JSON when it ends in .json), else the default one when it exists. */

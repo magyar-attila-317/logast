@@ -138,7 +138,7 @@ public final class KbReview {
     private static void write(Path file, ObjectNode root, String header) throws IOException {
         Files.createDirectories(file.toAbsolutePath().getParent());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        Files.writeString(tmp, header + YAML.writeValueAsString(root));
+        Files.writeString(tmp, KbSchemas.stamp(file, header + YAML.writeValueAsString(root)));   // #321
         Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
     }
 

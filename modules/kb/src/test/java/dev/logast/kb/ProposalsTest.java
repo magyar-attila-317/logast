@@ -52,6 +52,10 @@ class ProposalsTest {
         assertThat(text(call(s, "propose_flow", "{\"name\":\"month-end settlement\",\"description\":\"Settles the month and posts it\","
                 + "\"nodes\":\"job:billing:settle, table:billing.settlement, job:ledger:post\",\"sources\":\"job:billing:settle, https://wiki.example.com/settlement\"}")))
                 .startsWith("Proposed flow \"month-end settlement\" (3 nodes)");
+        // #321: the proposals file names its schema for the IDE, copied beside it
+        assertThat(Files.readString(proposals)).startsWith("# $schema: schemas/knowledge.schema.json\n"
+                + "# yaml-language-server: $schema=schemas/knowledge.schema.json\n");
+        assertThat(kb.resolve("schemas/knowledge.schema.json")).isRegularFile();
         assertThat(text(call(s, "propose_flow", "{\"name\":\"x\",\"nodes\":\"job:nowhere:run\",\"sources\":\"a\"}")))
                 .as("a node the facts do not have").startsWith("Not in the facts: job:nowhere:run");
         assertThat(text(call(s, "propose_flow", "{\"name\":\"x\",\"nodes\":\"job:ledger:post\",\"sources\":\"\"}")))

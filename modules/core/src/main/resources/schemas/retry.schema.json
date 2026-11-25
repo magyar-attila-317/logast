@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "logast retry.yaml",
+  "description": "Optional. Every retry decision of the service (pack resilience). Then run logast apply .",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "usages": {
+      "type": "object",
+      "description": "The existing retries (@Retryable), by Class.method",
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "specific": {
+            "type": [
+              "boolean",
+              "string"
+            ],
+            "enum": [
+              true,
+              false,
+              ""
+            ],
+            "default": "",
+            "description": "true: its own block resilience.retry.usages.<class>.<method>; false: the shared block of its kind; empty: logast decides (its own block when its settings differ from the shared ones)"
+          },
+          "values": {
+            "type": "object",
+            "description": "What its own block starts with (default: the shared values): Spring Framework max-retries, delay, jitter, multiplier, max-delay, timeout; Spring Retry max-attempts, delay, max-delay, multiplier",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number"
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "max-retries",
+                "max-attempts",
+                "delay",
+                "jitter",
+                "multiplier",
+                "max-delay",
+                "timeout"
+              ]
+            },
+            "examples": [
+              {
+                "max-retries": 5,
+                "delay": "500ms"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "candidates": {
+      "type": "object",
+      "description": "Idempotent HTTP calls nothing retries, by Class.method",
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "retry": {
+            "type": "string",
+            "enum": [
+              "",
+              "yes",
+              "no"
+            ],
+            "default": "",
+            "description": "yes: add @Retryable (a request: one quick retry; a job or consumer: retries with backoff); no: not recommended again; empty: undecided. Say no when a gateway or mesh already retries, or the remote side must not see the call twice"
+          },
+          "specific": {
+            "type": [
+              "boolean",
+              "string"
+            ],
+            "enum": [
+              true,
+              false,
+              ""
+            ],
+            "default": "",
+            "description": "true: its own block resilience.retry.usages.<class>.<method>; false: the shared block of its kind; empty: logast decides (its own block when its settings differ from the shared ones)"
+          },
+          "values": {
+            "type": "object",
+            "description": "What its own block starts with (default: the shared values): Spring Framework max-retries, delay, jitter, multiplier, max-delay, timeout; Spring Retry max-attempts, delay, max-delay, multiplier",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number"
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "max-retries",
+                "max-attempts",
+                "delay",
+                "jitter",
+                "multiplier",
+                "max-delay",
+                "timeout"
+              ]
+            },
+            "examples": [
+              {
+                "max-retries": 5,
+                "delay": "500ms"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

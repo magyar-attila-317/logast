@@ -1,3 +1,5 @@
+# $schema: .logast/schemas/logast.schema.json
+# yaml-language-server: $schema=.logast/schemas/logast.schema.json
 # e2e golden project: the shapes real services showed (see cli/src/test/.../E2eGoldenTest)
 packs: [errors]
 logging:

@@ -48,6 +48,37 @@ the same company.yaml first; with both, it is one layer. A single entry may also
 
 ---
 
+## In the IDE: schemas, defaults and examples
+
+Every YAML file logast writes or reads has a JSON schema, so IntelliJ IDEA and VS Code (with the YAML extension)
+complete keys, show what each does and its default, and mark unknown keys and wrong values while you type (#321):
+
+| file | schema |
+|---|---|
+| `logast.yaml`, a fleet's `company.yaml` | `logast.schema.json` (rule ids and packs of this logast filled in) |
+| `.logast/decisions/messages.yaml`, `metrics.yaml`, `retry.yaml`, `traffic.yaml` | `messages`, `metrics`, `retry`, `traffic.schema.json` |
+| a fleet's `vocabulary-worksheet.yaml` | `vocabulary-worksheet.schema.json` |
+| a fleet repo's `repos.yaml` | `repos.schema.json` |
+| `knowledge.yml`, `knowledge.proposed.yml`, `knowledge.decisions.yml` | `knowledge.schema.json` |
+| a fact mapping (`logast facts --mapping`) | `mapping.schema.json` |
+| the user config `~/.config/logast/config.yaml` | `config.schema.json` |
+
+- `apply` copies the schemas into `.logast/schemas/` (kept in git, so teammates get them without running logast)
+  and puts two lines at the top of each file, one per IDE:
+  ```yaml
+  # $schema: .logast/schemas/logast.schema.json
+  # yaml-language-server: $schema=.logast/schemas/logast.schema.json
+  ```
+  IntelliJ reads the first ([YAML in IntelliJ IDEA](https://www.jetbrains.com/help/idea/yaml.html)), VS Code's YAML
+  extension the second. An existing `logast.yaml` gets the two lines once; nothing else in it changes. A fleet's files
+  keep their schemas in `schemas/` beside them.
+- A new `logast.yaml` ends with every setting and its built-in default (or an example), commented: copy a line up and
+  change it. Each decision file shows a filled-in example entry in its header.
+- Files logast never writes itself (a fact mapping, a knowledge.yml started by hand): `logast schemas [dir]` writes
+  every schema (default `.logast/schemas/`) and shows the two lines to put on top. `logast schemas --check <file>…`
+  checks files against their schema from the command line (`--schema mapping.schema.json` for a name that says
+  nothing); exit 1 on a problem.
+
 ## The settings, one by one
 
 Defaults are shown in the examples. Anything you leave out keeps its default.

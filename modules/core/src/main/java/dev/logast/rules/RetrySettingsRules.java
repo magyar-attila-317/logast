@@ -186,7 +186,7 @@ public final class RetrySettingsRules {
                         Matcher m = Pattern.compile("^(    retry: )(\"[^\"]*\"|[^#\\s]*)(.*)$").matcher(lines.get(j));
                         if (m.matches()) {
                             lines.set(j, m.group(1) + "\"" + v + "\"" + m.group(3));
-                            Files.writeString(p, String.join("\n", lines) + "\n");
+                            Files.writeString(p, dev.logast.Schemas.stamp(p, String.join("\n", lines) + "\n"));
                             return true;
                         }
                     }
@@ -452,7 +452,17 @@ public final class RetrySettingsRules {
                 .append("# them). retry: yes adds @Retryable (a request: one quick retry; a job or consumer: retries with backoff; the\n")
                 .append("# settings then move into application.yml like any usage's); no: not recommended again. Say no when a gateway\n")
                 .append("# or service mesh already retries, or the remote side must not see the call twice. specific: and values:\n")
-                .append("# work here as under usages and are taken over by the usage yes creates.\n");
+                .append("# work here as under usages and are taken over by the usage yes creates.\n")
+                .append(dev.logast.apply.DecisionYaml.example("""
+                        usages:
+                          ParcelClient.track:
+                            specific: true     # its own block, starting from these values
+                            values:
+                              max-retries: 5
+                        candidates:
+                          ParcelClient.quote:
+                            retry: "yes"       # yes | no; empty: undecided (no retry)
+                        """));
         sb.append("usages:").append(usages.isEmpty() ? " {}\n" : "\n");
         Set<String> listed = new HashSet<>();
         for (Usage u : usages) {
@@ -509,7 +519,7 @@ public final class RetrySettingsRules {
             boolean created = !Files.exists(p);
             if (write && (created || !Files.readString(p).equals(sb.toString()))) {
                 Files.createDirectories(p.getParent());
-                Files.writeString(p, sb.toString());
+                Files.writeString(p, dev.logast.Schemas.stamp(p, sb.toString()));
             }
             return created;
         } catch (IOException e) {

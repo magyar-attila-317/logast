@@ -108,7 +108,7 @@ public final class Proposals {
     private static void write(Path file, ObjectNode root) throws IOException {
         Files.createDirectories(file.toAbsolutePath().getParent());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        Files.writeString(tmp, HEADER + YAML.writeValueAsString(root));
+        Files.writeString(tmp, KbSchemas.stamp(file, HEADER + YAML.writeValueAsString(root)));   // #321
         Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
     }
 }

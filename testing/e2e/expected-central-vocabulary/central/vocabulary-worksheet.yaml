@@ -1,4 +1,5 @@
-# $schema: ./vocabulary-worksheet.schema.json
+# $schema: schemas/vocabulary-worksheet.schema.json
+# yaml-language-server: $schema=schemas/vocabulary-worksheet.schema.json
 # logast vocabulary worksheet: every MDC / [k=v] key the services use, and where.
 #
 # What to do: under each key that has "# decide:" lines, uncomment ONE of them (the first one is

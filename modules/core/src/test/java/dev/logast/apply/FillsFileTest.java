@@ -33,7 +33,7 @@ class FillsFileTest {
         Path file = root.resolve(FillsFile.PATH);
         assertThat(FillsFile.update(root, List.of(order("SWA-1"))).written()).isTrue();
         String created = Files.readString(file);
-        assertThat(created).startsWith("# Optional. Write a message text").contains("# 1 finding(s) below need a message text.\n")
+        assertThat(dev.logast.Schemas.withoutModelines(created)).startsWith("# Optional. Write a message text").contains("# 1 finding(s) below need a message text.\n")
                 .contains("SWA-1:\n  MSG: \"\"\n  _MSG: \"What failed | was: Export failed\"\n  _where: src/A.java:12 A.run\n");
         assertThat(FillsFile.update(root, List.of(order("SWA-1"))).written()).as("nothing changed").isFalse();
 

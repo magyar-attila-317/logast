@@ -75,7 +75,7 @@ public record Todo(long auto, long text, long outcomes, long retries, Map<String
             if (persist && !Files.exists(file)) {
                 try {
                     Files.createDirectories(file.getParent());
-                    Files.writeString(file, Traffic.template(a.entrypoints, existing));
+                    Files.writeString(file, dev.logast.Schemas.stamp(file, Traffic.template(a.entrypoints, existing)));
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }

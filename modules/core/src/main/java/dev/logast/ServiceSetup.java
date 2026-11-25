@@ -12,9 +12,12 @@ public final class ServiceSetup {
     private ServiceSetup() {
     }
 
-    /** .logast/ is ignored except what the team shares: the baseline, the decisions a person made, the README (#108). */
+    /**
+     * .logast/ is ignored except what the team shares: the baseline, the decisions a person made, the README (#108),
+     * the schemas the IDE checks logast.yaml and the decisions with (#321).
+     */
     public static final List<String> GITIGNORE = List.of(".logast/*", "!.logast/baseline.json", "!.logast/decisions/",
-            "!.logast/README.md");
+            "!.logast/README.md", "!.logast/schemas/");
     /** Entries of the earlier layout (#108): the files they kept in git live in decisions/ now. */
     private static final Set<String> GITIGNORE_OBSOLETE = Set.of("!.logast/traffic.yaml", "!.logast/retry.yaml",
             "# logast: machine-specific classpath and scan output; baseline and traffic are shared");
@@ -104,7 +107,10 @@ public final class ServiceSetup {
             // #290: how the code logs a caught exception, unless a parent layer decides it
             boolean parentDecides = dev.logast.policy.PolicyLoader.sets(parents, "logging.exceptionStack")
                     || dev.logast.policy.PolicyLoader.sets(parents, "logging.exceptionMessage");
-            Files.writeString(policyFile, parentDecides ? own : suggestExceptionPolicy(own, root));
+            // #321: its schema named on top (an IDE completes and checks it), every setting with its default at the end
+            String policy = parentDecides ? own : suggestExceptionPolicy(own, root);
+            Files.writeString(policyFile, Schemas.stamp(policyFile, policy + "\n" + Schemas.reference()));
+            Schemas.writeAll(root.resolve(Schemas.DIR));
             terms = h.terms().size();
             if (dev.logast.policy.PolicyLoader.sets(parents, "logging.keyStyle") && c.keyStyle() == null) {
                 style = inherited.logging().keyStyle() + " (from " + (fleet.isEmpty() ? "an extended layer" : "fleet " + fleet) + ")";

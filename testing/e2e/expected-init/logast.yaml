@@ -1,3 +1,5 @@
+# $schema: .logast/schemas/logast.schema.json
+# yaml-language-server: $schema=.logast/schemas/logast.schema.json
 # =============================================================================================
 # logast.yaml: how this service should log, trace and measure
 #
@@ -126,3 +128,83 @@ vocabulary:
 #   LOG_IN_LOOP: { enabled: false }
 
 # The metrics, resilience and audit packs have their own settings: see the guide linked at the top.
+
+# ---------------------------------------------------------------------------------------------
+# Every setting with its built-in default; [example] marks a value that only shows the form.
+# Copy a line above the dashes and remove the # to change it.
+# The IDE completes and checks this file against .logast/schemas/logast.schema.json.
+# ---------------------------------------------------------------------------------------------
+# packs: [logging, tracing, metrics, resilience, errors, audit]   # Which checks run; replaces the list of earlier layers (audit | errors | logging | metrics | resilience | tracing)
+# vocabulary: {order: {aliases: [purchase], mdc: {key: orderId, sources: {params: [orderId]}}}}   # [example] Your business words: one entry per concept, keyed by the word your logs use. `logast vocabulary .` lists …
+# areas:   # Parts of the code where a word means something else
+# mdc:   # MDC keys
+#   ambientKeys: [traceId, spanId]   # Keys tracing maintains: never set by hand, never renamed
+#   extractRepeated: 2   # An id logged by this many lines of one method goes into MDC once (0 = off)
+# pii: [password, secret, token, email, phone, iban, cardNumber, cvv, pin, ssn, taxNumber, birthDate]   # Value names that are personal data: removed from log lines and refused as metric tags (added to the …
+# entrypoints:   # Where work starts
+#   extraAnnotations: [com.example.InboxHandler]   # [example] Your own annotations that start work (like @KafkaListener)
+#   includeMain: false   # Treat main() as an entrypoint (command-line tools)
+#   kafkaObservationEnabled:   # Set when the service switches on Kafka observation itself (spring.kafka.template.observation-enabled)
+#   trustInboundTrace: true   # true: continue callers' traces (traceparent, baggage); false for a service the internet reaches directly
+# logging:   # Message format and wording
+#   keyStyle: camel   # How MDC and [k=v] keys are spelled; applies to vocabulary keys too (camel | dotted | pascal | snake | keep)
+#   rewriteExistingMessages: true   # false: keep the words of existing messages, fix only their structure
+#   structuredFormat: logstash   # JSON console log format logast writes to application.yml; none leaves the log format alone (logstash | ecs | gelf | none)
+#   structuredProfiles: []   # Profiles that get JSON console logs (application-<profile>.yml); empty: every profile
+#   serviceName: "${SERVICE_NAME:shop}"   # [example] Written to spring.application.name when missing (default: the project name)
+#   serviceVersion: "${APPLICATION_VERSION:unknown}"   # [example] Written to spring.application.version when missing
+#   loggerName: log   # Field name of a logger logast adds
+#   entryLevel: info   # Level of the "X started" line logast adds to a silent entrypoint (trace | debug | info | warn | error)
+#   minEntrypointLevel: info   # An entrypoint with nothing logged at this level or above is silent (trace | debug | info | warn | error)
+#   swallowedLevel: warn   # Level of a line added to a catch that drops its exception (trace | debug | info | warn | error)
+#   exceptionStack: attach   # attach: pass the caught exception to the logger; never: log its class only ([errorType=…]) (attach | never)
+#   exceptionMessage: keep   # keep: e.getMessage() may stay in log lines; never: its class instead (a message may hold personal data) (keep | never)
+#   wordingQueue: 50   # messages.yaml asks for at most this many texts at once, the most severe first
+#   protectedMessages: []   # Messages alerts or dashboards depend on (regex): never reworded, only reported
+#   vagueMessages: [^handled\.?$]   # [example] Wording to avoid (regex, added to the built-in list): MESSAGE_VAGUE
+# phrasing:   # One way to say lifecycle events
+#   events: {completed: {variants: ["{subject} wrapped up"]}}   # [example] Event → its canonical form and the variants rewritten to it
+# levels:   # Log levels
+#   clientErrors: [com.example.BusinessRuleViolationException]   # [example] Exceptions caused by the caller (added to the built-in list): never logged as ERROR
+#   clientErrorLevel: warn   # The level for client errors (trace | debug | info | warn | error)
+#   infoInLoops: size   # INFO once per loop item. size: fine for small loops, DEBUG over query/stream data, reported when unknown; … (size | never | always)
+#   boundedLoopMax: 20   # A loop over at most this many items counts as small
+#   volumeBudget: 100000.0   # Log lines per day one statement may produce (with traffic numbers)
+#   addedInfoMaxPerDay: 1000.0   # A line logast adds for a request or a write is INFO only up to this rate
+# tracing:   # Tracing
+#   samplingProbability: 1.0   # [example] Written into management.tracing.sampling.probability when the service sets none; unset: only proposed
+# support:   # The runtime helper library (MdcScope, ObservedContext, Outcomes)
+#   mode:   # vendor: copy its classes into the service; dependency: add the logging-support library (default when … (vendor | dependency)
+#   coordinates: "dev.logast:logging-support:0.5.4"   # [example] Which library (dependency mode); default: this logast's version
+#   repository: "https://nexus.example.com/repository/maven-releases/"   # [example] Where the library comes from: added to the build unless a script names it
+#   vendorPackage: com.example.shop.logging   # [example] Where vendor mode copies the classes (default: <app package>.logging)
+#   packageName: dev.logast.logging   # [example] The library's package (for a renamed fork)
+# metrics:   # Metrics (pack metrics)
+#   events: true   # Business events without a metric get an Observation (timer, count, span)
+#   defaults: [failures, jobs, skips, db-writes]   # Logged outcomes counted without a metrics.yaml decision; [] = only what metrics.yaml decides (failures | jobs | skips | db-writes)
+#   amounts: total   # A number on an outcome line counted too: total (a counter grows by it), per-run (a distribution), off (an … (total | per-run | off | false)
+#   catalog: per-package   # Metric names in one place: per-package (an XMetrics class per package), single (all in catalogClass), off … (per-package | single | off | false)
+#   catalogClass: com.example.metrics.BusinessMetrics   # [example] The class for catalog: single (default: <app package>.metrics.BusinessMetrics)
+#   tags: {outcome: {aliases: [result, success, succeeded]}}   # [example] Tag vocabulary: tag key → aliases renamed to it and allowed values
+# resilience:   # Timeouts and locks (pack resilience): a timeout is written only when this file or a layer it extends sets it
+#   httpConnectTimeout: 5s   # Written to spring.http.clients.connect-timeout when a service has none
+#   httpReadTimeout: 30s   # Written to spring.http.clients.read-timeout
+#   dbQueryTimeout: 5m   # Written to spring.jdbc.template.query-timeout and the JPA query timeout
+#   singleInstance: false   # true: the service never runs more than once, @Scheduled jobs need no lock
+# audit:   # Audit records (pack audit)
+#   emitters: []   # Calls that record an audit event: a class, or class#method; empty: calls on *Audit* types
+#   logger: audit   # Audit classes log through this logger name (AUDIT_LOG_MIXED)
+#   actions:   # Entrypoints that must record an audit event; any field matches
+# reporting:   # What scan writes besides the findings
+#   sourceComments: false   # true: "// logast: RULE ID" beside findings that need an entry in messages.yaml or metrics.yaml (a …
+# queries:   # What .logast/reports/queries.md holds
+#   backends: [prometheus, newrelic, splunk]   # Query languages to write (prometheus | newrelic | splunk)
+#   splunk:   # Splunk
+#     index: ""   # The index the service logs to; empty: no Splunk queries
+#     sourcetype: ""   # Added to every search
+#   prometheus:   # Prometheus
+#     serviceLabel: ""   # The label that names the service (default: application when management.metrics.tags.application is set, …
+# verify:   # logast verify
+#   tasks: [test, intTest]   # [example] Gradle tasks that run your tests (default: test)
+#   gradleDir: ../..   # [example] Run Gradle here, relative to the service
+# rules: {LOG_IN_LOOP: {enabled: false}, ENTRYPOINT_SILENT: {severity: low}}   # [example] Switch single rules off or change their severity: rule id → setting (`logast explain rules` lists them)

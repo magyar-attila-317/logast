@@ -1,0 +1,1246 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/magyar-attila-317/logast/schemas/logast.schema.json",
+  "title": "logast.yaml",
+  "description": "How a service should log, trace and measure. Anything left out uses the built-in default (`logast explain policy .` shows the final settings). Every option: docs/configuration.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "extends": {
+      "description": "Policy layers this one builds on, applied first: a path, an https URL with #sha256=…, or fleet:<name>[@policy-N]",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "examples": [
+        [
+          "../company.yaml"
+        ],
+        [
+          "fleet:platform@policy-3"
+        ]
+      ]
+    },
+    "fleet": {
+      "type": "string",
+      "description": "The fleet this service belongs to: its company.yaml is extended",
+      "examples": [
+        "platform"
+      ]
+    },
+    "rollout": {
+      "type": "object",
+      "description": "This repo's say in a fleet rollout (#236): read from the default branch",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "pr: rolled out as a pull request; manual: only when named with --repos; off: never (say why in hold)",
+          "default": "pr",
+          "enum": [
+            "pr",
+            "manual",
+            "off"
+          ]
+        },
+        "hold": {
+          "type": "string",
+          "description": "Hold the rollout, with the reason; \"until YYYY-MM-DD\" ends it on that day",
+          "examples": [
+            "until 2026-12-15: release freeze"
+          ]
+        }
+      }
+    },
+    "packs": {
+      "type": "array",
+      "description": "Which checks run; replaces the list of earlier layers",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "logging",
+        "tracing",
+        "metrics",
+        "resilience",
+        "errors",
+        "audit"
+      ],
+      "examples": [
+        [
+          "logging",
+          "tracing"
+        ]
+      ]
+    },
+    "vocabulary": {
+      "type": "object",
+      "description": "Your business words: one entry per concept, keyed by the word your logs use. `logast vocabulary .` lists the ids the code already uses",
+      "additionalProperties": {
+        "type": "object",
+        "description": "One business concept: the word the logs use",
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "description": "Words that mean the same: rewritten to the term in messages",
+            "items": {
+              "type": "string"
+            },
+            "examples": [
+              [
+                "purchase",
+                "ordr"
+              ]
+            ]
+          },
+          "mdc": {
+            "type": "object",
+            "description": "The MDC key that carries this term's id",
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "The MDC key",
+                "examples": [
+                  "orderId"
+                ]
+              },
+              "aliases": {
+                "type": "array",
+                "description": "Earlier MDC key names: renamed to key",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "order_id",
+                    "orderUuid"
+                  ]
+                ]
+              },
+              "sources": {
+                "type": "object",
+                "description": "Where logast finds the value in the code",
+                "additionalProperties": false,
+                "properties": {
+                  "params": {
+                    "type": "array",
+                    "description": "Method parameters with these names carry the value",
+                    "items": {
+                      "type": "string"
+                    },
+                    "examples": [
+                      [
+                        "orderId",
+                        "orderUuid"
+                      ]
+                    ]
+                  },
+                  "types": {
+                    "type": "object",
+                    "description": "An accessor per type that returns the value: type → accessor",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "examples": [
+                      {
+                        "com.example.order.Order": "getId()"
+                      }
+                    ]
+                  },
+                  "override": {
+                    "type": "boolean",
+                    "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+                  }
+                }
+              },
+              "cardinality": {
+                "type": "string",
+                "description": "high (an id: never a metric tag) or low (a small set of values)",
+                "default": "high",
+                "enum": [
+                  "high",
+                  "low"
+                ]
+              },
+              "override": {
+                "type": "boolean",
+                "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+              }
+            }
+          },
+          "logKey": {
+            "type": "string",
+            "description": "The name inside \"Message [orderId=…]\" (default: mdc.key)",
+            "examples": [
+              "orderId"
+            ]
+          },
+          "override": {
+            "type": "boolean",
+            "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+          }
+        }
+      },
+      "examples": [
+        {
+          "order": {
+            "aliases": [
+              "purchase"
+            ],
+            "mdc": {
+              "key": "orderId",
+              "sources": {
+                "params": [
+                  "orderId"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "areas": {
+      "type": "object",
+      "description": "Parts of the code where a word means something else",
+      "additionalProperties": {
+        "type": "object",
+        "description": "One business area",
+        "additionalProperties": false,
+        "properties": {
+          "packages": {
+            "type": "array",
+            "description": "Classes in these packages belong to the area",
+            "items": {
+              "type": "string"
+            },
+            "examples": [
+              [
+                "com.example.kitchen"
+              ]
+            ]
+          },
+          "vocabulary": {
+            "type": "object",
+            "description": "Terms that apply only here",
+            "additionalProperties": {
+              "type": "object",
+              "description": "One business concept: the word the logs use",
+              "additionalProperties": false,
+              "properties": {
+                "aliases": {
+                  "type": "array",
+                  "description": "Words that mean the same: rewritten to the term in messages",
+                  "items": {
+                    "type": "string"
+                  },
+                  "examples": [
+                    [
+                      "purchase",
+                      "ordr"
+                    ]
+                  ]
+                },
+                "mdc": {
+                  "type": "object",
+                  "description": "The MDC key that carries this term's id",
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "The MDC key",
+                      "examples": [
+                        "orderId"
+                      ]
+                    },
+                    "aliases": {
+                      "type": "array",
+                      "description": "Earlier MDC key names: renamed to key",
+                      "items": {
+                        "type": "string"
+                      },
+                      "examples": [
+                        [
+                          "order_id",
+                          "orderUuid"
+                        ]
+                      ]
+                    },
+                    "sources": {
+                      "type": "object",
+                      "description": "Where logast finds the value in the code",
+                      "additionalProperties": false,
+                      "properties": {
+                        "params": {
+                          "type": "array",
+                          "description": "Method parameters with these names carry the value",
+                          "items": {
+                            "type": "string"
+                          },
+                          "examples": [
+                            [
+                              "orderId",
+                              "orderUuid"
+                            ]
+                          ]
+                        },
+                        "types": {
+                          "type": "object",
+                          "description": "An accessor per type that returns the value: type → accessor",
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "examples": [
+                            {
+                              "com.example.order.Order": "getId()"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "type": "boolean",
+                          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+                        }
+                      }
+                    },
+                    "cardinality": {
+                      "type": "string",
+                      "description": "high (an id: never a metric tag) or low (a small set of values)",
+                      "default": "high",
+                      "enum": [
+                        "high",
+                        "low"
+                      ]
+                    },
+                    "override": {
+                      "type": "boolean",
+                      "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+                    }
+                  }
+                },
+                "logKey": {
+                  "type": "string",
+                  "description": "The name inside \"Message [orderId=…]\" (default: mdc.key)",
+                  "examples": [
+                    "orderId"
+                  ]
+                },
+                "override": {
+                  "type": "boolean",
+                  "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+                }
+              }
+            }
+          },
+          "requiredMdc": {
+            "type": "array",
+            "description": "Every log line in the area must carry these MDC keys",
+            "items": {
+              "type": "string"
+            },
+            "examples": [
+              [
+                "tenantId"
+              ]
+            ]
+          },
+          "override": {
+            "type": "boolean",
+            "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+          }
+        }
+      }
+    },
+    "glossary": {
+      "type": "object",
+      "description": "Earlier, flat form of vocabulary: still read and merged into it",
+      "additionalProperties": false,
+      "properties": {
+        "terms": {
+          "type": "array",
+          "description": "Business words",
+          "items": {
+            "type": "string"
+          }
+        },
+        "synonyms": {
+          "type": "object",
+          "description": "word → the term it is rewritten to",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "mdc": {
+      "type": "object",
+      "description": "MDC keys",
+      "additionalProperties": false,
+      "properties": {
+        "ambientKeys": {
+          "type": "array",
+          "description": "Keys tracing maintains: never set by hand, never renamed",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "traceId",
+            "spanId"
+          ]
+        },
+        "keys": {
+          "type": "object",
+          "description": "Earlier form of vocabulary.<term>.mdc.sources: key → where its value comes from",
+          "additionalProperties": {
+            "type": "object",
+            "description": "Where logast finds the value in the code",
+            "additionalProperties": false,
+            "properties": {
+              "params": {
+                "type": "array",
+                "description": "Method parameters with these names carry the value",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "orderId",
+                    "orderUuid"
+                  ]
+                ]
+              },
+              "types": {
+                "type": "object",
+                "description": "An accessor per type that returns the value: type → accessor",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "examples": [
+                  {
+                    "com.example.order.Order": "getId()"
+                  }
+                ]
+              },
+              "override": {
+                "type": "boolean",
+                "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+              }
+            }
+          }
+        },
+        "extractRepeated": {
+          "type": "integer",
+          "description": "An id logged by this many lines of one method goes into MDC once (0 = off)",
+          "minimum": 0,
+          "default": 2
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "pii": {
+      "type": "array",
+      "description": "Value names that are personal data: removed from log lines and refused as metric tags (added to the built-in list)",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "password",
+        "secret",
+        "token",
+        "email",
+        "phone",
+        "iban",
+        "cardNumber",
+        "cvv",
+        "pin",
+        "ssn",
+        "taxNumber",
+        "birthDate"
+      ],
+      "examples": [
+        [
+          "guestName",
+          "guestPhone"
+        ]
+      ]
+    },
+    "entrypoints": {
+      "type": "object",
+      "description": "Where work starts",
+      "additionalProperties": false,
+      "properties": {
+        "extraAnnotations": {
+          "type": "array",
+          "description": "Your own annotations that start work (like @KafkaListener)",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "com.example.InboxHandler"
+            ]
+          ]
+        },
+        "includeMain": {
+          "type": "boolean",
+          "description": "Treat main() as an entrypoint (command-line tools)",
+          "default": false
+        },
+        "kafkaObservationEnabled": {
+          "type": "boolean",
+          "description": "Set when the service switches on Kafka observation itself (spring.kafka.template.observation-enabled)"
+        },
+        "trustInboundTrace": {
+          "type": "boolean",
+          "description": "true: continue callers' traces (traceparent, baggage); false for a service the internet reaches directly",
+          "default": true
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "description": "Message format and wording",
+      "additionalProperties": false,
+      "properties": {
+        "keyStyle": {
+          "type": "string",
+          "description": "How MDC and [k=v] keys are spelled; applies to vocabulary keys too",
+          "default": "camel",
+          "enum": [
+            "camel",
+            "dotted",
+            "pascal",
+            "snake",
+            "keep"
+          ]
+        },
+        "rewriteExistingMessages": {
+          "type": "boolean",
+          "description": "false: keep the words of existing messages, fix only their structure",
+          "default": true
+        },
+        "structuredFormat": {
+          "type": "string",
+          "description": "JSON console log format logast writes to application.yml; none leaves the log format alone",
+          "default": "logstash",
+          "enum": [
+            "logstash",
+            "ecs",
+            "gelf",
+            "none"
+          ]
+        },
+        "structuredProfiles": {
+          "type": "array",
+          "description": "Profiles that get JSON console logs (application-<profile>.yml); empty: every profile",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "examples": [
+            [
+              "prod",
+              "staging"
+            ]
+          ]
+        },
+        "serviceName": {
+          "type": "string",
+          "description": "Written to spring.application.name when missing (default: the project name)",
+          "examples": [
+            "${SERVICE_NAME:shop}"
+          ]
+        },
+        "serviceVersion": {
+          "type": "string",
+          "description": "Written to spring.application.version when missing",
+          "examples": [
+            "${APPLICATION_VERSION:unknown}"
+          ]
+        },
+        "loggerName": {
+          "type": "string",
+          "description": "Field name of a logger logast adds",
+          "default": "log"
+        },
+        "entryLevel": {
+          "type": "string",
+          "description": "Level of the \"X started\" line logast adds to a silent entrypoint",
+          "default": "info",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
+        },
+        "minEntrypointLevel": {
+          "type": "string",
+          "description": "An entrypoint with nothing logged at this level or above is silent",
+          "default": "info",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
+        },
+        "swallowedLevel": {
+          "type": "string",
+          "description": "Level of a line added to a catch that drops its exception",
+          "default": "warn",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
+        },
+        "exceptionStack": {
+          "type": "string",
+          "description": "attach: pass the caught exception to the logger; never: log its class only ([errorType=…])",
+          "default": "attach",
+          "enum": [
+            "attach",
+            "never"
+          ]
+        },
+        "exceptionMessage": {
+          "type": "string",
+          "description": "keep: e.getMessage() may stay in log lines; never: its class instead (a message may hold personal data)",
+          "default": "keep",
+          "enum": [
+            "keep",
+            "never"
+          ]
+        },
+        "wordingQueue": {
+          "type": "integer",
+          "description": "messages.yaml asks for at most this many texts at once, the most severe first",
+          "minimum": 1,
+          "default": 50
+        },
+        "protectedMessages": {
+          "type": "array",
+          "description": "Messages alerts or dashboards depend on (regex): never reworded, only reported",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "examples": [
+            [
+              "^ALERT:"
+            ]
+          ]
+        },
+        "vagueMessages": {
+          "type": "array",
+          "description": "Wording to avoid (regex, added to the built-in list): MESSAGE_VAGUE",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "^handled\\.?$"
+            ]
+          ]
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "phrasing": {
+      "type": "object",
+      "description": "One way to say lifecycle events",
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "type": "object",
+          "description": "Event → its canonical form and the variants rewritten to it",
+          "additionalProperties": {
+            "type": "object",
+            "description": "A lifecycle event",
+            "additionalProperties": false,
+            "properties": {
+              "canonical": {
+                "type": "string",
+                "description": "The form logast writes; {subject} is what happens, in domain terms",
+                "examples": [
+                  "{subject} completed"
+                ]
+              },
+              "variants": {
+                "type": "array",
+                "description": "Phrasings rewritten to canonical (added to the built-in ones)",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "{subject} wrapped up"
+                  ]
+                ]
+              },
+              "override": {
+                "type": "boolean",
+                "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+              }
+            }
+          },
+          "examples": [
+            {
+              "completed": {
+                "variants": [
+                  "{subject} wrapped up"
+                ]
+              }
+            }
+          ]
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "levels": {
+      "type": "object",
+      "description": "Log levels",
+      "additionalProperties": false,
+      "properties": {
+        "clientErrors": {
+          "type": "array",
+          "description": "Exceptions caused by the caller (added to the built-in list): never logged as ERROR",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "com.example.BusinessRuleViolationException"
+            ]
+          ]
+        },
+        "clientErrorLevel": {
+          "type": "string",
+          "description": "The level for client errors",
+          "default": "warn",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
+        },
+        "infoInLoops": {
+          "type": "string",
+          "description": "INFO once per loop item. size: fine for small loops, DEBUG over query/stream data, reported when unknown; never: DEBUG unless known small; always: no loop checks",
+          "default": "size",
+          "enum": [
+            "size",
+            "never",
+            "always"
+          ]
+        },
+        "noInfoInLoops": {
+          "type": "boolean",
+          "description": "Earlier form of infoInLoops: never"
+        },
+        "boundedLoopMax": {
+          "type": "integer",
+          "description": "A loop over at most this many items counts as small",
+          "minimum": 0,
+          "default": 20
+        },
+        "volumeBudget": {
+          "type": "number",
+          "description": "Log lines per day one statement may produce (with traffic numbers)",
+          "default": 100000.0,
+          "minimum": 0
+        },
+        "addedInfoMaxPerDay": {
+          "type": "number",
+          "description": "A line logast adds for a request or a write is INFO only up to this rate",
+          "default": 1000.0,
+          "minimum": 0
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "tracing": {
+      "type": "object",
+      "description": "Tracing",
+      "additionalProperties": false,
+      "properties": {
+        "samplingProbability": {
+          "type": "number",
+          "description": "Written into management.tracing.sampling.probability when the service sets none; unset: only proposed",
+          "examples": [
+            1.0
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "support": {
+      "type": "object",
+      "description": "The runtime helper library (MdcScope, ObservedContext, Outcomes)",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "vendor: copy its classes into the service; dependency: add the logging-support library (default when repository or coordinates is set, or the build resolves it)",
+          "enum": [
+            "vendor",
+            "dependency"
+          ]
+        },
+        "coordinates": {
+          "type": "string",
+          "description": "Which library (dependency mode); default: this logast's version",
+          "examples": [
+            "dev.logast:logging-support:0.5.4"
+          ]
+        },
+        "repository": {
+          "type": "string",
+          "description": "Where the library comes from: added to the build unless a script names it",
+          "examples": [
+            "https://nexus.example.com/repository/maven-releases/"
+          ]
+        },
+        "vendorPackage": {
+          "type": "string",
+          "description": "Where vendor mode copies the classes (default: <app package>.logging)",
+          "examples": [
+            "com.example.shop.logging"
+          ]
+        },
+        "packageName": {
+          "type": "string",
+          "description": "The library's package (for a renamed fork)",
+          "examples": [
+            "dev.logast.logging"
+          ]
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Metrics (pack metrics)",
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "type": "boolean",
+          "description": "Business events without a metric get an Observation (timer, count, span)",
+          "default": true
+        },
+        "defaults": {
+          "type": "array",
+          "description": "Logged outcomes counted without a metrics.yaml decision; [] = only what metrics.yaml decides",
+          "items": {
+            "type": "string",
+            "enum": [
+              "failures",
+              "jobs",
+              "skips",
+              "db-writes"
+            ]
+          },
+          "default": [
+            "failures",
+            "jobs",
+            "skips",
+            "db-writes"
+          ]
+        },
+        "amounts": {
+          "type": [
+            "string",
+            "boolean"
+          ],
+          "description": "A number on an outcome line counted too: total (a counter grows by it), per-run (a distribution), off (an unquoted off reads as false in YAML 1.1: the same)",
+          "default": "total",
+          "enum": [
+            "total",
+            "per-run",
+            "off",
+            false
+          ]
+        },
+        "catalog": {
+          "type": [
+            "string",
+            "boolean"
+          ],
+          "description": "Metric names in one place: per-package (an XMetrics class per package), single (all in catalogClass), off (an unquoted off reads as false in YAML 1.1: the same)",
+          "default": "per-package",
+          "enum": [
+            "per-package",
+            "single",
+            "off",
+            false
+          ]
+        },
+        "catalogClass": {
+          "type": "string",
+          "description": "The class for catalog: single (default: <app package>.metrics.BusinessMetrics)",
+          "examples": [
+            "com.example.metrics.BusinessMetrics"
+          ]
+        },
+        "tags": {
+          "type": "object",
+          "description": "Tag vocabulary: tag key → aliases renamed to it and allowed values",
+          "additionalProperties": {
+            "type": "object",
+            "description": "One tag key",
+            "additionalProperties": false,
+            "properties": {
+              "aliases": {
+                "type": "array",
+                "description": "Tag keys renamed to this one",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "result",
+                    "success"
+                  ]
+                ]
+              },
+              "values": {
+                "type": "array",
+                "description": "Allowed literal values (METRIC_TAG_VALUE)",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "success",
+                    "failure"
+                  ]
+                ]
+              },
+              "override": {
+                "type": "boolean",
+                "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+              }
+            }
+          },
+          "examples": [
+            {
+              "outcome": {
+                "aliases": [
+                  "result",
+                  "success",
+                  "succeeded"
+                ]
+              }
+            }
+          ]
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "resilience": {
+      "type": "object",
+      "description": "Timeouts and locks (pack resilience): a timeout is written only when this file or a layer it extends sets it",
+      "additionalProperties": false,
+      "properties": {
+        "httpConnectTimeout": {
+          "type": "string",
+          "pattern": "^[+-]?\\d+(ns|us|ms|s|m|h|d)?$",
+          "description": "Written to spring.http.clients.connect-timeout when a service has none",
+          "default": "5s"
+        },
+        "httpReadTimeout": {
+          "type": "string",
+          "pattern": "^[+-]?\\d+(ns|us|ms|s|m|h|d)?$",
+          "description": "Written to spring.http.clients.read-timeout",
+          "default": "30s"
+        },
+        "dbQueryTimeout": {
+          "type": "string",
+          "pattern": "^[+-]?\\d+(ns|us|ms|s|m|h|d)?$",
+          "description": "Written to spring.jdbc.template.query-timeout and the JPA query timeout",
+          "default": "5m"
+        },
+        "singleInstance": {
+          "type": "boolean",
+          "description": "true: the service never runs more than once, @Scheduled jobs need no lock",
+          "default": false
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "description": "Audit records (pack audit)",
+      "additionalProperties": false,
+      "properties": {
+        "emitters": {
+          "type": "array",
+          "description": "Calls that record an audit event: a class, or class#method; empty: calls on *Audit* types",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "examples": [
+            [
+              "com.example.audit.AuditService",
+              "com.example.ActivityLogger#log"
+            ]
+          ]
+        },
+        "logger": {
+          "type": "string",
+          "description": "Audit classes log through this logger name (AUDIT_LOG_MIXED)",
+          "default": "audit"
+        },
+        "actions": {
+          "type": "array",
+          "description": "Entrypoints that must record an audit event; any field matches",
+          "items": {
+            "type": "object",
+            "description": "An auditable action",
+            "additionalProperties": false,
+            "properties": {
+              "http": {
+                "type": "string",
+                "description": "Method and path; * within a segment, ** across",
+                "examples": [
+                  "DELETE **",
+                  "* /admin/**"
+                ]
+              },
+              "method": {
+                "type": "string",
+                "description": "Regex on the method name",
+                "examples": [
+                  "(?i)(refund|export|grant).*"
+                ]
+              },
+              "term": {
+                "type": "string",
+                "description": "A vocabulary term in the endpoint or method name",
+                "examples": [
+                  "refund"
+                ]
+              },
+              "override": {
+                "type": "boolean",
+                "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+              }
+            }
+          }
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "reporting": {
+      "type": "object",
+      "description": "What scan writes besides the findings",
+      "additionalProperties": false,
+      "properties": {
+        "sourceComments": {
+          "type": "boolean",
+          "description": "true: \"// logast: RULE ID\" beside findings that need an entry in messages.yaml or metrics.yaml (a debugging aid)",
+          "default": false
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "queries": {
+      "type": "object",
+      "description": "What .logast/reports/queries.md holds",
+      "additionalProperties": false,
+      "properties": {
+        "backends": {
+          "type": "array",
+          "description": "Query languages to write",
+          "items": {
+            "type": "string",
+            "enum": [
+              "prometheus",
+              "newrelic",
+              "splunk"
+            ]
+          },
+          "default": [
+            "prometheus",
+            "newrelic",
+            "splunk"
+          ]
+        },
+        "splunk": {
+          "type": "object",
+          "description": "Splunk",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "type": "string",
+              "description": "The index the service logs to; empty: no Splunk queries",
+              "default": "",
+              "examples": [
+                "app-logs"
+              ]
+            },
+            "sourcetype": {
+              "type": "string",
+              "description": "Added to every search",
+              "default": "",
+              "examples": [
+                "_json"
+              ]
+            },
+            "override": {
+              "type": "boolean",
+              "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+            }
+          }
+        },
+        "prometheus": {
+          "type": "object",
+          "description": "Prometheus",
+          "additionalProperties": false,
+          "properties": {
+            "serviceLabel": {
+              "type": "string",
+              "description": "The label that names the service (default: application when management.metrics.tags.application is set, else job)",
+              "default": "",
+              "examples": [
+                "application"
+              ]
+            },
+            "override": {
+              "type": "boolean",
+              "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+            }
+          }
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "verify": {
+      "type": "object",
+      "description": "logast verify",
+      "additionalProperties": false,
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "description": "Gradle tasks that run your tests (default: test)",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "test",
+              "intTest"
+            ]
+          ]
+        },
+        "gradleDir": {
+          "type": "string",
+          "description": "Run Gradle here, relative to the service",
+          "examples": [
+            "../.."
+          ]
+        },
+        "override": {
+          "type": "boolean",
+          "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "description": "Switch single rules off or change their severity: rule id → setting (`logast explain rules` lists them)",
+      "additionalProperties": {
+        "type": "object",
+        "description": "One rule",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "false: the rule does not run"
+          },
+          "severity": {
+            "type": "string",
+            "description": "Its severity",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "override": {
+            "type": "boolean",
+            "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+          }
+        }
+      },
+      "examples": [
+        {
+          "LOG_IN_LOOP": {
+            "enabled": false
+          },
+          "ENTRYPOINT_SILENT": {
+            "severity": "low"
+          }
+        }
+      ]
+    }
+  }
+}

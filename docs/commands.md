@@ -3,7 +3,7 @@
 Every command prints its options with `--help` (`logast scan --help`). This page explains what they are for, with
 examples. Output samples are illustrations; counts and ids differ per service and version.
 
-`logast --help` lists the main commands (and `update`); everything else is a report logast writes on its own, a question under
+`logast --help` lists the main commands (and `update`, `schemas`, `completion`); everything else is a report logast writes on its own, a question under
 `explain`, or an [advanced command](#advanced).
 
 | command | what it does |
@@ -20,6 +20,8 @@ examples. Output samples are illustrations; counts and ids differ per service an
 | `logast fleet <name> [--refresh [--threads n]] [--kb [--kb-full] [--kb-threads n] [--flyway]] [--service <svc>] [--html] [--json] [--vocabulary]` | the fleet's overview from the snapshots: members added / joined, scores, open findings, trace breaks, one outcome under several metric names, vocabulary conflicts; `--service` prints one member's findings from its last scan (with `--refresh`/`--kb`: works on that member only); `--vocabulary` writes the fleet's worksheet and company.yaml |
 | `logast fleet <svc>…` | the earlier form: scans the given services and writes the report; calls whose trace stops between two services; one outcome counted under several metric names |
 | `logast fleet --vocabulary [--central <dir>] <svc>…` | per service, the keys in the code the vocabulary makes aliases (what apply would rename); with `--central`, as if every service extended `<dir>/company.yaml` |
+| `logast schemas [dir] [--check <file>…]` | the JSON schemas of every file you edit by hand, for the IDE ([configuration](configuration.md#in-the-ide-schemas-defaults-and-examples)); `--check` checks files against them |
+| `logast completion [bash\|zsh]` | the shell completion script; install.sh sets up bash ([below](#completion)) |
 | `logast init [svc]` | optional: choose before the first apply (`logast.yaml`, `.gitignore`, classpath, traffic template; `--baseline` for CI). `apply` does the same setup itself when there is no `logast.yaml` |
 
 Options most analysing commands share: `--policy <file>`, `--classpath-file <file>`, `--pack <packs>`,
@@ -508,6 +510,16 @@ logast update 0.5.2     # a given release
 Replaces this install with a release downloaded from GitHub, checked against its `.sha256`, in the same place
 (`LOGAST_HOME`). It runs the `install.sh` the install was shipped with (releases from 0.5.2 on); an install from a
 checkout updates with `git pull && ./install.sh`.
+
+## completion
+
+```bash
+source <(logast completion)        # bash, in ~/.bashrc (install.sh installs it for bash-completion instead)
+source <(logast completion zsh)    # zsh, in ~/.zshrc
+```
+
+Completes every command, option and option value logast knows (`--pack`, `--until`, `--skip`), generated from the
+commands themselves, so it matches the installed version (#321).
 
 ## Reports written automatically
 

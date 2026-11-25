@@ -269,9 +269,10 @@ public final class CompanyPolicy {
             if (r.text() == null) {
                 return List.of();
             }
-            if (!r.text().equals(existing) || !Files.exists(file)) {
+            String text = dev.logast.Schemas.stamp(file, r.text());   // #321: its schema named on top
+            if (!text.equals(existing) || !Files.exists(file)) {
                 Path tmp = Files.createTempFile(fleetDir, "company", ".tmp");
-                Files.writeString(tmp, r.text());
+                Files.writeString(tmp, text);
                 Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             }
             return r.suggestions();

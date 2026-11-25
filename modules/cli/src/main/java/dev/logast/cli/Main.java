@@ -33,7 +33,8 @@ import java.util.concurrent.Callable;
         subcommands = {Main.Apply.class, Main.Scan.class, Review.class, Verify.class, Main.Explain.class, Fleet.class, Init.class,
                 Main.ShapeCmd.class, Main.Classpath.class, Main.TrafficCmd.class, Main.VocabularyCmd.class,
                 Main.MetricsCmd.class, Main.QueriesCmd.class, Main.WhyCmd.class, Main.LifecycleCmd.class, Main.PolicyCmd.class,
-                Main.RulesCmd.class, Facts.class, ExportCmd.class, McpCmd.class, SupportCmd.class, UpdateCmd.class})
+                Main.RulesCmd.class, Facts.class, ExportCmd.class, McpCmd.class, SupportCmd.class, UpdateCmd.class,
+                SchemasCmd.class, CompletionCmd.class})
 public final class Main {
     static final class Version implements CommandLine.IVersionProvider {
         @Override
@@ -70,6 +71,14 @@ public final class Main {
     /** The policy's warnings ({@code PolicyValidator}), each once per run however often the policy is loaded. */
     static void warnOnce(Policy p) {
         p.warnings().stream().filter(WARNED::add).forEach(w -> Out.warn("policy: " + w));
+    }
+
+    /** #321: the pipeline steps, for the completion of --until and --skip. */
+    static final class StepNames implements Iterable<String> {
+        @Override
+        public Iterator<String> iterator() {
+            return java.util.Arrays.stream(Rules.Step.values()).map(st -> st.name().toLowerCase(java.util.Locale.ROOT)).iterator();
+        }
     }
 
     /** The packs {@code --pack} can select, for its help text: every pack some rule belongs to. */
@@ -360,9 +369,9 @@ public final class Main {
         boolean auto;
         @Option(names = "--only", split = ",", description = "Restrict to these order ids")
         Set<String> only = new LinkedHashSet<>();
-        @Option(names = "--until", description = "Stop after this pipeline step: setup, structure, lines, mdc, messages, exceptions, levels, reports (default: all)")
+        @Option(names = "--until", completionCandidates = StepNames.class, description = "Stop after this pipeline step: setup, structure, lines, mdc, messages, exceptions, levels, reports (default: all)")
         String until;
-        @Option(names = "--skip", split = ",", description = "Leave these pipeline steps out (e.g. lines,levels): their findings stay open, the other steps apply")
+        @Option(names = "--skip", split = ",", completionCandidates = StepNames.class, description = "Leave these pipeline steps out (e.g. lines,levels): their findings stay open, the other steps apply")
         List<String> skip = new ArrayList<>();
         @Option(names = "--path", description = "Apply only to files matching this glob (repeatable), e.g. 'src/main/java/com/example/orders/**': a big service in batches; setup changes always apply")
         List<String> paths = new ArrayList<>();
@@ -438,6 +447,19 @@ public final class Main {
             Integer stop = setUp(header);
             if (stop != null) {
                 return stop;
+            }
+            if (write && !refreshed && !stepRun) {
+                // #321: the schemas this logast reads its files with, and logast.yaml naming its own, so an IDE checks it
+                dev.logast.Schemas.writeAll(root().resolve(dev.logast.Schemas.DIR));
+                // only the service's own logast.yaml: a --policy file elsewhere (a shared layer) is not ours to edit
+                Path own = dev.logast.policy.PolicyLoader.defaultFile(root());
+                if (policyFile == null && Files.isRegularFile(own)) {
+                    String text = Files.readString(own);
+                    String stamped = dev.logast.Schemas.stamp(own, text);
+                    if (!stamped.equals(text)) {
+                        Files.writeString(own, stamped);
+                    }
+                }
             }
             Map<String, Fill> fillMap = dev.logast.apply.FillsFile.forApply(root(), fills);
             String olderJdk = dev.logast.JavaTarget.warning(root());   // #5
@@ -1338,7 +1360,7 @@ public final class Main {
             dev.logast.Traffic existing = (Files.exists(file) ? dev.logast.Traffic.load(root(), file) : dev.logast.Traffic.none())
                     .withSchedules(a.traffic.schedules());
             Files.createDirectories(file.toAbsolutePath().getParent());
-            Files.writeString(file, dev.logast.Traffic.template(a.entrypoints, existing));
+            Files.writeString(file, dev.logast.Schemas.stamp(file, dev.logast.Traffic.template(a.entrypoints, existing)));
             long filled = a.entrypoints.stream().filter(ep -> existing.perDay(ep.label()) != null).count();
             System.out.println("traffic: " + a.entrypoints.size() + " entrypoints in " + file + " (" + filled + " with rates)");
             return 0;
