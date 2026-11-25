@@ -60,4 +60,33 @@ class MetricsMapTest {
         MetricsMap.Map m = MetricsMap.of(Analysis.run(dir, Fixtures.classpath(), dev.logast.policy.Policy.resolve(dir, null)));
         assertThat(m.outcomes()).extracting(MetricsMap.Unmeasured::method).containsExactly("ProdSeeder.run");
     }
+
+    /** #327: a team's own non-production profile (qa) is a setting. */
+    @Test
+    void aTeamsOwnTestProfileIsASetting(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path src = java.nio.file.Files.createDirectories(dir.resolve("src/main/java/x"));
+        java.nio.file.Files.writeString(src.resolve("QaSeeder.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+                import org.springframework.context.annotation.Profile;
+                import org.springframework.stereotype.Component;
+
+                @Component
+                @Profile("qa")
+                public class QaSeeder {
+                    private static final Logger log = LoggerFactory.getLogger(QaSeeder.class);
+
+                    public void run() {
+                        log.info("Tenant seed completed");
+                    }
+                }
+                """);
+        assertThat(MetricsMap.of(Analysis.run(dir, Fixtures.classpath(), dev.logast.policy.Policy.resolve(dir, null))).outcomes())
+                .as("qa is no built-in profile").isNotEmpty();
+        java.nio.file.Files.writeString(dir.resolve("logast.yaml"), "metrics:\n  nonProductionProfiles: [qa]\n");
+        assertThat(MetricsMap.of(Analysis.run(dir, Fixtures.classpath(), dev.logast.policy.Policy.resolve(dir, null))).outcomes())
+                .as("listed: test-only").isEmpty();
+    }
 }

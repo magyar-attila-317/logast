@@ -171,6 +171,7 @@ vocabulary:
 #   boundedLoopMax: 20   # A loop over at most this many items counts as small
 #   volumeBudget: 100000.0   # Log lines per day one statement may produce (with traffic numbers)
 #   addedInfoMaxPerDay: 1000.0   # A line logast adds for a request or a write is INFO only up to this rate
+#   expectedExceptions: [Conflict, Rejected, Rejection, NotFound, Invalid, Validation, Duplicate, AlreadyExists, Forbidden, Unauthorized, BadRequest, StateConflict, NotAllowed, Denied]   # Words in an exception's class name that make it an expected outcome (a business signal): an existing WARN …
 # tracing:   # Tracing
 #   samplingProbability: 1.0   # [example] Written into management.tracing.sampling.probability when the service sets none; unset: only proposed
 # support:   # The runtime helper library (MdcScope, ObservedContext, Outcomes)
@@ -186,6 +187,9 @@ vocabulary:
 #   catalog: per-package   # Metric names in one place: per-package (an XMetrics class per package), single (all in catalogClass), off … (per-package | single | off | false)
 #   catalogClass: com.example.metrics.BusinessMetrics   # [example] The class for catalog: single (default: <app package>.metrics.BusinessMetrics)
 #   tags: {outcome: {aliases: [result, success, succeeded]}}   # [example] Tag vocabulary: tag key → aliases renamed to it and allowed values
+#   nonProductionProfiles: [test, tests, e2e, it, dev, local, demo, seed, seeder, testdata, mock, fake, stub, integration-test, integrationtest]   # Profiles (and property prefixes of @ConditionalOnProperty / @ConditionalOnExpression) that never run in …
+#   genericWords: [line, item, row, record, entry, value, data, request, response, message, event, task, call, communicate, process, handle, send, receive, run, execute, update, check, give, sync, operation, action, step, result, submit, read, queue, publish, print, price, persist, mark, nudge, close, open, write, parse, load, save, fetch, notify, release, cancel, retry, refresh, apply, resolve, validate, render, convert, delete, create, start, stop, poll, consume, emit, store, lookup]   # Words that make no metric name on their own: a name of only one of them gets its class's subject first …
+#   familyVerbs: [handle, process, parse, write, read, run, execute, do, perform, get, set, update, check, validate, load, save]   # Outcomes whose metric names start with one of these share no metric: everything handled is no family. A …
 # resilience:   # Timeouts and locks (pack resilience): a timeout is written only when this file or a layer it extends sets it
 #   httpConnectTimeout: 5s   # Written to spring.http.clients.connect-timeout when a service has none
 #   httpReadTimeout: 30s   # Written to spring.http.clients.read-timeout

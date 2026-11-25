@@ -69,22 +69,28 @@ public final class MetricsMap {
      * and alerts hard to keep and cost money in hosted backends.
      */
     static List<Gap> families(List<Gap> gaps) {
+        return families(gaps, FAMILY_VERBS);
+    }
+
+    /** #327: {@code familyVerbs}: the policy's metrics.familyVerbs. */
+    static List<Gap> families(List<Gap> gaps, java.util.Set<String> familyVerbs) {
         List<Gap> out = new ArrayList<>(gaps);
         java.util.Set<Integer> grouped = new java.util.HashSet<>();
         // #324 M2: one shape across the service: the same event and the same first word, whatever the package
         // (broadcast.modifier.group.created, broadcast.preset.updated, … → broadcast{kind=…}); then, for the rest, the
         // same event and last word in one directory (#273)
-        group(gaps, out, grouped, (g, w) -> g.outcome().event() + " " + w[0], true);
+        group(gaps, out, grouped, (g, w) -> g.outcome().event() + " " + w[0], true, familyVerbs);
         group(gaps, out, grouped, (g, w) -> {
             String file = g.outcome().file();
             String dir = file.contains("/") ? file.substring(0, file.lastIndexOf('/')) : "";
             return g.outcome().event() + " " + w[w.length - 1] + " " + dir;
-        }, false);
+        }, false, familyVerbs);
         return out;
     }
 
     private static void group(List<Gap> gaps, List<Gap> out, java.util.Set<Integer> grouped,
-                              java.util.function.BiFunction<Gap, String[], String> key, boolean leadOnly) {
+                              java.util.function.BiFunction<Gap, String[], String> key, boolean leadOnly,
+                              java.util.Set<String> familyVerbs) {
         java.util.Map<String, List<Integer>> groups = new java.util.LinkedHashMap<>();
         for (int i = 0; i < gaps.size(); i++) {
             Gap g = gaps.get(i);
@@ -107,7 +113,7 @@ public final class MetricsMap {
             while (trail < min - lead - 1 && sameAt(names, trail, false)) {
                 trail++;
             }
-            if (leadOnly ? lead == 0 || FAMILY_VERBS.contains(names.getFirst()[0]) : trail == 0) {
+            if (leadOnly ? lead == 0 || familyVerbs.contains(names.getFirst()[0]) : trail == 0) {
                 continue;
             }
             List<String> family = new ArrayList<>(List.of(names.getFirst()).subList(0, lead));
@@ -150,7 +156,7 @@ public final class MetricsMap {
                 for (org.openrewrite.java.tree.Expression arg : an.getArguments()) {
                     collectStrings(a, arg instanceof J.Assignment as ? as.getAssignment() : arg, profiles);
                 }
-                if (!profiles.isEmpty() && profiles.stream().allMatch(p -> nonProduction(p))) {
+                if (!profiles.isEmpty() && profiles.stream().allMatch(p -> nonProduction(a, p))) {
                     return true;
                 }
             } else if (name.equals("ConditionalOnProperty") || name.equals("ConditionalOnExpression")) {
@@ -161,7 +167,7 @@ public final class MetricsMap {
                         : "(?<!!)\\$\\{\\s*([\\w.-]+)").matcher(text);
                 if (first.find()) {
                     String prop = first.group(1) != null ? first.group(1) : first.group(2);
-                    if (prop != null && nonProduction(prop.split("[.-]")[0])) {
+                    if (prop != null && nonProduction(a, prop.split("[.-]")[0])) {
                         return true;
                     }
                 }
@@ -171,13 +177,14 @@ public final class MetricsMap {
     }
 
     /** "e2e", "e2e-tenant", "dev", "local-seed": a profile or property prefix that never runs in production. */
-    private static boolean nonProduction(String name) {
+    private static boolean nonProduction(Analysis a, String name) {
+        java.util.Set<String> listed = orDefault(a.policy.metrics().nonProductionProfiles(), NON_PRODUCTION);   // #327
         String n = name.strip().toLowerCase(Locale.ROOT);
-        if (NON_PRODUCTION.contains(n)) {
+        if (listed.contains(n)) {
             return true;
         }
         for (String part : n.split("[-_.]")) {
-            if (NON_PRODUCTION.contains(part)) {
+            if (listed.contains(part)) {
                 return true;
             }
         }
@@ -398,6 +405,7 @@ public final class MetricsMap {
         List<Unmeasured> outcomes = new ArrayList<>();
         List<Gap> gaps = new ArrayList<>();
         Set<String> catalogs = CatalogRules.catalogNames(a);   // OrderMetrics.ordersShipped() counts too
+        java.util.Set<String> generic = orDefault(a.policy.metrics().genericWords(), GENERIC);   // #327
         for (MethodInfo m : a.index.methods()) {
             if (m.owner().fqn().startsWith(a.supportPackage + ".") || m.facts().logs.isEmpty() || hasMeter(m, metered)
                     || testOnly(a, m)) {
@@ -432,7 +440,7 @@ public final class MetricsMap {
                 boolean inObservation = !inReactiveOperator(m, lc.call())
                         && eps.stream().anyMatch(e -> e.observedByFramework() || observedMethods.contains(e.method().key()));
                 String subject = subject(phrasing, text, event);
-                String metric = metricName(subject, m.owner().simpleName());
+                String metric = metricName(subject, m.owner().simpleName(), generic);
                 String tag = inObservation
                         ? "observationRegistry.getCurrentObservation().lowCardinalityKeyValue(\"outcome\", \"" + event + "\")  "
                         + "(tags the running " + (eps.isEmpty() ? "" : eps.getFirst().label()) + " timer; same thread only)"
@@ -446,7 +454,7 @@ public final class MetricsMap {
         }
         outcomes.sort(Comparator.comparing(Unmeasured::file).thenComparingInt(Unmeasured::line));
         gaps.sort(Comparator.comparing((Gap g) -> g.outcome().file()).thenComparingInt(g -> g.outcome().line()));
-        gaps = families(gaps);
+        gaps = families(gaps, orDefault(a.policy.metrics().familyVerbs(), FAMILY_VERBS));
         return new Map(exporters, note, identity, measured, unmeasuredEps, repositories, meters, outcomes, gaps);
     }
 
@@ -749,6 +757,16 @@ public final class MetricsMap {
      * GrnImportService → grn.import.line).
      */
     static String metricName(String subject, String ownerClass) {
+        return metricName(subject, ownerClass, GENERIC);
+    }
+
+    /** The policy's list, else the built-in one (a policy made in code has none). */
+    static java.util.Set<String> orDefault(List<String> listed, java.util.Set<String> builtIn) {
+        return listed == null || listed.isEmpty() ? builtIn : java.util.Set.copyOf(listed);
+    }
+
+    /** #327: {@code generic}: the policy's metrics.genericWords. */
+    static String metricName(String subject, String ownerClass, java.util.Set<String> generic) {
         // #326 M3: an acronym with digits stays one word (E2E, not "e2.e"); a hyphenated word stays one (write-off)
         String spaced = subject.replaceAll("(\\w)-(\\w)", "$1$2")
                 .replaceAll("([A-Z0-9]*[A-Z])([A-Z][a-z])", "$1 $2").replaceAll("([a-z])([A-Z0-9])", "$1 $2");
@@ -774,7 +792,7 @@ public final class MetricsMap {
             words.removeFirst();
         }
         // a single generic word, or a bare participle ("queued"), says nothing of its own: the class's subject first
-        if (words.size() == 1 && (GENERIC.contains(words.getFirst()) || words.getFirst().endsWith("ed") && words.getFirst().length() > 4)
+        if (words.size() == 1 && (generic.contains(words.getFirst()) || words.getFirst().endsWith("ed") && words.getFirst().length() > 4)
                 && ownerClass != null) {
             String owner = ROLE.matcher(ownerClass).replaceAll("");
             List<String> prefix = new ArrayList<>();

@@ -790,6 +790,35 @@
         "override": {
           "type": "boolean",
           "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        },
+        "expectedExceptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Conflict",
+            "Rejected",
+            "Rejection",
+            "NotFound",
+            "Invalid",
+            "Validation",
+            "Duplicate",
+            "AlreadyExists",
+            "Forbidden",
+            "Unauthorized",
+            "BadRequest",
+            "StateConflict",
+            "NotAllowed",
+            "Denied"
+          ],
+          "description": "Words in an exception's class name that make it an expected outcome (a business signal): an existing WARN for it is not given the stack. A layer adds to the list; override: true replaces it",
+          "examples": [
+            [
+              "Fault",
+              "Refused"
+            ]
+          ]
         }
       }
     },
@@ -979,6 +1008,144 @@
         "override": {
           "type": "boolean",
           "description": "true: this layer replaces the object instead of merging it into what earlier layers set"
+        },
+        "nonProductionProfiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "test",
+            "tests",
+            "e2e",
+            "it",
+            "dev",
+            "local",
+            "demo",
+            "seed",
+            "seeder",
+            "testdata",
+            "mock",
+            "fake",
+            "stub",
+            "integration-test",
+            "integrationtest"
+          ],
+          "description": "Profiles (and property prefixes of @ConditionalOnProperty / @ConditionalOnExpression) that never run in production: code active only there gets no counters. A layer adds to the list",
+          "examples": [
+            [
+              "qa",
+              "sandbox"
+            ]
+          ]
+        },
+        "genericWords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "line",
+            "item",
+            "row",
+            "record",
+            "entry",
+            "value",
+            "data",
+            "request",
+            "response",
+            "message",
+            "event",
+            "task",
+            "call",
+            "communicate",
+            "process",
+            "handle",
+            "send",
+            "receive",
+            "run",
+            "execute",
+            "update",
+            "check",
+            "give",
+            "sync",
+            "operation",
+            "action",
+            "step",
+            "result",
+            "submit",
+            "read",
+            "queue",
+            "publish",
+            "print",
+            "price",
+            "persist",
+            "mark",
+            "nudge",
+            "close",
+            "open",
+            "write",
+            "parse",
+            "load",
+            "save",
+            "fetch",
+            "notify",
+            "release",
+            "cancel",
+            "retry",
+            "refresh",
+            "apply",
+            "resolve",
+            "validate",
+            "render",
+            "convert",
+            "delete",
+            "create",
+            "start",
+            "stop",
+            "poll",
+            "consume",
+            "emit",
+            "store",
+            "lookup"
+          ],
+          "description": "Words that make no metric name on their own: a name of only one of them gets its class's subject first (line in GrnImportService: grn.import.line). A layer adds to the list",
+          "examples": [
+            [
+              "batch",
+              "job"
+            ]
+          ]
+        },
+        "familyVerbs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "handle",
+            "process",
+            "parse",
+            "write",
+            "read",
+            "run",
+            "execute",
+            "do",
+            "perform",
+            "get",
+            "set",
+            "update",
+            "check",
+            "validate",
+            "load",
+            "save"
+          ],
+          "description": "Outcomes whose metric names start with one of these share no metric: everything handled is no family. A layer adds to the list",
+          "examples": [
+            [
+              "dispatch"
+            ]
+          ]
         }
       }
     },

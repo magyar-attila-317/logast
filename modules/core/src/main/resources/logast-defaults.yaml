@@ -64,6 +64,10 @@ levels:
     - org.springframework.dao.EmptyResultDataAccessException
     - jakarta.persistence.EntityNotFoundException
   clientErrorLevel: warn
+  # #326/#327: an exception whose name contains one of these words is an expected outcome (a business signal): an
+  # existing WARN for it is not given the stack. Add your own (Fault, Refused, …); override: true replaces the list.
+  expectedExceptions: [Conflict, Rejected, Rejection, NotFound, Invalid, Validation, Duplicate, AlreadyExists, Forbidden,
+                       Unauthorized, BadRequest, StateConflict, NotAllowed, Denied]
   # INFO once per item of a loop. size: fine for small loops (fixed lists, up to boundedLoopMax items, or a
   # `// logast:loop-size 10` hint above the loop); lowered to DEBUG for loops over query/stream data (database rows,
   # file lines, Kafka batches, or a `// logast:loop-size large` hint); reported where the size is unknown.
@@ -73,6 +77,19 @@ levels:
 
 metrics:
   events: true                     # business events (lifecycle log messages) without a metric get an Observation
+  # #326/#327: code active only in these profiles (@Profile, a property prefix in @ConditionalOnProperty /
+  # @ConditionalOnExpression) is test-only: no counters. Add your own (qa, sandbox, …).
+  nonProductionProfiles: [test, tests, e2e, it, dev, local, demo, seed, seeder, testdata, mock, fake, stub,
+                          integration-test, integrationtest]
+  # #326/#327: a metric name of only one of these words gets its class's subject first ("line" in GrnImportService:
+  # grn.import.line); a bare participle (queued) does too.
+  genericWords: [line, item, row, record, entry, value, data, request, response, message, event, task, call, communicate,
+                 process, handle, send, receive, run, execute, update, check, give, sync, operation, action, step, result,
+                 submit, read, queue, publish, print, price, persist, mark, nudge, close, open, write, parse, load, save,
+                 fetch, notify, release, cancel, retry, refresh, apply, resolve, validate, render, convert, delete, create,
+                 start, stop, poll, consume, emit, store, lookup]
+  # #326/#327: outcomes whose names start with one of these share no metric ("everything handled" is no family)
+  familyVerbs: [handle, process, parse, write, read, run, execute, do, perform, get, set, update, check, validate, load, save]
   amounts: total                   # an outcome line that logs a number ([rows={}]) can count it too, if metrics.yaml
                                    # names it ("amount"): total = a counter grows by it, per-run = each one a sample of
                                    # a distribution summary, off = metrics.yaml does not offer it

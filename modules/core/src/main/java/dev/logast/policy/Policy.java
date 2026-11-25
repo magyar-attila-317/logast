@@ -142,7 +142,13 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      *                     failures, jobs (job/listener outcomes), skips, db-writes (all by default; [] for none)
      */
     public record Metrics(Map<String, MetricTag> tags, Boolean events, String amounts, String catalog, String catalogClass,
-                          List<String> defaults) {
+                          List<String> defaults, List<String> nonProductionProfiles, List<String> genericWords,
+                          List<String> familyVerbs) {
+        public Metrics(Map<String, MetricTag> tags, Boolean events, String amounts, String catalog, String catalogClass,
+                       List<String> defaults) {
+            this(tags, events, amounts, catalog, catalogClass, defaults, null, null, null);
+        }
+
         public static final List<String> DEFAULTS = List.of("failures", "jobs", "skips", "db-writes");
         public static final List<String> AMOUNTS = List.of("total", "per-run", "off");
         public static final List<String> CATALOGS = List.of("per-package", "single", "off");
@@ -163,11 +169,19 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
             }
             catalogClass = catalogClass == null || catalogClass.isBlank() ? null : catalogClass.strip();
             defaults = defaults == null ? DEFAULTS : defaults.stream().map(d -> d.strip().toLowerCase(Locale.ROOT)).toList();
+            // #327: the naming lists, built in through logast-defaults.yaml; a layer adds to them (override: true replaces)
+            nonProductionProfiles = lower(nonProductionProfiles);
+            genericWords = lower(genericWords);
+            familyVerbs = lower(familyVerbs);
             for (String d : defaults) {
                 if (!DEFAULTS.contains(d)) {
                     throw new IllegalArgumentException("metrics.defaults: unknown category \"" + d + "\" (known: " + DEFAULTS + ")");
                 }
             }
+        }
+
+        private static List<String> lower(List<String> words) {
+            return words == null ? List.of() : words.stream().map(w -> w.strip().toLowerCase(Locale.ROOT)).filter(w -> !w.isEmpty()).toList();
         }
 
         /** Alias → canonical tag key. */
@@ -257,10 +271,10 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      *                           is DEBUG
      */
     public record Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
-                         Integer boundedLoopMax, String infoInLoops, Double addedInfoMaxPerDay) {
+                         Integer boundedLoopMax, String infoInLoops, Double addedInfoMaxPerDay, List<String> expectedExceptions) {
         public Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
                       Integer boundedLoopMax) {
-            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null, null);
+            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null, null, null);
         }
 
         /** #285: a line added for an entrypoint with this rate (null: not known) may be INFO. */
@@ -280,6 +294,9 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
             noInfoInLoops = noInfoInLoops != null && noInfoInLoops;
             infoInLoops = infoInLoops == null ? "size" : infoInLoops.toLowerCase(Locale.ROOT);
             addedInfoMaxPerDay = addedInfoMaxPerDay == null ? 1_000d : addedInfoMaxPerDay;
+            // #327: words in an exception's name that make it an expected outcome (built in through logast-defaults.yaml)
+            expectedExceptions = expectedExceptions == null ? List.of()
+                    : expectedExceptions.stream().map(String::strip).filter(w -> !w.isEmpty()).toList();
             if (!Set.of("size", "never", "always").contains(infoInLoops)) {
                 throw new IllegalArgumentException("levels.infoInLoops must be size, never or always, was " + infoInLoops);
             }

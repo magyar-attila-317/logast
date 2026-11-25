@@ -70,4 +70,44 @@ class ExpectedSignalTest {
                 .map(WorkOrder::method).collect(Collectors.toSet());
         assertThat(attached).as("only the fault gets the exception").containsExactly("Imports.read");
     }
+
+    /** #327: a team's own word for an expected outcome (…Fault) is a setting, added to the built-in list. */
+    @Test
+    void aTeamsOwnExpectedExceptionWordIsASetting(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("PaymentFault.java"), "package x;\n\npublic class PaymentFault extends RuntimeException {\n}\n");
+        Files.writeString(src.resolve("Pay.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public class Pay {
+                    private static final Logger log = LoggerFactory.getLogger(Pay.class);
+
+                    void pay() {
+                        try {
+                            run();
+                        } catch (PaymentFault e) {
+                            log.warn("Payment refused by the provider");
+                        }
+                    }
+
+                    void run() {
+                    }
+                }
+                """);
+        java.util.function.Supplier<Boolean> attached = () -> {
+            try {
+                return Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))).orders().stream()
+                        .anyMatch(o -> "Pay.pay".equals(o.method()) && o.edits().stream().anyMatch(e -> e.text() != null && e.text().endsWith(", e")));
+            } catch (java.io.IOException ex) {
+                throw new java.io.UncheckedIOException(ex);
+            }
+        };
+        assertThat(attached.get()).as("Fault is no built-in word: the exception is attached").isTrue();
+        Files.writeString(dir.resolve("logast.yaml"), "levels:\n  expectedExceptions: [Fault]\n");
+        assertThat(attached.get()).as("listed: an expected outcome, no stack").isFalse();
+        assertThat(Policy.resolve(dir, null).levels().expectedExceptions()).as("added to the built-in list").contains("Fault", "Rejected");
+    }
 }

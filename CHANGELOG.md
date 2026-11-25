@@ -13,6 +13,9 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 - Metrics: a `@Profile` named by a constant, and `@ConditionalOnProperty` / `@ConditionalOnExpression` on an e2e / dev / test / seed property, count as test-only code; names keep acronyms with digits (e2e) and hyphenated words, stop at adverbs and "without", drop a leading gerund before a subject of its own, and a bare verb or participle gets its class's subject; a family led by a generic verb (handle, process, parse, …) is none (#326).
 - The list of changes beyond logging knows a class's own logger fields, whatever their name (#326).
 
+**Configuration**
+- The naming lists are settings with today's lists as defaults, extended by a layer like `levels.clientErrors`: `levels.expectedExceptions` (words of an expected outcome's exception name), `metrics.nonProductionProfiles`, `metrics.genericWords`, `metrics.familyVerbs` (#327).
+
 ## 0.5.5
 
 **What logast writes**

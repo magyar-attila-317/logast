@@ -195,6 +195,8 @@ levels:
   boundedLoopMax: 20            # a loop over at most this many items counts as small
   volumeBudget: 100000          # log lines per day one statement may produce (with traffic numbers)
   addedInfoMaxPerDay: 1000      # a line logast adds for a request or a write is INFO only up to this rate (#285)
+  expectedExceptions: [Fault]   # words in an exception's name that make it an expected outcome (added to the built-in
+                                #   Conflict, Rejected, NotFound, Validation, …): an existing WARN gets no stack (#327)
 ```
 
 Lines logast *adds* follow the measured rate (#285). A write endpoint that logs nothing gets a "… started" line only
@@ -327,6 +329,10 @@ metrics:
   amounts: total                # a number on an outcome line counted too: total (counter), per-run (distribution), off
   catalog: per-package          # metric names in one place: per-package, single (all in catalogClass), off
   # catalogClass: com.example.metrics.BusinessMetrics   # for single (default: <app package>.metrics.BusinessMetrics)
+  nonProductionProfiles: [qa]   # profiles / property prefixes that never run in production: no counters there
+                                #   (added to the built-in test, e2e, dev, local, seed, …) (#327)
+  genericWords: [batch]         # a metric name of only one of these gets its class's subject first (added to line, step, …)
+  familyVerbs: [dispatch]       # outcomes starting with one of these share no metric (added to handle, process, parse, …)
   tags:                         # tag vocabulary
     outcome:
       aliases: [result, success] # renamed to "outcome"

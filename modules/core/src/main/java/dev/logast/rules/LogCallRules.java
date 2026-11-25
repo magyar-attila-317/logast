@@ -334,7 +334,9 @@ final class LogCallRules {
         for (JavaType t : c.types) {
             JavaType.FullyQualified fq = TypeUtils.asFullyQualified(t);
             String simple = fq == null ? String.valueOf(t) : fq.getClassName();
-            if (client.stream().anyMatch(cl -> TypeUtils.isAssignableTo(cl, t)) || OUTCOME_EXCEPTION.matcher(simple).find()) {
+            List<String> words = ctx.policy.levels().expectedExceptions();   // #327: levels.expectedExceptions
+            boolean named = words.isEmpty() ? OUTCOME_EXCEPTION.matcher(simple).find() : words.stream().anyMatch(simple::contains);
+            if (client.stream().anyMatch(cl -> TypeUtils.isAssignableTo(cl, t)) || named) {
                 return true;
             }
             if (fq != null && fq.getFullyQualifiedName().equals("java.lang.IllegalArgumentException")
