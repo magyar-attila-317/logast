@@ -5,6 +5,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+## 0.5.6
+
 **What logast writes**
 - A catch that returns or sets a value is a designed default (a fail-closed check, an unknown code mapped to OTHER, a missing key read as false): its line is DEBUG, with the exception's class as a key and no stack; its wording is generated only from a value named in words (DEFAULT_CURRENCY), never from the method's name; a record gets no logger. 0.5.5 wrote a WARN with the stack there (#325).
 - A per-item check whose loop body is the try itself, and a loop that counts what it drops (`dropped++`), get no WARN line (#325, #326).
