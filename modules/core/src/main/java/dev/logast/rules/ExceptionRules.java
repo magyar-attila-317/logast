@@ -84,8 +84,9 @@ final class ExceptionRules {
         }
 
         Set<String> inMdc = ctx.mdcInside(m);
+        // #331: in a catch every accessor is read null-safe: a throwing log argument would replace the catch's handling
         List<DomainValues.Value> values = new ArrayList<>(ctx.domain.fromVars(ctx.vars(m, open + 1)).stream()
-                .filter(v -> !inMdc.contains(v.key())).toList());
+                .filter(v -> !inMdc.contains(v.key())).map(DomainValues::nullSafe).toList());
         // #278: a team that logs exceptions by class only gets [errorType=…] instead of the exception (stack and message)
         boolean attach = ctx.policy.logging().attachExceptions() && !designedDefault;
         if (!attach) {

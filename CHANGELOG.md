@@ -6,6 +6,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **What logast writes**
+- An id logast adds to a log line through an accessor is read null-safe (`actor == null ? null : actor.getGlobalUserId()`): in a catch always, elsewhere unless the method used the variable before the line. 0.5.6 could add `actor.getGlobalUserId()` in a catch where `actor` is null for a system run: the NullPointerException replaced the catch's own handling (#331).
 - An existing WARN in a loop's catch that records the item and moves on is not given the exception (a stack per item of a readiness check); a line that names the exception's class in a catch that answers with a 4xx loses the stack (#329).
 - A POST to a path ending in an action (`/orders/assign`, `/menu/validate-combination`) starts "Order assign", "Validate combination", not "Assign creation"; fallback wording comes only from constants (`DEFAULT_CURRENCY`), not from variables (#329).
 - Metric names end at a lifecycle word (complete, done, finished): no `tenant{kind="schema.migrations.complete", outcome="failed"}`; build, compute and deliver are generic words (#329).

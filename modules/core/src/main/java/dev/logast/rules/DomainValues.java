@@ -15,6 +15,20 @@ public final class DomainValues {
     public record Value(String key, String expr) {
     }
 
+    /**
+     * #331: {@code v} read without a NullPointerException: an accessor ({@code actor.getGlobalUserId()}) becomes
+     * {@code actor == null ? null : actor.getGlobalUserId()}. A value logast adds must not throw where the code did not:
+     * in a catch block a throwing log argument replaces the catch's own handling.
+     */
+    public static Value nullSafe(Value v) {
+        int dot = v.expr().indexOf('.');
+        if (dot <= 0 || v.expr().contains(" == null ? ")) {
+            return v;
+        }
+        String root = v.expr().substring(0, dot);
+        return root.equals("this") ? v : new Value(v.key(), root + " == null ? null : " + v.expr());
+    }
+
     private final Policy policy;
 
     public DomainValues(Policy policy) {

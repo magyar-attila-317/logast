@@ -71,7 +71,10 @@ final class LogIdRules {
                     }
                     boolean carried = !lc.offThread() && (inMdc.contains(v.key()) || ctx.plannedBy(m, v.key()) != null);
                     if (!carried && !logged.contains(key) && !logged.contains(v.key()) && !logged.contains(v.expr())) {
-                        missing.add(v);
+                        // #331: an accessor of a parameter the method has not dereferenced before this line may be null
+                        // (a system actor); in a catch the try may have failed before it: read it null-safe
+                        missing.add(accessor && (lc.inCatch() != null || !dereferencedBefore(m, root(v.expr()), Pos.start(lc.call())))
+                                ? DomainValues.nullSafe(v) : v);
                     }
                 }
                 int line = Pos.line(lc.call());
@@ -116,6 +119,16 @@ final class LogIdRules {
     }
 
     /** The method compares {@code name} with null (or asks Objects about it): it may be null here. */
+    /** The method calls a method on {@code name} before {@code at} (so it is not null on the way to the line). */
+    private static boolean dereferencedBefore(MethodInfo m, String name, int at) {
+        int start = Pos.start(m.decl().getBody());
+        if (at <= start) {
+            return false;
+        }
+        String before = m.file().slice(start, at);
+        return java.util.regex.Pattern.compile("(?<![\\w.])" + java.util.regex.Pattern.quote(name) + "\\s*\\.\\s*\\w+\\s*\\(").matcher(before).find();
+    }
+
     private static boolean nullChecked(MethodInfo m, String name) {
         String body = m.file().slice(Pos.start(m.decl().getBody()), Pos.end(m.decl().getBody()));
         return java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(name) + "\\s*[!=]=\\s*null\\b|\\bnull\\s*[!=]=\\s*"
