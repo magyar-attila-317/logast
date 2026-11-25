@@ -5,6 +5,7 @@
 # patterns: a rate for every entrypoint whose label matches and has no value below (* within a path segment,
 #   ** across segments; the most specific match wins), e.g. "* /api/admin/**": 10
 patterns: {}
+#  "* /pledges/**":     # 6 endpoints without a rate
 entrypoints:
   # http
   "DELETE /pledges/{pledgeId}":     # http, PledgeController.delete

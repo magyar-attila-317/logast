@@ -38,6 +38,17 @@ class TrafficPatternsTest {
     }
 
     @Test
+    void groupsOfEndpointsWithoutARateAreOfferedAsPatterns() {
+        Traffic existing = Traffic.of(java.util.Map.of("GET /api/orders/{id}", 500.0), java.util.Map.of("* /api/admin/**", 10.0), "test");
+        List<String> labels = List.of("GET /api/reports/daily", "GET /api/reports/weekly", "POST /api/reports/run",
+                "GET /api/orders/{id}", "POST /api/orders/new", "GET /api/orders/list",
+                "GET /api/admin/a", "GET /api/admin/b", "GET /api/admin/c", "GET /health", "kafka orders",
+                "POST /pledges/{id}/confirm", "GET /pledges/{id}", "DELETE /pledges/{id}", "POST /pledges/allot");
+        assertThat(Traffic.suggestedPatterns(labels, existing)).as("orders has two without a rate; admin has a pattern")
+                .containsExactly(java.util.Map.entry("* /pledges/**", 4), java.util.Map.entry("* /api/reports/**", 3));
+    }
+
+    @Test
     void theTemplateKeepsThePatterns() {
         Traffic existing = Traffic.of(Map.of(), Map.of("* /api/admin/**", 10d), "traffic.yaml");
         assertThat(Traffic.template(List.of(), existing)).contains("patterns:\n  \"* /api/admin/**\": 10\nentrypoints:\n");

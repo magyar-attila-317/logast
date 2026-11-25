@@ -144,6 +144,10 @@ public final class Traffic {
             sb.append('\n');
             existing.patterns.forEach((k, v) -> sb.append("  \"").append(k.replace("\"", "\\\"")).append("\": ").append(number(v)).append('\n'));
         }
+        List<String> allLabels = entrypoints.stream().flatMap(ep -> ep.labels().stream()).distinct().toList();
+        for (Map.Entry<String, Integer> g : suggestedPatterns(allLabels, existing).entrySet()) {
+            sb.append("#  \"").append(g.getKey()).append("\":     # ").append(g.getValue()).append(" endpoints without a rate\n");
+        }
         sb.append("entrypoints:\n");
         Set<String> labels = new LinkedHashSet<>();
         List<dev.logast.model.Entrypoint> sorted = new ArrayList<>(entrypoints);
@@ -181,6 +185,42 @@ public final class Traffic {
             gone.forEach(l -> sb.append("#  \"").append(l).append("\": ").append(existing.perDay(l)).append('\n'));
         }
         return sb.toString();
+    }
+
+    /** A group needs this many endpoints without a rate to be offered as a pattern. */
+    static final int GROUP = 3;
+
+    /**
+     * #279: HTTP endpoints without a rate, grouped by their first two path segments before any path variable ({@code "* /api/admin/**"}), for
+     * the groups of {@link #GROUP} or more, most endpoints first (at most ten): one value per group instead of one per
+     * endpoint. Offered commented; a pattern already set is not offered again.
+     */
+    static Map<String, Integer> suggestedPatterns(List<String> labels, Traffic existing) {
+        Map<String, Integer> count = new LinkedHashMap<>();
+        for (String label : labels) {
+            int space = label.indexOf(" /");
+            if (space < 0 || existing.perDay(label) != null) {
+                continue;
+            }
+            // up to two leading segments, none of them a path variable: /api/reports/**, /pledges/** (from /pledges/{id}/…)
+            String[] segments = label.substring(space + 2).split("/");
+            StringBuilder prefix = new StringBuilder();
+            for (int i = 0; i < Math.min(2, segments.length - 1) && !segments[i].isEmpty() && !segments[i].contains("{"); i++) {
+                prefix.append('/').append(segments[i]);
+            }
+            if (prefix.isEmpty()) {
+                continue;
+            }
+            String pattern = "* " + prefix + "/**";
+            if (!existing.patterns.containsKey(pattern)) {
+                count.merge(pattern, 1, Integer::sum);
+            }
+        }
+        Map<String, Integer> out = new LinkedHashMap<>();
+        count.entrySet().stream().filter(e -> e.getValue() >= GROUP)
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                .limit(10).forEach(e -> out.put(e.getKey(), e.getValue()));
+        return out;
     }
 
     private static String number(double v) {

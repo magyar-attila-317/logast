@@ -237,11 +237,19 @@ public final class ServiceSetup {
         return policyTemplate(extendsList, packs, keepWording, keyStyle, null, vocabulary);
     }
 
+    private static final String CLIENT_CODES = "(BAD_REQUEST|UNAUTHORIZED|PAYMENT_REQUIRED|FORBIDDEN|NOT_FOUND|"
+            + "METHOD_NOT_ALLOWED|NOT_ACCEPTABLE|CONFLICT|GONE|PRECONDITION_FAILED|PAYLOAD_TOO_LARGE|UNSUPPORTED_MEDIA_TYPE|"
+            + "UNPROCESSABLE_ENTITY|UNPROCESSABLE_CONTENT|LOCKED|PRECONDITION_REQUIRED|TOO_MANY_REQUESTS)";
     private static final java.util.regex.Pattern CLIENT_STATUS = java.util.regex.Pattern.compile(
-            "@ResponseStatus\\s*\\((?:[^)]*?)HttpStatus\\.(BAD_REQUEST|UNAUTHORIZED|PAYMENT_REQUIRED|FORBIDDEN|NOT_FOUND|"
-                    + "METHOD_NOT_ALLOWED|NOT_ACCEPTABLE|CONFLICT|GONE|PRECONDITION_FAILED|PAYLOAD_TOO_LARGE|UNSUPPORTED_MEDIA_TYPE|"
-                    + "UNPROCESSABLE_ENTITY|UNPROCESSABLE_CONTENT|LOCKED|PRECONDITION_REQUIRED|TOO_MANY_REQUESTS)[^)]*\\)"
+            "@ResponseStatus\\s*\\((?:[^)]*?)HttpStatus\\." + CLIENT_CODES + "[^)]*\\)"
                     + "(?:\\s|@\\w+(?:\\([^)]*\\))?)*public\\s+(?:final\\s+)?class\\s+(\\w+)\\s+extends\\s+\\w*(?:Exception|Error)\\b");
+    /** An {@code @ExceptionHandler} and the exception classes it names. */
+    private static final java.util.regex.Pattern HANDLER = java.util.regex.Pattern.compile(
+            "@ExceptionHandler\\s*\\(\\s*(?:value\\s*=\\s*)?(\\{[^}]*}|[\\w.]+\\.class)");
+    /** A handler's answer is a 4xx: its @ResponseStatus, a ResponseEntity / ProblemDetail with a 4xx status. */
+    private static final java.util.regex.Pattern CLIENT_ANSWER = java.util.regex.Pattern.compile(
+            "HttpStatus\\." + CLIENT_CODES + "\\b|ResponseEntity\\s*\\.\\s*(badRequest|notFound|unprocessableEntity)\\s*\\("
+                    + "|(status|valueOf)\\s*\\(\\s*4\\d\\d\\s*\\)");
 
     /**
      * #279: the service's own exceptions that answer with a 4xx status ({@code @ResponseStatus(HttpStatus.CONFLICT)} on the
@@ -255,9 +263,15 @@ public final class ServiceSetup {
                 for (Path f : files.filter(p -> p.toString().endsWith(".java")).sorted().toList()) {
                     String text = Files.readString(f);
                     java.util.regex.Matcher m = CLIENT_STATUS.matcher(text);
+                    java.util.regex.Matcher pkg = java.util.regex.Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;").matcher(text);
+                    String prefix = pkg.find() ? pkg.group(1) + "." : "";
                     if (m.find()) {
-                        java.util.regex.Matcher pkg = java.util.regex.Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;").matcher(text);
-                        found.add((pkg.find() ? pkg.group(1) + "." : "") + m.group(2));
+                        found.add(prefix + m.group(2));
+                    }
+                    for (String handled : handledAsClientErrors(text, prefix)) {
+                        if (!found.contains(handled)) {
+                            found.add(handled);
+                        }
                     }
                 }
             } catch (IOException e) {
@@ -268,7 +282,62 @@ public final class ServiceSetup {
         if (found.isEmpty() || !policy.contains(example)) {
             return policy;
         }
-        return policy.replace(example, "#   clientErrors: [" + String.join(", ", found) + "]   # found: @ResponseStatus 4xx in the code");
+        return policy.replace(example, "#   clientErrors: [" + String.join(", ", found) + "]   # found: @ResponseStatus 4xx, 4xx handlers in the code");
+    }
+
+    /**
+     * #279: the exceptions an {@code @ExceptionHandler} answers with a 4xx (its {@code @ResponseStatus}, or a
+     * ResponseEntity / ProblemDetail with a 4xx status in its body), named as the file imports them (else in its package).
+     */
+    static List<String> handledAsClientErrors(String text, String prefix) {
+        List<String> out = new ArrayList<>();
+        java.util.regex.Matcher h = HANDLER.matcher(text);
+        while (h.find()) {
+            int open = text.indexOf('{', h.end());
+            int close = open < 0 ? -1 : closingBrace(text, open);
+            if (close < 0) {
+                continue;
+            }
+            // the method's annotations, signature and body (the next handler's annotations are not part of it)
+            String method = text.substring(h.start(), close + 1);
+            if (!CLIENT_ANSWER.matcher(method).find()) {
+                continue;
+            }
+            java.util.regex.Matcher c = java.util.regex.Pattern.compile("([\\w.]+)\\.class").matcher(h.group(1));
+            while (c.find()) {
+                String name = c.group(1);
+                if (!name.contains(".")) {
+                    java.util.regex.Matcher imp = java.util.regex.Pattern.compile("(?m)^import\\s+([\\w.]+\\." + name + ")\\s*;").matcher(text);
+                    name = imp.find() ? imp.group(1) : javaLang(name) ? "java.lang." + name : prefix + name;
+                }
+                if (!out.contains(name)) {
+                    out.add(name);
+                }
+            }
+        }
+        return out;
+    }
+
+    private static boolean javaLang(String simpleName) {
+        try {
+            Class.forName("java.lang." + simpleName, false, ServiceSetup.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException | LinkageError e) {
+            return false;
+        }
+    }
+
+    private static int closingBrace(String text, int open) {
+        int depth = 0;
+        for (int i = open; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '{') {
+                depth++;
+            } else if (ch == '}' && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**

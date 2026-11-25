@@ -104,7 +104,7 @@ vocabulary:
 
 # Exceptions caused by the caller (logged at WARN at most, never ERROR). Adds to the built-in list.
 # levels:
-#   clientErrors: [com.example.BusinessRuleViolationException]
+#   clientErrors: [com.example.e2e.pledge.PledgeMissing]   # found: @ResponseStatus 4xx, 4xx handlers in the code
 #   infoInLoops: size            # INFO per loop item: fine when small, DEBUG over database rows/streams,
 #                                # reported when unknown (`// logast:loop-size 10` above a loop settles it)
 

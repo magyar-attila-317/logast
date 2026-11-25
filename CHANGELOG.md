@@ -8,6 +8,10 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 **Findings**
 - MDC_VALUE_UNVALIDATED (logging): an MDC value taken from a request header, a `@RequestHeader` / `@CookieValue` parameter or a query parameter with nothing that checks it first is reported (#278).
 
+**Setup**
+- The commented `levels.clientErrors` example also lists the exceptions an `@ExceptionHandler` answers with a 4xx (`@ResponseStatus`, a `ResponseEntity` / `ProblemDetail` with a 4xx status) (#279).
+- traffic.yaml offers a commented pattern for each group of three or more endpoints without a rate under one path prefix (`"* /pledges/**"`): one value per group instead of one per endpoint (#279).
+
 ## 0.5.4
 
 **Log inventory**
