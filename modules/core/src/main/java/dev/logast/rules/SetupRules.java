@@ -513,6 +513,11 @@ public final class SetupRules {
      * Copied support classes that differ from the current version are replaced (they are logast's code, and newer
      * generated code needs the newer API). The dry run shows the diff; edits made to the copies show up there too.
      */
+    /** The code without comments and whitespace: what a formatter cannot change. */
+    static String codeOnly(String java) {
+        return java.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?m)//.*$", "").replaceAll("\\s+", "");
+    }
+
     private void updateVendored() {
         var oc = ctx.a.index.clazz(ctx.a.supportPackage + ".ObservedContext");
         if (oc == null) {
@@ -536,9 +541,10 @@ public final class SetupRules {
             }
             String current = vendoredFor(cls, ctx.a.supportPackage);
             String existing = read(target);
-            // #237: the build's formatter (spring-javaformat, Spotless) reformats the copies after an apply: the same code
-            // in another layout is up to date, or every apply would copy them again and the formatter undo it
-            if (existing.replaceAll("\\s+", "").equals(current.replaceAll("\\s+", ""))) {
+            // #237: the build's formatter (spring-javaformat, Spotless) reformats the copies after an apply, javadoc
+            // re-wrapped included: the same code in another layout is up to date, or every apply would copy them again
+            // and the formatter undo it (a change in a comment alone then waits for the next code change)
+            if (codeOnly(existing).equals(codeOnly(current))) {
                 continue;
             }
             if (b == null) {

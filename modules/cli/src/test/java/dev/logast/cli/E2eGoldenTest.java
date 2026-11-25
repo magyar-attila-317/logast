@@ -900,7 +900,7 @@ abstract class E2eGoldenTest {
         Path wrapper = app.resolve("gradlew");
         // like a real formatter: it lays out every file its own way (here: a tab for the first indent level)
         Files.writeString(wrapper, "#!/bin/sh\necho \"$@\" >> \"$(dirname \"$0\")/formatted.txt\"\n"
-                + "find \"$(dirname \"$0\")/src\" -name '*.java' -exec sed -i 's/^    /\\t/' {} +\n");
+                + "find \"$(dirname \"$0\")/src\" -name '*.java' -exec sed -i -e 's/^    /\\t/' -e 's/^\\( *\\* .\\{30\\}[^ ]*\\) /\\1\\n * /' {} +\n");
         wrapper.toFile().setExecutable(true);
         String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         assertThat(out).as(out).contains("formatted with the build's io.spring.javaformat (format)").doesNotContain("CHECK FAILED");

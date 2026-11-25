@@ -23,7 +23,17 @@ final class DecisionSummary {
     private DecisionSummary() {
     }
 
-    static String of(String service, String diff) {
+    /** The header of every support class logast copies in (vendor mode): its own code, not a decision about the service. */
+    static final String VENDORED = "Copied by logast (support.mode: vendor)";
+
+    static String of(String service, String fullDiff) {
+        StringBuilder kept = new StringBuilder();
+        for (String file : fullDiff.split("(?m)^(?=diff --git )")) {
+            if (!file.contains(VENDORED)) {
+                kept.append(file);
+            }
+        }
+        String diff = kept.toString();
         List<String> added = lines(ADDED, diff);
         List<String> removed = lines(REMOVED, diff);
         Map<String, Integer> lines = new TreeMap<>();
