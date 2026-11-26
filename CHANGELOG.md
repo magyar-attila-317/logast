@@ -5,6 +5,8 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+## 0.5.7
+
 **What logast writes**
 - An id logast adds to a log line through an accessor is read null-safe (`actor == null ? null : actor.getGlobalUserId()`): in a catch always, elsewhere unless the method used the variable before the line. 0.5.6 could add `actor.getGlobalUserId()` in a catch where `actor` is null for a system run: the NullPointerException replaced the catch's own handling (#331).
 - An existing WARN in a loop's catch that records the item and moves on is not given the exception (a stack per item of a readiness check); a line that names the exception's class in a catch that answers with a 4xx loses the stack (#329).
