@@ -6,7 +6,7 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 ## Unreleased
 
 **CLI**
-- `logast support publish` prints what it uploaded, the versions now in the repository, and the next steps: the policy block, the apply, the token every build needs to read a GitHub package (with the Gradle property names apply writes), a `curl` that checks the POM resolves, and upgrading (#332).
+- `logast support publish` shows each upload as it goes (a GitHub Packages publish takes about a minute), the versions now in the repository, and the next steps: the policy block, the apply, the token every build needs to read a GitHub package (with the Gradle property names apply writes), a `curl` that checks the POM resolves, and upgrading (#332).
 
 ## 0.5.7
 

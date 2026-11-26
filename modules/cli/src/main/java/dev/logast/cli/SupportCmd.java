@@ -87,24 +87,33 @@ final class SupportCmd {
                 }
                 files.put(base + ".pom", pom(Files.readString(dir.resolve(artifact + "-" + shipped + ".pom")), group, v)
                         .getBytes(StandardCharsets.UTF_8));
+                // a repository takes seconds per request (13 of them for GitHub Packages): one line per file, as it goes
+                System.out.println("publishing " + group + ":" + artifact + ":" + v + " to " + url
+                        + (target instanceof Repository.Folder ? "" : " (each file with its checksums, a few seconds each)"));
                 for (var f : files.entrySet()) {
+                    long start = System.nanoTime();
+                    System.out.print("  " + f.getKey().substring(f.getKey().lastIndexOf('/') + 1) + " (" + size(f.getValue().length) + ") ... ");
+                    System.out.flush();
                     target.put(f.getKey(), f.getValue());
                     target.put(f.getKey() + ".sha1", hash("SHA-1", f.getValue()).getBytes(StandardCharsets.US_ASCII));
                     target.put(f.getKey() + ".md5", hash("MD5", f.getValue()).getBytes(StandardCharsets.US_ASCII));
+                    System.out.println("done" + took(start));
                 }
                 String meta = group.replace('.', '/') + "/" + artifact + "/maven-metadata.xml";
+                long start = System.nanoTime();
+                System.out.print("  maven-metadata.xml ... ");
+                System.out.flush();
                 byte[] metadata = metadata(group, artifact, v, target.get(meta)).getBytes(StandardCharsets.UTF_8);
                 try {
                     target.put(meta, metadata);
                     target.put(meta + ".sha1", hash("SHA-1", metadata).getBytes(StandardCharsets.US_ASCII));
                     target.put(meta + ".md5", hash("MD5", metadata).getBytes(StandardCharsets.US_ASCII));
+                    System.out.println("done" + took(start) + ", versions there now: " + String.join(", ", versions(metadata)));
                 } catch (IOException e) {   // the versions still resolve by name; only listings miss this one
+                    System.out.println("not written");
                     System.err.println("support: " + artifact + ": maven-metadata.xml not written (" + e.getMessage() + ")");
                 }
                 System.out.println("published " + group + ":" + artifact + ":" + v + " to " + url);
-                System.out.println("  " + files.keySet().stream().map(k -> k.substring(k.lastIndexOf('/') + 1))
-                        .collect(java.util.stream.Collectors.joining(", ")) + " (each with .sha1 and .md5)");
-                System.out.println("  versions there now: " + String.join(", ", versions(metadata)));
             }
             System.out.println();
             // #295: run in a service, its logast.yaml learns where the starter is, so apply adds that repository to the
@@ -113,6 +122,16 @@ final class SupportCmd {
             System.out.print(nextSteps(group, v, url, note));
             return 0;
         }
+    }
+
+    private static String size(long bytes) {
+        return bytes < 1024 ? bytes + " B" : bytes < 1024 * 1024 ? (bytes / 1024) + " KB" : String.format("%.1f MB", bytes / 1048576.0);
+    }
+
+    /** ", 3.2s" for a step that took a while; nothing for one that did not. */
+    private static String took(long startNanos) {
+        long ms = (System.nanoTime() - startNanos) / 1_000_000;
+        return ms < 500 ? "" : String.format(java.util.Locale.ROOT, " (%.1fs)", ms / 1000.0);
     }
 
     /** The versions a maven-metadata.xml lists, oldest first. */
@@ -287,6 +306,22 @@ final class SupportCmd {
 
     /** A Maven repository: a folder ({@code file://}) or HTTP(S) with PUT and GET. */
     interface Repository {
+        /** A repository on disk ({@code file://}). */
+        record Folder(Path root) implements Repository {
+            @Override
+            public void put(String path, byte[] content) throws IOException {
+                Path p = root.resolve(path);
+                Files.createDirectories(p.getParent());
+                Files.write(p, content);
+            }
+
+            @Override
+            public byte[] get(String path) throws IOException {
+                Path p = root.resolve(path);
+                return Files.exists(p) ? Files.readAllBytes(p) : null;
+            }
+        }
+
         void put(String path, byte[] content) throws IOException, InterruptedException;
 
         /** The file's content, or null when it is not there. */
@@ -294,21 +329,7 @@ final class SupportCmd {
 
         static Repository of(String url, String auth) {
             if (url.startsWith("file:")) {
-                Path root = Path.of(URI.create(url));
-                return new Repository() {
-                    @Override
-                    public void put(String path, byte[] content) throws IOException {
-                        Path p = root.resolve(path);
-                        Files.createDirectories(p.getParent());
-                        Files.write(p, content);
-                    }
-
-                    @Override
-                    public byte[] get(String path) throws IOException {
-                        Path p = root.resolve(path);
-                        return Files.exists(p) ? Files.readAllBytes(p) : null;
-                    }
-                };
+                return new Folder(Path.of(URI.create(url)));
             }
             HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).followRedirects(HttpClient.Redirect.NORMAL).build();
             return new Repository() {

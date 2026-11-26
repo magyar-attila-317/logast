@@ -110,7 +110,18 @@ class SupportCmdTest {
         server.start();
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/maven/releases";
-            assertThat(run("publish", "--from", dir.toString(), "--repo", url, "--credentials", "ci-bot:s3cret")).isZero();
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            java.io.PrintStream was = System.out;
+            System.setOut(new java.io.PrintStream(out, true, StandardCharsets.UTF_8));
+            try {
+                assertThat(run("publish", "--from", dir.toString(), "--repo", url, "--credentials", "ci-bot:s3cret")).isZero();
+            } finally {
+                System.setOut(was);
+            }
+            assertThat(out.toString(StandardCharsets.UTF_8)).as("#332: progress while it uploads, one line per file")
+                    .startsWith("publishing dev.logast:logging-support:0.9.0 to " + url)
+                    .contains("  logging-support-0.9.0.jar (22 B) ... done", "  logging-support-0.9.0.pom (", "  maven-metadata.xml ... done",
+                            "versions there now: 0.9.0");
         } finally {
             server.stop(0);
         }
