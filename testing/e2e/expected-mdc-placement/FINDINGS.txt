@@ -68,12 +68,15 @@ REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/order/OrderS
 NEEDS TEXT LOG_FORMAT src/main/java/com/example/e2e/order/PaymentClient.java:15
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:23
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:19
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:21
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:18
 NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:20
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeRepository.java:27
-REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeRepository.java:33
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeRepository.java:33
-NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeRepository.java:39
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeRepository.java:28
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeRepository.java:34
+REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeRepository.java:41
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeRepository.java:41
+NEEDS TEXT MESSAGE_SUGGESTED src/main/java/com/example/e2e/pledge/PledgeRepository.java:47
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeSender.java:14
 REPORT-ONLY MESSAGE_VAGUE src/main/java/com/example/e2e/pledge/PledgeService.java:41
 REPORT-ONLY METRIC_OUTCOME_UNMEASURED src/main/java/com/example/e2e/pledge/PledgeService.java:44

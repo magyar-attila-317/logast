@@ -232,8 +232,11 @@ final class CoverageRules {
         int guards = LifecyclePlan.guards(block.getStatements());
         int startAt = guards == 0 || guards >= block.getStatements().size() ? inner[0]
                 : Text.lineStart(text, Pos.start(block.getStatements().get(guards)));
+        // #334: a job that runs more often than hourly logs its lifecycle at DEBUG
+        boolean debug = ctx.lifecycle().debugRun(ep);
+        String doneLevel = debug ? "debug" : "info";
         Edit startEdit = addStart ? Edit.insert(f.relPath(), startAt, indent + logger.name() + "."
-                + ctx.policy.logging().entryLevel() + "(" + Text.javaString(phrase("started", subject)) + "); " + DbRules.WORDING_MARKER + "\n")
+                + (debug ? "debug" : ctx.policy.logging().entryLevel()) + "(" + Text.javaString(phrase("started", subject)) + "); " + DbRules.WORDING_MARKER + "\n")
                 : null;
         if (addOutcome) {
             Statement last = block.getStatements().getLast();
@@ -246,9 +249,9 @@ final class CoverageRules {
             }
             String completeLine = "{{MSG}}";
             if (last instanceof J.Return ret && ret.getExpression() != null) {
-                insertBeforeReturn(b, m, ret, values, logger.name(), "info", completeLine);
+                insertBeforeReturn(b, m, ret, values, logger.name(), doneLevel, completeLine);
             } else if (!(last instanceof J.Throw)) {
-                b.edit(Edit.insert(f.relPath(), inner[1], indent + logLine(logger.name(), "info", completeLine, values) + "\n"));
+                b.edit(Edit.insert(f.relPath(), inner[1], indent + logLine(logger.name(), doneLevel, completeLine, values) + "\n"));
             } else {
                 ctx.drop(b);
                 return;
@@ -262,7 +265,7 @@ final class CoverageRules {
                             || Annotations.is(an, "jakarta.transaction.Transactional"));
             if (transactional && ctx.a.project.probe().hasClass("org.springframework.transaction.support.TransactionSynchronizationManager")
                     && ctx.supportHas("AfterCommit") && ctx.supportNameFree("AfterCommit", f)) {   // #248
-                String call = logger.name() + ".info(" + Text.javaString(done);
+                String call = logger.name() + "." + doneLevel + "(" + Text.javaString(done);
                 b.rewriteEdits(call, "AfterCommit.log(() -> " + call).rewriteEdits("); " + DbRules.WORDING_MARKER, ")); " + DbRules.WORDING_MARKER);
                 b.edits(JavaEdits.imports(f, ctx.support("AfterCommit")));
                 ctx.dependOnStarter(b);
@@ -325,6 +328,18 @@ final class CoverageRules {
         JavaType t = e.getType();
         String base = e instanceof J.MethodInvocation mi ? mi.getSimpleName().replaceFirst("^(get|find|load|fetch|read|calculate|compute|build)", "")
                 : e instanceof J.Identifier id ? id.getSimpleName() : "result";
+        // #334: a write returning how many rows it touched (repo.deleteStaleThings(cutoff)) is named by what it did
+        java.util.regex.Matcher write = java.util.regex.Pattern.compile("^(delete|remove|purge|evict|expire|archive|update|insert|mark|reset|clean|cleanup)(?:[A-Z]\\w*)?$")
+                .matcher(e instanceof J.MethodInvocation call ? call.getSimpleName() : "");
+        if (write.matches() && (t instanceof JavaType.Primitive || TypeUtils.isAssignableTo("java.lang.Number", t))) {
+            String verb = write.group(1);
+            String done = switch (verb) {
+                case "reset" -> "reset";
+                case "clean", "cleanup" -> "cleaned";
+                default -> verb.endsWith("e") ? verb + "d" : verb + "ed";
+            };
+            return new String[]{key(done), var};
+        }
         base = base.isEmpty() ? "result" : Text.lowerFirst(base);
         if (t == null) {
             return null;

@@ -1,8 +1,8 @@
-logast · 53 files · 21 entrypoints · log coverage 42.9%
+logast · 56 files · 23 entrypoints · log coverage 43.5%
 WARNING: 2 calls did not resolve: paths through them may be missing (`--format compact` lists them)
 
-141 findings: 91 logast fixes, 3 need a message, 11 outcomes to count or skip, 36 need your decision
-  logast fixes     message not in house format 39, business id missing from MDC 10, logged outcome not counted 7, same …
+145 findings: 95 logast fixes, 3 need a message, 11 outcomes to count or skip, 36 need your decision
+  logast fixes     message not in house format 40, business id missing from MDC 10, logged outcome not counted 7, same …
   messages         write in .logast/decisions/messages.yaml or `logast review .`: message not in house format 2, except…
   outcomes         decide in .logast/decisions/metrics.yaml (.logast/reports/metrics.md has the context): 11 logged but not counted
 
@@ -61,7 +61,7 @@ Your decisions (most important first; → what to do)
       pledge/PledgeCleanupJob.java:22  Loop over 'repository.findOpen()' writes one row per item (PledgeRepository.clos…
     scheduled job without a lock  SCHEDULED_WITHOUT_LOCK
       → Add a lock that keeps a run to one instance (ShedLock: @SchedulerLock(name = …) with a LockProvider), or set re…
-      pledge/PledgeCleanupJob.java:21  2 @Scheduled job(s) without a lock: with more than one instance each runs on eve…
+      pledge/PledgeAuditJob.java:18  4 @Scheduled job(s) without a lock: with more than one instance each runs on every…
     traces not exported  TRACING_EXPORT_UNCONFIGURED
       → Set the collector's endpoint per environment: management.opentelemetry.tracing.export.otlp.endpoint in applicat…
       application.yml:1  Traces are exported nowhere: management.opentelemetry.tracing.export.otlp.endpoint is not set,…
@@ -91,7 +91,7 @@ Your decisions (most important first; → what to do)
 
 what to decide, and when it is done: logast scan . --rule ASYNC_CONTEXT_LOSS   ·   everything in full (for an LLM): --format compact
 
-Next: logast apply .   91 fixes logast makes itself (--dry-run: a preview)
+Next: logast apply .   95 fixes logast makes itself (--dry-run: a preview)
 
 Optional (50) — the counts change with the apply — left as is, each keeps its default:
    3 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
@@ -100,9 +100,9 @@ Optional (50) — the counts change with the apply — left as is, each keeps it
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
-Log lines: 64 — 51 with a finding, 10 fine, 3 not checked (.logast/reports/coverage.txt)
+Log lines: 66 — 53 with a finding, 10 fine, 3 not checked (.logast/reports/coverage.txt)
 
 Also:
-  fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 23 entrypoints have no rate: log levels and metrics frequency stay cautious there
 
 reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)

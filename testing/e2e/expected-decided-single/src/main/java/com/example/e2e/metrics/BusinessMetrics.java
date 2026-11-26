@@ -96,6 +96,11 @@ public final class BusinessMetrics {
         Outcomes.count("pledges", "updated", "rows", rows);
     }
 
+    /** pledges{outcome="deleted"} +1; pledges.rows{outcome="deleted"} grows by rows. */
+    public static void pledgesDeleted(Number rows) {
+        Outcomes.count("pledges", "deleted", "rows", rows);
+    }
+
     /** pledge.usage{outcome="saved"} +1; pledge.usage.uses{outcome="saved"} grows by uses. */
     public static void pledgeUsageSaved(Number uses) {
         Outcomes.count("pledge.usage", "saved", "uses", uses);
@@ -140,6 +145,7 @@ public final class BusinessMetrics {
             Outcomes.register("charge", "failed");
             Outcomes.register("pledge.lookup", "failed");
             Outcomes.registerTotal("pledges", "updated", "rows");
+            Outcomes.registerTotal("pledges", "deleted", "rows");
             Outcomes.registerTotal("pledge.usage", "saved", "uses");
             Outcomes.register("pledge", "sent");
             Outcomes.register("pledge.resend", "failed");

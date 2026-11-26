@@ -533,11 +533,16 @@ public final class ShapeExport {
                 int marker = comment.indexOf("logast:");
                 if (marker >= 0) {
                     out.append("// ").append(mapText(comment.substring(marker)));
+                } else if (dev.logast.rules.LifecyclePlan.asksForNoLogging(comment)) {
+                    out.append("// no logging");   // #334: a rule reads it; the rest of the comment stays out
                 }
                 i = end;
             } else if (c == '/' && i + 1 < n && src.charAt(i + 1) == '*') {
                 int end = src.indexOf("*/", i + 2);
                 end = end < 0 ? n : end + 2;
+                if (dev.logast.rules.LifecyclePlan.asksForNoLogging(src.substring(i, end))) {
+                    out.append("/* no logging */");   // #334: a rule reads it; the rest of the comment stays out
+                }
                 src.substring(i, end).chars().filter(ch -> ch == '\n').forEach(ch -> out.append('\n'));
                 i = end;
             } else if (src.startsWith("\"\"\"", i)) {

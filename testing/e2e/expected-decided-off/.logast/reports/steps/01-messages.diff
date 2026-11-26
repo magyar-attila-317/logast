@@ -112,17 +112,33 @@ index 4f47def..8117e82 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
-index 811a059..73ce29b 100644
+index d00bd71..a38cdb1 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
 @@ -15,8 +15,8 @@ 
  
      @Scheduled(fixedDelay = 600000)
      public void run() {
--        log.info("Pledge reload started"); // logast:wording
-+        log.info("Pledge sweep started");
+-        log.debug("Pledge reload started"); // logast:wording
++        log.debug("Pledge sweep started");
          lookup.reload();
--        log.info("Pledge reload completed"); // logast:wording
-+        log.info("Pledge sweep completed");
+-        log.debug("Pledge reload completed"); // logast:wording
++        log.debug("Pledge sweep completed");
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java b/src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
+index cf50ca2..562e1b7 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
+@@ -16,9 +16,9 @@ 
+ 
+     @Scheduled(cron = "0 30 * * * *")
+     public int expire() {
+-        log.info("Pledge expiry started"); // logast:wording
++        log.info("Pledge sweep started");
+         var result = repository.deleteExpired();
+-        log.info("Pledge expiry completed [deleted={}]", result); // logast:wording
++        log.info("Pledge sweep completed [deleted={}]", result);
+         return result;
      }
  }

@@ -346,6 +346,19 @@ index c90ac3d..9f00c37 100644
              repository.close(pledgeId);
          }
          AfterCommit.log(() -> log.info("Pledge cleanup completed [pledgeCount={}]", pledgeIds.size())); // logast:wording
+diff --git a/src/main/java/com/example/e2e/order/DepotRouting.java b/src/main/java/com/example/e2e/order/DepotRouting.java
+index 35044d9..27fbfef 100644
+--- a/src/main/java/com/example/e2e/order/DepotRouting.java
++++ b/src/main/java/com/example/e2e/order/DepotRouting.java
+@@ -11,7 +11,7 @@ 
+     private static final Logger log = LoggerFactory.getLogger(DepotRouting.class);
+ 
+     public void route(String url) {
+-        log.info("pool targets {}", describeHost(url));
++        log.info("pool targets [host={}]", describeHost(url));
+         try {
+             connect(url);
+         } catch (RuntimeException e) {
 diff --git a/src/main/java/com/example/e2e/job/TallyJob.java b/src/main/java/com/example/e2e/job/TallyJob.java
 index 5379f9d..c682b53 100644
 --- a/src/main/java/com/example/e2e/job/TallyJob.java

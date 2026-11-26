@@ -20,12 +20,14 @@ src/main/java/com/example/e2e/job/TallyJob.java
 src/main/java/com/example/e2e/ledger/GatewayCalls.java
 src/main/java/com/example/e2e/messaging/MessagingMetrics.java
 src/main/java/com/example/e2e/messaging/PledgeMessages.java
+src/main/java/com/example/e2e/order/DepotRouting.java
 src/main/java/com/example/e2e/order/OrderEvents.java
 src/main/java/com/example/e2e/order/OrderMetrics.java
 src/main/java/com/example/e2e/order/OrderNotifications.java
 src/main/java/com/example/e2e/order/OrderService.java
 src/main/java/com/example/e2e/order/PaymentClient.java
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
 src/main/java/com/example/e2e/pledge/PledgeLookup.java
 src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 src/main/java/com/example/e2e/pledge/PledgeReloadJob.java

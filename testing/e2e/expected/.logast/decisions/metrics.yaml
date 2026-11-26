@@ -131,7 +131,7 @@ OUM-3dfc51:
     - uses
   _event: saved
   _message: INFO "Pledge usage saved"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.countUse
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:41 PledgeRepository.countUse
   _frequency: "unknown: no rate for \"POST /pledges/{pledgeId}/use\" in .logast/decisions/traffic.yaml"
   _paths:
     - "http POST /pledges/{pledgeId}/use"

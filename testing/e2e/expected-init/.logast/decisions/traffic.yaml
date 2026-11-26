@@ -30,7 +30,9 @@ entrypoints:
   "POST /pledges/{pledgeId}/use":     # http, PledgeController.use
   # scheduled
   "@Scheduled EdgeJob.run":     # scheduled, EdgeJob.run
+  "@Scheduled PledgeAuditJob.audit":     # scheduled, PledgeAuditJob.audit
   "@Scheduled PledgeCleanupJob.cleanup":     # scheduled, PledgeCleanupJob.cleanup
+  "@Scheduled PledgeExpiryJob.expire":     # scheduled, PledgeExpiryJob.expire
   "@Scheduled PledgeReloadJob.run":     # scheduled, PledgeReloadJob.run
   # kafka
   "@KafkaListener orders":     # kafka, OrderEvents.onOrder

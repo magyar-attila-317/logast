@@ -5,10 +5,10 @@ Identity
   spring.application.version: ${APPLICATION_VERSION:unknown}
   meter tags: application, version
 
-Measured without code: 16 entrypoints
+Measured without code: 18 entrypoints
   1 by Spring Kafka, e.g. spring.kafka.listener{…}  (listener OrderEvents.onOrder)
   12 by Spring MVC, e.g. http.server.requests{method="DELETE", uri="/pledges/{pledgeId}"}
-  3 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.edge.EdgeJob", code.function="run"}
+  5 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.edge.EdgeJob", code.function="run"}
   1 Spring Data repositories, e.g. spring.data.repository.invocations{repository="OrderRecordRepository", method=…}
 
 Entrypoints no metric covers: 5
@@ -51,7 +51,7 @@ Outcomes logged but not counted: 13  failed 2, sent 2, archived 1, audited 1, co
     from http POST /orders
   src/main/java/com/example/e2e/order/OrderService.java:48  OrderService.ship
     INFO "Orders shipped"  outcome=shipped  frequency unknown: no entrypoint is known to reach it
-  src/main/java/com/example/e2e/pledge/PledgeRepository.java:33  PledgeRepository.countUse
+  src/main/java/com/example/e2e/pledge/PledgeRepository.java:41  PledgeRepository.countUse
     INFO "Pledge usage saved"  outcome=saved  frequency unknown: no rate for "POST /pledges/{pledgeId}/use" in .logast/decisions/traffic.yaml
     from http POST /pledges/{pledgeId}/use
   src/main/java/com/example/e2e/pledge/PledgeSender.java:14  PledgeSender.send

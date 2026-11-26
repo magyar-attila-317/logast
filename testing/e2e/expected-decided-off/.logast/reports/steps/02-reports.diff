@@ -30,7 +30,7 @@ index 5f70c44..2746e44 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-index 35921a9..7ca0172 100644
+index e7c4fa0..7b7f714 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 @@ -1,6 +1,7 @@ 
@@ -41,11 +41,18 @@ index 35921a9..7ca0172 100644
  import java.util.List;
  import lombok.extern.slf4j.Slf4j;
  import org.springframework.jdbc.core.JdbcTemplate;
-@@ -25,11 +26,13 @@
+@@ -26,17 +27,20 @@
      public void close(String pledgeId) {
          int rows = jdbcTemplate.update(CLOSE, pledgeId);
          AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
 +        Outcomes.count("pledges", "updated", "rows", rows);
+     }
+ 
+     public int deleteExpired() {
+         int rows = jdbcTemplate.update(DELETE_EXPIRED);
+         AfterCommit.log(() -> log.info("Pledges deleted [rows={}]", rows)); // logast:wording
++        Outcomes.count("pledges", "deleted", "rows", rows);
+         return rows;
      }
  
      public int countUse(String pledgeId) {

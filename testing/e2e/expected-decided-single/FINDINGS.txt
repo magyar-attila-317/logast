@@ -1,7 +1,7 @@
-logast · 70 files · 21 entrypoints · 74/205 methods reachable · 144 call edges
+logast · 73 files · 23 entrypoints · 77/213 methods reachable · 149 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
-log coverage 76.2% (jobs 8/9 · http 8/12)   (places that should log and do)
-78 orders: 0 AUTO, 18 NEEDS TEXT, 60 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+log coverage 78.3% (jobs 10/11 · http 8/12)   (places that should log and do)
+82 orders: 0 AUTO, 21 NEEDS TEXT, 61 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-b1c041  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -89,9 +89,9 @@ UMX-665400  medium  REPORT-ONLY  UNMAPPED_EXCEPTION  src/main/java/com/example/e
   also fixes: UNMAPPED_EXCEPTION src/main/java/com/example/e2e/order/PaymentClient.java:20
   note: Decide its status: @ResponseStatus(HttpStatus.CONFLICT) on the class, or an @ExceptionHandler returning a ProblemDetail (with a stable error code) in the controller advice.
   done when: @ResponseStatus on it or a supertype, it extends ResponseStatusException (or is an ErrorResponse), or an @ExceptionHandler names it or a supertype narrower than Exception / RuntimeException
-SWL-aa8bfe  medium  REPORT-ONLY  SCHEDULED_WITHOUT_LOCK  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
-  2 @Scheduled job(s) without a lock: with more than one instance each runs on every instance at the same time (PledgeCleanupJob.cleanup, PledgeReloadJob.run)
-  also fixes: SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:17
+SWL-aa8bfe  medium  REPORT-ONLY  SCHEDULED_WITHOUT_LOCK  src/main/java/com/example/e2e/pledge/PledgeAuditJob.java:18
+  4 @Scheduled job(s) without a lock: with more than one instance each runs on every instance at the same time (PledgeAuditJob.audit, PledgeCleanupJob.cleanup, PledgeExpiryJob.expire, PledgeReloadJob.run)
+  also fixes: SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22, SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:18, SCHEDULED_WITHOUT_LOCK src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:17
   note: Add a lock that keeps a run to one instance (ShedLock: @SchedulerLock(name = …) with a LockProvider), or set resilience.singleInstance: true in logast.yaml if the service never runs more than once.
   done when: every @Scheduled method has @SchedulerLock, or logast.yaml sets resilience.singleInstance: true
 RBR-88de27  medium  REPORT-ONLY  ROW_BY_ROW_WRITE  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:25  PledgeCleanupJob.cleanup
@@ -330,6 +330,20 @@ SUG-bc7bc4  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pl
   + "{{MSG}}"
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Pledge cleanup completed" | suffix keys: [pledgeCount] | must read as '{subject} completed'
+SUG-fe19b0  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:19  PledgeExpiryJob.expire
+  Generated wording "Pledge expiry started": say it in domain terms
+  path: @Scheduled PledgeExpiryJob.expire → PledgeExpiryJob.expire
+  - "Pledge expiry started"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: "Pledge expiry started" | must read as '{subject} started'
+SUG-bd50bd  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:21  PledgeExpiryJob.expire
+  Generated wording "Pledge expiry completed [deleted={}]": say it in domain terms
+  path: @Scheduled PledgeExpiryJob.expire → PledgeExpiryJob.expire
+  - "Pledge expiry completed [deleted={}]"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Pledge expiry completed" | suffix keys: [deleted] | must read as '{subject} completed'
 OUM-91066b  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeLookup.java:22  PledgeLookup.find
   "Pledge lookup failed" is logged but not counted (outcome=failed, frequency unknown: no rate for "GET /pledges/{pledgeId}/details" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.lookup", "failed")), tag (Outcomes.tag("failed") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
@@ -348,29 +362,40 @@ SUG-9c3080  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pl
   + "{{MSG}}"
   (+1 more edits)
   MSG: Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: "Pledge reload completed" | must read as '{subject} completed'
-OUM-0310f9  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:27  PledgeRepository.close
+OUM-0310f9  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:28  PledgeRepository.close
   "Pledges updated" is logged but not counted (outcome=updated, frequency unknown: no rate for "DELETE /pledges/{pledgeId}" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledges", "updated")), tag (Outcomes.tag("updated") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
-SUG-69e349  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:27  PledgeRepository.close
+SUG-69e349  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:28  PledgeRepository.close
   Generated wording "Pledges updated [rows={}]": say it in domain terms
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup → PledgeRepository.close  (+2 more)
   - "Pledges updated [rows={}]"
   + "{{MSG}}"
   (+1 more edits)
   MSG: What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: "Pledges updated" | suffix keys: [rows]
-OUM-3dfc51  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:32  PledgeRepository.countUse
+OUM-c59adb  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:33  PledgeRepository.deleteExpired
+  "Pledges deleted" is logged but not counted (outcome=deleted, frequency low)
+  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledges", "deleted")), tag (Outcomes.tag("deleted") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
+SUG-891dd8  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:33  PledgeRepository.deleteExpired
+  Generated wording "Pledges deleted [rows={}]": say it in domain terms
+  path: @Scheduled PledgeExpiryJob.expire → PledgeExpiryJob.expire → PledgeRepository.deleteExpired
+  - "Pledges deleted [rows={}]"
+  + "{{MSG}}"
+  (+1 more edits)
+  MSG: What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: "Pledges deleted" | suffix keys: [rows]
+OUM-3dfc51  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:39  PledgeRepository.countUse
   "Pledge usage saved" is logged but not counted (outcome=saved, frequency unknown: no rate for "POST /pledges/{pledgeId}/use" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.usage", "saved")), tag (Outcomes.tag("saved") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
-SUG-05aa8d  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:32  PledgeRepository.countUse
+SUG-05aa8d  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:39  PledgeRepository.countUse
   Generated wording "Pledge usage saved [uses={}]": say it in domain terms
   path: POST /pledges/{pledgeId}/use → PledgeController.use → PledgeRepository.countUse
   - "Pledge usage saved [uses={}]"
   + "{{MSG}}"
   (+1 more edits)
   MSG: What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: "Pledge usage saved" | suffix keys: [uses]
-SUG-6fe694  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:38  PledgeRepository.findOpen
+SUG-6fe694  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeRepository.java:45  PledgeRepository.findOpen
   Generated wording "Pledges read [count={}]": say it in domain terms
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup → PledgeRepository.findOpen  (+1 more)
   - "Pledges read [count={}]"
@@ -414,18 +439,18 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 86 changes in 48 files (git diff to review)
+Applied earlier: 90 changes in 50 files (git diff to review)
 
-Optional (78) — left as is, each keeps its default:
-  18 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
-  24 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
+Optional (82) — left as is, each keeps its default:
+  21 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
+  25 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
   36 decisions                      → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
-Log lines: 84 — 43 fixed, 23 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 89 — 45 fixed, 26 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
-  fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 21 entrypoints have no rate: log levels and metrics frequency stay cautious there
+  fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 23 entrypoints have no rate: log levels and metrics frequency stay cautious there
 
 reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain metrics|queries|lifecycle prints them)

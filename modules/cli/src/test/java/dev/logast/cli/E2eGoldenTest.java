@@ -837,8 +837,10 @@ abstract class E2eGoldenTest {
     }
 
     /**
-     * #279: a fix that changes a constructor (the hand-built WebClient now comes from Spring Boot's builder) breaks the
-     * test that calls it: the run says which test no longer compiles and why, and exits 1, instead of reporting success.
+     * #279, #333: a fix that changes a constructor (the hand-built WebClient now comes from Spring Boot's builder): a
+     * test that calls it directly gets a plain builder as the new argument and still compiles; one that reaches it in
+     * a way the fix cannot follow (a constructor reference) is reported: the run says which test no longer compiles
+     * and why, and exits 1, instead of reporting success.
      */
     @Test
     void aTestBrokenByAChangedSignatureIsReported() throws IOException {
@@ -861,8 +863,32 @@ abstract class E2eGoldenTest {
         String out = run(app, "apply", app.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         assertThat(Files.readString(app.resolve("src/main/java/com/example/e2e/depot/DepotClient.java")))
                 .as("the fix is applied").contains("WebClient.Builder");
+        assertThat(Files.readString(test)).as("#333: the direct call passes a plain builder")
+                .contains("new DepotClient(connector, WebClient.builder())")
+                .contains("import org.springframework.web.reactive.function.client.WebClient;");
+        assertThat(out).as(out).doesNotContain("CHECK FAILED");
+        assertThat(LAST_EXIT).isZero();
+
+        Path again = tmp.resolve("again");
+        copy(BEFORE, again);
+        ROLLOUT_AND_CACHES.run(again);
+        Path referenced = again.resolve("src/test/java/com/example/e2e/depot/DepotClientFactoryCheck.java");
+        Files.createDirectories(referenced.getParent());
+        Files.writeString(referenced, """
+                package com.example.e2e.depot;
+
+                import java.util.function.Function;
+                import org.springframework.http.client.reactive.ClientHttpConnector;
+
+                class DepotClientFactoryCheck {
+                    Function<ClientHttpConnector, DepotClient> factory() {
+                        return DepotClient::new;
+                    }
+                }
+                """);
+        out = run(again, "apply", again.toString(), "--auto", "--write", "--classpath-file", CLASSPATH);
         assertThat(out).as(out).contains("CHECK FAILED")
-                .contains("src/test/java/com/example/e2e/depot/DepotClientCheck.java: no longer compiles against the changed code");
+                .contains("src/test/java/com/example/e2e/depot/DepotClientFactoryCheck.java: no longer compiles against the changed code");
         assertThat(LAST_EXIT).isEqualTo(1);
     }
 

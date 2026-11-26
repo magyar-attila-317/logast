@@ -5,6 +5,11 @@ CLI changes after them. Unreleased entries move under the version when it is rel
 
 ## Unreleased
 
+**What logast writes**
+- A `@Scheduled` job that runs more often than hourly gets its started / completed lines at DEBUG (`levels.jobInfoMaxPerDay`, 24): every 10 minutes was 288 INFO lines a day. A method or class whose comment asks for no logging ("No logging by owner rule.") gets none; the count a delete returns is `deleted`, not the repository method's name (#334).
+- A ternary with the exception's message is a `reason` (`e instanceof X ? e.getMessage() : "…"` was `eInstanceofXEGetMessage…`); a helper that presents a value is named after it (`describeHost(url)` → `host`) (#335).
+- A bean method or constructor that gets the injected client builder keeps its direct callers compiling: a test calling `new ThingClient().thingRestClient(url, key, connect, read)` gets `RestClient.builder()` as the new argument (#333).
+
 ## 0.5.8
 
 **CLI**

@@ -6,7 +6,7 @@
 # Keys starting with _ are hints (_where and "was:" find the line again when its id changes: keep them). `logast
 # scan` keeps this file up to date and keeps what you wrote.
 #
-# 18 finding(s) below need a message text.
+# 21 finding(s) below need a message text.
 #
 # Example:
 #   SUG-1a2b3c:
@@ -60,6 +60,14 @@ SUG-bc7bc4:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge cleanup completed | must read as: {subject} completed | suffix keys added by the tool: [pledgeCount]"
   _where: src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29 PledgeCleanupJob.cleanup
+SUG-fe19b0:
+  MSG: ""
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge expiry started | must read as: {subject} started"
+  _where: src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:19 PledgeExpiryJob.expire
+SUG-bd50bd:
+  MSG: ""
+  _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge expiry completed | must read as: {subject} completed | suffix keys added by the tool: [deleted]"
+  _where: src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:21 PledgeExpiryJob.expire
 SUG-b07418:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge reload started | must read as: {subject} started"
@@ -71,15 +79,19 @@ SUG-9c3080:
 SUG-69e349:
   MSG: ""
   _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges updated | suffix keys added by the tool: [rows]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:27 PledgeRepository.close
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:28 PledgeRepository.close
+SUG-891dd8:
+  MSG: ""
+  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges deleted | suffix keys added by the tool: [rows]"
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:34 PledgeRepository.deleteExpired
 SUG-05aa8d:
   MSG: ""
   _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledge usage saved | suffix keys added by the tool: [uses]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.countUse
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:41 PledgeRepository.countUse
 SUG-6fe694:
   MSG: ""
   _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges read | suffix keys added by the tool: [count]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:39 PledgeRepository.findOpen
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:47 PledgeRepository.findOpen
 SUG-08dd18:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} failed' (the generated subject came from the code's names) | was: Quote controller async work failed | must read as: {subject} failed"

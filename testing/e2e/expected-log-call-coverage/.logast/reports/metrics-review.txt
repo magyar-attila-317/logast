@@ -8,5 +8,6 @@ src/main/java/com/example/e2e/messaging/PledgeMessages.java:39  pledge.messages{
 src/main/java/com/example/e2e/order/OrderService.java:43  order.shipment{outcome=skipped}, confidence: medium
 src/main/java/com/example/e2e/order/PaymentClient.java:19  charge{outcome=failed}, confidence: medium
 src/main/java/com/example/e2e/pledge/PledgeLookup.java:22  pledge.lookup{outcome=failed}, confidence: medium
-src/main/java/com/example/e2e/pledge/PledgeRepository.java:27  pledges{outcome=updated}, confidence: low
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:28  pledges{outcome=updated}, confidence: low
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:33  pledges{outcome=deleted}, confidence: low
 src/main/java/com/example/e2e/pledge/PledgeSender.java:25  pledge.resend{outcome=failed}, confidence: medium

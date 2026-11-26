@@ -66,7 +66,7 @@ entrypoints:
 # The entries below were found in your code, one per key as the code spells it. Organise them as
 # the example shows, then run `logast vocabulary .` again: it lists only what is still missing.
 # ---------------------------------------------------------------------------------------------
-# Harvested from 53 source files: MDC keys, [k=v] keys in log messages and id-like variables,
+# Harvested from 56 source files: MDC keys, [k=v] keys in log messages and id-like variables,
 # one term per key, written as in the code. Counts: mdc / log / declared, files. "same value as" and
 # "a kind of" are only hints: nothing is merged or renamed until you edit it.
 #
@@ -171,6 +171,7 @@ vocabulary:
 #   boundedLoopMax: 20   # A loop over at most this many items counts as small
 #   volumeBudget: 100000.0   # Log lines per day one statement may produce (with traffic numbers)
 #   addedInfoMaxPerDay: 1000.0   # A line logast adds for a request or a write is INFO only up to this rate
+#   jobInfoMaxPerDay: 24.0   # Runs per day up to which the started/completed lines logast adds to a @Scheduled job are INFO; a job that …
 #   expectedExceptions: [Conflict, Rejected, Rejection, NotFound, Invalid, Validation, Duplicate, AlreadyExists, Forbidden, Unauthorized, BadRequest, StateConflict, NotAllowed, Denied]   # Words in an exception's class name that make it an expected outcome (a business signal): an existing WARN …
 # tracing:   # Tracing
 #   samplingProbability: 1.0   # [example] Written into management.tracing.sampling.probability when the service sets none; unset: only proposed

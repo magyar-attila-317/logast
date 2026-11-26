@@ -5,10 +5,10 @@ Identity
   spring.application.version: ${APPLICATION_VERSION:unknown}
   meter tags: application, version
 
-Measured without code: 16 entrypoints
+Measured without code: 18 entrypoints
   1 by Spring Kafka, e.g. spring.kafka.listener{…}  (listener OrderEvents.onOrder)
   12 by Spring MVC, e.g. http.server.requests{method="DELETE", uri="/pledges/{pledgeId}"}
-  3 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.edge.EdgeJob", code.function="run"}
+  5 by Spring scheduling, e.g. tasks.scheduled.execution{code.namespace="com.example.e2e.edge.EdgeJob", code.function="run"}
   1 Spring Data repositories, e.g. spring.data.repository.invocations{repository="OrderRecordRepository", method=…}
 
 Entrypoints no metric covers: 5

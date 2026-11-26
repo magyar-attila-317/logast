@@ -787,6 +787,12 @@
           "default": 1000.0,
           "minimum": 0
         },
+        "jobInfoMaxPerDay": {
+          "type": "number",
+          "description": "Runs per day up to which the started/completed lines logast adds to a @Scheduled job are INFO; a job that runs more often gets them at DEBUG",
+          "default": 24.0,
+          "minimum": 0
+        },
         "override": {
           "type": "boolean",
           "description": "true: this layer replaces the object instead of merging it into what earlier layers set"

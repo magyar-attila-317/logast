@@ -179,6 +179,7 @@ final class EntrypointRules {
         return !readEndpoint && !busyOrUnknown && !ctx.lifecycle().frequentRun(ep)   // #272: no INFO line per run of a sweep
                 && !(run && ctx.enabled(Rules.JOB_OUTCOME_MISSING))
                 && ctx.enabled(Rules.ENTRYPOINT_SILENT) && !ctx.ignored(m.file(), m.line(), Rules.ENTRYPOINT_SILENT)
+                && !LifecyclePlan.noLoggingWanted(m)   // #334
                 // #323 H4: an HTTP endpoint's started line is DEBUG: a line at DEBUG already ends its silence
                 && !LifecyclePlan.ownFlowLogs(ctx, m, LifecyclePlan.kindOf(ep) == LifecyclePlan.Kind.HTTP ? Level.DEBUG
                 : Level.parse(ctx.policy.logging().minEntrypointLevel()));

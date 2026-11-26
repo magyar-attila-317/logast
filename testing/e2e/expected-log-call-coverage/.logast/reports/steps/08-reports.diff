@@ -143,17 +143,23 @@ index 91f6866..b2798e7 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-index 35921a9..82eba1c 100644
+index e7c4fa0..dab81bb 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-@@ -25,6 +25,7 @@ 
+@@ -26,11 +26,13 @@ 
      public void close(String pledgeId) {
          int rows = jdbcTemplate.update(CLOSE, pledgeId);
          AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
 +        PledgeMetrics.pledgesUpdated(rows);
      }
  
-     public int countUse(String pledgeId) {
+     public int deleteExpired() {
+         int rows = jdbcTemplate.update(DELETE_EXPIRED);
+         AfterCommit.log(() -> log.info("Pledges deleted [rows={}]", rows)); // logast:wording
++        PledgeMetrics.pledgesDeleted(rows);
+         return rows;
+     }
+ 
 diff --git a/src/main/java/com/example/e2e/edge/EdgeFlow.java b/src/main/java/com/example/e2e/edge/EdgeFlow.java
 index 7445ba3..58c77f6 100644
 --- a/src/main/java/com/example/e2e/edge/EdgeFlow.java
@@ -323,10 +329,10 @@ index 0000000..48ff480
 +}
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeMetrics.java b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 new file mode 100644
-index 0000000..37c6d30
+index 0000000..b9ffc01
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
-@@ -0,0 +1,40 @@ 
+@@ -0,0 +1,46 @@ 
 +package com.example.e2e.pledge;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -351,6 +357,11 @@ index 0000000..37c6d30
 +        Outcomes.count("pledges", "updated", "rows", rows);
 +    }
 +
++    /** pledges{outcome="deleted"} +1; pledges.rows{outcome="deleted"} grows by rows. */
++    public static void pledgesDeleted(Number rows) {
++        Outcomes.count("pledges", "deleted", "rows", rows);
++    }
++
 +    /** pledge.resend{outcome="failed"} +1. */
 +    public static void pledgeResendFailed() {
 +        Outcomes.count("pledge.resend", "failed");
@@ -363,6 +374,7 @@ index 0000000..37c6d30
 +        public void afterSingletonsInstantiated() {
 +            Outcomes.register("pledge.lookup", "failed");
 +            Outcomes.registerTotal("pledges", "updated", "rows");
++            Outcomes.registerTotal("pledges", "deleted", "rows");
 +            Outcomes.register("pledge.resend", "failed");
 +        }
 +    }

@@ -63,9 +63,10 @@ public final class LifecyclePlan {
         MethodInfo m = ep.method();
         Kind kind = kindOf(ep);
         Set<String> roles = roles(m);
-        boolean hasStart = roles.contains("started") || m.facts().logs.stream().anyMatch(l -> "started".equals(event(l)) && info(l));
+        boolean debug = debugRun(ep);   // #334: its lines are DEBUG; a DEBUG line counts
+        boolean hasStart = roles.contains("started") || m.facts().logs.stream().anyMatch(l -> "started".equals(event(l)) && (debug || info(l)));
         boolean hasOutcome = roles.contains("completed") || m.facts().logs.stream()
-                .anyMatch(l -> event(l) != null && Set.of("completed", "failed", "skipped").contains(event(l)) && info(l));
+                .anyMatch(l -> event(l) != null && Set.of("completed", "failed", "skipped").contains(event(l)) && (debug || info(l)));
         boolean wrapper = wrapperLogsOutcome(m);
         boolean silent = ctx.entry.silent().contains(m.key());
         String startOwner;
@@ -76,6 +77,10 @@ public final class LifecyclePlan {
             // (tasks.scheduled.execution, a span per run) is its outcome, its failures are logged by the scheduler
             return new Flow(ep.label(), m.label(), m.file().relPath() + ":" + m.line(), kind, true, true,
                     "not needed (runs more often than once a minute)", "scheduler observation (tasks.scheduled.execution)", List.of());
+        }
+        if (noLoggingWanted(m)) {
+            return new Flow(ep.label(), m.label(), m.file().relPath() + ":" + m.line(), kind, true, true,
+                    "not wanted (its comment asks for no logging)", "not wanted (its comment asks for no logging)", List.of());
         }
         if (handsOff(m)) {
             // #312: the run only hands its work to an executor: a "completed" line here would say the work finished when
@@ -126,6 +131,34 @@ public final class LifecyclePlan {
         Double perDay = ctx.a.traffic.perDay(ep);
         return ep.kind() == Entrypoint.Kind.SCHEDULED && perDay != null
                 && (dev.logast.ScheduleRate.frequent(perDay) || !ctx.policy.levels().addedInfo(perDay));
+    }
+
+    /**
+     * #334: a {@code @Scheduled} job that runs more often than levels.jobInfoMaxPerDay (24: hourly; every 10 minutes is
+     * 144) gets its started / completed lines at DEBUG: a pair at INFO per run is noise next to the scheduler's
+     * observation, and the lines it logs itself ("Deleted 3 expired") say what a run did.
+     */
+    boolean debugRun(Entrypoint ep) {
+        Double perDay = ctx.a.traffic.perDay(ep);
+        return ep.kind() == Entrypoint.Kind.SCHEDULED && perDay != null && perDay > ctx.policy.levels().jobInfoMaxPerDay();
+    }
+
+    private static final java.util.regex.Pattern NO_LOGGING = java.util.regex.Pattern.compile(
+            "(?i)\\bno\\s+(?:added\\s+)?logging\\b|\\bdo\\s+not\\s+log\\b|\\bdon't\\s+log\\b|\\bmust\\s+not\\s+log\\b");
+
+    /**
+     * #334: the code says it wants no logging, in the comment right above the method or its class ("No logging by
+     * owner rule.", "Do not log here"): logast adds no lifecycle lines there.
+     */
+    static boolean noLoggingWanted(MethodInfo m) {
+        String text = m.file().text();
+        return asksForNoLogging(Text.commentBefore(text, Pos.start(m.decl())))
+                || asksForNoLogging(Text.commentBefore(text, Pos.start(m.owner().decl())));
+    }
+
+    /** #334: a comment's text asks for no logging; the shape export keeps that much of a comment. */
+    public static boolean asksForNoLogging(String comment) {
+        return NO_LOGGING.matcher(comment).find();
     }
 
     private static final Set<String> HAND_OFF = Set.of("submit", "execute", "runAsync", "supplyAsync", "schedule", "handOff",

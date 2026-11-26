@@ -127,4 +127,36 @@ public final class Text {
         String flat = s.replaceAll("\\s+", " ").trim();
         return flat.length() <= max ? flat : flat.substring(0, max - 1) + "…";
     }
+
+    /**
+     * #334: the comments right above {@code offset} (a declaration's start, its annotations included): a block or
+     * javadoc comment and/or consecutive line comments, separated from it only by whitespace; "" when there are none.
+     */
+    static String commentBefore(String text, int offset) {
+        StringBuilder out = new StringBuilder();
+        int at = Math.min(Math.max(offset, 0), text.length());
+        while (true) {
+            int end = at;
+            while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) {
+                end--;
+            }
+            if (end >= 2 && text.startsWith("*/", end - 2)) {
+                int open = text.lastIndexOf("/*", end - 2);
+                if (open < 0) {
+                    return out.toString();
+                }
+                out.insert(0, text, open, end);
+                at = open;
+                continue;
+            }
+            int lineStart = text.lastIndexOf('\n', Math.max(end - 1, 0)) + 1;
+            String line = text.substring(lineStart, end).strip();
+            if (end > 0 && line.startsWith("//")) {
+                out.insert(0, line + "\n");
+                at = lineStart;
+                continue;
+            }
+            return out.toString();
+        }
+    }
 }

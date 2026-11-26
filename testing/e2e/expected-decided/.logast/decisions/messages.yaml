@@ -6,7 +6,7 @@
 # Keys starting with _ are hints (_where and "was:" find the line again when its id changes: keep them). `logast
 # scan` keeps this file up to date and keeps what you wrote.
 #
-# 5 finding(s) below need a message text.
+# 6 finding(s) below need a message text.
 #
 # Example:
 #   SUG-1a2b3c:
@@ -23,12 +23,16 @@ FMT-93dcb8:
 SUG-69e349:
   MSG: ""
   _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges updated | suffix keys added by the tool: [rows]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:27 PledgeRepository.close
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:28 PledgeRepository.close
+SUG-891dd8:
+  MSG: ""
+  _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges deleted | suffix keys added by the tool: [rows]"
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:33 PledgeRepository.deleteExpired
 SUG-05aa8d:
   MSG: ""
   _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledge usage saved | suffix keys added by the tool: [uses]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:32 PledgeRepository.countUse
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:39 PledgeRepository.countUse
 SUG-6fe694:
   MSG: ""
   _MSG: "What happened, in domain terms (the generated text was made from the table name), e.g. 'Order items closed' instead of 'Order items updated' | was: Pledges read | suffix keys added by the tool: [count]"
-  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:38 PledgeRepository.findOpen
+  _where: src/main/java/com/example/e2e/pledge/PledgeRepository.java:45 PledgeRepository.findOpen

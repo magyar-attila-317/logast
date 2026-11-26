@@ -36,10 +36,14 @@ message (6)
     start: present (not needed (one outcome per message))   outcome: present (the method)
   @TransactionalEventListener OrderNotifications.onCommitted(OrderPlaced)  src/main/java/com/example/e2e/order/OrderNotifications.java:22
     start: none (not needed (one outcome per message))   outcome: none (not needed (no known rate))
-run (3)
+run (5)
   @Scheduled EdgeJob.run  src/main/java/com/example/e2e/edge/EdgeJob.java:22
     start: present (the method)   outcome: present (the method)
+  @Scheduled PledgeAuditJob.audit  src/main/java/com/example/e2e/pledge/PledgeAuditJob.java:18
+    start: present (not wanted (its comment asks for no logging))   outcome: present (not wanted (its comment asks for no logging))
   @Scheduled PledgeCleanupJob.cleanup  src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22
+    start: present (the method)   outcome: present (the method)
+  @Scheduled PledgeExpiryJob.expire  src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:18
     start: present (the method)   outcome: present (the method)
   @Scheduled PledgeReloadJob.run  src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:17
     start: present (the method)   outcome: present (the method)

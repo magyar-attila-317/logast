@@ -85,7 +85,7 @@ index 93796ad..17cde43 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeRepository.java b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
-index f3c016e..35921a9 100644
+index aef9afd..e7c4fa0 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeRepository.java
 @@ -1,10 +1,13 @@ 
@@ -102,13 +102,20 @@ index f3c016e..35921a9 100644
  @Repository
  public class PledgeRepository {
      private static final String CLOSE = "UPDATE pledges SET closed = true WHERE pledge_id = ?";
-@@ -20,14 +23,19 @@
+@@ -21,18 +24,25 @@
      }
  
      public void close(String pledgeId) {
 -        jdbcTemplate.update(CLOSE, pledgeId);
 +        int rows = jdbcTemplate.update(CLOSE, pledgeId);
 +        AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
+     }
+ 
+     public int deleteExpired() {
+-        return jdbcTemplate.update(DELETE_EXPIRED);
++        int rows = jdbcTemplate.update(DELETE_EXPIRED);
++        AfterCommit.log(() -> log.info("Pledges deleted [rows={}]", rows)); // logast:wording
++        return rows;
      }
  
      public int countUse(String pledgeId) {
@@ -156,6 +163,46 @@ index 7fb069d..4f47def 100644
      protected void doExecute() {
 +        log.info("Export job started"); // logast:wording
 +        log.info("Export job completed"); // logast:wording
+     }
+ }
+diff --git a/src/main/java/com/example/e2e/order/DepotRouting.java b/src/main/java/com/example/e2e/order/DepotRouting.java
+index 7c87597..35044d9 100644
+--- a/src/main/java/com/example/e2e/order/DepotRouting.java
++++ b/src/main/java/com/example/e2e/order/DepotRouting.java
+@@ -15,7 +15,7 @@ 
+         try {
+             connect(url);
+         } catch (RuntimeException e) {
+-            log.warn("Rejecting route {}", e instanceof IllegalStateException ? e.getMessage() : "malformed route");
++            log.warn("Rejecting route [reason={}]", e instanceof IllegalStateException ? e.getMessage() : "malformed route", e);
+         }
+     }
+ 
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java b/src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
+index 06b4e48..cf50ca2 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
+@@ -1,9 +1,11 @@ 
+ package com.example.e2e.pledge;
+ 
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.stereotype.Component;
+ 
+ /** An hourly job that returns how many rows it deleted (#334: the count is "deleted", not the method's name). */
++@Slf4j
+ @Component
+ public class PledgeExpiryJob {
+     private final PledgeRepository repository;
+@@ -14,6 +16,9 @@
+ 
+     @Scheduled(cron = "0 30 * * * *")
+     public int expire() {
+-        return repository.deleteExpired();
++        log.info("Pledge expiry started"); // logast:wording
++        var result = repository.deleteExpired();
++        log.info("Pledge expiry completed [deleted={}]", result); // logast:wording
++        return result;
      }
  }
 diff --git a/src/main/java/com/example/e2e/messaging/PledgeMessages.java b/src/main/java/com/example/e2e/messaging/PledgeMessages.java
@@ -233,7 +280,7 @@ index 06086f0..642d6f3 100644
  
      private List<KioskTotals> pending() {
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
-index 7d271be..811a059 100644
+index 7d271be..d00bd71 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
 @@ -1,8 +1,10 @@ 
@@ -251,8 +298,8 @@ index 7d271be..811a059 100644
  
      @Scheduled(fixedDelay = 600000)
      public void run() {
-+        log.info("Pledge reload started"); // logast:wording
++        log.debug("Pledge reload started"); // logast:wording
          lookup.reload();
-+        log.info("Pledge reload completed"); // logast:wording
++        log.debug("Pledge reload completed"); // logast:wording
      }
  }

@@ -269,12 +269,22 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
      *                           line, a saved line) is INFO; above it, or with no known rate, the started line is left
      *                           out (the access log and the server observation record the request) and the saved line
      *                           is DEBUG
+     * @param jobInfoMaxPerDay   #334: runs per day up to which the started / completed lines logast adds to a
+     *                           {@code @Scheduled} job are INFO; a job that runs more often (every 10 minutes is 144)
+     *                           gets them at DEBUG
      */
     public record Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
-                         Integer boundedLoopMax, String infoInLoops, Double addedInfoMaxPerDay, List<String> expectedExceptions) {
+                         Integer boundedLoopMax, String infoInLoops, Double addedInfoMaxPerDay, List<String> expectedExceptions,
+                         Double jobInfoMaxPerDay) {
         public Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
                       Integer boundedLoopMax) {
-            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null, null, null);
+            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, null, null, null, null);
+        }
+
+        public Levels(List<String> clientErrors, String clientErrorLevel, Boolean noInfoInLoops, Double volumeBudget,
+                      Integer boundedLoopMax, String infoInLoops, Double addedInfoMaxPerDay, List<String> expectedExceptions) {
+            this(clientErrors, clientErrorLevel, noInfoInLoops, volumeBudget, boundedLoopMax, infoInLoops, addedInfoMaxPerDay,
+                    expectedExceptions, null);
         }
 
         /** #285: a line added for an entrypoint with this rate (null: not known) may be INFO. */
@@ -294,6 +304,7 @@ public record Policy(@JsonProperty("extends") List<String> parents, Glossary glo
             noInfoInLoops = noInfoInLoops != null && noInfoInLoops;
             infoInLoops = infoInLoops == null ? "size" : infoInLoops.toLowerCase(Locale.ROOT);
             addedInfoMaxPerDay = addedInfoMaxPerDay == null ? 1_000d : addedInfoMaxPerDay;
+            jobInfoMaxPerDay = jobInfoMaxPerDay == null ? 24d : jobInfoMaxPerDay;
             // #327: words in an exception's name that make it an expected outcome (built in through logast-defaults.yaml)
             expectedExceptions = expectedExceptions == null ? List.of()
                     : expectedExceptions.stream().map(String::strip).filter(w -> !w.isEmpty()).toList();

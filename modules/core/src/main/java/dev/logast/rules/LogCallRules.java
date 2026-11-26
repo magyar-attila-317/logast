@@ -660,7 +660,8 @@ final class LogCallRules {
             } else if (throwableSrc != null && a.src().equals(throwableSrc + ".getMessage()")) {
                 issues.add(Rules.LOG_FORMAT);
             } else if (c != null && !ctx.policy.logging().exceptionMessages()
-                    && a.src().matches(java.util.regex.Pattern.quote(c.param) + "\\.get(Localized)?Message\\(\\)")) {
+                    && a.src().matches("(?s)(?:.*\\W)?" + java.util.regex.Pattern.quote(c.param) + "\\.get(Localized)?Message\\(\\).*")) {
+                // #335: also inside a ternary (e instanceof X ? e.getMessage() : "…")
                 // #278: the raw message may carry personal data or a response body: the class instead, once
                 issues.add(Rules.LOG_FORMAT);
                 String cls = c.param + ".getClass().getSimpleName()";

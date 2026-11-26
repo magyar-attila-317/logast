@@ -12,9 +12,11 @@ src/main/java/com/example/e2e/order/OrderService.java:26 OrderService.placeAndRe
 src/main/java/com/example/e2e/order/PaymentClient.java:12 PaymentClient.charge — code changed besides logging
 src/main/java/com/example/e2e/order/PaymentClient.java:26 PaymentClient.refund — code changed besides logging
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:22 PledgeCleanupJob.cleanup — code changed besides logging
-src/main/java/com/example/e2e/pledge/PledgeRepository.java:25 PledgeRepository.close — code changed besides logging
-src/main/java/com/example/e2e/pledge/PledgeRepository.java:31 PledgeRepository.countUse — code changed besides logging
-src/main/java/com/example/e2e/pledge/PledgeRepository.java:37 PledgeRepository.findOpen — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:18 PledgeExpiryJob.expire — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:26 PledgeRepository.close — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:32 PledgeRepository.deleteExpired — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:39 PledgeRepository.countUse — code changed besides logging
+src/main/java/com/example/e2e/pledge/PledgeRepository.java:45 PledgeRepository.findOpen — code changed besides logging
 src/main/java/com/example/e2e/pledge/PledgeSender.java:18 PledgeSender.resend — code changed besides logging
 src/main/java/com/example/e2e/pledge/PledgeService.java:47 PledgeService.allot — code changed besides logging
 src/main/java/com/example/e2e/stipend/StipendCalculator.java:28 StipendCalculator.validatePledge — code changed besides logging

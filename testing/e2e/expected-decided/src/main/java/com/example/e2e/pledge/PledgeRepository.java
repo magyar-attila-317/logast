@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PledgeRepository {
     private static final String CLOSE = "UPDATE pledges SET closed = true WHERE pledge_id = ?";
+    private static final String DELETE_EXPIRED = "DELETE FROM pledges WHERE closed = true AND closed_at < now() - interval '30 days'";
     private static final String COUNT_USE = """
             INSERT INTO pledge_usage (pledge_id, uses) VALUES (?, 1)
             ON CONFLICT (pledge_id) DO UPDATE SET uses = pledge_usage.uses + 1
@@ -26,6 +27,13 @@ public class PledgeRepository {
         int rows = jdbcTemplate.update(CLOSE, pledgeId);
         AfterCommit.log(() -> log.debug("Pledges updated [rows={}]", rows)); // logast:wording
         PledgeMetrics.pledgesUpdated(rows);
+    }
+
+    public int deleteExpired() {
+        int rows = jdbcTemplate.update(DELETE_EXPIRED);
+        AfterCommit.log(() -> log.info("Pledges deleted [rows={}]", rows)); // logast:wording
+        PledgeMetrics.pledgesDeleted(rows);
+        return rows;
     }
 
     public int countUse(String pledgeId) {

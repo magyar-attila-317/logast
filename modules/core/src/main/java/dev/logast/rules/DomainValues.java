@@ -205,7 +205,37 @@ public final class DomainValues {
     private static final Set<String> PIPELINE = Set.of("toList", "collect", "stream", "map", "filter", "sorted", "distinct",
             "limit", "values", "keySet", "entrySet", "toArray", "flatMap", "boxed", "mapToObj");
 
+    /**
+     * #335: helpers that only present a value (describeHost(url), formatAmount(x), maskEmail(e)): the value is named
+     * after the noun, not after the helper.
+     */
+    private static final java.util.regex.Pattern PRESENTING = java.util.regex.Pattern.compile(
+            "(?:describe|format|render|display|pretty|print|stringify|summarize|summarise|mask|redact|sanitize|sanitise|normalize|normalise|to|as)"
+                    + "([A-Z]\\w*)");
+
+    /** Words a presenting helper's noun cannot be: toString, asList, formatValue name the shape, not the value. */
+    private static final Set<String> SHAPES = Set.of("String", "Text", "List", "Set", "Map", "Array", "Json", "Value", "Display", "Log");
+
     public static String derivedKey(Expression arg) {
+        if (arg instanceof J.Parentheses<?> p && p.getTree() instanceof Expression inner) {
+            return derivedKey(inner);
+        }
+        // #335: a ternary is named after its branches: the exception's message or a fixed text is a reason; one value
+        // (or two of the same name) its name; else a plain "value", not the condition's text camel-cased
+        if (arg instanceof J.Ternary t) {
+            List<Expression> branches = List.of(t.getTruePart(), t.getFalsePart());
+            if (branches.stream().anyMatch(b -> b instanceof J.MethodInvocation mi && Set.of("getMessage", "getLocalizedMessage").contains(mi.getSimpleName()))) {
+                return "reason";
+            }
+            Set<String> keys = new java.util.LinkedHashSet<>();
+            for (Expression b : branches) {
+                if (!(b instanceof J.Literal)) {
+                    String k = derivedKey(b);
+                    keys.add(k == null ? "value" : k);
+                }
+            }
+            return keys.size() == 1 ? keys.iterator().next() : "value";
+        }
         if (arg instanceof J.Identifier id) {
             return id.getSimpleName();
         }
@@ -241,6 +271,11 @@ public final class DomainValues {
             }
             if (n.startsWith("get") && n.length() > 3 && Character.isUpperCase(n.charAt(3))) {
                 n = Character.toLowerCase(n.charAt(3)) + n.substring(4);
+            }
+            java.util.regex.Matcher presenting = PRESENTING.matcher(n);
+            if (presenting.matches() && !SHAPES.contains(presenting.group(1))) {
+                String noun = presenting.group(1);
+                return Character.toLowerCase(noun.charAt(0)) + noun.substring(1);   // #335: describeHost(url) → host
             }
             // G1: the id of what a getter returns is that thing's id (token.getUser().getId() → userId, not id)
             if (Set.of("id", "uuid", "name", "code", "key").contains(n) && mi.getSelect() instanceof J.MethodInvocation owner) {

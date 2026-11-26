@@ -22,6 +22,11 @@ public final class PledgeMetrics {
         Outcomes.count("pledges", "updated", "rows", rows);
     }
 
+    /** pledges{outcome="deleted"} +1; pledges.rows{outcome="deleted"} grows by rows. */
+    public static void pledgesDeleted(Number rows) {
+        Outcomes.count("pledges", "deleted", "rows", rows);
+    }
+
     /** pledge{kind="resend", outcome="failed"} +1. */
     public static void pledgeResendFailed() {
         Outcomes.countKind("pledge", "resend", "failed");
@@ -34,6 +39,7 @@ public final class PledgeMetrics {
         public void afterSingletonsInstantiated() {
             Outcomes.registerKind("pledge", "lookup", "failed");
             Outcomes.registerTotal("pledges", "updated", "rows");
+            Outcomes.registerTotal("pledges", "deleted", "rows");
             Outcomes.registerKind("pledge", "resend", "failed");
         }
     }

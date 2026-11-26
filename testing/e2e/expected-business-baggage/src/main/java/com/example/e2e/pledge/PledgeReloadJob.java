@@ -15,8 +15,8 @@ public class PledgeReloadJob {
 
     @Scheduled(fixedDelay = 600000)
     public void run() {
-        log.info("Pledge reload started"); // logast:wording
+        log.debug("Pledge reload started"); // logast:wording
         lookup.reload();
-        log.info("Pledge reload completed"); // logast:wording
+        log.debug("Pledge reload completed"); // logast:wording
     }
 }

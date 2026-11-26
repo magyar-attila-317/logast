@@ -72,6 +72,48 @@ class SuffixKeyNamingTest {
     }
 
     /**
+     * #335 (a dry run on a real service): a ternary of the exception's message and a text is a reason, not
+     * "eInstanceofJwtExceptionEGetMessage…"; a helper that presents a value is named after the value (describeHost → host).
+     */
+    @Test
+    void ternariesAndPresentingHelpersAreNamedAfterTheValue(@TempDir Path dir) throws Exception {
+        Path src = Files.createDirectories(dir.resolve("src/main/java/x"));
+        Files.writeString(src.resolve("Pool.java"), """
+                package x;
+
+                import org.slf4j.Logger;
+                import org.slf4j.LoggerFactory;
+
+                public class Pool {
+                    private static final Logger log = LoggerFactory.getLogger(Pool.class);
+
+                    void connect(String url, String region, String fallbackRegion, boolean primary) {
+                        log.info("pool targets {}", describeHost(url));
+                        log.info("pool region {}", primary ? region : fallbackRegion);
+                        try {
+                            run();
+                        } catch (RuntimeException e) {
+                            log.warn("Rejecting session {}", e instanceof IllegalStateException ? e.getMessage() : "malformed session id claim");
+                        }
+                    }
+
+                    String describeHost(String url) {
+                        return url;
+                    }
+
+                    void run() {
+                    }
+                }
+                """);
+        List<WorkOrder> orders = Rules.scan(Analysis.run(dir, Fixtures.classpath(), Policy.resolve(dir, null))).orders();
+        String edits = String.join("\n", orders.stream().filter(o -> "Pool.connect".equals(o.method()))
+                .flatMap(o -> java.util.stream.Stream.concat(o.edits().stream().map(Edit::text).filter(t -> t != null),
+                        o.slots().values().stream().flatMap(sl -> sl.keys().stream().map(k -> k + "={}")))).toList());
+        assertThat(edits).contains("host={}", "reason={}").as("two values of a ternary: a plain value").contains("value={}")
+                .doesNotContain("describeHost={}", "eInstanceof", "primaryRegion");
+    }
+
+    /**
      * #323 H1/H3 (a large service's dry run): two inline names that end in the same word ("source item={}", "clone
      * item={}") keep apart; the values a line compares (the authority a token is bound to and the one required, the
      * token's and the body's device, the user and the token type) all stay.

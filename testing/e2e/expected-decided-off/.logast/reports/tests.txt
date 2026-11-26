@@ -13,6 +13,7 @@ src/main/java/com/example/e2e/order/OrderNotifications.java
 src/main/java/com/example/e2e/order/OrderService.java
 src/main/java/com/example/e2e/order/PaymentClient.java
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
+src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
 src/main/java/com/example/e2e/pledge/PledgeLookup.java
 src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
 src/main/java/com/example/e2e/pledge/PledgeRepository.java

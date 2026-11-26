@@ -902,6 +902,8 @@ final class TracingRules {
         Edit param = addParameter(m, client.builderType(), client.param());
         if (param != null) {
             b.edit(param);
+            // #333: code that calls the factory itself (a test without a Spring context) passes a plain builder
+            b.edits(directCallers(m, client));
         }
         if (client.builderImport() != null) {
             int bootMajor = SetupRules.springBootVersion(ctx)[0];
@@ -933,6 +935,121 @@ final class TracingRules {
             }
         }
         return null;
+    }
+
+    /**
+     * #333: calls of a bean method or constructor that gains a builder parameter, outside Spring (a test calling
+     * {@code new ThingClient().thingRestClient(url, key, connect, read)}): each call with the old number of arguments
+     * gets a plain builder as the last one ({@code RestClient.builder()}), and its file the import. Found by text in
+     * every Java source of the project (tests are not in the index); a call with another argument count is left alone.
+     */
+    private List<Edit> directCallers(MethodInfo m, Client client) {
+        int arity = (int) m.decl().getParameters().stream().filter(p -> !(p instanceof J.Empty)).count();
+        String owner = m.owner().simpleName();
+        java.util.regex.Pattern call = m.decl().isConstructor()
+                ? java.util.regex.Pattern.compile("\\bnew\\s+" + java.util.regex.Pattern.quote(owner) + "\\s*\\(")
+                : java.util.regex.Pattern.compile("\\." + java.util.regex.Pattern.quote(m.decl().getSimpleName()) + "\\s*\\(");
+        String plain = switch (client.kind()) {
+            case "RestClient" -> "RestClient.builder()";
+            case "WebClient" -> "WebClient.builder()";
+            default -> "new RestTemplateBuilder()";
+        };
+        String fqn = switch (client.kind()) {
+            case "RestClient" -> "org.springframework.web.client.RestClient";
+            case "WebClient" -> "org.springframework.web.reactive.function.client.WebClient";
+            default -> SetupRules.springBootVersion(ctx)[0] >= 1 && SetupRules.springBootVersion(ctx)[0] <= 3
+                    ? BOOT3_REST_TEMPLATE_BUILDER : REST_TEMPLATE_BUILDER;
+        };
+        List<Edit> out = new ArrayList<>();
+        Path root = ctx.a.project.root();
+        List<Path> sources;
+        try (var files = Files.walk(root)) {
+            sources = files.filter(x -> x.toString().endsWith(".java")).filter(x -> {
+                String r = root.relativize(x).toString().replace('\\', '/');
+                return (r.contains("src/test/") || r.contains("src/main/")) && !r.contains("/build/") && !r.startsWith(".logast/");
+            }).sorted().toList();
+        } catch (java.io.IOException e) {
+            return out;
+        }
+        for (Path file : sources) {
+            String text;
+            try {
+                text = Files.readString(file);
+            } catch (java.io.IOException e) {
+                continue;
+            }
+            if (!text.contains(owner)) {
+                continue;
+            }
+            String rel = root.relativize(file).toString().replace('\\', '/');
+            boolean declaring = rel.equals(m.file().relPath());
+            java.util.regex.Matcher c = call.matcher(text);
+            boolean added = false;
+            while (c.find()) {
+                if (declaring && c.start() >= Pos.start(m.decl()) && c.start() < Pos.end(m.decl())) {
+                    continue;
+                }
+                int close = closingParen(text, c.end() - 1);
+                if (close < 0 || arguments(text, c.end(), close) != arity) {
+                    continue;
+                }
+                out.add(Edit.insert(rel, close, (arity == 0 ? "" : ", ") + plain));
+                added = true;
+            }
+            if (added && !text.contains("import " + fqn + ";") && !text.matches("(?s).*\\bimport\\s+" + java.util.regex.Pattern.quote(fqn.substring(0, fqn.lastIndexOf('.'))) + "\\.\\*;.*")) {
+                java.util.regex.Matcher pkg = java.util.regex.Pattern.compile("(?m)^package\\s+[\\w.]+;\\s*$").matcher(text);
+                int at = pkg.find() ? Text.nextLine(text, pkg.end()) : 0;
+                out.add(Edit.insert(rel, at, (at == 0 ? "" : "\n") + "import " + fqn + ";\n"));
+            }
+        }
+        return out;
+    }
+
+    /** The offset of the ')' closing the '(' at {@code open}, skipping strings, chars and nested parentheses; -1 if none. */
+    static int closingParen(String text, int open) {
+        int depth = 0;
+        for (int i = open; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '"' || ch == '\'') {
+                for (i++; i < text.length() && text.charAt(i) != ch; i++) {
+                    if (text.charAt(i) == '\\') {
+                        i++;
+                    }
+                }
+            } else if (ch == '(') {
+                depth++;
+            } else if (ch == ')' && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** The number of top-level arguments between {@code from} and {@code close}. */
+    static int arguments(String text, int from, int close) {
+        String inside = text.substring(from, close);
+        if (inside.isBlank()) {
+            return 0;
+        }
+        int count = 1;
+        int depth = 0;
+        for (int i = 0; i < inside.length(); i++) {
+            char ch = inside.charAt(i);
+            if (ch == '"' || ch == '\'') {
+                for (i++; i < inside.length() && inside.charAt(i) != ch; i++) {
+                    if (inside.charAt(i) == '\\') {
+                        i++;
+                    }
+                }
+            } else if (ch == '(' || ch == '[' || ch == '{' || ch == '<' && i > 0 && Character.isJavaIdentifierPart(inside.charAt(i - 1))) {
+                depth++;
+            } else if (ch == ')' || ch == ']' || ch == '}' || ch == '>' && depth > 0 && inside.charAt(i - 1) != '-') {
+                depth--;
+            } else if (ch == ',' && depth == 0) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /** Inserts {@code Type name} as the last parameter (unless a parameter with that name exists). */

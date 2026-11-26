@@ -84,7 +84,9 @@ For one of them, add its labels to the selector:
 | entrypoint | labels |
 |---|---|
 | @Scheduled EdgeJob.run | `code_namespace="com.example.e2e.edge.EdgeJob", code_function="run"` |
+| @Scheduled PledgeAuditJob.audit | `code_namespace="com.example.e2e.pledge.PledgeAuditJob", code_function="audit"` |
 | @Scheduled PledgeCleanupJob.cleanup | `code_namespace="com.example.e2e.pledge.PledgeCleanupJob", code_function="cleanup"` |
+| @Scheduled PledgeExpiryJob.expire | `code_namespace="com.example.e2e.pledge.PledgeExpiryJob", code_function="expire"` |
 | @Scheduled PledgeReloadJob.run | `code_namespace="com.example.e2e.pledge.PledgeReloadJob", code_function="run"` |
 
 ### Kafka listeners (`spring.kafka.listener`)
@@ -298,28 +300,28 @@ sum by (outcome) (increase(pledge_resend_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.usage** (outcome: saved), per hour  
-`src/main/java/com/example/e2e/pledge/PledgeRepository.java:35`
+`src/main/java/com/example/e2e/pledge/PledgeRepository.java:43`
 
 ```promql
 sum by (outcome) (increase(pledge_usage_total{application="e2e-shop"}[1h]))
 ```
 
 **pledge.usage.uses** (outcome: saved), per hour  
-`src/main/java/com/example/e2e/pledge/PledgeRepository.java:35`
+`src/main/java/com/example/e2e/pledge/PledgeRepository.java:43`
 
 ```promql
 sum by (outcome) (increase(pledge_usage_uses_total{application="e2e-shop"}[1h]))
 ```
 
-**pledges** (outcome: updated), per hour  
-`src/main/java/com/example/e2e/pledge/PledgeRepository.java:29`
+**pledges** (outcome: deleted, updated), per hour  
+`src/main/java/com/example/e2e/pledge/PledgeRepository.java:30`
 
 ```promql
 sum by (outcome) (increase(pledges_total{application="e2e-shop"}[1h]))
 ```
 
-**pledges.rows** (outcome: updated), per hour  
-`src/main/java/com/example/e2e/pledge/PledgeRepository.java:29`
+**pledges.rows** (outcome: deleted, updated), per hour  
+`src/main/java/com/example/e2e/pledge/PledgeRepository.java:30`
 
 ```promql
 sum by (outcome) (increase(pledges_rows_total{application="e2e-shop"}[1h]))
@@ -503,13 +505,13 @@ FROM Metric SELECT sum(pledge.usage) WHERE service.name = 'e2e-shop' FACET outco
 FROM Metric SELECT sum(pledge.usage.uses) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```
 
-**pledges** (outcome: updated), per hour
+**pledges** (outcome: deleted, updated), per hour
 
 ```sql
 FROM Metric SELECT sum(pledges) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```
 
-**pledges.rows** (outcome: updated), per hour
+**pledges.rows** (outcome: deleted, updated), per hour
 
 ```sql
 FROM Metric SELECT sum(pledges.rows) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour

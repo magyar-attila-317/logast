@@ -195,6 +195,7 @@ levels:
   boundedLoopMax: 20            # a loop over at most this many items counts as small
   volumeBudget: 100000          # log lines per day one statement may produce (with traffic numbers)
   addedInfoMaxPerDay: 1000      # a line logast adds for a request or a write is INFO only up to this rate (#285)
+  jobInfoMaxPerDay: 24          # a @Scheduled job running more often gets its added started/completed lines at DEBUG (#334)
   expectedExceptions: [Fault]   # words in an exception's name that make it an expected outcome (added to the built-in
                                 #   Conflict, Rejected, NotFound, Validation, …): an existing WARN gets no stack (#327)
 ```
