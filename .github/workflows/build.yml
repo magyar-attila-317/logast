@@ -24,10 +24,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run: ${{ steps.check.outputs.run }}
+      e2e: ${{ steps.check.outputs.e2e }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: check
         run: |
+          # a push that changes only text (*.md, docs/) builds but skips the e2e matrix: no scenario reads them
+          e2e=true
+          before="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = push ] && git cat-file -e "$before^{commit}" 2>/dev/null \
+              && ! git diff --name-only "$before" HEAD | grep -qvE '(\.md$|^docs/)'; then e2e=false; fi
+          echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" != "schedule" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           age=$(( $(date +%s) - $(git log -1 --format=%ct) ))
           echo "newest commit is ${age}s old"
@@ -54,16 +63,19 @@ jobs:
       - name: Build and unit tests
         run: ./gradlew build -x :cli:e2e -x :cli:e2eJdk21 --console=plain
 
+  # one job per shard (E2eShard0..3) and JDK: a runner has 4 cores, so one job ran the four shards two at a time
+  # (40 minutes); eight jobs side by side take about a quarter of that
   e2e:
-    name: e2e (${{ matrix.task }}, ${{ matrix.os }})
+    name: e2e (${{ matrix.task }}, shard ${{ matrix.shard }}, ${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.run == 'true'
+    if: needs.changes.outputs.run == 'true' && needs.changes.outputs.e2e == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest","macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
         task: [e2e, e2eJdk21]
+        shard: [0, 1, 2, 3]
         exclude:
           # JDK 21 checks javac's type attribution, which does not depend on the OS: Linux covers it
           - os: macos-latest
@@ -78,10 +90,10 @@ jobs:
             25
       - uses: gradle/actions/setup-gradle@v4
       - name: Golden e2e scenarios
-        run: ./gradlew :cli:${{ matrix.task }} --console=plain
+        run: ./gradlew :cli:${{ matrix.task }} --tests "dev.logast.cli.E2eShard${{ matrix.shard }}" -Pe2e.forks=1 --console=plain
       - name: Test report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-report-${{ matrix.task }}-${{ matrix.os }}
+          name: e2e-report-${{ matrix.task }}-${{ matrix.shard }}-${{ matrix.os }}
           path: modules/cli/build/reports/tests/${{ matrix.task }}
