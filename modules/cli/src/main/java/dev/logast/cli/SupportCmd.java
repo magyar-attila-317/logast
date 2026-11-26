@@ -1,5 +1,6 @@
 package dev.logast.cli;
 
+import dev.logast.rules.SetupRules;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -101,21 +102,61 @@ final class SupportCmd {
                     System.err.println("support: " + artifact + ": maven-metadata.xml not written (" + e.getMessage() + ")");
                 }
                 System.out.println("published " + group + ":" + artifact + ":" + v + " to " + url);
+                System.out.println("  " + files.keySet().stream().map(k -> k.substring(k.lastIndexOf('/') + 1))
+                        .collect(java.util.stream.Collectors.joining(", ")) + " (each with .sha1 and .md5)");
+                System.out.println("  versions there now: " + String.join(", ", versions(metadata)));
             }
             System.out.println();
             // #295: run in a service, its logast.yaml learns where the starter is, so apply adds that repository to the
             // build along with the dependency
             String note = recordRepository(Path.of("").toAbsolutePath().resolve("logast.yaml"), url);
-            if (note != null) {
-                System.out.println(note);
-            }
-            System.out.println("In the company policy (or each service's logast.yaml):");
-            System.out.println("  support:");
-            System.out.println("    mode: dependency");
-            System.out.println("    coordinates: " + group + ":logging-support:" + v);
-            System.out.println("    repository: " + url);
+            System.out.print(nextSteps(group, v, url, note));
             return 0;
         }
+    }
+
+    /** The versions a maven-metadata.xml lists, oldest first. */
+    static List<String> versions(byte[] metadata) {
+        List<String> out = new java.util.ArrayList<>();
+        Matcher m = Pattern.compile("<version>([^<]+)</version>").matcher(new String(metadata, StandardCharsets.UTF_8));
+        while (m.find()) {
+            out.add(m.group(1).strip());
+        }
+        return out;
+    }
+
+    /**
+     * What to do after publishing: point the policy at it, apply, let builds read it (GitHub Packages wants a token
+     * even to read), check it, upgrade later. {@code note} says what was recorded in this folder's logast.yaml, or null.
+     */
+    static String nextSteps(String group, String version, String url, String note) {
+        String coordinates = group + ":logging-support:" + version;
+        String path = group.replace('.', '/') + "/logging-support/" + version + "/logging-support-" + version + ".pom";
+        boolean github = url.startsWith("https://maven.pkg.github.com/");
+        StringBuilder sb = new StringBuilder();
+        if (note != null) {
+            sb.append(note).append("\n\n");
+        }
+        sb.append("Next:\n");
+        sb.append("1. Point the services at it, in the company policy (or each service's logast.yaml):\n");
+        sb.append("     support:\n       mode: dependency\n       coordinates: ").append(coordinates)
+                .append("\n       repository: ").append(url).append("\n");
+        sb.append("2. In each service: logast apply . adds the dependency, and the repository if its build has none.\n");
+        if (github) {
+            String name = SetupRules.githubRepositoryName(url);
+            sb.append("3. Every build that resolves it needs a token, even to read (GitHub Packages answers 401 or \"not found\" without one):\n");
+            sb.append("   - on a machine, in ~/.gradle/gradle.properties (or gpr.user / gpr.key for every GitHub repository):\n");
+            sb.append("       ").append(name).append("Username=<github user>\n");
+            sb.append("       ").append(name).append("Password=<token with read:packages>\n");
+            sb.append("   - in a GitHub workflow: permissions: packages: read, and env GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }};\n");
+            sb.append("     a workflow of another repository also needs read access in the package's settings (Manage Actions access).\n");
+            sb.append("4. Check it resolves: curl -fsS -u <github user>:<token> ").append(url).append("/").append(path).append(" | head -3\n");
+        } else {
+            sb.append("3. Every build that resolves it needs read access to ").append(url).append(" (its credentials, if it wants any).\n");
+            sb.append("4. Check it resolves: curl -fsS [-u <user>:<token>] ").append(url).append("/").append(path).append(" | head -3\n");
+        }
+        sb.append("Upgrading later: install the newer logast, run this command again, and change coordinates to its version.\n");
+        return sb.toString();
     }
 
     /**

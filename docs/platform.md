@@ -28,7 +28,7 @@ depend on the starter instead:
    ```
 
    `--version` and `--group` default to logast's (`dev.logast`, this logast's version); credentials default to
-   `REPO_USER`/`REPO_PASSWORD`, else `GITHUB_ACTOR`/`GITHUB_TOKEN`. It prints the `support:` lines below. From a logast
+   `REPO_USER`/`REPO_PASSWORD`, else `GITHUB_ACTOR`/`GITHUB_TOKEN`. It prints what it uploaded, the `support:` lines below, and what comes next: the apply, the token every build needs to read a GitHub package, and a `curl` that checks the POM resolves. From a logast
    checkout, `./install.sh --publish-to <name|url>` and `./gradlew :logging-support:publish -PrepoUrl=…` do the same
    with Gradle.
 

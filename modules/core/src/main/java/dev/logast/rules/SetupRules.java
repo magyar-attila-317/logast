@@ -402,7 +402,7 @@ public final class SetupRules {
      * platform-libs → githubAcmePlatformLibs): its credentials are the Gradle properties of that name with Username /
      * Password, as Gradle names a repository's credentials.
      */
-    static String githubRepositoryName(String url) {
+    public static String githubRepositoryName(String url) {
         StringBuilder sb = new StringBuilder("github");
         for (String part : url.replaceFirst("^https://maven\\.pkg\\.github\\.com/", "").split("[^A-Za-z0-9]+")) {
             if (!part.isEmpty()) {

@@ -155,4 +155,20 @@ class SupportCmdTest {
                 .stream().map(SupportCmd::repositoryUrl).distinct().toList()).containsExactly("https://maven.pkg.github.com/acme/platform-libs");
         assertThat(SupportCmd.repositoryUrl("https://nexus.example.com/repository/releases/")).isEqualTo("https://nexus.example.com/repository/releases");
     }
+
+    @Test
+    void afterPublishingItSaysWhatComesNextAndHowBuildsReadIt() {
+        String github = SupportCmd.nextSteps("dev.logast", "0.5.7", "https://maven.pkg.github.com/acme/platform", null);
+        assertThat(github).contains("coordinates: dev.logast:logging-support:0.5.7", "repository: https://maven.pkg.github.com/acme/platform",
+                        "logast apply .", "githubAcmePlatformUsername=", "githubAcmePlatformPassword=<token with read:packages>",
+                        "packages: read", "Manage Actions access",
+                        "https://maven.pkg.github.com/acme/platform/dev/logast/logging-support/0.5.7/logging-support-0.5.7.pom", "Upgrading later")
+                .as("no logast.yaml here: nothing recorded").doesNotContain("support.repository set");
+        String nexus = SupportCmd.nextSteps("com.example", "1.0.0", "https://nexus.example.com/repository/releases",
+                "logast.yaml: support.repository set to https://nexus.example.com/repository/releases");
+        assertThat(nexus).startsWith("logast.yaml: support.repository set").doesNotContain("read:packages", "gradle.properties")
+                .contains("com/example/logging-support/1.0.0/logging-support-1.0.0.pom");
+        assertThat(SupportCmd.versions("<versions><version>0.5.6</version><version>0.5.7</version></versions>".getBytes(StandardCharsets.UTF_8)))
+                .containsExactly("0.5.6", "0.5.7");
+    }
 }
