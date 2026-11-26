@@ -100,7 +100,7 @@ dependencies {
 // (`e2e` on JDK 25, `e2eJdk21`) runs on CI or with -Pe2e. `./gradlew :cli:e2e -Pe2e.update` rewrites e2e/expected
 // after an intended behaviour change.
 val e2eGolden = "dev.logast.cli.E2eGoldenTest"
-// #110: the scenarios run in E2eShard0..3 (each a quarter of E2eGoldenTest's scenarios), one JVM per shard in parallel
+// #110: the scenarios run in E2eShard0..7 (each an eighth of E2eGoldenTest's scenarios), one JVM per shard in parallel
 val e2eShards = "dev.logast.cli.E2eShard*"
 
 fun Test.e2eSetup() {

@@ -30,7 +30,7 @@ on real services; the background is in issue #7.
 - Every scenario must keep its properties: one pass (pass 2 of the first apply applies nothing), a second apply changes
   nothing, no `CHECK FAILED`, and the result compiles. Do not weaken these assertions to make a change pass.
 - The e2e scenarios run in their own tasks (#73): `./gradlew :cli:e2e` (JDK 25) and `:cli:e2eJdk21`, each with and
-  without Lombok and with class folders on the classpath, as four shards (`E2eShard0..3`) in parallel JVMs. Results
+  without Lombok and with class folders on the classpath, as eight shards (`E2eShard0..7`) in parallel JVMs (one CI job each). Results
   must be identical. Locally, run the scenarios your change touches (`./gradlew :cli:e2e --tests "*Name*"`); CI runs the e2e matrix on Linux for every push, and on macOS nightly after a day with commits (or with Run workflow).
 - `./gradlew :cli:e2e -Pe2e.update` rewrites the snapshots (add `--tests` to limit it): review `git diff testing/e2e/` before
   keeping them, and say in the commit why the expected output changed. A change of shared code (rule output that

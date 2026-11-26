@@ -63,8 +63,8 @@ jobs:
       - name: Build and unit tests
         run: ./gradlew build -x :cli:e2e -x :cli:e2eJdk21 --console=plain
 
-  # one job per shard (E2eShard0..3) and JDK: a runner has 4 cores, so one job ran the four shards two at a time
-  # (40 minutes); eight jobs side by side take about a quarter of that
+  # one job per shard (E2eShard0..7) and JDK: a runner has 4 cores, so one job ran four shards two at a time
+  # (40 minutes); four shards per JDK took 17, eight about 10
   e2e:
     name: e2e (${{ matrix.task }}, shard ${{ matrix.shard }}, ${{ matrix.os }})
     needs: changes
@@ -75,7 +75,7 @@ jobs:
       matrix:
         os: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest","macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
         task: [e2e, e2eJdk21]
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
         exclude:
           # JDK 21 checks javac's type attribution, which does not depend on the OS: Linux covers it
           - os: macos-latest

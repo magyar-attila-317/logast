@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>After an intended behaviour change: {@code ./gradlew :cli:test -Pe2e.update}, then review the diff of e2e/expected.
  */
 abstract class E2eGoldenTest {
-    /** Shards run in parallel JVMs (#110): the subclasses E2eShard0..3 each run the scenarios whose name hashes to them. */
-    static final int SHARDS = 4;
+    /** Shards run in parallel JVMs (#110): the subclasses E2eShard0..7 each run the scenarios whose name hashes to them. */
+    static final int SHARDS = 8;
 
     @org.junit.jupiter.api.BeforeEach
     void onlyThisShardsScenarios(org.junit.jupiter.api.TestInfo info) {
