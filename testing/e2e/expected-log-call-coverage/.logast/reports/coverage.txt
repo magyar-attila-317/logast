@@ -70,7 +70,10 @@ src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:26         fixed    L
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29         reported MESSAGE_SUGGESTED SUG-bc7bc4
 src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:19          reported MESSAGE_SUGGESTED SUG-fe19b0
 src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:21          reported MESSAGE_SUGGESTED SUG-bd50bd
-src/main/java/com/example/e2e/pledge/PledgeLookup.java:22             fixed    METRIC_OUTCOME_UNMEASURED OUM-91066b; reported LOG_AND_RETHROW LAR-af2b69
+src/main/java/com/example/e2e/pledge/PledgeLookup.java:22             fixed    LOG_ID_MISSING LIM-cf457b, METRIC_OUTCOME_UNMEASURED OUM-91066b; reported EXCEPTION_LOGGED_TWICE ELT-d36af7
+src/main/java/com/example/e2e/pledge/PledgeRegistration.java:33       checked  no finding
+src/main/java/com/example/e2e/pledge/PledgeRegistration.java:35       reported LOG_FORMAT FMT-7acc35, METRIC_OUTCOME_UNMEASURED OUM-bef2e9
+src/main/java/com/example/e2e/pledge/PledgeRegistration.java:46       fixed    LOST_THROWABLE LTH-64db98, REPEATED_LOG_VALUE RLV-e93b27, METRIC_OUTCOME_UNMEASURED OUM-23330f
 src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:18          reported MESSAGE_SUGGESTED SUG-b07418
 src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:20          reported MESSAGE_SUGGESTED SUG-9c3080
 src/main/java/com/example/e2e/pledge/PledgeRepository.java:28         fixed    METRIC_OUTCOME_UNMEASURED OUM-0310f9; reported MESSAGE_SUGGESTED SUG-69e349
@@ -113,7 +116,8 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             reported M
 # src/main/java/com/example/e2e/order/OrderService.java 14c52644249f
 # src/main/java/com/example/e2e/order/PaymentClient.java cdbcae7bead9
 # src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java 85728efdb638
-# src/main/java/com/example/e2e/pledge/PledgeLookup.java 3e07ea72f19c
+# src/main/java/com/example/e2e/pledge/PledgeLookup.java f2a08c69931e
+# src/main/java/com/example/e2e/pledge/PledgeRegistration.java 43b6161251eb
 # src/main/java/com/example/e2e/pledge/PledgeRepository.java 5f0bb123b0e6
 # src/main/java/com/example/e2e/pledge/PledgeSender.java 705483eb1b97
 # src/main/java/com/example/e2e/pledge/PledgeService.java 2f9401c79e7f

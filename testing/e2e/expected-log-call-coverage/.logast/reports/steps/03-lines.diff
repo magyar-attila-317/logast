@@ -165,6 +165,19 @@ index 7fb069d..4f47def 100644
 +        log.info("Export job completed"); // logast:wording
      }
  }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRegistration.java b/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
+index 4583f30..cb1ac16 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
+@@ -40,7 +40,7 @@ 
+         try {
+             return lookup.find(pledgeId) != null;
+         } catch (PledgeMissing e) {
+-            log.warn("Refusing pledge admission: session lookup failed [pledgeId={}]", pledgeId);
++            log.warn("Refusing pledge admission: session lookup failed [pledgeId={}]", pledgeId, e);
+             return false;
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/order/DepotRouting.java b/src/main/java/com/example/e2e/order/DepotRouting.java
 index 7c87597..35044d9 100644
 --- a/src/main/java/com/example/e2e/order/DepotRouting.java

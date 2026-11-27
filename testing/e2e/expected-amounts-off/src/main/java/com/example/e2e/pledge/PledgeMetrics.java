@@ -17,6 +17,11 @@ public final class PledgeMetrics {
         Outcomes.count("pledge.lookup", "failed");
     }
 
+    /** session.lookup{outcome="failed"} +1. */
+    public static void sessionLookupFailed() {
+        Outcomes.count("session.lookup", "failed");
+    }
+
     /** pledges{outcome="updated"} +1. */
     public static void pledgesUpdated() {
         Outcomes.count("pledges", "updated");
@@ -38,6 +43,7 @@ public final class PledgeMetrics {
         @Override
         public void afterSingletonsInstantiated() {
             Outcomes.register("pledge.lookup", "failed");
+            Outcomes.register("session.lookup", "failed");
             Outcomes.register("pledges", "updated");
             Outcomes.register("pledges", "deleted");
             Outcomes.register("pledge.resend", "failed");

@@ -423,7 +423,17 @@ public final class Rules {
     }
 
     /** Turns a metrics.yaml decision into edits; returns a problem to report, or null. */
-    /** The log call sits in a lambda inside {@code stmt}, under an if / switch / ternary / catch within that lambda. */
+    /** Calls that run a lambda they get only in one case: a log line in it is not logged on every run. */
+    private static final Set<String> CONDITIONAL_CALLBACKS = Set.of("ifPresent", "ifPresentOrElse", "orElseGet", "orElseThrow",
+            "or", "computeIfAbsent", "computeIfPresent", "removeIf", "filter", "takeWhile", "dropWhile", "anyMatch", "allMatch",
+            "noneMatch", "exceptionally", "exceptionallyCompose", "onErrorResume", "onErrorReturn",
+            "onErrorMap", "onErrorContinue", "doOnError", "doOnCancel", "doOnDiscard", "switchIfEmpty", "defaultIfEmpty", "recover",
+            "fallback", "onFailure", "onTimeout");
+
+    /**
+     * The log call sits in a lambda inside {@code stmt}, under an if / switch / ternary / catch within that lambda, or in
+     * a lambda that only runs in one case ({@link #CONDITIONAL_CALLBACKS}).
+     */
     static boolean conditionalInLambda(org.openrewrite.java.tree.J stmt, org.openrewrite.java.tree.J.MethodInvocation call) {
         boolean[] found = {false};
         new org.openrewrite.java.JavaIsoVisitor<Integer>() {
@@ -434,7 +444,10 @@ public final class Rules {
             public org.openrewrite.java.tree.J.Lambda visitLambda(org.openrewrite.java.tree.J.Lambda l, Integer p) {
                 lambdas++;
                 int outer = conditions;
-                conditions = 0;
+                // #337: a lambda that only runs in one case (ifPresentOrElse's else, orElseGet, doOnError) is a condition itself
+                org.openrewrite.java.tree.J.MethodInvocation passedTo = getCursor().getParentTreeCursor().getValue()
+                        instanceof org.openrewrite.java.tree.J.MethodInvocation mi ? mi : null;
+                conditions = passedTo != null && CONDITIONAL_CALLBACKS.contains(passedTo.getSimpleName()) ? 1 : 0;
                 try {
                     return super.visitLambda(l, p);
                 } finally {

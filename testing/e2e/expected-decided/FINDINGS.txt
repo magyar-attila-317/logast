@@ -1,7 +1,7 @@
-logast · 74 files · 23 entrypoints · 77/214 methods reachable · 149 call edges
+logast · 75 files · 23 entrypoints · 77/218 methods reachable · 152 call edges
 WARNING: 2 unresolved calls, e.g. [src/main/java/com/example/e2e/job/BaseRunJob.java:11 current(..), src/main/java/com/example/e2e/job/RunSummary.java:8 number(..)]
 log coverage 78.3% (jobs 10/11 · http 8/12)   (places that should log and do)
-82 orders: 0 AUTO, 21 NEEDS TEXT, 61 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
+85 orders: 0 AUTO, 22 NEEDS TEXT, 63 REPORT-ONLY   (AUTO = logast fixes it · NEEDS TEXT = someone writes one message · REPORT-ONLY = a decision for a person)
 glossary terms: pledge, order, sponsorship
 
 ASY-b1c041  high  REPORT-ONLY  ASYNC_CONTEXT_LOSS  src/main/java/com/example/e2e/edge/EdgeFlow.java:44  EdgeFlow.process
@@ -99,11 +99,11 @@ RBR-88de27  medium  REPORT-ONLY  ROW_BY_ROW_WRITE  src/main/java/com/example/e2e
   path: @Scheduled PledgeCleanupJob.cleanup → PledgeCleanupJob.cleanup
   note: One bulk statement (UPDATE … WHERE …) or paging with batch updates scales with the data. Report only: logast does not change data access.
   done when: the loop over the query result no longer writes per item
-LAR-af2b69  medium  REPORT-ONLY  LOG_AND_RETHROW  src/main/java/com/example/e2e/pledge/PledgeLookup.java:22  PledgeLookup.find
+ELT-d36af7  medium  REPORT-ONLY  EXCEPTION_LOGGED_TWICE  src/main/java/com/example/e2e/pledge/PledgeLookup.java:22  PledgeLookup.find
   Exception is logged here and rethrown; deleting this line is only safe once every caller path logs it
   path: GET /pledges/{pledgeId}/details → PledgeDetailsController.details → PledgeLookup.find  (+1 more)
-  note: Not removed: nothing else is known to log it on the path through @ExceptionHandler PledgeErrors.missing (maps it without logging), so this line may be its only record. Log it there (or in an @ExceptionHandler), then delete this one.
-  done when: a catch or @ExceptionHandler logs it on the path through @ExceptionHandler PledgeErrors.missing (maps it without logging); then logast deletes this line itself. Or the line is gone
+  note: Not removed: the line carries [pledgeId], which the rethrown exception does not, and nothing else is known to log it on the path through PledgeRegistration.register (no caller in the code), so this line may be its only record. Put the values into the exception (its message or a field) and log the exception there (or in an @ExceptionHandler), then delete this one.
+  done when: the line logs nothing but the exception and a catch or @ExceptionHandler logs it on the path through PledgeRegistration.register (no caller in the code); then logast deletes this line itself. Or the line is gone
 ARI-15abe1  medium  REPORT-ONLY  AUDIT_RECORD_INCOMPLETE  src/main/java/com/example/e2e/pledge/PledgeService.java:26  PledgeService.delete
   The audit record record(…) in PledgeService.delete does not say who did it
   path: DELETE /pledges/{pledgeId} → PledgeController.delete → PledgeService.delete
@@ -348,6 +348,20 @@ OUM-91066b  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/examp
   "Pledge lookup failed" is logged but not counted (outcome=failed, frequency unknown: no rate for "GET /pledges/{pledgeId}/details" in .logast/decisions/traffic.yaml)
   note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("pledge.lookup", "failed")), tag (Outcomes.tag("failed") on the running timer) or skip; then logast apply . Count it only if a dashboard or alert needs it.
   done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
+FMT-7acc35  low  NEEDS TEXT  LOG_FORMAT  src/main/java/com/example/e2e/pledge/PledgeRegistration.java:35  PledgeRegistration.register
+  WARN log: not in 'Text [k=v]' format or repeats MDC values
+  - "Registration insert failed ({}) and no registration exists", e.getClass().getSimpleName()
+  + "{{MSG}}", e.getClass().getSimpleName(){{ARGS}}
+  MSG: Reword this WARN message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: "Registration insert failed ({}) and no registration exists" | suffix keys: [errorType]
+  mdc: []  vars: pledgeId:String, e:DuplicateKeyException
+OUM-bef2e9  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRegistration.java:35  PledgeRegistration.register
+  "Registration insert failed ({}) and no registration exists" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
+  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("registration.insert", "failed")) or skip; then logast apply . Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
+OUM-23330f  low  REPORT-ONLY  METRIC_OUTCOME_UNMEASURED  src/main/java/com/example/e2e/pledge/PledgeRegistration.java:46  PledgeRegistration.admit
+  "Refusing pledge admission: session lookup failed" is logged but not counted (outcome=failed, frequency unknown: no entrypoint is known to reach it)
+  note: Decide in .logast/decisions/metrics.yaml: count: counter (Outcomes.count("session.lookup", "failed")) or skip; then logast apply . Count it only if a dashboard or alert needs it.
+  done when: a metric counts this outcome, or its decision in .logast/decisions/metrics.yaml is applied (logast apply .)
 SUG-b07418  low  NEEDS TEXT  MESSAGE_SUGGESTED  src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:18  PledgeReloadJob.run
   Generated wording "Pledge reload started": say it in domain terms
   path: @Scheduled PledgeReloadJob.run → PledgeReloadJob.run
@@ -439,16 +453,16 @@ PDD-6fcee6  low  REPORT-ONLY  PROBLEM_DETAILS_DISABLED  src/main/resources/appli
 
 messages.yaml: MSG is plain text, no {} and no [k=v]; optional args: [var] adds variables
 
-Applied earlier: 90 changes in 51 files (git diff to review)
+Applied earlier: 93 changes in 52 files (git diff to review)
 
-Optional (82) — left as is, each keeps its default:
-  21 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
-  25 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
+Optional (85) — left as is, each keeps its default:
+  22 log lines: a text of your own  → .logast/decisions/messages.yaml   (blank: the current text stays)
+  27 outcomes: count, tag or skip   → .logast/decisions/metrics.yaml   (blank: no metric)
   36 decisions                      → the REPORT-ONLY orders above   (each says what to decide)
      mostly: vague message 6, incomplete audit record 5, async work loses the log context 4, …
   to decide: logast review (or edit .logast/decisions/*.yaml), then logast apply . again   (on this code: don't revert it)
 
-Log lines: 89 — 45 fixed, 26 with a finding, 10 fine, 8 not checked (.logast/reports/coverage.txt)
+Log lines: 92 — 47 fixed, 26 with a finding, 11 fine, 8 not checked (.logast/reports/coverage.txt)
 
 Also:
   fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 23 entrypoints have no rate: log levels and metrics frequency stay cautious there

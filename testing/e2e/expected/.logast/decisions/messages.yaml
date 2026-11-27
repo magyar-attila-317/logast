@@ -6,7 +6,7 @@
 # Keys starting with _ are hints (_where and "was:" find the line again when its id changes: keep them). `logast
 # scan` keeps this file up to date and keeps what you wrote.
 #
-# 21 finding(s) below need a message text.
+# 22 finding(s) below need a message text.
 #
 # Example:
 #   SUG-1a2b3c:
@@ -68,6 +68,10 @@ SUG-bd50bd:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} completed' (the generated subject came from the code's names) | was: Pledge expiry completed | must read as: {subject} completed | suffix keys added by the tool: [deleted]"
   _where: src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:21 PledgeExpiryJob.expire
+FMT-7acc35:
+  MSG: ""
+  _MSG: "Reword this WARN message in plain text without placeholders; values move into the [k=v] suffix the tool appends | was: Registration insert failed ({}) and no registration exists | suffix keys added by the tool: [errorType]"
+  _where: src/main/java/com/example/e2e/pledge/PledgeRegistration.java:35 PledgeRegistration.register
 SUG-b07418:
   MSG: ""
   _MSG: "Say what this is in domain terms, keeping the form '{subject} started' (the generated subject came from the code's names) | was: Pledge reload started | must read as: {subject} started"

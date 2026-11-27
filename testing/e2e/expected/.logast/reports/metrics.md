@@ -24,7 +24,7 @@ Entrypoints no metric covers: 5
 
 Meters in code: 3   (logast explain metrics . --format table lists them)
 
-Outcomes logged but not counted: 13  failed 2, sent 2, archived 1, audited 1, completed 1, parsed 1, placed 1, published 1, recorded 1, saved 1, shipped 1
+Outcomes logged but not counted: 14  failed 3, sent 2, archived 1, audited 1, completed 1, parsed 1, placed 1, published 1, recorded 1, saved 1, shipped 1
   pick the ones a dashboard or alert needs; snippets (tag or counter) in --format json and in the METRIC_OUTCOME_UNMEASURED findings
   src/main/java/com/example/e2e/edge/Audited.java:11  Audited.audit
     INFO "Pledge audited"  outcome=audited  frequency low
@@ -51,6 +51,8 @@ Outcomes logged but not counted: 13  failed 2, sent 2, archived 1, audited 1, co
     from http POST /orders
   src/main/java/com/example/e2e/order/OrderService.java:48  OrderService.ship
     INFO "Orders shipped"  outcome=shipped  frequency unknown: no entrypoint is known to reach it
+  src/main/java/com/example/e2e/pledge/PledgeRegistration.java:35  PledgeRegistration.register
+    WARN "Registration insert failed ({}) and no registration exists"  outcome=failed  frequency unknown: no entrypoint is known to reach it
   src/main/java/com/example/e2e/pledge/PledgeRepository.java:41  PledgeRepository.countUse
     INFO "Pledge usage saved"  outcome=saved  frequency unknown: no rate for "POST /pledges/{pledgeId}/use" in .logast/decisions/traffic.yaml
     from http POST /pledges/{pledgeId}/use

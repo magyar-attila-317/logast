@@ -1,16 +1,16 @@
 === logast apply . --auto --write
-✓ 104 changes in 56 files (<t>)
+✓ 108 changes in 57 files (<t>)
   43 log lines rewritten in the standard format
-  16 log lines added where something happened silently
-  12 outcomes counted (a metric next to their log line)
+  17 log lines added where something happened silently
+  13 outcomes counted (a metric next to their log line)
   10 business ids put into MDC
-  7 setup changes (dependencies, configuration, tracing)
+  9 MDC keys tidied
   16 other changes
   support code copied into com/example/e2e/logging (16 files)
   review: git diff   (one diff per kind: .logast/reports/steps/)
-12 counters added by default (metrics.defaults): review them in .logast/reports/metrics-review.txt
+13 counters added by default (metrics.defaults): review them in .logast/reports/metrics-review.txt
 38 log lines no longer carry their ids in the text (they are in MDC now): a test that asserts an id in a log message needs the MDC value instead
-Changes beyond logging (32): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
+Changes beyond logging (33): code that can now run differently; the rest of the diff only changes log lines (.logast/reports/behavioural.txt)
   src/main/java/com/example/e2e/edge/EdgeFlow.java:18 EdgeFlow.process — code changed besides logging
   src/main/java/com/example/e2e/edge/EdgeJob.java:22 EdgeJob.run — code changed besides logging
   src/main/java/com/example/e2e/job/BaseRunJob.java:9 BaseRunJob.doExecute — code changed besides logging
@@ -21,15 +21,15 @@ Changes beyond logging (32): code that can now run differently; the rest of the 
   src/main/java/com/example/e2e/messaging/PledgeMessages.java:37 PledgeMessages.onAudit — code changed besides logging
   src/main/java/com/example/e2e/order/OrderEvents.java:15 OrderEvents.onOrder — code changed besides logging
   src/main/java/com/example/e2e/order/OrderService.java:26 OrderService.placeAndReward — code changed besides logging
-  … and 22 more
+  … and 23 more
 
 Worth a look (optional) — the service works without these:
-  21 log lines could say more, 14 outcomes could be counted → logast review
+  22 log lines could say more, 15 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 96 — 54 fixed, 18 with a finding, 10 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
+Log lines: 99 — 55 fixed, 19 with a finding, 11 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
 
-Also: no test uses the changed classes   .logast/reports/tests.txt; 38 changed classes have no test that checks their log lines
+Also: no test uses the changed classes   .logast/reports/tests.txt; 39 changed classes have no test that checks their log lines
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 23 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?
 
@@ -39,10 +39,10 @@ reports: .logast/reports/ metrics.md queries.md lifecycle.txt (logast explain me
 ✓ nothing to change: the code has everything logast applies itself (<t>)
 
 Worth a look (optional) — the service works without these:
-  21 log lines could say more, 14 outcomes could be counted → logast review
+  22 log lines could say more, 15 outcomes could be counted → logast review
   36 things logast can't fix itself, e.g. vague message (6), incomplete audit record (5), async work loses the log context (4) → logast scan .
 
-Log lines: 96 — 54 fixed, 18 with a finding, 10 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
+Log lines: 99 — 55 fixed, 19 with a finding, 11 fine, 1 silenced by logast:ignore, 13 not checked (.logast/reports/coverage.txt)
 
 Also: fill calls/day in .logast/decisions/traffic.yaml (optional)   18 of 23 entrypoints have no rate: log levels and metrics frequency stay cautious there
 Also: logast verify .   build and run the tests with log capture: does the result really log what it should?

@@ -20,7 +20,7 @@ public class PledgeLookup {
         try {
             return load(pledgeId);
         } catch (IllegalStateException e) {
-            log.warn("Pledge lookup failed", e);
+            log.warn("Pledge lookup failed [pledgeId={}]", pledgeId, e);
             Outcomes.count("pledge.lookup", "failed");
             throw new PledgeMissing(pledgeId, e);
         }
@@ -33,6 +33,10 @@ public class PledgeLookup {
         } catch (IllegalStateException e) {
             throw e;
         }
+    }
+
+    public java.util.Optional<String> cached(String pledgeId) {
+        return java.util.Optional.ofNullable(cache.get(pledgeId));
     }
 
     private String load(String pledgeId) {

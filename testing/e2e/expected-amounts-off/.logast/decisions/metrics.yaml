@@ -117,6 +117,16 @@ OUM-00f4c0:
   _frequency: "unknown: no entrypoint is known to reach it"
   _paths: []
   _tag: not available here (no observation known to run)
+OUM-bef2e9:
+  count: ""
+  name: registration.insert
+  outcome: failed
+  _event: failed
+  _message: "WARN \"Registration insert failed ({}) and no registration exists\""
+  _where: src/main/java/com/example/e2e/pledge/PledgeRegistration.java:35 PledgeRegistration.register
+  _frequency: "unknown: no entrypoint is known to reach it"
+  _paths: []
+  _tag: not available here (no observation known to run)
 OUM-3dfc51:
   count: ""
   name: pledge.usage

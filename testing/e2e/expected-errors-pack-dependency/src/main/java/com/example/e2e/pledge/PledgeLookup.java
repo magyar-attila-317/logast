@@ -34,6 +34,10 @@ public class PledgeLookup {
         }
     }
 
+    public java.util.Optional<String> cached(String pledgeId) {
+        return java.util.Optional.ofNullable(cache.get(pledgeId));
+    }
+
     private String load(String pledgeId) {
         String value = cache.get(pledgeId);
         if (value == null) {

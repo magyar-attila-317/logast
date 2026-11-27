@@ -15,6 +15,7 @@ src/main/java/com/example/e2e/order/PaymentClient.java
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java
 src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java
 src/main/java/com/example/e2e/pledge/PledgeLookup.java
+src/main/java/com/example/e2e/pledge/PledgeRegistration.java
 src/main/java/com/example/e2e/pledge/PledgeReloadJob.java
 src/main/java/com/example/e2e/pledge/PledgeRepository.java
 src/main/java/com/example/e2e/pledge/PledgeSender.java

@@ -54,4 +54,15 @@ OUM-798439:
   _frequency: "unknown: no entrypoint is known to reach it"
   _paths: []
   _tag: not available here (no observation known to run)
-  _problem: "The log line is part of a return/throw statement: a counting line after it would never run; count it where it happens (inside the lambda) or mark it skip."
+  _problem: "The log line runs inside a lambda, only under a condition: a counting line after the statement would count every run; count it inside the lambda, next to the log line, or mark it skip."
+OUM-bef2e9:
+  count: counter
+  name: registration.insert
+  outcome: failed
+  _event: failed
+  _message: "WARN \"Registration insert failed ({}) and no registration exists\""
+  _where: src/main/java/com/example/e2e/pledge/PledgeRegistration.java:35 PledgeRegistration.register
+  _frequency: "unknown: no entrypoint is known to reach it"
+  _paths: []
+  _tag: not available here (no observation known to run)
+  _problem: "The log line runs inside a lambda, only under a condition: a counting line after the statement would count every run; count it inside the lambda, next to the log line, or mark it skip."

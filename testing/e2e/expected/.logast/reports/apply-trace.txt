@@ -1,2 +1,2 @@
-scan: 70 orders
+scan: 72 orders
 == pass 1

@@ -311,6 +311,13 @@ public final class MetricsMap {
     private static final Set<String> NOT_OUTCOMES = Set.of("started", "read", "received", "called", "used", "loaded", "requested",
             "invoked", "scheduled", "queued", "enabled", "disabled", "configured", "initialized", "initialised", "registered");
 
+    /** #336: a line that starts with what the code does about a failure, not with what failed. */
+    private static final Pattern REACTION = Pattern.compile("(?i)^(refusing|rejecting|skipping|ignoring|dropping|discarding|aborting"
+            + "|denying|declining|closing|returning|falling back|giving up)\\b");
+    /** #336: the clause after the reaction that names the failed operation: "…: session lookup failed". */
+    private static final Pattern FAILURE_CLAUSE = Pattern.compile("(?:[:;,(]|\\s[-–—])\\s*(?:the\\s+|a\\s+)?([A-Za-z][\\w ]*?)\\s+"
+            + "(?:failed|failure|errored|timed out|unavailable)\\b");
+
     private MetricsMap() {
     }
 
@@ -470,6 +477,14 @@ public final class MetricsMap {
 
     /** The subject of an outcome line: "Order items" for "Order items closed". */
     private static String subject(Phrasing phrasing, String text, String event) {
+        // #336: "Refusing pledge admission: session lookup failed": the line starts with the reaction; what failed is
+        // named in the clause with the failure word
+        if (REACTION.matcher(text).find()) {
+            Matcher f = FAILURE_CLAUSE.matcher(text);
+            if (f.find()) {
+                return clean(f.group(1));
+            }
+        }
         String fromPhrasing = phrasing.subjectOf(text);
         return clean(fromPhrasing != null ? fromPhrasing : subjectOf(text, event));
     }

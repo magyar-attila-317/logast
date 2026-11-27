@@ -66,7 +66,7 @@ entrypoints:
 # The entries below were found in your code, one per key as the code spells it. Organise them as
 # the example shows, then run `logast vocabulary .` again: it lists only what is still missing.
 # ---------------------------------------------------------------------------------------------
-# Harvested from 56 source files: MDC keys, [k=v] keys in log messages and id-like variables,
+# Harvested from 57 source files: MDC keys, [k=v] keys in log messages and id-like variables,
 # one term per key, written as in the code. Counts: mdc / log / declared, files. "same value as" and
 # "a kind of" are only hints: nothing is merged or renamed until you edit it.
 #
@@ -83,7 +83,7 @@ entrypoints:
 #     mdc: { key: approverUserId }     # so its own term, never an alias of it
 # Delete the keys that are not business terms (technical ones like retryCount).
 vocabulary:
-  pledgeId:      # 0 / 31 / 26, 21 files
+  pledgeId:      # 0 / 32 / 29, 22 files
     mdc: { key: pledgeId, sources: { params: [pledgeId] } }
   runCode:       # 1 / 5 / 0, 2 files
     mdc: { key: runCode }

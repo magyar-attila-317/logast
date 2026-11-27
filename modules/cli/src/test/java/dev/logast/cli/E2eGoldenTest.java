@@ -1436,7 +1436,7 @@ abstract class E2eGoldenTest {
                 .contains("outcomes to count or skip").contains("--rule ASYNC_CONTEXT_LOSS")
                 .as("each rule says what to do: the note's first instruction, past an explanation")
                 .contains("      → Pass a context-propagating executor: ContextExecutors.wrap(executor) or a Spring TaskExecutor bean.\n")
-                .contains("      → e.g. Put the values into the exception (its message or a field) and log the exception there (or in an @Exceptio…")
+                .contains("      → Put the values into the exception (its message or a field) and log the exception there (or in an @ExceptionHand…")
                 .contains("      → e.g. Record the trace or correlation id");
         String piped = run(app, "scan", app.toString(), "--classpath-file", CLASSPATH);
         assertThat(piped).as("not a terminal: the full listing").contains("REPORT-ONLY").doesNotContain("Your decisions");
@@ -1725,9 +1725,10 @@ abstract class E2eGoldenTest {
                 .mapToLong(t -> t.lines().filter(l -> l.matches(".*Outcomes\\.(count|record)\\(\"[^\"]+\", \"[^\"]+\", \"[^\"]+\", [^\"]+\\);.*")).count()).sum();
         // decisions that cannot be written stay in metrics.yaml with a "_problem" (e.g. a log line inside a returned pipeline)
         long problems = actual.get(".logast/decisions/metrics.yaml").lines().filter(l -> l.strip().startsWith("_problem:")).count();
-        // the reactive pipeline's line (inside a return), the async failure line (inside whenComplete's if) and the line in
-        // runAsync's lambda (another thread, later) cannot be counted after their statement
-        assertThat(problems).as("lines that cannot be counted after their statement").isEqualTo(3);
+        // the reactive pipeline's line (inside a return), the async failure line (inside whenComplete's if), the line in
+        // runAsync's lambda (another thread, later) and the failure in ifPresentOrElse's else lambda (#337) cannot be
+        // counted after their statement
+        assertThat(problems).as("lines that cannot be counted after their statement").isEqualTo(4);
         decided -= problems;
         if (catalog.equals("off")) {
             assertThat(counted).as("every outcome decided in metrics.yaml is counted").isEqualTo(decided);

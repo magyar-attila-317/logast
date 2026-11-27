@@ -22,6 +22,11 @@ public final class PledgeMetrics {
         Outcomes.countKind("pledge", "reload", "failed");
     }
 
+    /** session.lookup{outcome="failed"} +1. */
+    public static void sessionLookupFailed() {
+        Outcomes.count("session.lookup", "failed");
+    }
+
     /** pledge{kind="resend", outcome="failed"} +1. */
     public static void pledgeResendFailed() {
         Outcomes.countKind("pledge", "resend", "failed");
@@ -34,6 +39,7 @@ public final class PledgeMetrics {
         public void afterSingletonsInstantiated() {
             Outcomes.registerKind("pledge", "lookup", "failed");
             Outcomes.registerKind("pledge", "reload", "failed");
+            Outcomes.register("session.lookup", "failed");
             Outcomes.registerKind("pledge", "resend", "failed");
         }
     }

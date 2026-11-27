@@ -334,6 +334,13 @@ sum by (outcome) (increase(pledges_rows_total{application="e2e-shop"}[1h]))
 sum by (outcome) (increase(preload_export_total{application="e2e-shop"}[1h]))
 ```
 
+**session.lookup** (outcome: failed), per hour  
+`src/main/java/com/example/e2e/pledge/PledgeRegistration.java:48`
+
+```promql
+sum by (outcome) (increase(session_lookup_total{application="e2e-shop"}[1h]))
+```
+
 **tally** (outcome: completed), per hour  
 `src/main/java/com/example/e2e/job/TallyJob.java:18`
 
@@ -521,6 +528,12 @@ FROM Metric SELECT sum(pledges.rows) WHERE service.name = 'e2e-shop' FACET outco
 
 ```sql
 FROM Metric SELECT sum(preload.export) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
+```
+
+**session.lookup** (outcome: failed), per hour
+
+```sql
+FROM Metric SELECT sum(session.lookup) WHERE service.name = 'e2e-shop' FACET outcome TIMESERIES 1 hour
 ```
 
 **tally** (outcome: completed), per hour

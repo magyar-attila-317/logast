@@ -22,7 +22,7 @@ Entrypoints no metric covers: 3
 
 Meters in code: 3   (logast explain metrics . --format table lists them)
 
-Outcomes logged but not counted: 3  failed 2, archived 1
+Outcomes logged but not counted: 4  failed 3, archived 1
   pick the ones a dashboard or alert needs; snippets (tag or counter) in --format json and in the METRIC_OUTCOME_UNMEASURED findings
   src/main/java/com/example/e2e/edge/EdgeFlow.java:46  EdgeFlow.process
     INFO "Pledge archived"  outcome=archived  frequency low
@@ -32,3 +32,5 @@ Outcomes logged but not counted: 3  failed 2, archived 1
     from scheduled @Scheduled EdgeJob.run
   src/main/java/com/example/e2e/messaging/ReactivePledgeLookup.java:17  ReactivePledgeLookup.find
     WARN "Pledge lookup failed"  outcome=failed  frequency unknown: no entrypoint is known to reach it
+  src/main/java/com/example/e2e/pledge/PledgeRegistration.java:36  PledgeRegistration.register
+    WARN "Registration insert failed ({}) and no registration exists"  outcome=failed  frequency unknown: no entrypoint is known to reach it

@@ -91,6 +91,11 @@ public final class BusinessMetrics {
         Outcomes.count("pledge.lookup", "failed");
     }
 
+    /** session.lookup{outcome="failed"} +1. */
+    public static void sessionLookupFailed() {
+        Outcomes.count("session.lookup", "failed");
+    }
+
     /** pledges{outcome="updated"} +1; pledges.rows{outcome="updated"} grows by rows. */
     public static void pledgesUpdated(Number rows) {
         Outcomes.count("pledges", "updated", "rows", rows);
@@ -144,6 +149,7 @@ public final class BusinessMetrics {
             Outcomes.registerPerRun("orders", "shipped", "items");
             Outcomes.register("charge", "failed");
             Outcomes.register("pledge.lookup", "failed");
+            Outcomes.register("session.lookup", "failed");
             Outcomes.registerTotal("pledges", "updated", "rows");
             Outcomes.registerTotal("pledges", "deleted", "rows");
             Outcomes.registerTotal("pledge.usage", "saved", "uses");

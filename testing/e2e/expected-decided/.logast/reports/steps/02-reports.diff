@@ -80,6 +80,18 @@ index b5016f7..9783241 100644
 +        OrderMetrics.orderAuditRecorded();
      }
  }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRegistration.java b/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
+index ab2f098..3cd3106 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
+@@ -44,6 +44,7 @@ 
+             }
+         } catch (PledgeMissing e) {
+             log.warn("Refusing pledge admission: session lookup failed [pledgeId={}]", pledgeId, e);
++            PledgeMetrics.sessionLookupFailed();
+             return false;
+         }
+     }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeSender.java b/src/main/java/com/example/e2e/pledge/PledgeSender.java
 index 883cb52..d9a678e 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeSender.java
@@ -186,13 +198,13 @@ index 7e878e4..14ceb1d 100644
      }
  }
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
-index ee13ea4..c79b8c8 100644
+index 14ccc96..c6a4563 100644
 --- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 +++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
 @@ -20,6 +20,7 @@ 
              return load(pledgeId);
          } catch (IllegalStateException e) {
-             log.warn("Pledge lookup failed", e);
+             log.warn("Pledge lookup failed [pledgeId={}]", pledgeId, e);
 +            PledgeMetrics.pledgeLookupFailed();
              throw new PledgeMissing(pledgeId, e);
          }
@@ -393,10 +405,10 @@ index 0000000..9185002
 +}
 diff --git a/src/main/java/com/example/e2e/pledge/PledgeMetrics.java b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
 new file mode 100644
-index 0000000..8b55614
+index 0000000..6a3bd6b
 --- /dev/null
 +++ b/src/main/java/com/example/e2e/pledge/PledgeMetrics.java
-@@ -0,0 +1,70 @@ 
+@@ -0,0 +1,76 @@ 
 +package com.example.e2e.pledge;
 +
 +import com.example.e2e.logging.Outcomes;
@@ -414,6 +426,11 @@ index 0000000..8b55614
 +    /** pledge.lookup{outcome="failed"} +1. */
 +    public static void pledgeLookupFailed() {
 +        Outcomes.count("pledge.lookup", "failed");
++    }
++
++    /** session.lookup{outcome="failed"} +1. */
++    public static void sessionLookupFailed() {
++        Outcomes.count("session.lookup", "failed");
 +    }
 +
 +    /** pledges{outcome="updated"} +1; pledges.rows{outcome="updated"} grows by rows. */
@@ -457,6 +474,7 @@ index 0000000..8b55614
 +        @Override
 +        public void afterSingletonsInstantiated() {
 +            Outcomes.register("pledge.lookup", "failed");
++            Outcomes.register("session.lookup", "failed");
 +            Outcomes.registerTotal("pledges", "updated", "rows");
 +            Outcomes.registerTotal("pledges", "deleted", "rows");
 +            Outcomes.registerTotal("pledge.usage", "saved", "uses");

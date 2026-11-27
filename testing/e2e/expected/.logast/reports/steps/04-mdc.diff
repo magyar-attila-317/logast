@@ -386,3 +386,38 @@ index 1895279..180b614 100644
          } catch (IllegalStateException e) {
              log.error("Charge failed for order {}", order.id(), e);
              throw new PaymentException("charge failed", e);
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeLookup.java b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+index 96fb96f..d47f656 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeLookup.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeLookup.java
+@@ -19,7 +19,7 @@ 
+         try {
+             return load(pledgeId);
+         } catch (IllegalStateException e) {
+-            log.warn("Pledge lookup failed", e);
++            log.warn("Pledge lookup failed [pledgeId={}]", pledgeId, e);
+             throw new PledgeMissing(pledgeId, e);
+         }
+     }
+diff --git a/src/main/java/com/example/e2e/pledge/PledgeRegistration.java b/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
+index cb1ac16..ab2f098 100644
+--- a/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
++++ b/src/main/java/com/example/e2e/pledge/PledgeRegistration.java
+@@ -1,5 +1,6 @@ 
+ package com.example.e2e.pledge;
+ 
++import com.example.e2e.logging.MdcScope;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.dao.DuplicateKeyException;
+@@ -38,7 +39,9 @@
+ 
+     public boolean admit(String pledgeId) {
+         try {
+-            return lookup.find(pledgeId) != null;
++            try (var mdc = MdcScope.of("pledgeId", pledgeId)) {
++                return lookup.find(pledgeId) != null;
++            }
+         } catch (PledgeMissing e) {
+             log.warn("Refusing pledge admission: session lookup failed [pledgeId={}]", pledgeId, e);
+             return false;

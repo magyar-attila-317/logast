@@ -63,7 +63,10 @@ src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:26         checked  n
 src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java:29         fixed    MESSAGE_SUGGESTED SUG-bc7bc4
 src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:19          fixed    MESSAGE_SUGGESTED SUG-fe19b0
 src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java:21          fixed    MESSAGE_SUGGESTED SUG-bd50bd
-src/main/java/com/example/e2e/pledge/PledgeLookup.java:22             fixed    METRIC_OUTCOME_UNMEASURED OUM-91066b; reported LOG_AND_RETHROW LAR-af2b69
+src/main/java/com/example/e2e/pledge/PledgeLookup.java:22             fixed    METRIC_OUTCOME_UNMEASURED OUM-91066b; reported EXCEPTION_LOGGED_TWICE ELT-d36af7
+src/main/java/com/example/e2e/pledge/PledgeRegistration.java:33       checked  no finding
+src/main/java/com/example/e2e/pledge/PledgeRegistration.java:35       reported LOG_FORMAT FMT-7acc35, METRIC_OUTCOME_UNMEASURED OUM-bef2e9
+src/main/java/com/example/e2e/pledge/PledgeRegistration.java:46       fixed    METRIC_OUTCOME_UNMEASURED OUM-23330f
 src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:18          fixed    MESSAGE_SUGGESTED SUG-b07418
 src/main/java/com/example/e2e/pledge/PledgeReloadJob.java:20          fixed    MESSAGE_SUGGESTED SUG-9c3080
 src/main/java/com/example/e2e/pledge/PledgeRepository.java:28         fixed    METRIC_OUTCOME_UNMEASURED OUM-0310f9; reported MESSAGE_SUGGESTED SUG-69e349
@@ -107,7 +110,8 @@ src/main/java/com/example/e2e/web/QuoteController.java:30             fixed    M
 # src/main/java/com/example/e2e/order/PaymentClient.java cdbcae7bead9
 # src/main/java/com/example/e2e/pledge/PledgeCleanupJob.java 93c1e283deb1
 # src/main/java/com/example/e2e/pledge/PledgeExpiryJob.java 8d953654c343
-# src/main/java/com/example/e2e/pledge/PledgeLookup.java 3e07ea72f19c
+# src/main/java/com/example/e2e/pledge/PledgeLookup.java f2a08c69931e
+# src/main/java/com/example/e2e/pledge/PledgeRegistration.java 43b6161251eb
 # src/main/java/com/example/e2e/pledge/PledgeReloadJob.java d68dd99c9a10
 # src/main/java/com/example/e2e/pledge/PledgeRepository.java e18711e0eb6e
 # src/main/java/com/example/e2e/pledge/PledgeSender.java adb0e30a0f6a
