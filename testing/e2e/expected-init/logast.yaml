@@ -177,7 +177,7 @@ vocabulary:
 #   samplingProbability: 1.0   # [example] Written into management.tracing.sampling.probability when the service sets none; unset: only proposed
 # support:   # The runtime helper library (MdcScope, ObservedContext, Outcomes)
 #   mode:   # vendor: copy its classes into the service; dependency: add the logging-support library (default when … (vendor | dependency)
-#   coordinates: "dev.logast:logging-support:0.5.8"   # [example] Which library (dependency mode); default: this logast's version
+#   coordinates: "dev.logast:logging-support:0.5.9"   # [example] Which library (dependency mode); default: this logast's version
 #   repository: "https://nexus.example.com/repository/maven-releases/"   # [example] Where the library comes from: added to the build unless a script names it
 #   vendorPackage: com.example.shop.logging   # [example] Where vendor mode copies the classes (default: <app package>.logging)
 #   packageName: dev.logast.logging   # [example] The library's package (for a renamed fork)
